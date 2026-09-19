@@ -72,6 +72,8 @@ git commit -m "feat: add typed CampusQuest frontend API client"
 - Create: `frontend/src/app/(auth)/login/page.tsx`
 - Create: `frontend/src/features/auth/RegisterForm.tsx`
 - Create: `frontend/src/features/auth/LoginForm.tsx`
+- Create: `frontend/src/app/(auth)/forgot-password/page.tsx`
+- Create: `frontend/src/features/auth/PasswordResetForm.tsx`
 - Create: `frontend/e2e/auth.spec.ts`
 
 **Interfaces:**
@@ -86,9 +88,9 @@ Seed whitelist fixture, enter student number, nickname, phone, request fake OTP,
 
 Student number UI may reject obvious non-ASCII digits; backend remains authority. Nickname counter uses grapheme segmentation and shows `16/16`.
 
-- [ ] **Step 3: Implement error states**
+- [ ] **Step 3: Implement error states and password recovery**
 
-Render stable messages for not-whitelisted, phone already bound, OTP expired, wrong password, account not active.
+Render stable messages for not-whitelisted, phone already bound, OTP expired, wrong password, account not active. Password recovery requests a phone verification challenge for the username, confirms the code, sets a new password, and returns to login; the UI never exposes whether an arbitrary non-whitelisted username exists beyond the backend's anti-enumeration response policy.
 
 - [ ] **Step 4: Run and commit**
 
@@ -183,6 +185,7 @@ git commit -m "feat: add submission validation and revision UI"
 - Create: `frontend/src/app/(student)/rewards/page.tsx`
 - Create: `frontend/src/app/(student)/rankings/page.tsx`
 - Create: `frontend/src/app/(student)/profile/page.tsx`
+- Create: `frontend/src/features/auth/AccountSettings.tsx`
 - Create: `frontend/src/features/rewards/RedeemDialog.tsx`
 - Create: `frontend/src/features/rankings/Leaderboard.tsx`
 - Create: `frontend/e2e/rewards-ranking.spec.ts`
@@ -202,9 +205,9 @@ Rendered ranking rows contain nickname/honor/score only. Assert seeded student n
 
 Daily/monthly/all and around-me. Around-me visually marks current user.
 
-- [ ] **Step 4: Implement growth profile**
+- [ ] **Step 4: Implement growth profile and account settings**
 
-Month points/rank, total contribution, completion count, on-time rate, streak, best month, honor selector.
+Month points/rank, total contribution, completion count, on-time rate, streak, best month, honor selector. In a separate Account Settings section, allow nickname change, phone change through password re-auth + new-phone OTP, email bind/verify/unbind, and session/password security actions. Never render full phone/email outside the authenticated user's own settings.
 
 - [ ] **Step 5: Run and commit**
 
@@ -275,7 +278,39 @@ git add frontend/src frontend/e2e/notifications.spec.ts
 git commit -m "feat: add notification inbox and PWA shell"
 ```
 
-### Task 8: Implement Teacher Workspace
+### Task 8: Implement Staff Invitation Acceptance and 2FA Login
+
+**Files:**
+- Create: `frontend/src/app/(auth)/staff/invite/[token]/page.tsx`
+- Create: `frontend/src/app/(auth)/staff/login/page.tsx`
+- Create: `frontend/src/features/auth/TotpSetup.tsx`
+- Create: `frontend/src/features/auth/StaffLoginForm.tsx`
+- Create: `frontend/e2e/staff-auth.spec.ts`
+
+**Interfaces:**
+- Consumes Staff invitation/TOTP/session APIs.
+- Produces Teacher/Admin onboarding and 2FA login flow.
+
+- [ ] **Step 1: Write invitation E2E**
+
+Open valid invite -> set password -> show TOTP QR/secret setup -> confirm current code -> display recovery codes once -> enter management workspace.
+
+- [ ] **Step 2: Write 2FA enforcement E2E**
+
+Correct staff email/password without TOTP must not yield a management session. Correct TOTP succeeds. Reused recovery code fails after first use.
+
+- [ ] **Step 3: Implement Staff login using verified email identifier**
+
+Do not merge Student-number and Staff-email identifiers into one ambiguous text parser. Provide a dedicated Staff login route/form.
+
+- [ ] **Step 4: Run and commit**
+
+```bash
+git add frontend/src frontend/e2e/staff-auth.spec.ts
+git commit -m "feat: add staff invitation and two factor login UI"
+```
+
+### Task 9: Implement Teacher Workspace
 
 **Files:**
 - Create: `frontend/src/app/teacher/layout.tsx`
@@ -308,7 +343,7 @@ git add frontend/src frontend/e2e/teacher.spec.ts
 git commit -m "feat: add teacher task and review workspace"
 ```
 
-### Task 9: Implement Admin Workspace
+### Task 10: Implement Admin Workspace
 
 **Files:**
 - Create: `frontend/src/app/admin/layout.tsx`
@@ -333,7 +368,7 @@ Require Admin to enter reason; only after successful reveal API display identity
 
 - [ ] **Step 3: Implement audited destructive-action confirmations**
 
-Suspend/ban, reward adjustment, system setting update, named state repair show reason/confirmation as required by backend.
+Suspend/ban/reactivate user, reward adjustment, system setting update including current academic term, notification template edit, anonymous identity reveal, and named state repair show reason/confirmation as required by backend.
 
 - [ ] **Step 4: Run and commit**
 
@@ -342,7 +377,7 @@ git add frontend/src frontend/e2e/admin.spec.ts
 git commit -m "feat: add CampusQuest admin workspace"
 ```
 
-### Task 10: Frontend Verification Gate
+### Task 11: Frontend Verification Gate
 
 **Files:**
 - Modify: `frontend/package.json`
