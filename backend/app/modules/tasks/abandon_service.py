@@ -16,6 +16,12 @@ Transaction shape (one transaction, exactly one commit at the end):
 3. Daily count inside the user-row lock: this user's ABANDONED claims
    whose ``terminal_at`` instant falls in ``[local-midnight,
    next-local-midnight)`` of BUSINESS_TIMEZONE (see ``business_day_window``).
+   The clock instant (``now``) is sampled immediately BEFORE this step —
+   after the user-row and claim-row locks are held, before the assignment
+   lock — so lock-wait can never skew the daily abandon window, the
+   persisted ``terminal_at``, or the audit event's ``occurred_at`` (the
+   final-review symmetry fix; see the CLOCK SAMPLING CONTRACT comment in
+   ``abandon_claim``).
 4. Assignment release under FOR UPDATE, then Claim -> ABANDONED +
    ``terminal_at = clock.now()``; flush, publish, one commit.
 
@@ -293,8 +299,6 @@ class AbandonService:
         without recounting. Raises the typed §8.5 business errors (4xx)
         otherwise; commits exactly once, only on the success path.
         """
-        now = self._clock.now()
-
         # (1) Same-user serialization FIRST (see module docstring): the
         # stable user-level resource the claim flow also locks, so the
         # daily count below runs under a queue shared with claims.
@@ -329,6 +333,20 @@ class AbandonService:
             return claim
         if status not in ABANDONABLE_STATUSES:
             raise ClaimNotAbandonableError(status)
+
+        # CLOCK SAMPLING CONTRACT (final-review symmetry fix, same as
+        # claim_service): ``now`` is sampled HERE — after every lock the
+        # flow takes before its first time consumer (user row FOR UPDATE
+        # above, claim row FOR UPDATE above) and before the daily-window
+        # computation below. Sampling before the locks would let the
+        # user-row lock-wait skew the daily abandon window, the persisted
+        # terminal_at, and the audit event's occurred_at backwards by
+        # however long the lock was held. A clock advanced between call
+        # start and lock acquisition is therefore invisible by
+        # construction (asserted by structure: nothing reads self._clock
+        # between method entry and this line). FrozenClock tests pin the
+        # sampled instant on both sides of this contract.
+        now = self._clock.now()
 
         # (3) Daily cap inside the user-row lock (spec §8.5 atomicity).
         window_start, window_end = business_day_window(now, self._timezone)
