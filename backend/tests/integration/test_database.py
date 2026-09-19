@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import pytest
+from db_guard import require_test_database
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.config import Settings
-from db_guard import require_test_database
 
 
 @pytest.mark.integration

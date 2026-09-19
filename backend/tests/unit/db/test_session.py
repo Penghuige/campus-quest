@@ -30,10 +30,15 @@ class _RecordingSession:
 
 
 def _set_required_env(monkeypatch: pytest.MonkeyPatch, database_url: str) -> None:
+    # Complete required-settings set: these tests must pass when only
+    # tests/unit + tests/workers are collected, i.e. without the integration
+    # conftest having installed its env defaults in the same process.
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("S3_ENDPOINT_URL", "http://localhost:9000")
     monkeypatch.setenv("S3_BUCKET", "campusquest-test")
+    monkeypatch.setenv("S3_ACCESS_KEY", "campusquest")
+    monkeypatch.setenv("S3_SECRET_KEY", "campusquest-dev")
     monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
 
 

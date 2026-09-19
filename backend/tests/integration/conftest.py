@@ -15,13 +15,13 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from db_guard import require_test_database
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.db.session import create_db_engine
-from db_guard import require_test_database
 
 _TEST_STACK_HINT = (
     "docker compose -f infra/docker-compose.yml up -d (from the repository root)"

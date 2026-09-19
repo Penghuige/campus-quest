@@ -1,5 +1,5 @@
 # backend/tests/unit/core/test_errors.py
-"""BusinessError envelope and request-id propagation (spec §29; interfaces.md error registry)."""
+"""BusinessError envelope and request-id propagation (spec §29, interfaces.md)."""
 
 import logging
 import re
@@ -78,7 +78,9 @@ def test_oversized_request_id_is_replaced_not_reflected():
 
 
 def test_unsafe_charset_request_id_is_replaced():
-    response = TestClient(_boom_app()).get("/boom", headers={"X-Request-ID": "req-1<script>"})
+    response = TestClient(_boom_app()).get(
+        "/boom", headers={"X-Request-ID": "req-1<script>"}
+    )
 
     request_id = response.json()["error"]["request_id"]
     assert request_id != "req-1<script>"
@@ -99,7 +101,9 @@ def test_unexpected_exception_returns_safe_500_envelope():
 
     @app.get("/explode")
     async def explode():
-        raise RuntimeError("boom SELECT secret FROM internal_table path=/etc/campusquest")
+        raise RuntimeError(
+            "boom SELECT secret FROM internal_table path=/etc/campusquest"
+        )
 
     response = TestClient(app, raise_server_exceptions=False).get(
         "/explode", headers={"X-Request-ID": "req-2"}

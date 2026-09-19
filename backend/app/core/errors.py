@@ -9,6 +9,7 @@ logged server-side only (docs/quality/backend-engineering.md §10, §15).
 """
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -29,7 +30,7 @@ class BusinessError(Exception):
         code: str,
         message: str,
         status_code: int = 400,
-        details: dict | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -39,8 +40,11 @@ class BusinessError(Exception):
 
 
 def error_envelope(
-    code: str, message: str, details: dict | None, request_id: str | None
-) -> dict:
+    code: str,
+    message: str,
+    details: dict[str, Any] | None,
+    request_id: str | None,
+) -> dict[str, Any]:
     return {
         "error": {
             "code": code,
@@ -55,7 +59,7 @@ def _envelope_response(
     status_code: int,
     code: str,
     message: str,
-    details: dict | None,
+    details: dict[str, Any] | None,
     request_id: str | None,
 ) -> JSONResponse:
     headers = {REQUEST_ID_HEADER: request_id} if request_id is not None else None
@@ -70,7 +74,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     """Attach the §29 envelope handlers to an app."""
 
     @app.exception_handler(BusinessError)
-    async def handle_business_error(request: Request, exc: BusinessError) -> JSONResponse:
+    async def handle_business_error(
+        request: Request, exc: BusinessError
+    ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
         return _envelope_response(
             exc.status_code, exc.code, exc.message, exc.details, request_id
