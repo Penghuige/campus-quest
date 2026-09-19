@@ -40,10 +40,17 @@ Design decisions:
   which is exactly what re-claiming after ABANDONED/EXPIRED requires
   (§8.2). Both WHERE clauses are built from `ACTIVE_CLAIM_STATUSES` so the
   models, migration, and later claim service share one definition.
-- Claims snapshot the task contract at claim time (§6.2): reward policy,
-  base points, deadline, grace deadline; `task_id` is denormalized onto
-  the claim so the (user_id, task_id) partial index and per-task history
-  queries never need a join. Later Task edits must not touch these.
+- Claims snapshot the task contract at claim time (§6.2 MUST list, all
+  five fields): `base_reward_points_snapshot`, `deadline_at`,
+  `grace_deadline_at`, `reward_policy_snapshot`, and
+  `submission_schema_version` — a later Task schema or reward bump must
+  never retroactively change an already-claimed Claim's requirements.
+  `submission_schema_version` is NOT NULL on the claim (unlike the
+  nullable Task column): claiming requires a PUBLISHED Task, which
+  requires a schema, so a version always exists at claim time; the claim
+  service copies it from the Task on creation. `task_id` is denormalized
+  onto the claim so the (user_id, task_id) partial index and per-task
+  history queries never need a join. Later Task edits must not touch these.
 - `reward_tier_locked` is the locked percentage from the snapshotted
   ladder (spec §9.3: 100/80/50/20), not a string tier name — the ladder
   shape itself is versioned inside `reward_policy_snapshot`.
@@ -280,9 +287,9 @@ class Assignment(Base):
 class AssignmentClaim(Base):
     """One claim (assignment-occupancy) history row (spec §8).
 
-    Snapshots (§6.2): the reward policy, base points, deadline and grace
-    deadline are copied from the Task at claim time and never follow later
-    Task edits.
+    Snapshots (§6.2, all five): base_reward_points, deadline_at,
+    grace_deadline_at, reward_policy, submission_schema_version — copied
+    from the Task at claim time and never followed by later Task edits.
     """
 
     __tablename__ = "assignment_claims"
@@ -334,6 +341,9 @@ class AssignmentClaim(Base):
     grace_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reward_policy_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
     base_reward_points_snapshot: Mapped[int] = mapped_column(Integer)
+    # §6.2 MUST-snapshot; NOT NULL here because a claim can only be created
+    # against a PUBLISHED Task, which always carries a schema version.
+    submission_schema_version: Mapped[int] = mapped_column(Integer)
     reward_lock_status: Mapped[str] = mapped_column(String(16))
     # Locked percentage from the snapshotted ladder (spec §9.3).
     reward_tier_locked: Mapped[int | None] = mapped_column(Integer)

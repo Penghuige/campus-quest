@@ -103,6 +103,7 @@ def _claim(
     user: User,
     *,
     status: ClaimStatus = ClaimStatus.CLAIMED,
+    submission_schema_version: int = 1,
 ) -> AssignmentClaim:
     deadline = datetime.now(UTC) + timedelta(days=3)
     return AssignmentClaim(
@@ -114,6 +115,7 @@ def _claim(
         grace_deadline_at=deadline + timedelta(minutes=1440),
         reward_policy_snapshot={"version": 1},
         base_reward_points_snapshot=100,
+        submission_schema_version=submission_schema_version,
         reward_lock_status=RewardLockStatus.NONE,
     )
 
@@ -238,6 +240,51 @@ async def test_terminal_claims_free_both_partial_indexes(
     # Same (assignment, user, task) triple as the terminal claim: both
     # partial unique indexes must ignore the ABANDONED row.
     await _flush(db_session, _claim(assignment, student, status=ClaimStatus.CLAIMED))
+
+
+@pytest.mark.integration
+async def test_claim_snapshots_submission_schema_version(
+    db_session: AsyncSession,
+) -> None:
+    """The claim-side submission_schema_version is a §6.2 MUST-snapshot:
+    bumping the Task's schema afterwards must not retroactively change the
+    submission requirements of already-claimed Claims."""
+    owner = _teacher()
+    student = _student()
+    await _flush(db_session, owner, student)
+    task = _task(
+        owner,
+        submission_schema={"columns": [{"name": "note", "type": "string"}]},
+        submission_schema_version=3,
+    )
+    await _flush(db_session, task)
+
+    assignment = _assignment(task)
+    await _flush(db_session, assignment)
+
+    claim = _claim(assignment, student, submission_schema_version=3)
+    await _flush(db_session, claim)
+
+    # Teacher evolves the task schema after students have claimed.
+    task.submission_schema = {
+        "columns": [
+            {"name": "note", "type": "string"},
+            {"name": "link", "type": "string"},
+        ]
+    }
+    task.submission_schema_version = 4
+    await _flush(db_session)
+    db_session.expunge_all()
+
+    loaded_claim = await db_session.scalar(
+        select(AssignmentClaim).where(AssignmentClaim.id == claim.id)
+    )
+    loaded_task = await db_session.scalar(select(Task).where(Task.id == task.id))
+
+    assert loaded_task is not None
+    assert loaded_task.submission_schema_version == 4
+    assert loaded_claim is not None
+    assert loaded_claim.submission_schema_version == 3
 
 
 @pytest.mark.integration

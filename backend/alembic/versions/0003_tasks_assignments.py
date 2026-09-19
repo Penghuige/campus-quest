@@ -252,6 +252,9 @@ def upgrade() -> None:
         sa.Column("grace_deadline_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("reward_policy_snapshot", JSONB(), nullable=False),
         sa.Column("base_reward_points_snapshot", sa.Integer(), nullable=False),
+        # Spec §6.2 MUST-snapshot; NOT NULL because claiming requires a
+        # PUBLISHED Task, which always carries a schema version.
+        sa.Column("submission_schema_version", sa.Integer(), nullable=False),
         sa.Column("reward_lock_status", sa.String(length=16), nullable=False),
         sa.Column("reward_tier_locked", sa.Integer(), nullable=True),
         sa.Column("reward_locked_at", sa.DateTime(timezone=True), nullable=True),
