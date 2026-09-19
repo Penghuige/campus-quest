@@ -38,6 +38,7 @@ from typing import Protocol
 import redis.asyncio as aioredis
 
 from app.core.clock import Clock
+from app.integrations.masking import mask_email, mask_phone
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +127,23 @@ class RedisFixedWindowLimiter:
             logger.info(
                 "rate limit exceeded bucket=%s identifier=%s count=%d limit=%d",
                 bucket,
-                identifier,
+                _masked_identifier(identifier),
                 count,
                 limit,
             )
             raise RateLimitExceededError(bucket)
+
+
+def _masked_identifier(identifier: str) -> str:
+    """Mask an identifier when it is contact data (spec §5.4/§40).
+
+    OTP-send/phone-change identifiers are E.164 phones, email-verify and
+    staff-login identifiers are emails — both are masked in logs with the
+    shared adapter forms. Usernames/student numbers are not contact data
+    and stay exact (they are also the support lookup key).
+    """
+    if identifier.startswith("+"):
+        return mask_phone(identifier)
+    if "@" in identifier:
+        return mask_email(identifier)
+    return identifier

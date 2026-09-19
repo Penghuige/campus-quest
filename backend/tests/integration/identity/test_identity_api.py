@@ -571,6 +571,51 @@ async def test_student_cannot_reach_staff_totp_setup(
     assert _envelope(denied)["code"] == "PERMISSION_DENIED"
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/api/v1/staff/totp/begin", None),
+        ("/api/v1/staff/totp/confirm", {"code": "123456"}),
+    ],
+)
+async def test_suspended_staff_denied_totp_setup(
+    db_session: AsyncSession,
+    client: httpx.AsyncClient,
+    api_clock: FrozenClock,
+    path: str,
+    payload: dict | None,
+) -> None:
+    # Fix-round-1: the setup routes must also carry the account-status gate
+    # (§5.7) — a SUSPENDED staff member holding a still-live access token
+    # (revocation lags suspension) may not rotate a pending TOTP credential.
+    # No privilege is gained (the management guard re-checks), but the gate
+    # belongs here too. Login refuses suspended accounts, so the session is
+    # minted directly through the real SessionService.
+    suspended = User(
+        username="suspended@pku.edu.cn",
+        password_hash=hash_password(_PASSWORD),
+        nickname="停用教师",
+        email_normalized="suspended@pku.edu.cn",
+        email_verified_at=_T0,
+        role=Role.TEACHER.value,
+        status=UserStatus.SUSPENDED.value,
+    )
+    db_session.add(suspended)
+    await db_session.flush()
+    sessions = SessionService(clock=api_clock, access_codec=get_access_token_codec())
+    _, tokens = await sessions.issue_session(
+        db_session, user=suspended, now=api_clock.now()
+    )
+
+    denied = await client.post(
+        path, json=payload, headers=_bearer({"access_token": tokens.access_token})
+    )
+
+    assert denied.status_code == 403
+    assert _envelope(denied)["code"] == "ACCOUNT_NOT_ACTIVE"
+
+
 # --- rate limiting: normalized identifiers + 429 envelope (spec §33.1) ---------
 
 

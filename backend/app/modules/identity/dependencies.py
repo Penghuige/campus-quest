@@ -84,6 +84,7 @@ __all__ = [
     "get_actor",
     "get_business_clock",
     "require_active_actor",
+    "require_active_staff_actor",
     "require_staff_management_actor",
 ]
 
@@ -229,6 +230,41 @@ async def get_access_session_id(
     except AccessTokenError as exc:
         raise _authentication_required() from exc
     return UUID(claims.sid)
+
+
+async def require_active_staff_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The guard for staff-scoped but NON-management endpoints (TOTP setup).
+
+    Staff role plus ``status == ACTIVE`` — the management guard's first two
+    checks, WITHOUT the confirmed-TOTP gate, because these are the very
+    endpoints that establish it (a TOTP requirement here would deadlock
+    onboarding). A SUSPENDED staff member holding a still-live access token
+    (revocation lags suspension) gets ``ACCOUNT_NOT_ACTIVE`` — no privilege
+    was reachable through the management guard anyway, but the §5.7 state
+    gate belongs on every staff action. Check order mirrors the management
+    guard: role, then status.
+    """
+    user = await _resolve_user(credentials, db, codec, clock)
+    if not rbac.is_staff(user.role):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _MANAGEMENT_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
 
 
 async def require_staff_management_actor(

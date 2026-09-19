@@ -19,6 +19,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.integrations.masking import mask_phone
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,12 +58,6 @@ class SmsSender(Protocol):
         ...
 
 
-def _mask_phone(phone_e164: str) -> str:
-    if len(phone_e164) <= 8:
-        return f"{phone_e164[:2]}****"
-    return f"{phone_e164[:3]}****{phone_e164[-4:]}"
-
-
 class LoggingSmsSender:
     """Interim `SmsSender` adapter: log masked, deliver nothing (Plan 02).
 
@@ -73,6 +69,6 @@ class LoggingSmsSender:
     def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
         logger.info(
             "sms send (interim logging adapter) to=%s template=%s",
-            _mask_phone(to),
+            mask_phone(to),
             template,
         )

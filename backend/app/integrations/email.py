@@ -22,6 +22,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.integrations.masking import mask_email
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,13 +59,6 @@ class EmailSender(Protocol):
         ...
 
 
-def _mask_email(email: str) -> str:
-    local, separator, domain = email.partition("@")
-    if not separator or not local:
-        return "***"
-    return f"{local[:1]}***@{domain}"
-
-
 class LoggingEmailSender:
     """Interim `EmailSender` adapter: log masked, deliver nothing (Plan 02).
 
@@ -74,6 +69,6 @@ class LoggingEmailSender:
     def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
         logger.info(
             "email send (interim logging adapter) to=%s template=%s",
-            _mask_email(to),
+            mask_email(to),
             template,
         )

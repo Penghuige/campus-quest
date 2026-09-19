@@ -47,10 +47,10 @@ decisions live here:
   (Plan 07); until then the interim logging adapters record masked
   deliveries (never ``variables`` — the OTP code and email token travel
   there).
-- **Staff TOTP setup sits behind the staff role guard** (``rbac.require_role``
-  wired to ``get_actor`` at the app composition root): a pending staff
-  session is a real authenticated session that may finish its own 2FA
-  setup, while every management endpoint keeps the stricter
+- **Staff TOTP setup sits behind ``require_active_staff_actor``**: staff
+  role plus ACTIVE status, but no confirmed-TOTP requirement — a pending
+  staff session is a real authenticated session that may finish its own
+  2FA setup, while every management endpoint keeps the stricter
   ``require_staff_management_actor`` gate (§5.8 step 3, §33.4).
 """
 
@@ -70,7 +70,6 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
 
-from app.core import rbac
 from app.core.clock import Clock
 from app.core.config import Settings, get_settings
 from app.core.error_codes import ErrorCode
@@ -92,13 +91,13 @@ from app.modules.identity.dependencies import (
     get_actor,
     get_business_clock,
     require_active_actor,
+    require_active_staff_actor,
 )
 from app.modules.identity.email_verification import (
     EmailAlreadyBoundError,
     EmailVerificationService,
     InvalidEmailTokenError,
 )
-from app.modules.identity.enums import Role
 from app.modules.identity.events import (
     Actor,
     DomainEventPublisher,
@@ -171,10 +170,11 @@ _SECONDS_PER_DAY = 86400
 _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
 _CSRF_REJECTED_MESSAGE = "CSRF 校验失败：Cookie 请求必须携带有效的 X-CSRF-Token"
 
-# Staff-role guard for the TOTP setup endpoints: any authenticated staff
-# account, including pending setup (the management guard would deadlock the
-# flow — setup must be reachable before it can pass).
-_staff_role_guard = rbac.require_role(Role.TEACHER, Role.ADMIN)
+# Guard for the TOTP setup endpoints: staff role plus ACTIVE status, but NO
+# confirmed-TOTP requirement (these endpoints establish it — the management
+# guard would deadlock onboarding). Suspended staff with a live token are
+# refused here too (§5.7 gate on every staff action; fix round 1).
+_staff_setup_guard = require_active_staff_actor
 
 
 def require_csrf_when_cookie_bearer(request: Request) -> None:
@@ -656,7 +656,7 @@ async def accept_staff_invitation(
 
 @router.post("/staff/totp/begin", response_model=TotpSetupResponse)
 async def begin_totp_setup(
-    actor: Annotated[Actor, Depends(_staff_role_guard)],
+    actor: Annotated[Actor, Depends(_staff_setup_guard)],
     staff: Annotated[StaffService, Depends(get_staff_service)],
     db: DbSession,
 ) -> TotpSetupResponse:
@@ -668,7 +668,7 @@ async def begin_totp_setup(
 @router.post("/staff/totp/confirm", response_model=TotpConfirmResponse)
 async def confirm_totp_setup(
     body: TotpConfirmRequest,
-    actor: Annotated[Actor, Depends(_staff_role_guard)],
+    actor: Annotated[Actor, Depends(_staff_setup_guard)],
     staff: Annotated[StaffService, Depends(get_staff_service)],
     db: DbSession,
 ) -> TotpConfirmResponse:
