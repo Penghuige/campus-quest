@@ -27,9 +27,17 @@ class VerifiedPhone:
     The E.164 form is the only phone representation registration ever sees:
     raw input was normalized at challenge-creation time (Task 4), and the
     original formatting is never a uniqueness key.
+
+    ``purpose`` is the challenge's recorded purpose (Task 8): consumers
+    that authorize a specific operation (phone change, password reset)
+    reject a proof minted for any other purpose, so a code a user received
+    for — say — registration can never be replayed into a password reset.
+    Typed ``str | None`` (not ``OtpPurpose``) because ``otp`` imports this
+    module; ``OtpPurpose`` is a ``StrEnum`` so member equality still works.
     """
 
     phone_e164: str
+    purpose: str | None = None
 
 
 class PasswordHasher(Protocol):

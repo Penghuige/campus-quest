@@ -272,7 +272,7 @@ class OtpChallengeService:
         abuse. The generated code never appears in the return value, the
         Redis record, or any log line.
         """
-        phone = _normalize_phone(raw_phone, self._policy.default_region)
+        phone = normalize_phone(raw_phone, self._policy.default_region)
         now = self._clock.now()
         now_ts = now.timestamp()
 
@@ -434,6 +434,11 @@ class OtpChallengeService:
         caller receives the payload. Unknown, already-consumed, and expired
         tokens all raise `InvalidTokenError` — callers must re-verify, and
         distinguishing the cases would only leak lifecycle state.
+
+        The returned phone carries the challenge's ``purpose`` so
+        flow-specific consumers (Task 8's phone change and password reset)
+        can reject a proof minted for a different operation; registration
+        ignores it (its tokens are REGISTER-purpose by construction).
         """
         token_key = _token_key(
             _hmac_hex(self._policy.hmac_secret, _TOKEN_HASH_SALT, token)
@@ -448,7 +453,12 @@ class OtpChallengeService:
             raise InvalidTokenError
         expires_at = loaded.get("expires_at")
         phone = loaded.get("phone")
-        if not isinstance(phone, str) or not isinstance(expires_at, (int, float)):
+        purpose = loaded.get("purpose")
+        if (
+            not isinstance(phone, str)
+            or not isinstance(expires_at, (int, float))
+            or (purpose is not None and not isinstance(purpose, str))
+        ):
             # A payload we did not write cannot authenticate anything.
             logger.info("otp token rejected reason=malformed_payload")
             raise InvalidTokenError
@@ -456,7 +466,7 @@ class OtpChallengeService:
             logger.info("otp token rejected reason=expired")
             raise InvalidTokenError
         logger.info("otp token consumed phone=%s", _mask_phone(phone))
-        return VerifiedPhone(phone_e164=phone)
+        return VerifiedPhone(phone_e164=phone, purpose=purpose)
 
     async def _require_not_in_cooldown(self, phone: str, now_ts: float) -> None:
         cooldown_until = await self._redis.get(_cooldown_key(phone))
@@ -520,12 +530,16 @@ class OtpChallengeService:
                 raise OtpRateLimitError(scope=f"{scope}_{window}")
 
 
-def _normalize_phone(raw: str, region: str) -> str:
+def normalize_phone(raw: str, region: str) -> str:
     """Normalize raw caller input to canonical E.164 (spec §5.4).
 
     Raw formatting (spaces, +86 vs 0086, domestic trunk) is parsed away by
     the standard library and never stored: only the E.164 form keys
     cooldown/caps and reaches the SmsSender and the challenge record.
+    Public since Task 8: the profile service normalizes a caller-supplied
+    new phone BEFORE requesting a challenge, so the friendly
+    bound-elsewhere pre-check compares the same canonical form the index
+    enforces (backend-engineering §7) without re-implementing parsing.
     """
     try:
         parsed = phonenumbers.parse(raw, region)

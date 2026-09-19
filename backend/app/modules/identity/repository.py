@@ -87,6 +87,21 @@ class UserRepository:
         )
         return found
 
+    async def find_by_email_normalized(
+        self, session: AsyncSession, email_normalized: str
+    ) -> User | None:
+        """The account currently holding ``email_normalized``, if any (§5.5).
+
+        V1 uniqueness covers non-null normalized emails whether verified or
+        not (see models.py), so this is the friendly pre-check for both the
+        first bind and a re-bind; the partial unique index
+        ``uq_users_email_normalized`` adjudicates every race.
+        """
+        found: User | None = await session.scalar(
+            select(User).where(User.email_normalized == email_normalized)
+        )
+        return found
+
     async def find_with_live_session(
         self,
         session: AsyncSession,

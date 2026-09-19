@@ -218,21 +218,49 @@ class SessionService:
         (Task 8) so old refresh sessions die with the old password; rows
         are never deleted — revocation is part of the audit trail.
         """
+        revoked_count = await self._revoke(db, user_id, keep_session_id=None)
+        logger.info("sessions revoked user_id=%s count=%d", user_id, revoked_count)
+
+    async def revoke_all_except(
+        self, db: AsyncSession, user_id: UUID, keep_session_id: UUID | None
+    ) -> None:
+        """Revoke every live session of ``user_id`` except ``keep_session_id``.
+
+        The `change_password` variant (Task 8): the caller passes the
+        access token's ``sid`` so the session that AUTHORIZED the change
+        stays usable while every other device is signed out. Like
+        ``revoke_all`` this commits — deliberately: ``change_password``
+        flushes the new Argon2id verifier first, so one commit lands the
+        hash rotation and the revocations atomically (a crash between the
+        two would otherwise leave old-password sessions alive).
+        ``keep_session_id=None`` degrades to ``revoke_all``.
+        """
+        revoked_count = await self._revoke(db, user_id, keep_session_id=keep_session_id)
+        logger.info(
+            "sessions revoked user_id=%s kept_session_id=%s count=%d",
+            user_id,
+            keep_session_id,
+            revoked_count,
+        )
+
+    async def _revoke(
+        self, db: AsyncSession, user_id: UUID, *, keep_session_id: UUID | None
+    ) -> int:
         now = self._clock.now()
+        conditions = [
+            UserSession.user_id == user_id,
+            UserSession.revoked_at.is_(None),
+        ]
+        if keep_session_id is not None:
+            conditions.append(UserSession.id != keep_session_id)
         result = await db.execute(
-            update(UserSession)
-            .where(
-                UserSession.user_id == user_id,
-                UserSession.revoked_at.is_(None),
-            )
-            .values(revoked_at=now)
+            update(UserSession).where(*conditions).values(revoked_at=now)
         )
         await db.commit()
         # `CursorResult.rowcount` exists on every driver result here, but
         # the declared `Result` type does not carry it; the log count is
         # informational, so a missing attribute degrades to 0.
-        revoked_count = int(getattr(result, "rowcount", 0) or 0)
-        logger.info("sessions revoked user_id=%s count=%d", user_id, revoked_count)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def issue_session(
         self, db: AsyncSession, *, user: User, now: datetime
