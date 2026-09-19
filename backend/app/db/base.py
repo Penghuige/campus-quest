@@ -41,3 +41,9 @@ class AppMetadata(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), index=True
     )
+
+
+# Aggregate model modules so `Base.metadata` covers every table for Alembic
+# autogenerate (see module docstring). The import must stay below the Base
+# class definition: model modules import Base from this module.
+from app.modules.identity import models as identity_models  # noqa: E402, F401
