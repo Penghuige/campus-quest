@@ -319,7 +319,49 @@ git add backend/app/core/rbac.py backend/app/modules/identity/dependencies.py ba
 git commit -m "feat: enforce role and account status policies"
 ```
 
-### Task 8: Add Identity API Routes
+### Task 8: Implement Student Profile Contacts and Password Recovery
+
+**Files:**
+- Create: `backend/app/modules/identity/profile_service.py`
+- Create: `backend/app/modules/identity/email_verification.py`
+- Create: `backend/tests/integration/identity/test_profile_contacts.py`
+- Create: `backend/tests/integration/identity/test_password_recovery.py`
+
+**Interfaces:**
+- Produces:
+  - `change_nickname(user_id, nickname) -> User`
+  - `request_phone_change(user_id, password, new_phone) -> ChallengePublic`
+  - `confirm_phone_change(user_id, challenge_id, code) -> User`
+  - `request_email_verification(user_id, email) -> EmailChallenge`
+  - `confirm_email_verification(user_id, token) -> User`
+  - `unbind_email(user_id, password) -> User`
+  - `request_password_reset(username) -> PasswordResetChallenge`
+  - `confirm_password_reset(challenge_id, phone_code, new_password) -> None`
+
+- [ ] **Step 1: Write phone-change tests**
+
+Require current password/re-authentication before challenge issuance, verify new phone OTP, preserve old phone until confirmation, reject a new phone already bound to another account, and ensure concurrent changes cannot violate the global phone unique constraint.
+
+- [ ] **Step 2: Write email tests**
+
+Normalize email, enforce V1 global unique verified/bound email, do not mark it verified until token consumption, make token short-lived and single-use, and allow unbind only after re-authentication. Email verification uses `EmailSender`, never logs the raw token.
+
+- [ ] **Step 3: Write password-recovery tests**
+
+Because every Student has a verified phone, V1 password recovery uses the bound phone as the mandatory recovery factor. After successful reset, revoke all existing refresh sessions. Replaying the same reset challenge must fail.
+
+- [ ] **Step 4: Implement services with existing validators/challenge patterns**
+
+Nickname update reuses `normalize_nickname`; phone change reuses E.164 normalization and OTP; staff accounts do not use the Student phone-reset path.
+
+- [ ] **Step 5: Run tests and commit**
+
+```bash
+git add backend/app/modules/identity backend/tests/integration/identity
+git commit -m "feat: manage student contacts and account recovery"
+```
+
+### Task 9: Add Identity API Routes
 
 **Files:**
 - Create: `backend/app/modules/identity/router.py`
@@ -336,6 +378,12 @@ git commit -m "feat: enforce role and account status policies"
   - `POST /api/v1/auth/logout`
   - password reset endpoints.
   - staff invitation/TOTP endpoints under Admin/Staff scope.
+  - `PATCH /api/v1/me/nickname`
+  - phone-change request/confirm endpoints
+  - email bind/verify/unbind endpoints
+  - password reset request/confirm endpoints.
+
+Staff login identifier for V1 is the Staff account's verified email address. Do not support ambiguous fallback between student-number and staff-email login in one parser; Student and Staff login endpoints may be separate while sharing session infrastructure.
 
 - [ ] **Step 1: Write API flow test**
 
@@ -356,9 +404,9 @@ Assert no response includes `password_hash`, OTP hash, refresh-token hash, or TO
 
 Routes validate input, call service, set secure refresh cookie, and translate domain errors. They must not contain persistence logic.
 
-- [ ] **Step 3: Add rate-limit hooks**
+- [ ] **Step 3: Add rate-limit and CSRF hooks**
 
-Apply request limits to login, registration, OTP send, and password reset endpoints. Test that the limiter adapter is invoked with normalized identifiers.
+Apply request limits to login, registration, OTP send, email verification, phone change, and password reset endpoints. Test that the limiter adapter is invoked with normalized identifiers. Because refresh authentication uses secure cookies, write an integration test proving state-changing cookie-authenticated requests without the required CSRF token are rejected while the same request with a valid CSRF token succeeds.
 
 - [ ] **Step 4: Run identity gate**
 
