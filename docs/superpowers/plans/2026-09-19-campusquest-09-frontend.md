@@ -264,9 +264,9 @@ git commit -m "feat: add task community and rating UI"
 
 Revision-required and reward-result notifications render and can be marked read by owner only.
 
-- [ ] **Step 2: Add PWA manifest**
+- [ ] **Step 2: Add PWA manifest and owned icons**
 
-Provide app name, short name, start URL, display mode, icons supplied by project assets. Do not add push notifications in V1.
+Provide app name, short name, start URL, display mode, and create project-owned install icons under `frontend/public/` (at least the sizes required by the selected PWA/installability checker). Do not depend on an undefined external design asset and do not add push notifications in V1.
 
 - [ ] **Step 3: Run and commit**
 
