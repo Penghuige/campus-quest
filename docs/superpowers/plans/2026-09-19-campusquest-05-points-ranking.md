@@ -216,18 +216,24 @@ Original reward effective in August, reversal posted in September. Assert August
 
 Aggregate only `affects_ranking=true` by `ranking_effective_at` converted to business period.
 
-- [ ] **Step 4: Implement Redis Sorted Set projection**
+- [ ] **Step 4: Implement retry-safe Redis Sorted Set projection**
 
 Keys exactly:
 - `ranking:daily:<YYYY-MM-DD>`
 - `ranking:monthly:<YYYY-MM>`
 - `ranking:all`
 
-- [ ] **Step 5: Write Redis-loss rebuild test**
+Do not blindly `ZINCRBY` from a retryable ledger event. On a changed ranking-affecting ledger entry, enqueue the affected user/period and recompute that user's authoritative period score from PostgreSQL, then `ZADD` the absolute score. Repeating the same projection job therefore converges instead of double-counting.
+
+- [ ] **Step 5: Write projection retry test**
+
+Process the same ranking-update trigger twice and assert Redis score equals the PostgreSQL aggregate once, not twice.
+
+- [ ] **Step 6: Write Redis-loss rebuild test**
 
 Flush Redis, run rebuild, compare Top N and around-me result before/after.
 
-- [ ] **Step 6: Run and commit**
+- [ ] **Step 7: Run and commit**
 
 ```bash
 git add backend/app/modules/rankings backend/app/workers/jobs/rebuild_rankings.py backend/tests
