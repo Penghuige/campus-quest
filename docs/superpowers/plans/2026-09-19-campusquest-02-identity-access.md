@@ -45,7 +45,7 @@
 
 - [ ] **Step 1: Write constraint tests**
 
-Create two users with the same `username` and assert the second insert raises `IntegrityError`. Repeat for normalized phone. Insert `"000123456"` and assert it round-trips unchanged.
+Create two users with the same `username` and assert the second insert raises `IntegrityError`. Repeat for normalized phone. V1 also uses a global unique constraint for a non-null normalized email address; test two accounts attempting to bind the same normalized email. Insert `"000123456"` and assert it round-trips unchanged.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -53,7 +53,7 @@ Run: `cd backend && pytest tests/integration/identity/test_identity_constraints.
 
 - [ ] **Step 3: Implement models**
 
-Use string/varchar for username and phone. Add database unique constraints on `users.username` and `users.phone_e164`. Store password hash only. Keep `email_verified_at` nullable.
+Use string/varchar for username and phone. Add database unique constraints on `users.username` and `users.phone_e164`, plus a partial/global unique constraint for non-null normalized `users.email_normalized`. Store password hash only. Keep `email_verified_at` nullable.
 
 - [ ] **Step 4: Add migration and migrate from clean DB**
 
