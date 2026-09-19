@@ -183,7 +183,7 @@ git add backend/app/modules/tasks/importer.py backend/tests/unit/tasks backend/t
 git commit -m "feat: preview and import task assignments safely"
 ```
 
-### Task 4: Implement Deadline and Reward-Tier Calculator
+### Task 5: Implement Deadline and Reward-Tier Calculator
 
 **Files:**
 - Create: `backend/app/modules/tasks/deadlines.py`
@@ -224,7 +224,7 @@ git add backend/app/modules/tasks/deadlines.py backend/tests/unit/tasks/test_dea
 git commit -m "feat: calculate claim deadlines and reward tiers"
 ```
 
-### Task 5: Implement Concurrency-Safe Random Claiming
+### Task 6: Implement Concurrency-Safe Random Claiming
 
 **Files:**
 - Create: `backend/app/modules/tasks/claim_service.py`
@@ -270,7 +270,7 @@ git add backend/app/modules/tasks/claim_service.py backend/tests/integration/tas
 git commit -m "feat: allocate assignments safely under concurrency"
 ```
 
-### Task 6: Implement Claim Cutoff and Quota Semantics
+### Task 7: Implement Claim Cutoff and Quota Semantics
 
 **Files:**
 - Modify: `backend/app/modules/tasks/claim_service.py`
@@ -299,7 +299,7 @@ git add backend/app/modules/tasks/claim_service.py backend/tests
 git commit -m "feat: enforce claim cutoff and active work quotas"
 ```
 
-### Task 7: Implement Abandon and Release
+### Task 8: Implement Abandon and Release
 
 **Files:**
 - Create: `backend/app/modules/tasks/abandon_service.py`
@@ -331,7 +331,7 @@ git add backend/app/modules/tasks/abandon_service.py backend/tests/integration/t
 git commit -m "feat: abandon and release assignments safely"
 ```
 
-### Task 8: Add Task and Claim APIs
+### Task 9: Add Task and Claim APIs
 
 **Files:**
 - Create: `backend/app/modules/tasks/router.py`
@@ -345,6 +345,8 @@ git commit -m "feat: abandon and release assignments safely"
   - `POST /api/v1/tasks/{id}/claim`
   - `POST /api/v1/claims/{id}/abandon`
   - Teacher task CRUD/publish/pause/import preview/confirm routes.
+  - Teacher collaborator management routes.
+  - `GET /api/v1/teacher/tasks/{id}/statistics`.
 
 - [ ] **Step 1: Write API permission tests**
 
