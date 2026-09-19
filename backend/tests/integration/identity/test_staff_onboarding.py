@@ -23,15 +23,17 @@ and recovery codes never reach a log line; the TOTP secret rests encrypted
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pyotp
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.clock import FrozenClock
 from app.core.error_codes import ErrorCode
@@ -278,7 +280,11 @@ async def test_expired_invitation_cannot_be_accepted(db_session: AsyncSession) -
         )
         == 0
     )
-    row = await db_session.scalar(select(StaffInvitation))
+    row = await db_session.scalar(
+        select(StaffInvitation).where(
+            StaffInvitation.token_hash == hash_refresh_token(issued.token)
+        )
+    )
     assert row is not None and row.accepted_at is None
 
 
@@ -330,6 +336,131 @@ async def test_invitation_is_single_use(db_session: AsyncSession) -> None:
     assert accepted[0].aggregate_type == "User"
     assert accepted[0].aggregate_id == first.user_id
     assert accepted[0].payload["role"] == Role.TEACHER.value
+
+
+async def _accept_on_own_session(
+    engine: AsyncEngine, service: StaffService, token: str
+) -> PendingStaffSession | BusinessError:
+    """Run one invitation acceptance on an independent session.
+
+    Real commits on the session's own engine connection (the rollback
+    harness cannot express two racers), returning the pending session or
+    the BusinessError so `asyncio.gather` results classify without losing
+    either side — the T3 concurrent-registration pattern. Default
+    ``expire_on_commit`` also regression-guards the service's pre-commit
+    id-capture discipline: post-commit attribute access would raise
+    MissingGreenlet here even though the harness hides it.
+    """
+    async with AsyncSession(engine) as session:
+        try:
+            return await service.accept_staff_invitation(session, token, _PASSWORD)
+        except BusinessError as exc:
+            return exc
+
+
+async def _seed_committed_invitation(
+    engine: AsyncEngine, service: StaffService, *, email: str, admin_name: str
+) -> str:
+    """Commit the admin and the invitation on one dedicated connection.
+
+    Concurrent acceptors on other connections must see both rows (the
+    rollback harness would hide uncommitted seeds).
+    """
+    async with AsyncSession(engine) as session:
+        admin = User(
+            username=admin_name,
+            password_hash=hash_password(_PASSWORD),
+            nickname="并发管理员",
+            role=Role.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        session.add(admin)
+        await session.flush()
+        issued = await service.create_staff_invitation(
+            session, _actor(admin), email, Role.TEACHER
+        )  # commits the admin and the invitation together
+        return issued.token
+
+
+async def _cleanup_committed_staff_rows(
+    engine: AsyncEngine, *, usernames: set[str], email: str
+) -> None:
+    """Delete rows this test committed (registration's cleanup pattern).
+
+    Deletion order respects the FKs: invitations reference their creating
+    admin user, and sessions reference their user, so both go before the
+    users themselves.
+    """
+    async with AsyncSession(engine) as session:
+        await session.execute(
+            delete(StaffInvitation).where(StaffInvitation.email_normalized == email)
+        )
+        users = (
+            await session.scalars(select(User).where(User.username.in_(usernames)))
+        ).all()
+        for user in users:
+            await session.execute(
+                delete(UserSession).where(UserSession.user_id == user.id)
+            )
+            await session.delete(user)
+        await session.commit()
+
+
+@pytest.mark.integration
+async def test_concurrent_accept_of_one_invitation_exactly_one_succeeds(
+    db_engine: AsyncEngine,
+) -> None:
+    # Two independent sessions race the SAME single-use token with real
+    # commits. Sequential-only coverage would degrade silently if the
+    # ``FOR UPDATE`` row lock were ever refactored away (a plain-SELECT
+    # re-check passes every sequential test); this pins the guarantee the
+    # same way T3 pinned the unique-index races.
+    suffix = uuid4().hex[:8]
+    email = f"concurrent-{suffix}@campus.example.edu.cn"
+    admin_name = f"conc-admin-{suffix}"
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    token = await _seed_committed_invitation(
+        db_engine, service, email=email, admin_name=admin_name
+    )
+    try:
+        results = await asyncio.gather(
+            _accept_on_own_session(db_engine, service, token),
+            _accept_on_own_session(db_engine, service, token),
+        )
+
+        wins = [result for result in results if isinstance(result, PendingStaffSession)]
+        losses = [result for result in results if isinstance(result, BusinessError)]
+        assert len(wins) == 1
+        assert len(losses) == 1
+        assert losses[0].code == ErrorCode.AUTHENTICATION_REQUIRED
+        assert losses[0].status_code == 401
+
+        async with AsyncSession(db_engine) as verifier:
+            users = (
+                await verifier.scalars(
+                    select(User).where(User.email_normalized == email)
+                )
+            ).all()
+            assert len(users) == 1
+            assert users[0].id == wins[0].user_id
+            invitation = await verifier.scalar(
+                select(StaffInvitation).where(
+                    StaffInvitation.token_hash == hash_refresh_token(token)
+                )
+            )
+            assert invitation is not None
+            assert invitation.accepted_at is not None  # consumed exactly once
+            sessions = (
+                await verifier.scalars(
+                    select(UserSession).where(UserSession.user_id == users[0].id)
+                )
+            ).all()
+            assert len(sessions) == 1  # only the winner minted one
+    finally:
+        await _cleanup_committed_staff_rows(
+            db_engine, usernames={email, admin_name}, email=email
+        )
 
 
 @pytest.mark.integration
@@ -613,10 +744,17 @@ async def test_onboarding_flow_never_logs_secrets(
             _PASSWORD,
             _code_for(setup.secret, clock),
         )
+        # Failure paths inside the same capture: a recovery code works once
+        # (its replay and a wrong TOTP code both fail), so the rejection
+        # log lines are exercised too — and must still leak nothing.
+        await service.authenticate_staff(
+            db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, codes[0]
+        )
         with pytest.raises(BusinessError):
             await service.authenticate_staff(
                 db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, codes[0]
             )
+        with pytest.raises(BusinessError):
             await service.authenticate_staff(
                 db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, "000000"
             )

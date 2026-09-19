@@ -97,6 +97,8 @@ def verify_totp_code(
 
     Outer whitespace is tolerated (humans and apps pad codes); the
     comparison inside pyotp is constant-time over the HMAC inner state.
+    No replay prevention: the same code stays valid within its 30s ±1
+    window for both confirm and login (deferred by design; V1 scope).
     """
     return bool(
         pyotp.TOTP(secret).verify(code.strip(), for_time=at, valid_window=valid_window)

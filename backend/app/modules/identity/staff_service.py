@@ -30,8 +30,11 @@ Design decisions:
   confirmed (`TotpSetupRequiredError`), and Task 7's dependencies enforce
   the same two-factor state on management endpoints (spec §5.8 step 3).
   Keeping the refresh capability means an interrupted setup (closed tab,
-  lost phone) can resume within the refresh window instead of stranding
-  the account.
+  lost phone) can resume within the refresh window. PAST the refresh
+  window, an account whose TOTP was never confirmed is stranded — login
+  refuses it and setup needs a live session — and only the Plan 08
+  admin reset/re-invite flow can recover it; no such tool exists in V1
+  (deliberate scope cut, not an oversight).
 - **Email is verified-on-acceptance (V1 simplification, documented)**: the
   invitation link was delivered to that address, and only its recipient
   can consume the single-use token, so `email_verified_at` is set at
