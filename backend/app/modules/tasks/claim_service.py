@@ -1,6 +1,6 @@
 # backend/app/modules/tasks/claim_service.py
 """Concurrency-safe random assignment claiming (spec §8.2-8.4, §6.2, §9;
-backend-engineering §5-§7; plan 03 task 6).
+backend-engineering §5-§7; plan 03 tasks 6-7).
 
 Transaction shape (spec §8.3, one transaction, one commit at the end):
 
@@ -14,13 +14,23 @@ Transaction shape (spec §8.3, one transaction, one commit at the end):
    share the lock freely (claims stay parallel), while a lifecycle
    ``FOR UPDATE`` (pause/close) excludes them, so a PAUSED commit
    linearizes against in-flight claims instead of racing them.
-3. Candidate selection: ``... WHERE availability_status = AVAILABLE AND
+3. Eligibility: ``ClaimEligibilityService.load_active_claims`` fetches
+   the claimer's non-terminal claims (the quota and same-task facts)
+   still under the user-row lock, then ``check`` runs the whole §8.2
+   checklist head — account, task claimability, FIXED cutoff, quota,
+   same-task — as pure rules over the locked rows and the clock (task 7;
+   backend-engineering §4/§21: the predicates stay unit-testable without
+   a database because every count arrives as an input).
+4. Candidate selection: ``... WHERE availability_status = AVAILABLE AND
    id NOT IN (this user's ABANDONED/EXPIRED assignments) ORDER BY
    random() LIMIT 1 FOR UPDATE SKIP LOCKED`` — two transactions can never
    take the same assignment, and a row someone else holds is skipped, not
    waited on.
-4. Claim insert + Assignment -> OCCUPIED + snapshot all in the same
+5. Claim insert + Assignment -> OCCUPIED + snapshot all in the same
    transaction; exactly one ``commit``.
+
+The lock order (user row -> Task FOR SHARE -> assignment locks) is the
+T6 review's carry-forward and MUST NOT be reordered.
 
 Design decisions:
 
@@ -55,10 +65,10 @@ Design decisions:
 - **Cutoff boundary:** claiming is blocked when remaining FIXED time is
   strictly LESS than ``claim_cutoff_minutes`` — parity with
   TaskService.is_claimable and the publish gate, so exactly-at-cutoff
-  stays claimable on both paths. Task-level eligibility refinements
-  (per-task restrictions, role gating, full cutoff semantics) arrive in
-  plan 03 task 7; this service implements the checklist's core window
-  checks.
+  stays claimable on both paths. RELATIVE tasks never hit the fixed
+  cutoff at all (spec §9.2: their deadlines are computed per claim).
+  Task-level eligibility refinements beyond the checklist (per-task
+  restrictions, role gating) arrive with the routes that need them.
 
 Snapshots (spec §6.2, all five MUSTs plus claimed_at) are copied at claim
 time and never follow later Task edits:
@@ -73,6 +83,8 @@ uses binary floats, §31.1/§31.14), ``submission_schema_version``, and
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -108,10 +120,13 @@ __all__ = [
     "REWARD_POLICY_SNAPSHOT_V1",
     "REWARD_POLICY_VERSION",
     "AccountNotActiveError",
+    "ActiveClaim",
     "ActiveClaimExistsError",
     "AssignmentLimitReachedError",
     "ClaimCutoffReachedError",
+    "ClaimEligibilityService",
     "ClaimService",
+    "Claimer",
     "NoAssignmentAvailableError",
     "TaskNotClaimableError",
     "UserNotFoundError",
@@ -294,21 +309,177 @@ def _map_claim_integrity_error(
     return None
 
 
+# --- eligibility rules (task 7) ------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Claimer:
+    """The claiming user as the eligibility rules see them: the locked row
+    reduced to id + status, so identity ORM models stay behind the module
+    seam (interfaces.md) while ``ClaimEligibilityService.check`` remains a
+    pure rule over planted inputs."""
+
+    id: UUID
+    status: UserStatus
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveClaim:
+    """One of the claimer's current claims, reduced to the two columns the
+    eligibility rules read (the same-task rule needs the task; the quota
+    rule needs only the status)."""
+
+    task_id: UUID
+    status: ClaimStatus
+
+
+class ClaimEligibilityService:
+    """The spec §8.2 claim checklist as pure, testable rules.
+
+    ``check`` evaluates every checklist rule that depends only on the
+    locked rows, the clock, and the claimer's current claims: account
+    status, task claimability (PUBLISHED + schema version + FIXED
+    cutoff), the global actionable-claim quota, and the same-task
+    non-terminal conflict. All facts — counts included — arrive as
+    inputs, so the §9.1 cutoff boundary and the §8.2 quota-status matrix
+    are unit-testable with a FrozenClock and no database
+    (backend-engineering §21); the claim flow calls ``check`` inside its
+    locked transaction right after taking the user-row lock (spec §8.3).
+    The AVAILABLE-assignment rule is deliberately NOT here: proving one
+    exists requires the FOR UPDATE SKIP LOCKED select, which is candidate
+    selection, not eligibility.
+
+    Boundary semantics (spec §9.1 "距 deadline 少于 4 小时时停止新领取"):
+    blocked only when the remaining FIXED time is strictly LESS than
+    ``claim_cutoff_minutes`` — exactly-at-cutoff stays claimable, the
+    same edge TaskService.is_claimable and the publish gate use. RELATIVE
+    tasks are never cutoff-blocked (§9.2 computes their deadlines per
+    claim).
+
+    ``max_active_claims`` is injectable for tests; production wires the
+    spec §8.2 default of 3.
+    """
+
+    def __init__(self, *, max_active_claims: int = MAX_ACTIVE_CLAIMS) -> None:
+        self._max_active_claims = max_active_claims
+
+    def check(
+        self,
+        user: Claimer,
+        task: Task,
+        now: datetime,
+        *,
+        active_claims: Sequence[ActiveClaim],
+    ) -> None:
+        """Run the §8.2 checklist head; return (None) when eligible.
+
+        Raises the §8.4 business code of the FIRST failed rule, in the
+        T6 precedence order: account -> task -> cutoff -> quota ->
+        same-task. ``active_claims`` is required (no default): the quota
+        and same-task rules are only as strong as the facts fed to them.
+        """
+        self.require_active_account(user)
+        self._require_claimable_task(task, now)
+        self._require_quota_slot(active_claims)
+        self._require_no_same_task_claim(task.id, active_claims)
+
+    def require_active_account(self, user: Claimer) -> None:
+        """User ACTIVE gate (§8.2); exposed separately because the claim
+        flow applies it directly at the user-row lock, before spending
+        the FOR SHARE task read."""
+        if user.status is not UserStatus.ACTIVE:
+            raise AccountNotActiveError(user.id)
+
+    def _require_claimable_task(self, task: Task, now: datetime) -> None:
+        status = TaskStatus(task.status)
+        if status is not TaskStatus.PUBLISHED:
+            raise TaskNotClaimableError(status, reason="task_not_published")
+        if task.submission_schema_version is None:
+            # A PUBLISHED task always carries a schema version; reaching
+            # here means publish validation was bypassed. The claim-side
+            # column is NOT NULL, so refuse instead of failing the insert.
+            raise TaskNotClaimableError(
+                status, reason="missing_submission_schema_version"
+            )
+        if DeadlineMode(task.deadline_mode) is DeadlineMode.FIXED:
+            self._require_within_cutoff(task, now)
+
+    def _require_within_cutoff(self, task: Task, now: datetime) -> None:
+        """FIXED-window gate (spec §9.1): blocked once remaining time is
+        strictly less than claim_cutoff_minutes — the same boundary
+        TaskService.is_claimable and the publish gate use. A missing or
+        naive deadline cannot be compared as an instant and is reported
+        as not claimable (mirroring is_claimable)."""
+        deadline = task.fixed_deadline_at
+        if deadline is None or deadline.tzinfo is None:
+            raise TaskNotClaimableError(
+                TaskStatus(task.status), reason="invalid_fixed_deadline"
+            )
+        cutoff = timedelta(minutes=task.claim_cutoff_minutes or 0)
+        if deadline.astimezone(UTC) < now + cutoff:
+            raise ClaimCutoffReachedError(
+                deadline.astimezone(UTC), task.claim_cutoff_minutes or 0
+            )
+
+    def _require_quota_slot(self, active_claims: Sequence[ActiveClaim]) -> None:
+        occupying = sum(
+            1 for claim in active_claims if claim.status in QUOTA_OCCUPYING_STATUSES
+        )
+        if occupying >= self._max_active_claims:
+            raise AssignmentLimitReachedError(self._max_active_claims)
+
+    def _require_no_same_task_claim(
+        self, task_id: UUID, active_claims: Sequence[ActiveClaim]
+    ) -> None:
+        if any(
+            claim.task_id == task_id and claim.status in ACTIVE_CLAIM_STATUSES
+            for claim in active_claims
+        ):
+            raise ActiveClaimExistsError(task_id)
+
+    @staticmethod
+    async def load_active_claims(
+        db: AsyncSession, user_id: UUID
+    ) -> tuple[ActiveClaim, ...]:
+        """Fetch the quota/same-task facts inside the caller's locked
+        transaction (never its own commit): the claimer's non-terminal
+        claims reduced to (task_id, status).
+
+        One snapshot feeds both rules — QUOTA_OCCUPYING_STATUSES is a
+        subset of ACTIVE_CLAIM_STATUSES, so a single
+        ``status IN (ACTIVE)`` fetch loses nothing for either — and the
+        count is safe only because every claim by this user holds the
+        user-row lock first (spec §8.3).
+        """
+        rows = (
+            await db.execute(
+                select(AssignmentClaim.task_id, AssignmentClaim.status).where(
+                    AssignmentClaim.user_id == user_id,
+                    AssignmentClaim.status.in_(ACTIVE_CLAIM_STATUSES),
+                )
+            )
+        ).all()
+        return tuple(
+            ActiveClaim(task_id=task_id, status=ClaimStatus(status))
+            for task_id, status in rows
+        )
+
+
 # --- the service ---------------------------------------------------------------------
 
 
 class ClaimService:
     """Random assignment claiming under contention (spec §8.2-8.3).
 
-    ``max_active_claims`` is injectable for tests; production wires the
-    spec §8.2 default of 3.
+    ``max_active_claims`` is injectable for tests (forwarded to the
+    eligibility rules); production wires the spec §8.2 default of 3.
     """
 
     def __init__(
         self, *, clock: Clock, max_active_claims: int = MAX_ACTIVE_CLAIMS
     ) -> None:
         self._clock = clock
-        self._max_active_claims = max_active_claims
+        self._eligibility = ClaimEligibilityService(max_active_claims=max_active_claims)
 
     async def claim_random_assignment(
         self, db: AsyncSession, user_id: UUID, task_id: UUID
@@ -321,7 +492,8 @@ class ClaimService:
         claimed_at = self._clock.now()
 
         # (1) Same-user serialization: lock the stable user-level resource
-        # FIRST (spec §8.3), then gate on the row we actually locked.
+        # FIRST (spec §8.3), then gate on the row we actually locked —
+        # before spending the FOR SHARE task read.
         status_value = (
             await db.execute(
                 select(_USERS_LOCK.c.status)
@@ -331,8 +503,8 @@ class ClaimService:
         ).scalar_one_or_none()
         if status_value is None:
             raise UserNotFoundError(user_id)
-        if UserStatus(status_value) is not UserStatus.ACTIVE:
-            raise AccountNotActiveError(user_id)
+        claimer = Claimer(id=user_id, status=UserStatus(status_value))
+        self._eligibility.require_active_account(claimer)
 
         # (2) Task gate under FOR SHARE (see module docstring).
         task = await db.scalar(
@@ -341,49 +513,14 @@ class ClaimService:
         if task is None:
             raise TaskNotFoundError(task_id)
 
-        status = TaskStatus(task.status)
-        if status is not TaskStatus.PUBLISHED:
-            raise TaskNotClaimableError(status, reason="task_not_published")
-        if task.submission_schema_version is None:
-            # A PUBLISHED task always carries a schema version; reaching
-            # here means publish validation was bypassed. The claim-side
-            # column is NOT NULL, so refuse instead of failing the insert.
-            raise TaskNotClaimableError(
-                status, reason="missing_submission_schema_version"
-            )
-        if DeadlineMode(task.deadline_mode) is DeadlineMode.FIXED:
-            self._require_within_cutoff(task, claimed_at)
+        # (3) The §8.2 checklist head inside the locked transaction:
+        # facts still under the user-row lock, then the pure rules —
+        # task claimability + FIXED cutoff, the global quota, and the
+        # same-task non-terminal conflict (task 7).
+        active_claims = await ClaimEligibilityService.load_active_claims(db, user_id)
+        self._eligibility.check(claimer, task, claimed_at, active_claims=active_claims)
 
-        # (3) Global per-student quota — safe only because every claim by
-        # this user holds the user-row lock (spec §8.3).
-        occupying = (
-            await db.execute(
-                select(func.count())
-                .select_from(AssignmentClaim)
-                .where(
-                    AssignmentClaim.user_id == user_id,
-                    AssignmentClaim.status.in_(QUOTA_OCCUPYING_STATUSES),
-                )
-            )
-        ).scalar_one()
-        if occupying >= self._max_active_claims:
-            raise AssignmentLimitReachedError(self._max_active_claims)
-
-        # (4) One non-terminal claim per user per task (§8.2); the
-        # partial unique index backstops this friendly check.
-        conflicting = await db.scalar(
-            select(AssignmentClaim.id)
-            .where(
-                AssignmentClaim.user_id == user_id,
-                AssignmentClaim.task_id == task_id,
-                AssignmentClaim.status.in_(ACTIVE_CLAIM_STATUSES),
-            )
-            .limit(1)
-        )
-        if conflicting is not None:
-            raise ActiveClaimExistsError(task_id)
-
-        # (5) Random candidate under FOR UPDATE SKIP LOCKED, excluding
+        # (4) Random candidate under FOR UPDATE SKIP LOCKED, excluding
         # assignments this user previously abandoned or expired (§8.2).
         excluded = select(AssignmentClaim.assignment_id).where(
             AssignmentClaim.user_id == user_id,
@@ -405,7 +542,7 @@ class ClaimService:
         if candidate is None:
             raise NoAssignmentAvailableError(task_id)
 
-        # (6) Snapshot (§6.2) + occupancy in the same transaction.
+        # (5) Snapshot (§6.2) + occupancy in the same transaction.
         deadlines = compute_claim_deadlines(task, claimed_at)
         claim = AssignmentClaim(
             assignment_id=candidate.id,
@@ -432,21 +569,3 @@ class ClaimService:
             raise mapped from exc
         await db.commit()
         return claim
-
-    @staticmethod
-    def _require_within_cutoff(task: Task, now: datetime) -> None:
-        """FIXED-window gate (spec §9.1): blocked once remaining time is
-        strictly less than claim_cutoff_minutes — the same boundary
-        TaskService.is_claimable and the publish gate use. A missing or
-        naive deadline cannot be compared as an instant and is reported
-        as not claimable (mirroring is_claimable)."""
-        deadline = task.fixed_deadline_at
-        if deadline is None or deadline.tzinfo is None:
-            raise TaskNotClaimableError(
-                TaskStatus(task.status), reason="invalid_fixed_deadline"
-            )
-        cutoff = timedelta(minutes=task.claim_cutoff_minutes or 0)
-        if deadline.astimezone(UTC) < now + cutoff:
-            raise ClaimCutoffReachedError(
-                deadline.astimezone(UTC), task.claim_cutoff_minutes or 0
-            )
