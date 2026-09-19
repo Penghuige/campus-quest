@@ -119,11 +119,15 @@ class InMemoryRedis:
             self.ttls.pop(key, None)
         return deleted
 
-    async def expire(self, key: str, seconds: int) -> bool:
+    async def expire(self, key: str, seconds: int, nx: bool = False) -> bool:
         exists = key in self.strings or key in self.hashes
-        if exists:
-            self.ttls[key] = seconds
-        return exists
+        if not exists:
+            return False
+        if nx and key in self.ttls:
+            # Real Redis: NX sets the TTL only when the key has none.
+            return False
+        self.ttls[key] = seconds
+        return True
 
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self.strings[key] = value
@@ -371,6 +375,24 @@ async def test_per_phone_daily_cap_enforced():
     with pytest.raises(OtpRateLimitError) as exc_info:
         await _request(service)
     assert exc_info.value.scope == "phone_daily"
+
+
+async def test_rate_window_ttl_is_always_re_armed():
+    # Regression pin: arming the window TTL only on the first INCR left a
+    # crash between INCR and EXPIRE able to strand a TTL-less counter that
+    # throttles that subject forever. EXPIRE ... NX on every hit re-arms a
+    # stranded key on the next request without extending an armed window.
+    clock = FrozenClock(_T0)
+    service, _, redis_fake = _make(
+        clock, _policy(phone_hourly_request_limit=5, resend_cooldown_seconds=0)
+    )
+    await _request(service)
+    rate_key = f"otp:rate:phone:hourly:{_E164}"
+    assert redis_fake.ttls[rate_key] == 3600
+
+    redis_fake.ttls.pop(rate_key)  # simulate the crash window
+    await _request(service)
+    assert redis_fake.ttls[rate_key] == 3600  # re-armed, not stranded
 
 
 async def test_per_ip_hourly_cap_enforced():

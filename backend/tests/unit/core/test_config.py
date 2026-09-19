@@ -44,6 +44,44 @@ def test_optional_settings_have_documented_defaults(monkeypatch) -> None:
     assert settings.max_upload_bytes_default == 200 * 1024 * 1024
 
 
+def test_development_accepts_sentinel_otp_hmac_secret(monkeypatch) -> None:
+    # The committed development-only sentinel stays usable locally without
+    # any extra configuration.
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("OTP_HMAC_SECRET", raising=False)
+    settings = Settings()
+    assert settings.environment == "development"
+    assert settings.otp_hmac_secret == "dev-only-insecure-otp-hmac-secret"
+
+
+def test_production_rejects_sentinel_otp_hmac_secret(monkeypatch) -> None:
+    # With the known sentinel, anyone who can read Redis also knows the HMAC
+    # key and can brute-force the 10^6 OTP space offline (spec §33.2), so a
+    # production deployment must fail fast at settings load instead.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("OTP_HMAC_SECRET", raising=False)
+    with pytest.raises(ValidationError, match="OTP_HMAC_SECRET"):
+        Settings()
+
+
+def test_production_accepts_overridden_otp_hmac_secret(monkeypatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    settings = Settings()
+    assert settings.environment == "production"
+    assert settings.otp_hmac_secret == "a-real-deployment-secret"
+
+
+def test_environment_rejects_unknown_values(monkeypatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 def test_get_settings_reads_environment_and_caches(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     get_settings.cache_clear()

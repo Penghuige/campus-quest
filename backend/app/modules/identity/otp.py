@@ -500,9 +500,12 @@ class OtpChallengeService:
         for scope, window, subject, limit, window_seconds in windows:
             key = f"{_RATE_KEY_PREFIX}{scope}:{window}:{subject}"
             count = int(await self._redis.incr(key))
-            if count == 1:
-                # Fixed window starts at the first counted request.
-                await self._redis.expire(key, window_seconds)
+            # EXPIRE ... NX on every hit, not only on the first: the window
+            # still starts at the first counted request (NX never extends an
+            # armed TTL), but a crash between INCR and EXPIRE can no longer
+            # strand a TTL-less counter that throttles the subject forever —
+            # the next hit re-arms it.
+            await self._redis.expire(key, window_seconds, nx=True)
             if count > limit:
                 logged_subject = _mask_phone(subject) if scope == "phone" else subject
                 logger.info(
