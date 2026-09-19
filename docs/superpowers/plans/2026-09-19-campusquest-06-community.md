@@ -212,6 +212,7 @@ git commit -m "feat: add non-destructive comment reporting"
 
 **Interfaces:**
 - Produces `rate_task(user_id, task_id, rating) -> TaskRating`, `rating_summary(task_id)`.
+- Produces concrete `CommunityRatingSummaryAdapter` implementing Plan 03's `RatingSummaryPort.summary(task_id) -> RatingSummary | None`.
 
 - [ ] **Step 1: Write eligibility tests**
 
@@ -221,9 +222,9 @@ Student with only CLAIMED/ABANDONED Claim rejected. Student with at least one CO
 
 Rate 3 then 5; DB retains one row with 5 and summary updates.
 
-- [ ] **Step 3: Implement aggregate query**
+- [ ] **Step 3: Implement aggregate query and Task statistics adapter**
 
-Return average and count; do not expose individual rating identities publicly.
+Return average and count; do not expose individual rating identities publicly. Implement `CommunityRatingSummaryAdapter` so Task statistics can consume the summary without importing Community internals.
 
 - [ ] **Step 4: Run and commit**
 
