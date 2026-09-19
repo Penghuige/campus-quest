@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     # Email-verification token lifetime (spec §5.5); wired into
     # `EmailVerificationService` at the composition root.
     email_verification_token_ttl_hours: int = 24
+    # Assignment batch-import caps (spec §7.1; backend-engineering §14:
+    # teacher-uploaded import files are untrusted, so size and row counts
+    # are bounded before parsing). Consumed by `AssignmentImportService`,
+    # which receives the scalars at the composition root.
+    assignment_import_max_file_bytes: int = 2 * 1024 * 1024
+    assignment_import_max_rows: int = 5000
+    assignment_import_keyword_max_length: int = 255
+    # Preview->confirm window: the server-side preview payload outlives the
+    # confirm deadline only as a Redis backstop TTL (see importer.py).
+    assignment_import_preview_ttl_seconds: int = 900
     # Region for parsing domestic phone input into E.164 (spec §5.4).
     phone_default_region: str = "CN"
 
