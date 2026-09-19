@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-19-campusquest-design.md`
 
+**Required quality references:** `AGENTS.md` and all files under `docs/quality/`.
+
 ## Global Constraints
 
 - A release is blocked by any failed invariant test.
