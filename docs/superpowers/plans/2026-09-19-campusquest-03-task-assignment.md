@@ -108,7 +108,42 @@ git add backend/app/modules/tasks/schemas.py backend/app/modules/tasks/service.p
 git commit -m "feat: enforce task lifecycle"
 ```
 
-### Task 3: Implement Assignment Import Preview and Confirm
+### Task 3: Implement Task Collaborators and Task Statistics
+
+**Files:**
+- Create: `backend/app/modules/tasks/collaborator_service.py`
+- Create: `backend/app/modules/tasks/query_service.py`
+- Create: `backend/tests/integration/tasks/test_collaborators.py`
+- Create: `backend/tests/integration/tasks/test_task_statistics.py`
+
+**Interfaces:**
+- Produces:
+  - `add_collaborator(owner_actor, task_id, teacher_id, permissions) -> TaskCollaborator`
+  - `remove_collaborator(owner_actor, task_id, teacher_id) -> None`
+  - `get_task_statistics(actor, task_id) -> TaskStatistics`
+
+- [ ] **Step 1: Write collaborator permission tests**
+
+Task owner may add/remove a Teacher collaborator. A collaborator cannot grant permissions beyond those they possess, and an unrelated Teacher cannot modify collaborators. Review permission is a distinct capability consumed by Submission review.
+
+- [ ] **Step 2: Implement explicit permission set**
+
+Use named booleans/enum capabilities such as `VIEW_TASK`, `MANAGE_ASSIGNMENTS`, `REVIEW_SUBMISSIONS`, `MODERATE_COMMUNITY`; do not represent authorization as an unchecked free-form JSON blob.
+
+- [ ] **Step 3: Write task-statistics tests**
+
+For seeded Claims/Submissions, return available/occupied/completed Assignment counts, active Claim counts, submission status counts, completion rate, and average rating. Teacher may query only owned/collaborating Tasks; Admin may query all.
+
+- [ ] **Step 4: Implement aggregate query without exposing hidden Assignment payloads to unauthorized callers**
+
+- [ ] **Step 5: Run and commit**
+
+```bash
+git add backend/app/modules/tasks/collaborator_service.py backend/app/modules/tasks/query_service.py backend/tests/integration/tasks
+git commit -m "feat: manage task collaborators and statistics"
+```
+
+### Task 4: Implement Assignment Import Preview and Confirm
 
 **Files:**
 - Create: `backend/app/modules/tasks/importer.py`
