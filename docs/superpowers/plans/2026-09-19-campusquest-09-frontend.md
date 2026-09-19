@@ -164,9 +164,9 @@ Missing required field shows structured errors and retry action.
 
 Render backend `current_reward_points` / lock status. Never calculate 80/50/20 in frontend.
 
-- [ ] **Step 4: Implement revision state**
+- [ ] **Step 4: Implement revision and abandon state**
 
-Show Teacher note, retained reward lock, revision deadline, previous versions, and upload new version.
+Show Teacher note, retained reward lock, revision deadline, previous versions, and upload new version. While the Claim is abandonable, expose an explicit abandon confirmation; handle the daily-limit error without removing the Claim from UI until the backend confirms ABANDONED.
 
 - [ ] **Step 5: Test deadline crossing**
 
@@ -324,19 +324,23 @@ git commit -m "feat: add staff invitation and two factor login UI"
 **Interfaces:**
 - Consumes Teacher Task/import/review/community APIs.
 
-- [ ] **Step 1: Write assignment import preview test**
+- [ ] **Step 1: Write Task management and collaborator test**
+
+Teacher creates/edits/publishes/pauses a Task, adds a collaborator with explicit permissions, and views Task statistics. Unrelated Teacher cannot edit or grant collaboration.
+
+- [ ] **Step 2: Write assignment import preview test**
 
 Upload file -> display total/valid/error rows -> require confirm -> result summary.
 
-- [ ] **Step 2: Write review test**
+- [ ] **Step 3: Write review test**
 
 Teacher sees validation report/sample/history, can request revision with note or approve. Another Teacher's unshared Task returns access-denied UX.
 
-- [ ] **Step 3: Implement community moderation without anonymous identity leakage**
+- [ ] **Step 4: Implement community moderation without anonymous identity leakage**
 
 Teacher moderation card for anonymous comment must not contain student number/phone/email/login identifier.
 
-- [ ] **Step 4: Run and commit**
+- [ ] **Step 5: Run and commit**
 
 ```bash
 git add frontend/src frontend/e2e/teacher.spec.ts
@@ -366,11 +370,15 @@ Teacher manually opens `/admin/whitelist`; UI redirects/403 page, and no Admin d
 
 Require Admin to enter reason; only after successful reveal API display identity. Do not auto-fetch identities when loading comments.
 
-- [ ] **Step 3: Implement audited destructive-action confirmations**
+- [ ] **Step 3: Implement operational admin pages**
+
+Whitelist import uses preview/confirm. User page supports suspend/ban/reactivate. Reward catalog supports cost/stock/term-limit/time-window management. Redemption queue supports approve/reject/fulfill. Failed notification page shows provider-safe error metadata. Audit page is paginated/read-only. System page edits emoji whitelist, current academic term, management-network policy, and notification templates.
+
+- [ ] **Step 4: Implement audited destructive-action confirmations**
 
 Suspend/ban/reactivate user, reward adjustment, system setting update including current academic term, notification template edit, anonymous identity reveal, and named state repair show reason/confirmation as required by backend.
 
-- [ ] **Step 4: Run and commit**
+- [ ] **Step 5: Run and commit**
 
 ```bash
 git add frontend/src frontend/e2e/admin.spec.ts
