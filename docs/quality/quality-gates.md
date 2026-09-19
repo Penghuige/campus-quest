@@ -27,7 +27,7 @@ A change is not ready if any applicable item fails.
 - Linter passes.
 - Type check passes for touched project code.
 - No secrets, debug statements, or temporary files.
-- No placeholder TODO or TBD for required behavior.
+- No unresolved placeholder markers for required behavior.
 - No broad ignored errors added merely to silence tooling.
 
 ### Reviewability
