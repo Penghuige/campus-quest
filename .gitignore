@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Agent worktrees and local session settings
+.claude/worktrees/
+.claude/settings.local.json
+
+# Editor and OS cruft
+.idea/
+.vscode/
+*.swp
+.DS_Store
