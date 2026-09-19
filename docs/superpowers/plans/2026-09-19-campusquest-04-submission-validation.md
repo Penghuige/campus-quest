@@ -89,9 +89,9 @@ Calling finalize twice on the same intent must return the same Submission or sta
 
 Key shape may be `submissions/{claim_id}/{uuid}`; never include untrusted path fragments.
 
-- [ ] **Step 4: Verify object metadata on finalize**
+- [ ] **Step 4: Verify object metadata and snapshot retention on finalize**
 
-Call `head_object`, compare size/content metadata, and persist `submitted_at` from server Clock at accepted finalize time.
+Call `head_object`, compare size/content metadata, and persist `submitted_at` from server Clock at accepted finalize time. Snapshot the Task file-retention policy into file metadata: for 30/90/180-day policies persist `retention_until = submitted_at + configured duration`; for permanent retention persist an explicit permanent flag/null expiry. Later Task policy edits must not rewrite this snapshot.
 
 - [ ] **Step 5: Run tests and commit**
 
