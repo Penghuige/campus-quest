@@ -70,9 +70,53 @@ def test_production_accepts_overridden_otp_hmac_secret(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    # Since Task 5 production refuses EVERY committed sentinel, so the
+    # token-signing secret must be real here too.
+    monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
     settings = Settings()
     assert settings.environment == "production"
     assert settings.otp_hmac_secret == "a-real-deployment-secret"
+
+
+def test_development_accepts_sentinel_token_secret(monkeypatch) -> None:
+    # The committed development-only sentinel stays usable locally without
+    # any extra configuration.
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("TOKEN_SECRET", raising=False)
+    settings = Settings()
+    assert settings.environment == "development"
+    assert settings.token_secret == "dev-only-insecure-access-token-secret"
+
+
+def test_production_rejects_sentinel_token_secret(monkeypatch) -> None:
+    # With the known sentinel anyone can forge access tokens (HS256 signing
+    # key public), so a production deployment must fail fast at settings
+    # load instead (spec §5.6, backend-engineering §17).
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    monkeypatch.delenv("TOKEN_SECRET", raising=False)
+    with pytest.raises(ValidationError, match="TOKEN_SECRET"):
+        Settings()
+
+
+def test_short_token_secret_rejected_everywhere(monkeypatch) -> None:
+    # RFC 7518 §3.2 wants >= 32 bytes for HS256; a short explicit secret
+    # fails at settings load in any environment, not just production.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("TOKEN_SECRET", "too-short-token-secret")
+    with pytest.raises(ValidationError, match="at least 32"):
+        Settings()
+
+
+def test_production_accepts_overridden_token_secret(monkeypatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
+    settings = Settings()
+    assert settings.token_secret == "a-real-access-token-secret-0123456789"
 
 
 def test_environment_rejects_unknown_values(monkeypatch) -> None:

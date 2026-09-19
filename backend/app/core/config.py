@@ -12,11 +12,22 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
-# Development-only OTP HMAC key (spec §33.2: OTP is hashed at rest; with a
-# KNOWN key anyone who can read Redis brute-forces the 10^6 code space
-# offline instantly). Production settings reject it — see
-# `_reject_insecure_otp_secret_in_production`.
+# Development-only secrets (backend-engineering §17 fail-fast): both are
+# KNOWN values committed to the repository, so production must override them.
+# - OTP HMAC key: with it, anyone who can read Redis brute-forces the 10^6
+#   code space offline instantly (spec §33.2).
+# - Access-token signing key: with it, anyone can forge valid JWTs (§5.6).
+# Production settings reject both — see `_reject_insecure_secrets_in_production`.
 _INSECURE_OTP_HMAC_SECRET = "dev-only-insecure-otp-hmac-secret"
+_INSECURE_TOKEN_SECRET = "dev-only-insecure-access-token-secret"
+
+# (field, env var) pairs the production guard checks against their dev-only
+# sentinel defaults; extend this table when a new committed-secret default
+# lands.
+_INSECURE_PRODUCTION_SENTINELS: tuple[tuple[str, str], ...] = (
+    ("otp_hmac_secret", "OTP_HMAC_SECRET"),
+    ("token_secret", "TOKEN_SECRET"),
+)
 
 
 class Settings(BaseSettings):
@@ -50,6 +61,9 @@ class Settings(BaseSettings):
     # plaintext). The default exists for local development only; production
     # deployments must set OTP_HMAC_SECRET and fail fast otherwise.
     otp_hmac_secret: str = _INSECURE_OTP_HMAC_SECRET
+    # HS256 signing key for short-lived access tokens (spec §5.6). Same
+    # deal: a committed development default that production refuses.
+    token_secret: str = _INSECURE_TOKEN_SECRET
     # Region for parsing domestic phone input into E.164 (spec §5.4).
     phone_default_region: str = "CN"
 
@@ -66,20 +80,39 @@ class Settings(BaseSettings):
             ) from exc
         return value
 
-    @model_validator(mode="after")
-    def _reject_insecure_otp_secret_in_production(self) -> "Settings":
-        # The known sentinel defeats at-rest OTP hashing for anyone who can
-        # read Redis (they hold the salt AND the HMAC key, so the 10^6 code
-        # space falls to offline brute force — spec §33.2). A production
-        # deployment must fail at startup, not run silently unprotected.
-        if (
-            self.environment == "production"
-            and self.otp_hmac_secret == _INSECURE_OTP_HMAC_SECRET
-        ):
+    @field_validator("token_secret")
+    @classmethod
+    def _validate_token_secret_length(cls, value: str) -> str:
+        # RFC 7518 §3.2: an HS256 key should be at least 32 bytes; PyJWT
+        # warns on every encode/decode with a shorter one. A deployment
+        # that sets a short TOKEN_SECRET must fail at settings load, not
+        # spam warnings (or run weakly) at runtime.
+        if len(value) < 32:
             raise ValueError(
-                "environment=production refuses the development-only default "
-                "otp_hmac_secret: set OTP_HMAC_SECRET to a deployment-specific "
-                "secret so stored OTP hashes cannot be brute-forced offline"
+                f"token_secret must be at least 32 characters for HS256 "
+                f"(got {len(value)})"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _reject_insecure_secrets_in_production(self) -> "Settings":
+        # A known sentinel defeats the secret's purpose in production (see
+        # the constants' comments): a deployment must fail at startup, not
+        # run silently unprotected. Every listed secret is checked so the
+        # one error names everything the deployer must set.
+        offenders = [
+            env_name
+            for field_name, env_name in _INSECURE_PRODUCTION_SENTINELS
+            if getattr(self, field_name)
+            in (_INSECURE_OTP_HMAC_SECRET, _INSECURE_TOKEN_SECRET)
+        ]
+        if self.environment == "production" and offenders:
+            raise ValueError(
+                "environment=production refuses development-only default "
+                f"secrets: set {' and '.join(offenders)} to "
+                "deployment-specific values (a committed sentinel lets "
+                "anyone brute-force stored OTP hashes offline or forge "
+                "access tokens)"
             )
         return self
 

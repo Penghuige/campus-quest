@@ -51,7 +51,7 @@ class StudentWhitelistRepository:
 
 
 class UserRepository:
-    """Read queries over ``users`` needed by registration."""
+    """Read queries over ``users`` needed by registration and login."""
 
     async def find_by_phone_e164(
         self, session: AsyncSession, phone_e164: str
@@ -68,3 +68,17 @@ class UserRepository:
             select(User).where(User.phone_e164 == phone_e164)
         )
         return bound
+
+    async def find_by_username(
+        self, session: AsyncSession, username: str
+    ) -> User | None:
+        """The account with exactly ``username``, if any (spec §5.2).
+
+        The caller strips outer whitespace at the login boundary (spec
+        §5.2); the match itself is exact — inner characters are never
+        rewritten, and the lookup relies on the ``username`` UNIQUE index.
+        """
+        found: User | None = await session.scalar(
+            select(User).where(User.username == username)
+        )
+        return found

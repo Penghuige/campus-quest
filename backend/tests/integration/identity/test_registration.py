@@ -181,6 +181,30 @@ async def test_register_rejects_invalid_student_number_format(
 
 
 @pytest.mark.integration
+async def test_register_password_outside_band_rejected(
+    db_session: AsyncSession,
+) -> None:
+    # Spec §5.6 band (10-128, no composition rules) enforced at the
+    # registration boundary through the Task-5 security constants, and
+    # before the single-use phone token is resolved (ordering asserted:
+    # the fake records every consumed token).
+    await _seed_whitelist(db_session, _STUDENT_A)
+    fake_verification = FakePhoneVerification({_TOKEN_A: _PHONE_A})
+    service = IdentityService(
+        password_hasher=_stub_hash, phone_verification=fake_verification
+    )
+
+    for password in ("short", "a" * 129):
+        with pytest.raises(BusinessError) as exc_info:
+            await service.register_student(db_session, _command(password=password))
+        assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
+        assert exc_info.value.status_code < 500
+        assert await _count_users(db_session, _STUDENT_A) == 0
+
+    assert fake_verification.verified == []
+
+
+@pytest.mark.integration
 async def test_register_phone_already_bound_rejected(
     db_session: AsyncSession,
 ) -> None:

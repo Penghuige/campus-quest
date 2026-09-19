@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.core.security import validate_password_length
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.identity.ports import PasswordHasher, PhoneVerificationPort
@@ -141,16 +142,21 @@ class IdentityService:
 
     @staticmethod
     def _require_usable_password(password: str) -> None:
-        """Reject the obviously-unusable; full policy is Task 5's (§5.6).
+        """Enforce the §5.6 password band before anything is hashed.
 
-        Spec §5.6 recommends 10-128 with no composition rules — enforcing
-        the band belongs with the Argon2id implementation so policy and
-        hashing ship as one reviewed unit. Here only emptiness is guarded.
+        The 10-128 band (no composition rules) is defined once in
+        `app.core.security` — the same constants `hash_password` enforces —
+        so registration reports a friendly ``VALIDATION_ERROR`` instead of
+        the hasher's ``ValueError`` escaping as a 500. The band check here
+        runs before the phone token is resolved, so a malformed request
+        never burns a single-use token.
         """
-        if not password:
+        try:
+            validate_password_length(password)
+        except ValueError as exc:
             raise BusinessError(
                 ErrorCode.VALIDATION_ERROR,
                 _VALIDATION_MESSAGE,
                 status_code=400,
-                details={"field": "password", "reason": "password must not be empty"},
-            )
+                details={"field": "password", "reason": str(exc)},
+            ) from exc
