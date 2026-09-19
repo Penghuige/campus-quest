@@ -1026,6 +1026,8 @@ RewardItem 字段建议：
 
 也可在创建后直接进入 UNDER_REVIEW。
 
+“每学期每人上限”不能用自然半年猜测。V1 使用管理员配置的 `CURRENT_ACADEMIC_TERM` 字符串作为学期键，例如 `2026-fall`。创建 RewardRedemption 时 MUST 将当前 term key 快照到 Redemption；同一 RewardItem 的 per-user-term-limit 按该快照键统计。管理员切换当前 term 只影响之后的新申请，不改写历史 Redemption。
+
 申请时：
 
 - 检查 available_points。
