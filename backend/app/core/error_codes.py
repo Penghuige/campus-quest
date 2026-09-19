@@ -39,6 +39,12 @@ class ErrorCode(StrEnum):
     ASSIGNMENT_LIMIT_REACHED = "ASSIGNMENT_LIMIT_REACHED"
     TASK_ACTIVE_CLAIM_EXISTS = "TASK_ACTIVE_CLAIM_EXISTS"
     CLAIM_CUTOFF_REACHED = "CLAIM_CUTOFF_REACHED"
+    # Registered in interfaces.md (not §29-listed): spec §8.5 typed outcomes
+    # for abandoning a claim — the per-natural-day cap and the rejection of
+    # claims in a non-student-actionable state (mid-review or terminal under
+    # another reason).
+    ABANDON_LIMIT_REACHED = "ABANDON_LIMIT_REACHED"
+    CLAIM_NOT_ABANDONABLE = "CLAIM_NOT_ABANDONABLE"
     CLAIM_NOT_SUBMITTABLE = "CLAIM_NOT_SUBMITTABLE"
     SUBMISSION_WINDOW_CLOSED = "SUBMISSION_WINDOW_CLOSED"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"

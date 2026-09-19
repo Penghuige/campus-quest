@@ -244,6 +244,8 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `ASSIGNMENT_LIMIT_REACHED` | §29, §8.4 |
 | `TASK_ACTIVE_CLAIM_EXISTS` | §29, §8.4 |
 | `CLAIM_CUTOFF_REACHED` | §29, §8.4 |
+| `ABANDON_LIMIT_REACHED` | §8.5 |
+| `CLAIM_NOT_ABANDONABLE` | §8.5 |
 | `CLAIM_NOT_SUBMITTABLE` | §29 |
 | `SUBMISSION_WINDOW_CLOSED` | §29 |
 | `FILE_TOO_LARGE` | §29 |

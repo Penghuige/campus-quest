@@ -100,6 +100,11 @@ class Settings(BaseSettings):
     assignment_import_preview_ttl_seconds: int = 900
     # Region for parsing domestic phone input into E.164 (spec §5.4).
     phone_default_region: str = "CN"
+    # Per-student daily abandon cap, counted per BUSINESS_TIMEZONE natural
+    # day (spec §8.5: the default is the spec's 2, and the limit is
+    # explicitly configurable). Consumed by `AbandonService`, which receives
+    # the scalar at the composition root.
+    daily_abandon_limit: int = 2
 
     @field_validator("business_timezone")
     @classmethod
@@ -112,6 +117,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"business_timezone must be a valid IANA timezone name, got {value!r}"
             ) from exc
+        return value
+
+    @field_validator("daily_abandon_limit")
+    @classmethod
+    def _validate_daily_abandon_limit(cls, value: int) -> int:
+        # A cap below 1 makes abandoning unreachable while still consuming
+        # the claim; a deployment wanting that should disable the action, not
+        # set an unusable quota. Fail at settings load, not at the first
+        # abandon attempt.
+        if value < 1:
+            raise ValueError(f"daily_abandon_limit must be >= 1, got {value}")
         return value
 
     @field_validator("token_secret")

@@ -32,6 +32,11 @@ FROZEN_BUSINESS_CODES = (
     "ASSIGNMENT_LIMIT_REACHED",
     "TASK_ACTIVE_CLAIM_EXISTS",
     "CLAIM_CUTOFF_REACHED",
+    # Plan 03 task 8 additions (registered in interfaces.md before this enum
+    # grew): spec §8.5 abandon outcomes — the daily natural-day cap and the
+    # non-actionable-status rejection.
+    "ABANDON_LIMIT_REACHED",
+    "CLAIM_NOT_ABANDONABLE",
     "CLAIM_NOT_SUBMITTABLE",
     "SUBMISSION_WINDOW_CLOSED",
     "FILE_TOO_LARGE",
