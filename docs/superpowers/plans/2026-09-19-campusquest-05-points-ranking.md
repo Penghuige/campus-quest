@@ -130,6 +130,7 @@ git commit -m "feat: issue task rewards exactly once"
 - Create: `backend/tests/integration/points/test_redemption_concurrency.py`
 
 **Interfaces:**
+- Consumes `AcademicTermProvider.current_term_key() -> str`. Plan 05 defines the Protocol plus a test/static provider; Plan 08 wires it to the audited `CURRENT_ACADEMIC_TERM` system setting.
 - Produces:
   - `request_redemption(user_id, reward_item_id) -> RewardRedemption`
   - `approve_redemption(actor, redemption_id) -> RewardRedemption`
@@ -146,7 +147,7 @@ RewardItem stock=1. Two users request concurrently. Exactly one succeeds; stock 
 
 - [ ] **Step 3: Implement locked reservation transaction**
 
-Lock wallet and RewardItem rows. Validate enabled/time/user-term-limit. Read the Admin-configured `CURRENT_ACADEMIC_TERM` (for example `2026-fall`) and snapshot it on the Redemption. Count per-user limits by `(user_id, reward_item_id, term_key)`; changing the current term later never changes historical rows. Reserve points and one stock unit atomically.
+Lock wallet and RewardItem rows. Validate enabled/time/user-term-limit. Read `AcademicTermProvider.current_term_key()` (for example `2026-fall`) and snapshot it on the Redemption. Count per-user limits by `(user_id, reward_item_id, term_key)`; changing the current term later never changes historical rows. If the provider returns empty/invalid term key, fail the request with a configuration error instead of silently using a calendar date. Reserve points and one stock unit atomically.
 
 - [ ] **Step 4: Implement approve/reject/fulfill**
 
