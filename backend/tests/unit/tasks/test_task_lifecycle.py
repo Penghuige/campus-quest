@@ -413,6 +413,57 @@ async def test_publish_fixed_exactly_at_cutoff_allowed(service: TaskService) -> 
     assert result.claimable is True
 
 
+@pytest.mark.parametrize(
+    ("verb", "advance_minutes", "expected_code"),
+    [
+        # Inside the cutoff (239 < 240 minutes remain) on either verb.
+        ("resume", 121, ErrorCode.TASK_NOT_CLAIMABLE),
+        ("publish", 121, ErrorCode.TASK_NOT_CLAIMABLE),
+        # Deadline itself has passed -> the earlier past-deadline check.
+        ("resume", 400, ErrorCode.VALIDATION_ERROR),
+        ("publish", 400, ErrorCode.VALIDATION_ERROR),
+    ],
+    ids=["resume-inside-cutoff", "publish-inside-cutoff",
+         "resume-past-deadline", "publish-past-deadline"],
+)
+async def test_entry_into_published_revalidates_stale_fixed_deadline(
+    service: TaskService,
+    clock: MutableClock,
+    verb: str,
+    advance_minutes: int,
+    expected_code: ErrorCode,
+) -> None:
+    """Regression (fix round 1): EVERY entry into PUBLISHED re-runs publish
+    validation, so a paused FIXED task whose deadline window went stale
+    must not come back live — on either verb, since publish and resume
+    share the target check (spec §9.1: no negative-remaining-time
+    listings). Without this, a refactor letting resume skip validation
+    would keep the rest of the suite green.
+    """
+    db = FakeSession()
+    task = await service.create_task(
+        db,
+        OWNER,
+        command(
+            deadline_mode=DeadlineMode.FIXED,
+            fixed_deadline_at=NOW + timedelta(minutes=360),
+            duration_minutes=None,
+        ),
+    )
+    await service.publish_task(db, OWNER, task.id)
+    await service.pause_task(db, OWNER, task.id)
+    assert service.is_claimable(task) is False  # PAUSED stops new claims
+    assert db.commits == 3  # create + publish + pause
+
+    clock.current = NOW + timedelta(minutes=advance_minutes)
+    with pytest.raises(BusinessError) as excinfo:
+        await getattr(service, f"{verb}_task")(db, OWNER, task.id)
+    assert excinfo.value.code == expected_code
+    assert task.status == TaskStatus.PAUSED  # unchanged; no commit landed
+    assert db.commits == 3
+    assert db.locked_ids[-1] == task.id  # the blocked attempt did lock
+
+
 @pytest.mark.parametrize("duration", [None, 0, -30])
 async def test_publish_relative_requires_positive_duration(
     service: TaskService, duration: int | None
