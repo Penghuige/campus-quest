@@ -337,7 +337,7 @@ Task 表示“一个可由多人参与的任务”。
 - deadline_mode：FIXED / RELATIVE
 - fixed_deadline_at，可空
 - duration_minutes，可空
-- grace_period_minutes，V1 默认 1440
+- grace_period_minutes，V1 固定为 1440（24 小时）；V1 不提供按 Task 修改宽限期的产品入口
 - claim_cutoff_minutes，FIXED 模式默认 240
 - submission_schema JSONB
 - allowed_file_types
@@ -592,7 +592,7 @@ PostgreSQL 推荐逻辑：
 领取时：
 
     deadline_at = Task.fixed_deadline_at
-    grace_deadline_at = deadline_at + grace_period
+    grace_deadline_at = deadline_at + 24h
 
 默认 claim cutoff：
 
@@ -1044,6 +1044,8 @@ RewardItem 字段建议：
 - REJECTED 或明确取消后释放库存预占。
 - FULFILLED 将预占转为永久消耗。
 - 对 RewardItem 行或库存账户做数据库锁，不能用“先查 stock > 0 再异步减 1”的方式。
+
+RewardItem 可兑换时间窗口在 V1 统一采用半开区间：`available_from <= now < available_until`；任一端为 null 表示该方向无界。每学期每人上限统计同一 `reward_item_id + term_key` 下仍占用资格或已批准的申请（REQUESTED / UNDER_REVIEW / APPROVED / FULFILLED）；REJECTED 不占用学期限额。有限库存同理，REJECTED 释放预占。
 
 ### 16.2 积分冻结
 
