@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-19-campusquest-design.md`
 
-**Mandatory quality references:**
+**Required quality references:**
 - `AGENTS.md`
 - `docs/quality/quality-gates.md`
 - Backend/worker/database tasks: `docs/quality/backend-engineering.md`
