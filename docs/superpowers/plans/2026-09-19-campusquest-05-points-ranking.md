@@ -141,9 +141,9 @@ git commit -m "feat: issue task rewards exactly once"
 
 Seed wallet 1500. Launch two concurrent requests for 1000-point items. Assert at most one active reservation and spendable never below zero.
 
-- [ ] **Step 2: Write last-stock test**
+- [ ] **Step 2: Write last-stock, time-window, and term-limit tests**
 
-RewardItem stock=1. Two users request concurrently. Exactly one succeeds; stock reservation count is one.
+RewardItem stock=1. Two users request concurrently. Exactly one succeeds; stock reservation count is one. Verify availability uses `available_from <= now < available_until`: exactly at start succeeds, exactly at end fails. Verify a configured per-user term limit counts REQUESTED/UNDER_REVIEW/APPROVED/FULFILLED in the snapshotted term, REJECTED releases the limit, and switching `CURRENT_ACADEMIC_TERM` permits the new term's independent quota.
 
 - [ ] **Step 3: Implement locked reservation transaction**
 
