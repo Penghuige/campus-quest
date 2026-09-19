@@ -218,7 +218,7 @@ Do not use binary float. Raise `SUBMISSION_WINDOW_CLOSED` at or after grace.
 
 - [ ] **Step 4: Test FIXED vs RELATIVE snapshot**
 
-FIXED uses task instant; RELATIVE uses `claimed_at + duration`. Editing the task afterward does not change persisted Claim values.
+FIXED uses task instant; RELATIVE uses `claimed_at + duration`. In both modes V1 sets `grace_deadline_at = deadline_at + 24h` exactly; no per-Task grace override is exposed. Editing the task afterward does not change persisted Claim values.
 
 - [ ] **Step 5: Run and commit**
 
