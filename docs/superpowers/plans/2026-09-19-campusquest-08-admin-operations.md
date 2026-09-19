@@ -155,9 +155,11 @@ git commit -m "feat: administer reward catalog and reviewers"
 
 - [ ] **Step 1: Write type/permission tests**
 
-Student/Teacher cannot mutate global settings. Invalid emoji-list type rejected. Admin change audited.
+Student/Teacher cannot mutate global settings. Invalid emoji-list type rejected. Admin change audited. Add NotificationTemplate CRUD tests: Admin can change channel template text/version; Teacher cannot modify global templates; unsafe executable template expressions are rejected.
 
-- [ ] **Step 2: Implement versioned values**
+- [ ] **Step 2: Implement versioned values and notification-template administration**
+
+Runtime system values include emoji whitelist, abandon daily limit, and management-network policy toggles/CIDRs. NotificationTemplate remains its dedicated typed model from Plan 07, but its Admin create/update/enable operations are implemented in this task and emit AuditLog.
 
 Each change increments version and records old/new redacted value.
 
@@ -220,7 +222,41 @@ git add backend/app/modules/audit/repair_service.py backend/tests/integration/au
 git commit -m "feat: add constrained audited state repairs"
 ```
 
-### Task 8: Add Teacher/Admin Operational APIs
+### Task 8: Implement User Account Status Administration and Backend Access Policy
+
+**Files:**
+- Create: `backend/app/modules/identity/account_admin_service.py`
+- Create: `backend/app/core/admin_network_policy.py`
+- Create: `backend/tests/integration/admin/test_account_status.py`
+- Create: `backend/tests/unit/admin/test_network_policy.py`
+
+**Interfaces:**
+- Produces `suspend_user`, `ban_user`, `reactivate_user`; optional configured Admin/Teacher CIDR/VPN allowlist check.
+
+- [ ] **Step 1: Write status-transition tests**
+
+Admin can ACTIVE->SUSPENDED, ACTIVE->BANNED, SUSPENDED->ACTIVE, and explicitly unban BANNED->ACTIVE with reason. Student/Teacher without Admin authority cannot perform these transitions. Existing ledger/audit/claim history remains intact.
+
+- [ ] **Step 2: Write enforcement test**
+
+After suspension, an already-issued Student access token cannot claim, upload, or create community content because service/dependency re-checks account status.
+
+- [ ] **Step 3: Implement audited transitions**
+
+Every status change stores reason, actor, before/after snapshot, and request id.
+
+- [ ] **Step 4: Implement optional management-network restriction**
+
+Parse configured CIDR allowlist using standard IP network parsing. When enabled, Teacher/Admin management routes reject requests outside allowed networks after normal authentication; when disabled, normal 2FA/RBAC still applies. Never trust an arbitrary client-supplied `X-Forwarded-For` unless the deployment's trusted-proxy configuration explicitly enables it.
+
+- [ ] **Step 5: Run tests and commit**
+
+```bash
+git add backend/app/modules/identity/account_admin_service.py backend/app/core/admin_network_policy.py backend/tests
+git commit -m "feat: administer account status and management network policy"
+```
+
+### Task 9: Add Teacher/Admin Operational APIs
 
 **Files:**
 - Create: `backend/app/modules/audit/router.py`
