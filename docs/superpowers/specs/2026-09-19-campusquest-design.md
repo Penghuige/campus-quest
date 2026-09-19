@@ -605,7 +605,7 @@ PostgreSQL 推荐逻辑：
 领取时：
 
     deadline_at = claimed_at + duration
-    grace_deadline_at = deadline_at + grace_period
+    grace_deadline_at = deadline_at + 24h
 
 之后 Teacher 修改 duration 不影响已存在 Claim。
 
