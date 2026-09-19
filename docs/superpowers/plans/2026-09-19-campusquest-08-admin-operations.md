@@ -159,7 +159,7 @@ Student/Teacher cannot mutate global settings. Invalid emoji-list type rejected.
 
 - [ ] **Step 2: Implement versioned values and notification-template administration**
 
-Runtime system values include emoji whitelist, abandon daily limit, and management-network policy toggles/CIDRs. NotificationTemplate remains its dedicated typed model from Plan 07, but its Admin create/update/enable operations are implemented in this task and emit AuditLog.
+Runtime system values include emoji whitelist, abandon daily limit, `CURRENT_ACADEMIC_TERM` (non-empty stable key such as `2026-fall`), and management-network policy toggles/CIDRs. Changing `CURRENT_ACADEMIC_TERM` affects only future RewardRedemption snapshots and must be audited. NotificationTemplate remains its dedicated typed model from Plan 07, but its Admin create/update/enable operations are implemented in this task and emit AuditLog.
 
 Each change increments version and records old/new redacted value.
 
