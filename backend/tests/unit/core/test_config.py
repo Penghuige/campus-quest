@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
@@ -71,8 +72,9 @@ def test_production_accepts_overridden_otp_hmac_secret(monkeypatch) -> None:
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
     # Since Task 5 production refuses EVERY committed sentinel, so the
-    # token-signing secret must be real here too.
+    # token-signing and TOTP-encryption secrets must be real here too.
     monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
+    monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
     settings = Settings()
     assert settings.environment == "production"
     assert settings.otp_hmac_secret == "a-real-deployment-secret"
@@ -96,6 +98,7 @@ def test_production_rejects_sentinel_token_secret(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("TOKEN_SECRET", raising=False)
     with pytest.raises(ValidationError, match="TOKEN_SECRET"):
         Settings()
@@ -115,6 +118,7 @@ def test_production_accepts_overridden_token_secret(monkeypatch) -> None:
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
     monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
+    monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
     settings = Settings()
     assert settings.token_secret == "a-real-access-token-secret-0123456789"
 

@@ -135,7 +135,7 @@ class SessionService:
                 status_code=403,
             )
 
-        session_row, tokens = await self._open_session(db, user=user, now=now)
+        session_row, tokens = await self.issue_session(db, user=user, now=now)
         # Ids for logging are captured pre-commit: the service must not
         # depend on the caller's session having ``expire_on_commit=False``
         # (accessing an expired attribute would trigger lazy IO).
@@ -197,7 +197,7 @@ class SessionService:
                 status_code=403,
             )
 
-        successor_row, tokens = await self._open_session(db, user=user, now=now)
+        successor_row, tokens = await self.issue_session(db, user=user, now=now)
         current.revoked_at = now
         current.replaced_by = successor_row.id
         # Captured pre-commit (see login_student).
@@ -234,14 +234,18 @@ class SessionService:
         revoked_count = int(getattr(result, "rowcount", 0) or 0)
         logger.info("sessions revoked user_id=%s count=%d", user_id, revoked_count)
 
-    async def _open_session(
+    async def issue_session(
         self, db: AsyncSession, *, user: User, now: datetime
     ) -> tuple[UserSession, SessionTokens]:
         """Add one live `UserSession` row and mint its token pair.
 
         Flush allocates the row id (server default) so the access token's
-        ``sid`` claim can name it; the caller owns the commit — for
-        rotation, the same transaction that revokes the predecessor.
+        ``sid`` claim can name it; this method deliberately does NOT
+        commit — the caller owns the transaction. `login_student` and
+        `rotate_refresh` commit their own; staff onboarding
+        (`StaffService.accept_staff_invitation`) composes the mint into
+        the same transaction that creates the account and consumes the
+        invitation, so a half-onboarded account can never rest committed.
         """
         refresh_token = generate_refresh_token()
         session_row = UserSession(

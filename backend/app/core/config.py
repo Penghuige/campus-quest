@@ -9,17 +9,29 @@ from functools import lru_cache
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from cryptography.fernet import Fernet
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
-# Development-only secrets (backend-engineering §17 fail-fast): both are
+# Development-only secrets (backend-engineering §17 fail-fast): all are
 # KNOWN values committed to the repository, so production must override them.
 # - OTP HMAC key: with it, anyone who can read Redis brute-forces the 10^6
 #   code space offline instantly (spec §33.2).
 # - Access-token signing key: with it, anyone can forge valid JWTs (§5.6).
-# Production settings reject both — see `_reject_insecure_secrets_in_production`.
+# - TOTP encryption key: with it, anyone who can read the database decrypts
+#   every stored staff TOTP secret (§5.6/§5.8).
+# Production settings reject all three — see `_reject_insecure_secrets_in_production`.
 _INSECURE_OTP_HMAC_SECRET = "dev-only-insecure-otp-hmac-secret"
 _INSECURE_TOKEN_SECRET = "dev-only-insecure-access-token-secret"
+# A Fernet key is 32 url-safe base64 bytes; this sentinel decodes to the
+# ASCII marker "dev-only-insecure-totp-key------" so the committed value is
+# both structurally valid and self-describing.
+_INSECURE_TOTP_ENCRYPTION_KEY = "ZGV2LW9ubHktaW5zZWN1cmUtdG90cC1rZXktLS0tLS0="
+_INSECURE_SECRET_SENTINELS = (
+    _INSECURE_OTP_HMAC_SECRET,
+    _INSECURE_TOKEN_SECRET,
+    _INSECURE_TOTP_ENCRYPTION_KEY,
+)
 
 # (field, env var) pairs the production guard checks against their dev-only
 # sentinel defaults; extend this table when a new committed-secret default
@@ -27,6 +39,7 @@ _INSECURE_TOKEN_SECRET = "dev-only-insecure-access-token-secret"
 _INSECURE_PRODUCTION_SENTINELS: tuple[tuple[str, str], ...] = (
     ("otp_hmac_secret", "OTP_HMAC_SECRET"),
     ("token_secret", "TOKEN_SECRET"),
+    ("totp_encryption_key", "TOTP_ENCRYPTION_KEY"),
 )
 
 
@@ -43,7 +56,8 @@ class Settings(BaseSettings):
     max_upload_bytes_default: int = 200 * 1024 * 1024
 
     # Deployment profile: "production" turns insecure development defaults
-    # into startup failures (currently the OTP HMAC sentinel below).
+    # into startup failures (the OTP HMAC, access-token, and TOTP-encryption
+    # sentinels).
     environment: Literal["development", "production"] = "development"
 
     # Phone OTP challenge lifecycle (spec §33.2 recommended defaults:
@@ -64,6 +78,13 @@ class Settings(BaseSettings):
     # HS256 signing key for short-lived access tokens (spec §5.6). Same
     # deal: a committed development default that production refuses.
     token_secret: str = _INSECURE_TOKEN_SECRET
+    # Fernet key encrypting staff TOTP secrets at rest (spec §5.6, §5.8):
+    # `totp_credentials.secret_encrypted` must never hold plaintext. Same
+    # sentinel pattern — development default, production refuses it.
+    totp_encryption_key: str = _INSECURE_TOTP_ENCRYPTION_KEY
+    # Staff invitation link lifetime (spec §5.8: 一次性、短时有效); 48h is
+    # the plan's default window.
+    staff_invitation_ttl_hours: int = 48
     # Region for parsing domestic phone input into E.164 (spec §5.4).
     phone_default_region: str = "CN"
 
@@ -94,6 +115,23 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("totp_encryption_key")
+    @classmethod
+    def _validate_totp_encryption_key(cls, value: str) -> str:
+        # Fernet accepts exactly 32 url-safe base64-encoded bytes; anything
+        # else raises at first use. A deployer pasting a passphrase must
+        # fail at settings load in any environment, not at the first staff
+        # login attempt.
+        try:
+            Fernet(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                "totp_encryption_key must be a valid Fernet key "
+                "(32 url-safe base64-encoded bytes, e.g. "
+                "Fernet.generate_key())"
+            ) from exc
+        return value
+
     @model_validator(mode="after")
     def _reject_insecure_secrets_in_production(self) -> "Settings":
         # A known sentinel defeats the secret's purpose in production (see
@@ -103,16 +141,15 @@ class Settings(BaseSettings):
         offenders = [
             env_name
             for field_name, env_name in _INSECURE_PRODUCTION_SENTINELS
-            if getattr(self, field_name)
-            in (_INSECURE_OTP_HMAC_SECRET, _INSECURE_TOKEN_SECRET)
+            if getattr(self, field_name) in _INSECURE_SECRET_SENTINELS
         ]
         if self.environment == "production" and offenders:
             raise ValueError(
                 "environment=production refuses development-only default "
                 f"secrets: set {' and '.join(offenders)} to "
                 "deployment-specific values (a committed sentinel lets "
-                "anyone brute-force stored OTP hashes offline or forge "
-                "access tokens)"
+                "anyone brute-force stored OTP hashes offline, forge "
+                "access tokens, or decrypt stored TOTP secrets)"
             )
         return self
 
