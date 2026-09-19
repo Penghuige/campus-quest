@@ -35,6 +35,10 @@ checks live in the services):
 ===========  =========================================================
 Method path  Purpose
 ===========  =========================================================
+GET          ``/teacher/tasks`` — workbench list: own + collaborated
+             tasks, every status incl. DRAFT (§41).
+GET          ``/teacher/tasks/{task_id}`` — full workbench detail incl.
+             contract fields (owner/collaborator/Admin).
 POST         ``/teacher/tasks`` — create DRAFT.
 PATCH        ``/teacher/tasks/{task_id}`` — edit under the V1 rule.
 POST         ``/teacher/tasks/{task_id}/publish|pause|resume|close|archive``
@@ -181,6 +185,8 @@ from app.modules.tasks.schemas import (
     TaskStatisticsResponse,
     TaskTransitionResponse,
     TaskUpdateRequest,
+    TeacherTaskListItemResponse,
+    TeacherTaskListResponse,
     TeacherTaskResponse,
     UpdateTask,
 )
@@ -432,6 +438,42 @@ async def abandon_claim(
 
 
 # --- teacher surfaces (spec §28, §41) -----------------------------------------------
+
+
+@router.get("/teacher/tasks", response_model=TeacherTaskListResponse)
+async def list_teacher_tasks(
+    actor: StaffActor,
+    db: DbSession,
+    queries: QueryServiceDep,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> TeacherTaskListResponse:
+    """The workbench Task list (spec §41): the actor's own tasks plus the
+    ones they collaborate on, every status including DRAFT, offset-
+    paginated. Card-level facts only — contract fields ride the detail."""
+    items, total = await queries.list_teacher_tasks(
+        db, actor, limit=limit, offset=offset
+    )
+    return TeacherTaskListResponse(
+        items=[TeacherTaskListItemResponse.from_view(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/teacher/tasks/{task_id}", response_model=TeacherTaskResponse)
+async def get_teacher_task(
+    task_id: uuid.UUID,
+    actor: StaffActor,
+    db: DbSession,
+    queries: QueryServiceDep,
+) -> TeacherTaskResponse:
+    """The full workbench detail of one task (spec §41): everything the
+    owner configured, contract fields included, DRAFT readable (unlike
+    the student surface). Owner, any collaborator, or Admin."""
+    task = await queries.get_teacher_task(db, actor, task_id)
+    return TeacherTaskResponse.from_domain(task)
 
 
 @router.post("/teacher/tasks", response_model=TeacherTaskResponse, status_code=201)

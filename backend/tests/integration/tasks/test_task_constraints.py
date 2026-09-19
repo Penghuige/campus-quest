@@ -321,3 +321,20 @@ async def test_completed_assignment_not_returned_by_available_query(
 
     assert {row.id for row in rows} == {available.id}
     assert completed.id not in {row.id for row in rows}
+
+
+@pytest.mark.integration
+async def test_terminal_at_column_comment_documents_semantics() -> None:
+    """The terminal_at column carries its semantic contract as a database
+    comment (final-review Minor 1): when the claim reached a terminal
+    status, NULL while active, and that the daily abandon cap counts
+    ABANDONED rows by this instant — a reader discovering the column in
+    psql should not have to open the service to learn this. The ORM
+    comment is what fresh alembic upgrades and create_all environments
+    both install (migration 0003 carries the same text).
+    """
+    comment = AssignmentClaim.__table__.c.terminal_at.comment
+    assert comment is not None
+    assert "COMPLETED/ABANDONED/EXPIRED" in comment
+    assert "NULL" in comment
+    assert "abandon" in comment

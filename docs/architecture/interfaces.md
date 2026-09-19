@@ -322,6 +322,8 @@ Canonical service/use-case names (spec §36). Business rules live in these servi
 
 Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs.
 
+Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
+
 ## Adapter Ports
 
 External systems are consumed only through these Protocols; domain modules never contain provider-specific logic. Each has a deterministic in-memory fake used by tests (Plan 01, `backend/app/integrations/`, `backend/tests/fakes/`).
@@ -395,3 +397,11 @@ class UserDirectory(Protocol):
 `find_by_email` normalizes its argument (strip + lowercase) exactly once;
 lookups join the caller's transaction (`session` in, answer out, no inner
 commit), same shape as the other cross-module ports.
+
+Locking-read seam: `UserDirectory` will gain a documented locking read
+(e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a second
+module needs one; until then, the lightweight typed Core reads over the
+`users` table in the claim/abandon services (`_USERS_LOCK` — `id` +
+`status` only, through the frozen `UserStatus` vocabulary) are the
+sanctioned interim, and both queries move behind the port unchanged when
+it registers one.

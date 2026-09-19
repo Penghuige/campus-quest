@@ -52,7 +52,7 @@ if TYPE_CHECKING:
         AssignmentImportError,
         AssignmentImportPreview,
     )
-    from app.modules.tasks.query_service import TaskStatistics
+    from app.modules.tasks.query_service import TaskStatistics, TeacherTaskListItem
 
 # spec §25.1: every channel on by default; a Teacher/Admin may turn each
 # one off per Task.
@@ -567,6 +567,51 @@ class TaskTransitionResponse(BaseModel):
     claimable: bool
     published_at: datetime | None
     closed_at: datetime | None
+
+
+class TeacherTaskListItemResponse(BaseModel):
+    """One workbench list row (spec §41 Task list): card-level facts plus
+    lifecycle timestamps, every status including DRAFT. Contract fields
+    ride only ``TeacherTaskResponse`` (the detail)."""
+
+    id: UUID
+    title: str
+    status: str
+    task_type: str
+    rarity: str
+    base_reward_points: int
+    deadline_mode: str
+    fixed_deadline_at: datetime | None
+    duration_minutes: int | None
+    published_at: datetime | None
+    closed_at: datetime | None
+    created_at: datetime
+
+    @classmethod
+    def from_view(cls, item: TeacherTaskListItem) -> TeacherTaskListItemResponse:
+        return cls(
+            id=item.id,
+            title=item.title,
+            status=item.status,
+            task_type=item.task_type,
+            rarity=item.rarity,
+            base_reward_points=item.base_reward_points,
+            deadline_mode=item.deadline_mode,
+            fixed_deadline_at=item.fixed_deadline_at,
+            duration_minutes=item.duration_minutes,
+            published_at=item.published_at,
+            closed_at=item.closed_at,
+            created_at=item.created_at,
+        )
+
+
+class TeacherTaskListResponse(BaseModel):
+    """Offset-paginated workbench page (the documented V1 choice)."""
+
+    items: list[TeacherTaskListItemResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class ImportPreviewErrorResponse(BaseModel):

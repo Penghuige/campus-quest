@@ -57,6 +57,12 @@ Design decisions:
   IntegrityError a concurrent importer still triggers is translated into
   the SAME typed conflict — only that constraint name is converted, any
   other database failure propagates (backend-engineering §7).
+- **Confirm inserts in one canonical order** — rows are sorted by
+  ``(platform, keyword)`` before ``add_all`` — so concurrent confirms of
+  previews that stored the same pair set in different row orders cannot
+  interleave unique-index slot acquisition into a PostgreSQL deadlock
+  (whose OperationalError is not an IntegrityError and would escape as
+  a 500); the loser queues on the first slot and surfaces the typed 409.
 - **Transaction shape** (§5): one ``flush`` to evaluate constraints, one
   ``commit`` at the end of the use case; helpers never commit.
 - Canonicalization: platform is case-insensitively mapped onto the
@@ -632,6 +638,19 @@ class AssignmentImportService:
         if conflicts:
             raise DuplicateAssignmentsError(sorted(conflicts))
 
+        # Deadlock avoidance (final-review fix): two concurrent confirms
+        # whose previews stored the same pair set in DIFFERENT row orders
+        # ([A,B] vs [B,A]) would otherwise take the
+        # UNIQUE(task_id, platform, keyword) index slots in opposite
+        # orders — PostgreSQL detects the cycle and the loser surfaces
+        # DeadlockDetectedError as a DBAPIError/OperationalError, which
+        # the ``except IntegrityError`` mapping below cannot convert (a
+        # 500). Sorting gives every transaction one canonical slot
+        # acquisition order, so the loser queues on the first slot and
+        # surfaces the typed 409 instead (verified by reproduction: the
+        # reversed-order barrier test deadlocked on every pre-fix run).
+        ordered_rows = tuple(sorted(rows, key=lambda row: (row.platform, row.keyword)))
+
         db.add_all(
             [
                 Assignment(
@@ -640,7 +659,7 @@ class AssignmentImportService:
                     keyword=row.keyword,
                     availability_status=AssignmentAvailability.AVAILABLE.value,
                 )
-                for row in rows
+                for row in ordered_rows
             ]
         )
         try:
@@ -656,7 +675,9 @@ class AssignmentImportService:
             task_id,
             len(rows),
         )
-        return AssignmentImportResult(task_id=task_id, inserted=len(rows), rows=rows)
+        return AssignmentImportResult(
+            task_id=task_id, inserted=len(rows), rows=ordered_rows
+        )
 
     # -- internals ----------------------------------------------------------------
 

@@ -20,7 +20,12 @@ Transaction shape (spec §8.3, one transaction, one commit at the end):
    checklist head — account, task claimability, FIXED cutoff, quota,
    same-task — as pure rules over the locked rows and the clock (task 7;
    backend-engineering §4/§21: the predicates stay unit-testable without
-   a database because every count arrives as an input).
+   a database because every count arrives as an input). The clock
+   instant (``claimed_at``) is sampled immediately BEFORE this step —
+   after all locks are held — so lock-wait can never skew the RELATIVE
+   deadline anchor, the FIXED cutoff comparison, or the persisted
+   claimed_at (the final-review pre-lock-sampling fix; see the CLOCK
+   SAMPLING CONTRACT comment in ``claim_random_assignment``).
 4. Candidate selection: ``... WHERE availability_status = AVAILABLE AND
    id NOT IN (this user's ABANDONED/EXPIRED assignments) ORDER BY
    random() LIMIT 1 FOR UPDATE SKIP LOCKED`` — two transactions can never
@@ -489,8 +494,6 @@ class ClaimService:
         Raises the §8.4 business codes (4xx) for every checklist failure;
         commits exactly once, only on the success path.
         """
-        claimed_at = self._clock.now()
-
         # (1) Same-user serialization: lock the stable user-level resource
         # FIRST (spec §8.3), then gate on the row we actually locked —
         # before spending the FOR SHARE task read.
@@ -512,6 +515,20 @@ class ClaimService:
         )
         if task is None:
             raise TaskNotFoundError(task_id)
+
+        # CLOCK SAMPLING CONTRACT (final-review fix): ``claimed_at`` is
+        # sampled HERE — after every lock the flow takes (user row FOR
+        # UPDATE above, Task FOR SHARE above) and before the first
+        # eligibility rule that consumes it. Sampling before the locks
+        # would let the user-row lock-wait skew the RELATIVE deadline
+        # anchor (claimed_at + duration), the FIXED cutoff comparison,
+        # and the persisted claimed_at backwards by however long the
+        # lock was held — the module charter is exact time. A clock
+        # advanced between call start and lock acquisition is therefore
+        # invisible by construction (asserted by structure: nothing reads
+        # self._clock between method entry and this line). FrozenClock
+        # tests pin claimed_at == _NOW on both sides of this contract.
+        claimed_at = self._clock.now()
 
         # (3) The §8.2 checklist head inside the locked transaction:
         # facts still under the user-row lock, then the pure rules —

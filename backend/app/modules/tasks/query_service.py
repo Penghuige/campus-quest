@@ -56,10 +56,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
@@ -92,11 +93,13 @@ __all__ = [
     "TaskCard",
     "TaskQueryService",
     "TaskStatistics",
+    "TeacherTaskListItem",
 ]
 
 _STATISTICS_DENIED_MESSAGE = (
     "只有任务所有者、拥有 VIEW_TASK 权限的协作者或管理员可以查看任务统计"
 )
+_TASK_READ_DENIED_MESSAGE = "只有任务所有者、协作者或管理员可以查看该任务"
 
 
 # --- cross-module rating port (Plan 06 supplies the real adapter) ----------------
@@ -140,6 +143,45 @@ class TaskStatistics:
     completion_rate: float
     rating: RatingSummary | None
     submission_counts: Mapping[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class TeacherTaskListItem:
+    """One workbench list row (spec §41 Task list): card-level facts plus
+    the lifecycle timestamps for every status — DRAFT included (the
+    student surface hides DRAFT; the owner's workbench must show it).
+    Contract fields (submission schema, file policy, notification
+    config) ride only the detail view."""
+
+    id: UUID
+    title: str
+    status: str
+    task_type: str
+    rarity: str
+    base_reward_points: int
+    deadline_mode: str
+    fixed_deadline_at: datetime | None
+    duration_minutes: int | None
+    published_at: datetime | None
+    closed_at: datetime | None
+    created_at: datetime
+
+    @classmethod
+    def from_domain(cls, task: Task) -> TeacherTaskListItem:
+        return cls(
+            id=task.id,
+            title=task.title,
+            status=task.status,
+            task_type=task.task_type,
+            rarity=task.rarity,
+            base_reward_points=task.base_reward_points,
+            deadline_mode=task.deadline_mode,
+            fixed_deadline_at=task.fixed_deadline_at,
+            duration_minutes=task.duration_minutes,
+            published_at=task.published_at,
+            closed_at=task.closed_at,
+            created_at=task.created_at,
+        )
 
 
 # --- the service --------------------------------------------------------------------
@@ -340,6 +382,95 @@ class TaskQueryService:
         return {task_id: int(count) for task_id, count in rows}
 
     # -- teacher surfaces ---------------------------------------------------------
+
+    async def list_teacher_tasks(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[TeacherTaskListItem], int]:
+        """One offset page of the actor's workbench tasks: every task they
+        own OR collaborate on, every status including DRAFT (spec §41
+        Task list), newest first.
+
+        Admin is deliberately NOT special-cased to list every teacher's
+        tasks: §41's Admin console has its own surfaces, and the workbench
+        list answers "my tasks and the ones I work on". ``limit``/
+        ``offset`` arrive already bounded (the route owns the caps).
+        """
+        collaborated = select(TaskCollaborator.task_id).where(
+            TaskCollaborator.teacher_id == actor.user_id
+        )
+        visibility = or_(
+            Task.owner_teacher_id == actor.user_id, Task.id.in_(collaborated)
+        )
+
+        total = int(
+            await db.scalar(select(func.count()).select_from(Task).where(visibility))
+            or 0
+        )
+        if total == 0 or offset >= total:
+            return [], total
+
+        tasks = (
+            await db.scalars(
+                select(Task)
+                .where(visibility)
+                .order_by(Task.created_at.desc(), Task.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        return [TeacherTaskListItem.from_domain(task) for task in tasks], total
+
+    async def get_teacher_task(
+        self, db: AsyncSession, actor: Actor, task_id: UUID
+    ) -> Task:
+        """One task's full workbench view — every field the owner
+        configured, contract fields included — for an authorized reader
+        (owner, any collaborator, or Admin).
+
+        Returns the Task row for ``TeacherTaskResponse.from_domain``; the
+        DRAFT status is readable here (unlike the student surface).
+        """
+        task = await db.scalar(select(Task).where(Task.id == task_id))
+        if task is None:
+            raise TaskNotFoundError(task_id)
+        await self._require_teacher_task_read(db, task, actor)
+        return task
+
+    @staticmethod
+    async def _require_teacher_task_read(
+        db: AsyncSession, task: Task, actor: Actor
+    ) -> None:
+        """Owner, Admin, or ANY collaborator on the task (spec §4.2).
+
+        Deliberately broader than the statistics gate (VIEW_TASK
+        specifically): every capability is actionable only through task
+        context (MANAGE_ASSIGNMENTS runs import previews against the
+        task, REVIEW_SUBMISSIONS will read its claims), so a
+        collaborator row of any capability can already act on the task —
+        denying them the workbench detail would be incoherent. The
+        module's 403-vs-404 posture follows the statistics precedent:
+        an existing-but-forbidden task is PERMISSION_DENIED, an unknown
+        id is the shared TaskNotFoundError.
+        """
+        if actor.user_id == task.owner_teacher_id or is_admin(actor.role):
+            return
+        standing = await db.scalar(
+            select(TaskCollaborator.teacher_id).where(
+                TaskCollaborator.task_id == task.id,
+                TaskCollaborator.teacher_id == actor.user_id,
+            )
+        )
+        if standing is None:
+            raise BusinessError(
+                ErrorCode.PERMISSION_DENIED,
+                _TASK_READ_DENIED_MESSAGE,
+                status_code=403,
+            )
 
     async def get_task_statistics(
         self,

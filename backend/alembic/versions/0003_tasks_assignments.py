@@ -261,7 +261,17 @@ def upgrade() -> None:
         sa.Column("locked_reward_points", sa.Integer(), nullable=True),
         sa.Column("latest_submission_id", sa.Uuid(), nullable=True),
         sa.Column("revision_deadline_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("terminal_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "terminal_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment=(
+                "When the claim reached a terminal status "
+                "(COMPLETED/ABANDONED/EXPIRED); NULL while a claim is active. "
+                "The daily abandon cap counts ABANDONED rows by this instant "
+                "inside the BUSINESS_TIMEZONE natural day (spec §8.5)."
+            ),
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_assignment_claims"),
         sa.ForeignKeyConstraint(
             ["assignment_id"],

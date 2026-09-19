@@ -277,6 +277,62 @@ async def test_collaborator_grants_within_own_permissions(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "own_permissions",
+    [
+        pytest.param([CollaboratorPermission.VIEW_TASK], id="single-capability"),
+        pytest.param(
+            [
+                CollaboratorPermission.VIEW_TASK,
+                CollaboratorPermission.MANAGE_ASSIGNMENTS,
+            ],
+            id="pair",
+        ),
+        pytest.param(list(CollaboratorPermission), id="full-set"),
+    ],
+)
+async def test_collaborator_grants_exactly_own_full_set(
+    db_session: AsyncSession,
+    own_permissions: list[CollaboratorPermission],
+) -> None:
+    """The equal-set boundary of the grant rule: a collaborator granting
+    EXACTLY their own full set is ALLOWED — the check is subset-or-equal
+    (``granted <= own``), not strict subset. Pinning this boundary so a
+    refactor to ``<`` fails here: re-granting one's whole set to a new
+    collaborator is legitimate delegation, not escalation (spec §4.2
+    caps grants at what the grantor possesses, inclusive)."""
+    owner = _user(username="teacher0001", role=Role.TEACHER)
+    grantor = _user(username="teacher0002", role=Role.TEACHER)
+    target = _user(username="teacher0003", role=Role.TEACHER)
+    await _flush(db_session, owner, grantor, target)
+    task = await _seed_task(db_session, owner)
+    service = _service()
+    await service.add_collaborator(
+        db_session, _actor(owner), task.id, grantor.id, own_permissions
+    )
+
+    added = await service.add_collaborator(
+        db_session,
+        _actor(grantor),
+        task.id,
+        target.id,
+        # Exactly the grantor's own set, same values (order shuffled to
+        # prove normalization, not set identity, decides).
+        list(reversed(own_permissions)),
+    )
+
+    assert set(added.permissions) == set(own_permissions)
+    persisted = await db_session.scalar(
+        select(TaskCollaborator).where(
+            TaskCollaborator.task_id == task.id,
+            TaskCollaborator.teacher_id == target.id,
+        )
+    )
+    assert persisted is not None
+    assert set(persisted.permissions) == set(own_permissions)
+
+
+@pytest.mark.integration
 async def test_unrelated_teacher_and_student_denied(
     db_session: AsyncSession,
 ) -> None:

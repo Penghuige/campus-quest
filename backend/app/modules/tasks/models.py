@@ -354,4 +354,12 @@ class AssignmentClaim(Base):
     revision_deadline_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "When the claim reached a terminal status "
+            "(COMPLETED/ABANDONED/EXPIRED); NULL while a claim is active. "
+            "The daily abandon cap counts ABANDONED rows by this instant "
+            "inside the BUSINESS_TIMEZONE natural day (spec §8.5)."
+        ),
+    )

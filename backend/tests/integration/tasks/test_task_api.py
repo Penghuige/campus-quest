@@ -93,6 +93,47 @@ _CARD_FIELDS = {
     "assignments_available",
     "rating",
 }
+# The workbench list row: card-level facts plus the lifecycle timestamps;
+# contract fields (schema, file policy, notification config) ride only the
+# detail response.
+_TEACHER_CARD_FIELDS = {
+    "id",
+    "title",
+    "status",
+    "task_type",
+    "rarity",
+    "base_reward_points",
+    "deadline_mode",
+    "fixed_deadline_at",
+    "duration_minutes",
+    "published_at",
+    "closed_at",
+    "created_at",
+}
+_TEACHER_DETAIL_FIELDS = {
+    "id",
+    "title",
+    "description",
+    "task_type",
+    "rarity",
+    "base_reward_points",
+    "status",
+    "deadline_mode",
+    "fixed_deadline_at",
+    "duration_minutes",
+    "claim_cutoff_minutes",
+    "grace_period_minutes",
+    "submission_schema",
+    "submission_schema_version",
+    "allowed_file_types",
+    "max_file_size_bytes",
+    "notify_24h",
+    "notify_4h",
+    "notification_channels",
+    "published_at",
+    "closed_at",
+    "created_at",
+}
 _CLAIM_FIELDS = {
     "claim_id",
     "task_id",
@@ -893,6 +934,161 @@ async def test_teacher_statistics_counts(
     assert body["completion_rate"] == 0.25  # 1 / (2+1+1)
     assert body["rating"] is None  # NullRatingSummaryPort until Plan 06
     assert body["submission_counts"] == {}  # Plan 04 seam
+
+
+# --- teacher read surfaces (spec §41 Task list) --------------------------------------
+
+
+@pytest.mark.integration
+async def test_teacher_lists_and_reads_own_and_collaborated_tasks(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """GET /teacher/tasks lists own + collaborated tasks, every status
+    including DRAFT (spec §41; the student surface hides DRAFT, the
+    workbench must show it), newest first, offset-paginated; the detail
+    returns the full contract-field view for owner and collaborator."""
+    teacher, teacher_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    other, _ = await _seed_management_teacher(
+        db_session, api_clock, username=_OTHER_TEACHER_EMAIL
+    )
+    published = _seed_task(teacher.id, title="已发布任务", published_at=_T0)
+    draft = _seed_task(
+        teacher.id,
+        title="草稿任务",
+        status=TaskStatus.DRAFT.value,
+        published_at=None,
+    )
+    closed = _seed_task(
+        teacher.id,
+        title="已关闭任务",
+        status=TaskStatus.CLOSED.value,
+        published_at=_T0 - timedelta(days=1),
+        closed_at=_T0,
+    )
+    collaborated = _seed_task(other.id, title="协作任务", published_at=_T0)
+    stranger = _seed_task(other.id, title="无关任务", published_at=_T0)
+    for index, task in enumerate((published, draft, closed, collaborated, stranger)):
+        # Stagger created_at so newest-first ordering is deterministic.
+        task.created_at = _T0 - timedelta(hours=index)
+    db_session.add_all([published, draft, closed, collaborated, stranger])
+    await db_session.flush()
+    db_session.add(
+        TaskCollaborator(
+            task_id=collaborated.id,
+            teacher_id=teacher.id,
+            permissions=["MANAGE_ASSIGNMENTS"],
+        )
+    )
+    await db_session.flush()
+
+    # The list: own (any status, DRAFT included) + collaborated; the
+    # stranger's task is absent; offset pagination carries total.
+    listed = await client.get("/api/v1/teacher/tasks", headers=_bearer(teacher_tokens))
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert set(body) == {"items", "total", "limit", "offset"}
+    assert body["total"] == 4
+    assert body["limit"] == 20
+    assert body["offset"] == 0
+    assert [item["title"] for item in body["items"]] == [
+        "已发布任务",
+        "草稿任务",
+        "已关闭任务",
+        "协作任务",
+    ]
+    for item in body["items"]:
+        assert set(item) == _TEACHER_CARD_FIELDS
+    statuses = {item["title"]: item["status"] for item in body["items"]}
+    assert statuses["草稿任务"] == "DRAFT"
+    assert statuses["已关闭任务"] == "CLOSED"
+
+    paged = await client.get(
+        "/api/v1/teacher/tasks",
+        params={"limit": 2, "offset": 2},
+        headers=_bearer(teacher_tokens),
+    )
+    assert paged.status_code == 200
+    assert [item["title"] for item in paged.json()["items"]] == [
+        "已关闭任务",
+        "协作任务",
+    ]
+
+    # The detail: own DRAFT carries the full contract fields.
+    detail = await client.get(
+        f"/api/v1/teacher/tasks/{draft.id}", headers=_bearer(teacher_tokens)
+    )
+    assert detail.status_code == 200, detail.text
+    draft_body = detail.json()
+    assert set(draft_body) == _TEACHER_DETAIL_FIELDS
+    assert draft_body["status"] == "DRAFT"
+    assert draft_body["title"] == "草稿任务"
+    assert draft_body["claim_cutoff_minutes"] == 240
+    assert draft_body["grace_period_minutes"] == 1440
+    assert draft_body["published_at"] is None
+
+    # A collaborator reads the collaborated task's detail too.
+    collaborated_detail = await client.get(
+        f"/api/v1/teacher/tasks/{collaborated.id}", headers=_bearer(teacher_tokens)
+    )
+    assert collaborated_detail.status_code == 200, collaborated_detail.text
+    assert collaborated_detail.json()["title"] == "协作任务"
+
+
+@pytest.mark.integration
+async def test_teacher_task_reads_denied_for_outsiders(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """An unrelated Teacher never sees the task in their list and gets
+    PERMISSION_DENIED on the detail; Students cannot reach the teacher
+    surface at all; an unknown id is the typed NOT_FOUND."""
+    owner, owner_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    other, other_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_OTHER_TEACHER_EMAIL
+    )
+    student = await _seed_user(db_session, username=_STUDENT_NUMBER, role=Role.STUDENT)
+    student_tokens = await _session_tokens(db_session, api_clock, student)
+    task = _seed_task(owner.id, title="他人的任务")
+    db_session.add(task)
+    await db_session.flush()
+
+    listed = await client.get("/api/v1/teacher/tasks", headers=_bearer(other_tokens))
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 0
+    assert listed.json()["items"] == []
+
+    denied = await client.get(
+        f"/api/v1/teacher/tasks/{task.id}", headers=_bearer(other_tokens)
+    )
+    assert denied.status_code == 403, denied.text
+    assert _envelope(denied)["code"] == "PERMISSION_DENIED"
+
+    student_list = await client.get(
+        "/api/v1/teacher/tasks", headers=_bearer(student_tokens)
+    )
+    assert student_list.status_code == 403
+    assert _envelope(student_list)["code"] == "PERMISSION_DENIED"
+
+    student_detail = await client.get(
+        f"/api/v1/teacher/tasks/{task.id}", headers=_bearer(student_tokens)
+    )
+    assert student_detail.status_code == 403
+    assert _envelope(student_detail)["code"] == "PERMISSION_DENIED"
+
+    # Unknown ids stay the typed NOT_FOUND (the module's aggregate rule),
+    # on both the list-own surface and for the owner.
+    missing = await client.get(
+        f"/api/v1/teacher/tasks/{uuid4()}", headers=_bearer(owner_tokens)
+    )
+    assert missing.status_code == 404
+    assert _envelope(missing)["code"] == "NOT_FOUND"
 
 
 # --- rate limiting on the student-heavy endpoints (spec §33.1) ------------------------

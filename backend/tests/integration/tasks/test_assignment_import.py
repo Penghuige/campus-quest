@@ -13,6 +13,14 @@ Pinned behavior:
   conflict (409), never a 500. Seed rows for the race are committed on
   a dedicated connection (the rollback harness would hide them from the
   racing sessions), and the race test cleans up after itself.
+- Reversed-row-order deadlock regression: two previews of the same pair
+  set stored in OPPOSITE row orders, confirmed concurrently behind the
+  pre-check barrier (with both racing connections' asyncpg
+  prepared-statement caches warmed by two primer import cycles — see
+  the test for why), must not deadlock — confirm inserts in one
+  canonical (platform, keyword) order, so the loser queues on the first
+  UNIQUE slot and surfaces the typed 409 instead of PostgreSQL's
+  deadlock DBAPIError (which would escape as a 500).
 - Preview DUPLICATE_IN_DB detection reflects the real table; confirm
   imports only the still-valid rows.
 - Authorization: owner, Admin, and a MANAGE_ASSIGNMENTS collaborator may
@@ -504,5 +512,125 @@ async def test_concurrent_confirm_exactly_one_wins(
                 "xiaohongshu",
                 "并发导入",
             )
+    finally:
+        await _cleanup_task(db_engine, task, owner)
+
+
+@pytest.mark.integration
+async def test_concurrent_confirm_reversed_row_orders_no_deadlock(
+    db_engine: AsyncEngine,
+    import_redis: aioredis.Redis,
+    clock: FrozenClock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reversed-order previews confirmed concurrently never deadlock.
+
+    Two previews of the SAME pair set stored in opposite row orders
+    ([A,B] vs [B,A]) reach confirm together (the pre-check barrier from
+    the race test above). Without deterministic insert ordering the two
+    transactions take the UNIQUE(task_id, platform, keyword) index slots
+    in opposite orders, PostgreSQL detects the cycle, and the loser
+    surfaces asyncpg DeadlockDetectedError -> DBAPIError — which the
+    ``except IntegrityError`` mapping cannot convert, so the caller sees
+    a 500. Confirm must order the rows canonically so both transactions
+    queue on the FIRST slot: exactly one insert lands, the loser gets
+    the typed 409 DuplicateAssignmentsError, and no exception outside
+    the BusinessError family ever escapes.
+
+    Harness: the deadlock needs both racing connections to run their
+    INSERT batches back-to-back at the server, which requires the asyncpg
+    prepared-statement cache to be warm on BOTH pooled connections (a
+    cold connection interleaves Parse round trips that stagger the
+    batches past the cycle window — verified by reproduction: with the
+    primer the pre-fix code deadlocked on every run, without it never).
+    Two concurrent single-pair import cycles warm exactly that state
+    (same trick as the claim suite's pre-barrier ``SELECT 1`` warm-up).
+    """
+    owner, task = await _seed_committed_owner_task(db_engine)
+    try:
+        service = _service(import_redis, clock)
+        actor = Actor(user_id=owner.id, role=Role.TEACHER)
+
+        # Warm-up: two CONCURRENT single-pair cycles so both pooled
+        # connections carry the INSERT prepared statement.
+        async def _primer(tag: str) -> None:
+            async with AsyncSession(db_engine) as session:
+                preview = await service.preview_assignments(
+                    session, actor, task.id, _csv(("douyin", f"预热{tag}"))
+                )
+                assert preview.preview_token is not None
+                await service.confirm_assignments(
+                    session, actor, task.id, preview.preview_token
+                )
+
+        await asyncio.gather(_primer("一"), _primer("二"))
+
+        pair_a = ("xiaohongshu", "并发甲")
+        pair_b = ("zhihu", "并发乙")
+        orders = [_csv(pair_a, pair_b), _csv(pair_b, pair_a)]
+        tokens = []
+        for data in orders:
+            async with AsyncSession(db_engine) as session:
+                preview = await service.preview_assignments(
+                    session, actor, task.id, data
+                )
+            assert preview.preview_token is not None
+            tokens.append(preview.preview_token)
+
+        real_existing_pairs = importer._existing_pairs
+        both_past_precheck = asyncio.Event()
+        arrivals = 0
+
+        async def _synchronized_existing_pairs(
+            db: AsyncSession,
+            task_id: UUID,
+            candidates: list[tuple[str, str]],
+        ) -> set[tuple[str, str]]:
+            nonlocal arrivals
+            arrivals += 1
+            if arrivals == 2:
+                both_past_precheck.set()
+            await asyncio.wait_for(both_past_precheck.wait(), timeout=10)
+            return await real_existing_pairs(db, task_id, candidates)
+
+        monkeypatch.setattr(importer, "_existing_pairs", _synchronized_existing_pairs)
+
+        # return_exceptions so BOTH racers finish before the assertions:
+        # a pre-fix deadlock DBAPIError lands in `results` (and fails the
+        # typing assertions below) instead of aborting the gather while
+        # the other racer is still mid-commit (which would break cleanup).
+        results = await asyncio.gather(
+            _confirm_on_own_session(db_engine, service, actor, task.id, tokens[0]),
+            _confirm_on_own_session(db_engine, service, actor, task.id, tokens[1]),
+            return_exceptions=True,
+        )
+
+        successes = [r for r in results if isinstance(r, AssignmentImportResult)]
+        failures = [r for r in results if isinstance(r, BusinessError)]
+        # The load-bearing assertions: both outcomes are typed business
+        # results — no OperationalError/DBAPIError (the deadlock's 500
+        # shape) escaped the service.
+        assert len(successes) + len(failures) == 2, [repr(r) for r in results]
+        assert len(successes) == 1
+        assert len(failures) == 1
+        assert successes[0].inserted == 2
+        assert isinstance(failures[0], DuplicateAssignmentsError)
+        assert failures[0].code == ErrorCode.VALIDATION_ERROR
+        assert failures[0].status_code == 409
+
+        async with AsyncSession(db_engine) as verifier:
+            rows = (
+                await verifier.scalars(
+                    select(Assignment).where(Assignment.task_id == task.id)
+                )
+            ).all()
+            # The two primer rows plus exactly one copy of the racing pair
+            # set — the deadlock victim's transaction fully rolled back.
+            assert sorted((row.platform, row.keyword) for row in rows) == [
+                ("douyin", "预热一"),
+                ("douyin", "预热二"),
+                pair_a,
+                pair_b,
+            ]
     finally:
         await _cleanup_task(db_engine, task, owner)
