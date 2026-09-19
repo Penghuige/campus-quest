@@ -120,7 +120,10 @@ git commit -m "feat: enforce task lifecycle"
 - Produces:
   - `add_collaborator(owner_actor, task_id, teacher_id, permissions) -> TaskCollaborator`
   - `remove_collaborator(owner_actor, task_id, teacher_id) -> None`
-  - `get_task_statistics(actor, task_id) -> TaskStatistics`
+  - `get_task_statistics(actor, task_id, rating_port: RatingSummaryPort) -> TaskStatistics`
+  - `RatingSummaryPort.summary(task_id) -> RatingSummary | None`
+
+Plan 03 ships a null/fake `RatingSummaryPort` so it does not import the later Community module. Plan 06 supplies the concrete adapter backed by TaskRating.
 
 - [ ] **Step 1: Write collaborator permission tests**
 
@@ -132,7 +135,7 @@ Use named booleans/enum capabilities such as `VIEW_TASK`, `MANAGE_ASSIGNMENTS`, 
 
 - [ ] **Step 3: Write task-statistics tests**
 
-For seeded Claims/Submissions, return available/occupied/completed Assignment counts, active Claim counts, submission status counts, completion rate, and average rating. Teacher may query only owned/collaborating Tasks; Admin may query all.
+For seeded Claims/Submissions, return available/occupied/completed Assignment counts, active Claim counts, submission status counts, completion rate, and rating summary when supplied by `RatingSummaryPort`. Teacher may query only owned/collaborating Tasks; Admin may query all.
 
 - [ ] **Step 4: Implement aggregate query without exposing hidden Assignment payloads to unauthorized callers**
 
