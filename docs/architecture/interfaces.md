@@ -238,6 +238,7 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `ACCOUNT_NOT_ACTIVE` | §29, §8.4 |
 | `STUDENT_NOT_WHITELISTED` | §29 |
 | `PHONE_ALREADY_BOUND` | §29 |
+| `USERNAME_ALREADY_EXISTS` | §5.2, §31.1 |
 | `TASK_NOT_CLAIMABLE` | §29, §8.4 |
 | `NO_ASSIGNMENT_AVAILABLE` | §29, §8.4 |
 | `ASSIGNMENT_LIMIT_REACHED` | §29, §8.4 |

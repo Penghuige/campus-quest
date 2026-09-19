@@ -30,6 +30,10 @@ class ErrorCode(StrEnum):
     ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE"
     STUDENT_NOT_WHITELISTED = "STUDENT_NOT_WHITELISTED"
     PHONE_ALREADY_BOUND = "PHONE_ALREADY_BOUND"
+    # Registered in interfaces.md (not a §29-listed code): a username/unique
+    # violation means the account already exists — distinct from a whitelist
+    # miss and from a phone conflict (spec §5.2, §31.1).
+    USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     TASK_NOT_CLAIMABLE = "TASK_NOT_CLAIMABLE"
     NO_ASSIGNMENT_AVAILABLE = "NO_ASSIGNMENT_AVAILABLE"
     ASSIGNMENT_LIMIT_REACHED = "ASSIGNMENT_LIMIT_REACHED"
