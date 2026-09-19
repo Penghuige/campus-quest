@@ -13,10 +13,17 @@ Design decisions:
   XLSX parser is a sibling reader in front of the same
   validate/store/confirm pipeline — no other change needed here.
 - **Teacher uploads are untrusted** (backend-engineering §14): bounded
-  file size, bounded row count (the reader stops one row past the cap, so
-  parse work is bounded), bounded cell length, strict UTF-8 decode, and
-  no formula execution — CSV cells are stored as plain text data, never
-  interpreted. Errors are validation outcomes, not exceptions.
+  file size — the byte cap fast-fails BEFORE any parsing, which is what
+  bounds all downstream parse work (the reader itself materializes the
+  whole decoded file); bounded row count (validation stops one row past
+  the cap); bounded cell length (``csv.field_size_limit`` is raised
+  above the byte cap at construction so an oversized cell parses and
+  reports TEXT_TOO_LONG instead of crashing the reader); strict UTF-8
+  decode; and no formula execution — CSV cells are stored as plain text
+  data, never interpreted. Every ``csv.Error`` the strict reader still
+  raises (e.g. an unterminated quote) is converted into a file-level
+  MALFORMED_CSV validation outcome — parser exceptions never escape
+  this module.
 - **Row numbers are 1-based data-row indexes** (the header is not a data
   row; blank lines are skipped without consuming a row number, matching
   what a teacher sees in a spreadsheet).
@@ -118,6 +125,8 @@ _REDIS_TTL_GRACE_SECONDS = 600
 _CSV_DELIMITERS = ",;\t"
 _SNIFF_SAMPLE_BYTES = 8192
 _HEADER = ("platform", "keyword")
+# Cap on raw values echoed into preview error DTOs (§14 safe truncation).
+_ECHO_MAX_LENGTH = 64
 
 
 # --- stable row/file error codes (spec §7.1 detection list) -----------------------
@@ -151,6 +160,7 @@ _DENIED_MESSAGE = (
 _FILE_TOO_LARGE_MESSAGE = "导入文件超过大小上限"
 _INVALID_ENCODING_MESSAGE = "文件编码必须是 UTF-8"
 _BAD_DIALECT_MESSAGE = "无法识别 CSV 分隔符格式"
+_BAD_STRUCTURE_MESSAGE = "CSV 结构无法解析（例如未闭合的引号）"
 _BAD_HEADER_MESSAGE = "CSV 表头必须是 platform,keyword"
 _EMPTY_FILE_MESSAGE = "CSV 文件没有数据行"
 _ROW_COLUMNS_MESSAGE = "每行必须恰好是 platform,keyword 两列"
@@ -362,6 +372,16 @@ class AssignmentImportService:
         self._max_rows = max_rows
         self._keyword_max_length = keyword_max_length
         self._preview_ttl_seconds = preview_ttl_seconds
+        # csv's default field limit (131072 chars) would turn one large
+        # cell into a csv.Error crash; raised above the byte cap, every
+        # cell the size gate admitted is parseable and the row check can
+        # classify it as TEXT_TOO_LONG instead (engineering §14: parser
+        # exceptions become validation outcomes). UTF-8 guarantees
+        # #chars <= #bytes, so the byte cap bounds the char count. The
+        # limit is process-global, hence raise-only: a small-caps
+        # instance must never tighten it for others.
+        if max_file_bytes > csv.field_size_limit():
+            csv.field_size_limit(max_file_bytes)
 
     # -- preview ----------------------------------------------------------------
 
@@ -457,7 +477,11 @@ class AssignmentImportService:
                         ImportErrorCode.UNSUPPORTED_PLATFORM,
                         _UNSUPPORTED_PLATFORM_MESSAGE,
                         row_number=row_number,
-                        platform=platform_raw,
+                        # Echo for display, truncated: the raw value is
+                        # unbounded (a giant cell parses — see _parse_csv
+                        # — and fails this check), and §14 keeps preview
+                        # echoes small.
+                        platform=platform_raw[:_ECHO_MAX_LENGTH],
                     )
                 )
                 continue
@@ -746,7 +770,19 @@ class AssignmentImportService:
                     ImportErrorCode.MALFORMED_CSV, _BAD_DIALECT_MESSAGE
                 )
         reader = csv.reader(io.StringIO(text, newline=""), dialect=dialect, strict=True)
-        rows = list(reader)
+        try:
+            # strict=True turns structural defects (an unterminated
+            # quoted field, ...) into csv.Error here; that is a
+            # validation outcome, never an exception past this module
+            # (engineering §14). Oversize cells cannot raise anymore:
+            # field_size_limit was raised above the byte cap at
+            # construction, so they parse and the row check reports
+            # TEXT_TOO_LONG.
+            rows = list(reader)
+        except csv.Error:
+            return None, AssignmentImportError(
+                ImportErrorCode.MALFORMED_CSV, _BAD_STRUCTURE_MESSAGE
+            )
         if not rows:
             return None, AssignmentImportError(
                 ImportErrorCode.MALFORMED_CSV, _EMPTY_FILE_MESSAGE

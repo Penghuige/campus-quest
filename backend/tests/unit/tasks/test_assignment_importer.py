@@ -390,6 +390,54 @@ async def test_keyword_too_long_error() -> None:
     assert preview.preview_token is None  # nothing confirmable
 
 
+async def test_oversize_cell_past_csv_field_limit_is_row_error() -> None:
+    """A cell bigger than csv's default field limit (131072 chars) inside
+    a file that still passes the byte cap must surface as a TEXT_TOO_LONG
+    row error, not a csv.Error crash (review fix: the service raises
+    csv.field_size_limit above its byte cap at construction)."""
+    service, _ = _service(max_file_bytes=2 * 1024 * 1024)
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    giant = "超" * (131072 + 1)  # > csv default field limit, < 2 MB file
+    preview = await _preview(service, db, task, _csv(("zhihu", giant)))
+
+    assert _error_codes(preview) == [(1, ImportErrorCode.TEXT_TOO_LONG)]
+    # The oversize value is not echoed into the error (§14 truncation).
+    assert preview.errors[0].keyword is None
+
+
+async def test_unterminated_quote_is_file_level_malformed() -> None:
+    """An unterminated quoted field makes the strict reader raise
+    csv.Error; that is a file-level MALFORMED_CSV validation outcome,
+    never an exception escaping preview (review fix)."""
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    data = b'platform,keyword\nzhihu,"\xe7\x95\x99\xe5\xad\xa6\n'
+    preview = await _preview(service, db, task, data)
+
+    assert _error_codes(preview) == [(None, ImportErrorCode.MALFORMED_CSV)]
+    assert preview.preview_token is None
+
+
+async def test_oversize_platform_value_truncated_in_error() -> None:
+    """UNSUPPORTED_PLATFORM echoes the raw value for display, so a huge
+    value must be truncated rather than copied into the DTO (§14)."""
+    service, _ = _service(max_file_bytes=2 * 1024 * 1024)
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    preview = await _preview(service, db, task, _csv(("w" * (131072 + 1), "考研")))
+
+    assert _error_codes(preview) == [(1, ImportErrorCode.UNSUPPORTED_PLATFORM)]
+    echoed = preview.errors[0].platform
+    assert echoed is not None
+    assert len(echoed) <= 64
+    assert echoed.startswith("w")
+
+
 async def test_wrong_column_count_is_row_level_malformed() -> None:
     service, _ = _service()
     task = _task()

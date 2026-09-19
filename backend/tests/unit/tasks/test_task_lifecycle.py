@@ -223,11 +223,7 @@ VERBS: dict[str, TaskStatus] = {
 
 @pytest.mark.parametrize(
     ("from_status", "verb"),
-    [
-        (from_status, verb)
-        for from_status in TaskStatus
-        for verb in VERBS
-    ],
+    [(from_status, verb) for from_status in TaskStatus for verb in VERBS],
     ids=[f"{fs.value}-{v}" for fs in TaskStatus for v in VERBS],
 )
 async def test_every_transition_pair_enforced_via_service(
@@ -423,8 +419,12 @@ async def test_publish_fixed_exactly_at_cutoff_allowed(service: TaskService) -> 
         ("resume", 400, ErrorCode.VALIDATION_ERROR),
         ("publish", 400, ErrorCode.VALIDATION_ERROR),
     ],
-    ids=["resume-inside-cutoff", "publish-inside-cutoff",
-         "resume-past-deadline", "publish-past-deadline"],
+    ids=[
+        "resume-inside-cutoff",
+        "publish-inside-cutoff",
+        "resume-past-deadline",
+        "publish-past-deadline",
+    ],
 )
 async def test_entry_into_published_revalidates_stale_fixed_deadline(
     service: TaskService,
@@ -776,8 +776,12 @@ async def test_unknown_task_raises_not_found(service: TaskService) -> None:
 
 
 def test_is_claimable_by_status(service: TaskService) -> None:
-    for status in (TaskStatus.DRAFT, TaskStatus.PAUSED, TaskStatus.CLOSED,
-                   TaskStatus.ARCHIVED):
+    for status in (
+        TaskStatus.DRAFT,
+        TaskStatus.PAUSED,
+        TaskStatus.CLOSED,
+        TaskStatus.ARCHIVED,
+    ):
         assert service.is_claimable(planted_task(status=status)) is False
     assert service.is_claimable(planted_task(status=TaskStatus.PUBLISHED)) is True
 
@@ -796,9 +800,7 @@ def test_is_claimable_fixed_deadline_window(service: TaskService) -> None:
         **base,
     )
     assert service.is_claimable(inside, now=NOW) is False
-    missing = planted_task(
-        status=TaskStatus.PUBLISHED, fixed_deadline_at=None, **base
-    )
+    missing = planted_task(status=TaskStatus.PUBLISHED, fixed_deadline_at=None, **base)
     assert service.is_claimable(missing, now=NOW) is False
 
 

@@ -229,15 +229,20 @@ async def test_collaborator_cannot_grant_beyond_own_permissions(
             _actor(limited),
             task.id,
             target.id,
-            [CollaboratorPermission.MANAGE_ASSIGNMENTS,
-             CollaboratorPermission.REVIEW_SUBMISSIONS],
+            [
+                CollaboratorPermission.MANAGE_ASSIGNMENTS,
+                CollaboratorPermission.REVIEW_SUBMISSIONS,
+            ],
         )
     assert denied.value.code == ErrorCode.PERMISSION_DENIED
     assert denied.value.status_code == 403
 
-    assert await db_session.scalar(
-        select(TaskCollaborator).where(TaskCollaborator.teacher_id == target.id)
-    ) is None
+    assert (
+        await db_session.scalar(
+            select(TaskCollaborator).where(TaskCollaborator.teacher_id == target.id)
+        )
+        is None
+    )
 
 
 @pytest.mark.integration
@@ -304,15 +309,11 @@ async def test_unrelated_teacher_and_student_denied(
         assert add_denied.value.code == ErrorCode.PERMISSION_DENIED
 
         with pytest.raises(BusinessError) as remove_denied:
-            await service.remove_collaborator(
-                db_session, actor, task.id, colleague.id
-            )
+            await service.remove_collaborator(db_session, actor, task.id, colleague.id)
         assert remove_denied.value.code == ErrorCode.PERMISSION_DENIED
 
     # The blocked attempts changed nothing.
-    collaborators = (
-        await db_session.scalars(select(TaskCollaborator))
-    ).all()
+    collaborators = (await db_session.scalars(select(TaskCollaborator))).all()
     assert len(collaborators) == 1
 
 

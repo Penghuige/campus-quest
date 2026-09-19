@@ -180,9 +180,7 @@ def _normalize_permissions(
 
 async def _locked_task(db: AsyncSession, task_id: UUID) -> Task:
     """The Task row under FOR UPDATE, or the shared TaskNotFoundError."""
-    task = await db.scalar(
-        select(Task).where(Task.id == task_id).with_for_update()
-    )
+    task = await db.scalar(select(Task).where(Task.id == task_id).with_for_update())
     if task is None:
         raise TaskNotFoundError(task_id)
     return task

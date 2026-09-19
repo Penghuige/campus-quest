@@ -112,9 +112,7 @@ def _assignment(
     )
 
 
-def _claim(
-    assignment: Assignment, user: User, status: ClaimStatus
-) -> AssignmentClaim:
+def _claim(assignment: Assignment, user: User, status: ClaimStatus) -> AssignmentClaim:
     deadline = datetime.now(UTC) + timedelta(days=3)
     return AssignmentClaim(
         assignment_id=assignment.id,

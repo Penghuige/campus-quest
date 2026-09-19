@@ -77,9 +77,7 @@ from app.modules.tasks.schemas import CreateTask, PublishResult, UpdateTask
 # models.py (`_ALLOWED_FILE_TYPES`) is pinned by the unit tests.
 SUPPORTED_FILE_TYPES: frozenset[str] = frozenset({"CSV", "XLSX", "SQLITE"})
 # Notification channels (interfaces.md §25); parity pinned the same way.
-SUPPORTED_NOTIFICATION_CHANNELS: frozenset[str] = frozenset(
-    {"SMS", "EMAIL", "IN_APP"}
-)
+SUPPORTED_NOTIFICATION_CHANNELS: frozenset[str] = frozenset({"SMS", "EMAIL", "IN_APP"})
 # spec §6: V1 fixes the grace period at 24h with no product entry point.
 DEFAULT_GRACE_PERIOD_MINUTES = 1440
 
@@ -128,8 +126,7 @@ _TASK_NOT_FOUND_MESSAGE = "任务不存在"
 _NOT_OWNER_MESSAGE = "只有任务所有者或管理员可以执行该操作"
 _ROLE_DENIED_MESSAGE = "当前角色无权执行该操作"
 _CUTOFF_MESSAGE = (
-    "距固定截止时间已不足领取窗口，发布后将立即不可领取；"
-    "请延后截止时间或调小领取窗口"
+    "距固定截止时间已不足领取窗口，发布后将立即不可领取；请延后截止时间或调小领取窗口"
 )
 
 
@@ -214,9 +211,7 @@ def _required_text(value: str, message: str, *, max_length: int | None = None) -
     return stripped
 
 
-def _normalize_codes(
-    values: Sequence[str], supported: frozenset[str]
-) -> list[str]:
+def _normalize_codes(values: Sequence[str], supported: frozenset[str]) -> list[str]:
     """Upper-case, strip, and de-duplicate closed-set codes.
 
     Empty input is preserved (allowed_file_types may be an empty DRAFT
@@ -358,28 +353,20 @@ class TaskService:
             claimable=self.is_claimable(task),
         )
 
-    async def pause_task(
-        self, db: AsyncSession, actor: Actor, task_id: UUID
-    ) -> Task:
+    async def pause_task(self, db: AsyncSession, actor: Actor, task_id: UUID) -> Task:
         """PUBLISHED -> PAUSED: stop NEW claims, keep existing ones (§6.2)."""
         return await self._transition(db, actor, task_id, TaskStatus.PAUSED)
 
-    async def resume_task(
-        self, db: AsyncSession, actor: Actor, task_id: UUID
-    ) -> Task:
+    async def resume_task(self, db: AsyncSession, actor: Actor, task_id: UUID) -> Task:
         """PAUSED -> PUBLISHED (re-validated; see module docstring)."""
         return await self._transition(db, actor, task_id, TaskStatus.PUBLISHED)
 
-    async def close_task(
-        self, db: AsyncSession, actor: Actor, task_id: UUID
-    ) -> Task:
+    async def close_task(self, db: AsyncSession, actor: Actor, task_id: UUID) -> Task:
         """PUBLISHED/PAUSED -> CLOSED: no new claims; existing claims keep
         running (default disposition — spec §6.2); ``closed_at`` is set."""
         return await self._transition(db, actor, task_id, TaskStatus.CLOSED)
 
-    async def archive_task(
-        self, db: AsyncSession, actor: Actor, task_id: UUID
-    ) -> Task:
+    async def archive_task(self, db: AsyncSession, actor: Actor, task_id: UUID) -> Task:
         """CLOSED -> ARCHIVED: history only (spec §6.2)."""
         return await self._transition(db, actor, task_id, TaskStatus.ARCHIVED)
 
@@ -534,9 +521,7 @@ class TaskService:
 
     async def _locked_task(self, db: AsyncSession, task_id: UUID) -> Task:
         """The Task row under FOR UPDATE, or TaskNotFoundError."""
-        task = await db.scalar(
-            select(Task).where(Task.id == task_id).with_for_update()
-        )
+        task = await db.scalar(select(Task).where(Task.id == task_id).with_for_update())
         if task is None:
             raise TaskNotFoundError(task_id)
         return task
