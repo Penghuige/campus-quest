@@ -8,12 +8,15 @@ writes so the whole invariant stays visible in one place.
 
 from __future__ import annotations
 
+from datetime import datetime
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.identity.models import StudentWhitelist, User
+from app.modules.identity.models import StudentWhitelist, User, UserSession
 
 _STUDENT_NOT_WHITELISTED_MESSAGE = "该学号不在注册白名单中，无法注册"
 
@@ -51,7 +54,8 @@ class StudentWhitelistRepository:
 
 
 class UserRepository:
-    """Read queries over ``users`` needed by registration and login."""
+    """Read queries over ``users`` needed by registration, login, and the
+    request-authentication dependencies."""
 
     async def find_by_phone_e164(
         self, session: AsyncSession, phone_e164: str
@@ -80,5 +84,39 @@ class UserRepository:
         """
         found: User | None = await session.scalar(
             select(User).where(User.username == username)
+        )
+        return found
+
+    async def find_with_live_session(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        now: datetime,
+    ) -> User | None:
+        """The ``user_id`` row iff ``session_id`` is its LIVE session.
+
+        One JOIN answers both halves of request authentication (spec
+        §5.6): joining on ``UserSession.user_id == User.id`` binds the
+        access token's ``sub`` to its ``sid`` (a pair borrowed from
+        another user resolves to nothing), and the liveness predicates —
+        never revoked, never replaced, not yet expired — are evaluated
+        server-side, so a session killed by ``revoke_all`` or refresh
+        rotation takes its access tokens down immediately, before the
+        JWT's own ``exp``. Expiry is compared against the injected
+        business ``now`` (backend-engineering §11), never the database
+        clock.
+        """
+        found: User | None = await session.scalar(
+            select(User)
+            .join(UserSession, UserSession.user_id == User.id)
+            .where(
+                User.id == user_id,
+                UserSession.id == session_id,
+                UserSession.revoked_at.is_(None),
+                UserSession.replaced_by.is_(None),
+                UserSession.expires_at > now,
+            )
         )
         return found
