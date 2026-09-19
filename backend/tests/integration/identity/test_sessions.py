@@ -60,12 +60,13 @@ async def _seed_user(
     *,
     username: str = _USERNAME,
     status: UserStatus = UserStatus.ACTIVE,
+    role: Role = Role.STUDENT,
 ) -> User:
     user = User(
         username=username,
         password_hash=hash_password(_PASSWORD),
         nickname="测试同学",
-        role=Role.STUDENT,
+        role=role,
         status=status,
     )
     db.add(user)
@@ -253,6 +254,43 @@ async def test_login_rejected_when_not_active(
     assert exc_info.value.status_code == 403
     assert exc_info.value.message == _ACCOUNT_NOT_ACTIVE_MESSAGE
     assert await _count_unrevoked_sessions(db_session, user.id) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
+async def test_login_student_rejects_staff_roles_uniformly(
+    db_session: AsyncSession, role: Role
+) -> None:
+    # Whole-branch review fix (spec §5.6, §33.4): /api/v1/auth/login is the
+    # STUDENT password-only door. A TEACHER/ADMIN account presenting the
+    # CORRECT password must draw the same uniform AUTHENTICATION_REQUIRED as
+    # a wrong password (reverse mirror of staff_service's STUDENT check) —
+    # otherwise a staff account opens a 2FA-less session and reaches the
+    # password-only staff self-service endpoints (/me/email, /me/password).
+    staff = await _seed_user(db_session, username="teacher@school.edu", role=role)
+
+    with pytest.raises(BusinessError) as staff_exc:
+        await _make_service(FrozenClock(_T0)).login_student(
+            db_session, "teacher@school.edu", _PASSWORD
+        )
+    with pytest.raises(BusinessError) as wrong_exc:
+        await _make_service(FrozenClock(_T0)).login_student(
+            db_session, "teacher@school.edu", "wrong-horse-battery"
+        )
+
+    assert staff_exc.value.code == wrong_exc.value.code
+    assert staff_exc.value.code == ErrorCode.AUTHENTICATION_REQUIRED
+    assert staff_exc.value.status_code == wrong_exc.value.status_code == 401
+    assert staff_exc.value.message == wrong_exc.value.message
+    assert await _count_unrevoked_sessions(db_session, staff.id) == 0
+
+    # The student door itself stays open for students.
+    student = await _seed_user(db_session)
+    tokens = await _make_service(FrozenClock(_T0)).login_student(
+        db_session, _USERNAME, _PASSWORD
+    )
+    assert await _session_row(db_session, tokens.refresh_token) is not None
+    assert await _count_unrevoked_sessions(db_session, student.id) == 1
 
 
 @pytest.mark.integration

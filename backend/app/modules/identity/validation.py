@@ -25,6 +25,15 @@ Design decisions:
   and removing it would split one grapheme cluster into several. Legitimate
   whitespace inside the nickname (e.g. U+0020) is preserved; only the edges
   are trimmed.
+- Two further nickname guards close holes grapheme counting alone leaves
+  open (whole-branch review):
+  - a total code-point cap aligned to the ``users.nickname`` varchar(255)
+    column: one grapheme cluster can span hundreds of code points (a long
+    ZWJ-joined emoji chain), and an oversized value would fail the INSERT
+    with a 500 AFTER the registration OTP token is already consumed;
+  - a visual-emptiness probe: ZWJ, whitespace, and combining marks draw
+    nothing on their own, so a nickname made only of them is rejected even
+    though the cleaned string is not empty.
 """
 
 import re
@@ -36,8 +45,16 @@ STUDENT_NUMBER_DEFAULT_MIN_LEN = 6
 STUDENT_NUMBER_DEFAULT_MAX_LEN = 20
 
 NICKNAME_MAX_GRAPHEME_CLUSTERS = 16
+# Storage width of ``users.nickname`` (models.py: String(255)). PostgreSQL
+# counts characters (code points), so ``len()`` on the cleaned string is the
+# same unit the column enforces; the cap is inclusive.
+NICKNAME_MAX_CODE_POINTS = 255
 
 _STUDENT_NUMBER_PATTERN = re.compile(r"[0-9]+")
+
+# General categories of combining marks (UAX #44): they render only as
+# decoration attached to a base character, never on their own.
+_COMBINING_MARK_CATEGORIES = frozenset({"Mn", "Mc", "Me"})
 
 # Format characters that must survive cleaning despite being category Cf:
 # ZWJ glues emoji sequences into a single user-perceived character (spec §5.3
@@ -48,6 +65,24 @@ _GRAPHEME_JOINERS = frozenset({"‍"})
 def _is_invisible(ch: str) -> bool:
     """Whether ``ch`` is a control/format/unassigned character to remove."""
     return unicodedata.category(ch).startswith("C") and ch not in _GRAPHEME_JOINERS
+
+
+def _is_visually_empty(cleaned: str) -> bool:
+    """Whether no character of ``cleaned`` renders anything by itself.
+
+    The probe keeps exactly the characters that can draw standalone and
+    drops whitespace, ZWJ glue, and combining marks (Mn/Mc/Me). If none
+    remain, every grapheme cluster is combining-only padding and the
+    nickname would display as nothing — rejected as visually empty. A plain
+    ZWJ-only string needs this probe because ZWJ must survive cleaning (it
+    glues emoji sequences), so the empty-string check does not catch it.
+    """
+    return not any(
+        not ch.isspace()
+        and ch not in _GRAPHEME_JOINERS
+        and unicodedata.category(ch) not in _COMBINING_MARK_CATEGORIES
+        for ch in cleaned
+    )
 
 
 def validate_student_number(
@@ -85,21 +120,37 @@ def validate_student_number(
 def normalize_nickname(value: str) -> str:
     """Clean and validate a nickname, returning the normalized string.
 
-    Rules (spec §5.3):
+    Rules (spec §5.3, plus the storage-width and visibility guards):
 
     - remove invisible control/format characters everywhere except ZWJ
       (needed inside emoji sequences); legitimate inner whitespace is kept;
     - trim whitespace from the edges;
     - reject when empty after cleaning;
+    - reject when visually empty: no grapheme may contain a character that
+      draws on its own, so ZWJ/whitespace/combining-mark-only padding
+      fails;
+    - reject when the cleaned string exceeds ``NICKNAME_MAX_CODE_POINTS``
+      code points (255, the users.nickname varchar(255) storage width): a
+      single grapheme cluster can span more code points than the column
+      holds, and an INSERT failure would surface as a 500 after the
+      registration OTP token is already consumed;
     - reject when longer than 16 grapheme clusters (user-perceived
       characters), counted with the ``regex`` package's ``\\X`` pattern.
 
     Raises:
-        ValueError: if empty after cleaning or longer than 16 graphemes.
+        ValueError: if empty or visually empty after cleaning, or longer
+            than 255 code points, or longer than 16 grapheme clusters.
     """
     cleaned = "".join(ch for ch in value if not _is_invisible(ch)).strip()
     if not cleaned:
         raise ValueError("nickname must not be empty after trimming")
+    if _is_visually_empty(cleaned):
+        raise ValueError("nickname must contain at least one visible character")
+    if len(cleaned) > NICKNAME_MAX_CODE_POINTS:
+        raise ValueError(
+            f"nickname must be at most {NICKNAME_MAX_CODE_POINTS} code points "
+            f"(got {len(cleaned)})"
+        )
     grapheme_count = len(regex.findall(r"\X", cleaned))
     if grapheme_count > NICKNAME_MAX_GRAPHEME_CLUSTERS:
         raise ValueError(

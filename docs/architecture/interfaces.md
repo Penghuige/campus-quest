@@ -369,3 +369,27 @@ Later modules are reached through ports so earlier plans ship with fakes:
 - `PointsRewardPort.grant_assignment_reward(...)` — Plan 04 calls it with a fake; Plan 05 provides the concrete points implementation.
 - `RatingSummaryPort.summary(task_id) -> RatingSummary | None` — Plan 03 ships a null/fake; Plan 06 supplies the concrete adapter backed by `TaskRating`.
 - Audit writes go through an audit port until Plan 08 replaces it with `AuditService`.
+
+### Identity directory (cross-module reads)
+
+Modules outside identity read account facts ONLY through this port, never by
+importing identity ORM models (Plan 02 ships the concrete adapter
+`backend/app/modules/identity/directory.py` over the existing repository):
+
+```python
+@dataclass(frozen=True)
+class UserSummary:      # NO contact fields: phone/email stay inside identity
+    user_id: UUID
+    username: str
+    role: Role
+    status: UserStatus
+
+class UserDirectory(Protocol):
+    async def find_by_username(self, session, username: str) -> UserSummary | None: ...
+    async def find_by_email(self, session, email: str) -> UserSummary | None: ...
+    async def get_role(self, session, user_id: UUID) -> Role | None: ...
+```
+
+`find_by_email` normalizes its argument (strip + lowercase) exactly once;
+lookups join the caller's transaction (`session` in, answer out, no inner
+commit), same shape as the other cross-module ports.

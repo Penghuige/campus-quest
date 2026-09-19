@@ -435,10 +435,11 @@ class OtpChallengeService:
         tokens all raise `InvalidTokenError` — callers must re-verify, and
         distinguishing the cases would only leak lifecycle state.
 
-        The returned phone carries the challenge's ``purpose`` so
-        flow-specific consumers (Task 8's phone change and password reset)
-        can reject a proof minted for a different operation; registration
-        ignores it (its tokens are REGISTER-purpose by construction).
+        The returned phone carries the challenge's ``purpose`` so consumers
+        can reject a proof minted for a different operation: Task 8's phone
+        change and password reset — and registration too, which enforces
+        ``REGISTER`` itself (``IdentityService.register_student`` rejects
+        any other purpose; no consumer may ignore the field).
         """
         token_key = _token_key(
             _hmac_hex(self._policy.hmac_secret, _TOKEN_HASH_SALT, token)

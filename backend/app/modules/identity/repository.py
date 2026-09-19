@@ -87,6 +87,17 @@ class UserRepository:
         )
         return found
 
+    async def find_by_id(self, session: AsyncSession, user_id: UUID) -> User | None:
+        """The account row for ``user_id``, if any.
+
+        Read-only lookup for cross-module consumers (the UserDirectory
+        port); identity rules never branch on existence alone here.
+        """
+        found: User | None = await session.scalar(
+            select(User).where(User.id == user_id)
+        )
+        return found
+
     async def find_by_email_normalized(
         self, session: AsyncSession, email_normalized: str
     ) -> User | None:

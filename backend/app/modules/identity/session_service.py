@@ -15,7 +15,10 @@ Design decisions:
   against `security.timing_shield_hash()` so even the failure cost
   matches — no account enumeration via response or timing. Password
   verification precedes the status check: an attacker without the password
-  learns nothing about the account's existence or state.
+  learns nothing about the account's existence or state. The same uniform
+  failure answers a correct password on a non-STUDENT account (review fix,
+  mirroring staff_service's reverse STUDENT check): the student login door
+  must never mint a password-only session for staff.
 - **Rotation is one transaction guarded by a row lock.** The presented
   session row is selected `FOR UPDATE`, so two concurrent rotations of the
   same refresh token serialize: the winner links and revokes the old row,
@@ -109,7 +112,12 @@ class SessionService:
         The username is stripped of outer whitespace only (spec §5.2 login
         rule; inner characters are never rewritten). Ordering is
         load-bearing: Argon2id verification before the status check, so a
-        stranger without the password cannot probe account status.
+        stranger without the password cannot probe account status. This is
+        the STUDENT door: a TEACHER/ADMIN account with the correct password
+        gets the same uniform authentication failure (the reverse mirror of
+        ``StaffService.authenticate_staff``'s STUDENT check), so a staff
+        account can never open a password-only session and reach the
+        self-service endpoints without its second factor (spec §5.6, §33.4).
         """
         now = self._clock.now()
         user = await self._users.find_by_username(db, username.strip())
@@ -134,6 +142,15 @@ class SessionService:
                 _ACCOUNT_NOT_ACTIVE_MESSAGE,
                 status_code=403,
             )
+
+        if user.role != Role.STUDENT:
+            # Same uniform failure as a wrong password — no role oracle for
+            # an attacker holding a staff password; staff login goes through
+            # authenticate_staff's TOTP flow instead.
+            logger.info(
+                "student login rejected reason=non_student_role role=%s", user.role
+            )
+            raise self._authentication_required()
 
         session_row, tokens = await self.issue_session(db, user=user, now=now)
         # Ids for logging are captured pre-commit: the service must not
