@@ -40,9 +40,9 @@ Design decisions:
   when remaining time is strictly LESS than ``claim_cutoff_minutes``; at
   exactly the cutoff the task is still claimable/publishable.
 - **Unknown task id** raises ``TaskNotFoundError`` carrying the system
-  code ``NOT_FOUND`` (404). The registry currently has no business code
-  for a missing aggregate; if interfaces.md registers one, remap here
-  (doc-first rule) — flagged for the T9 API review.
+  code ``NOT_FOUND`` (404). The T9 transport review resolved the T2
+  carry: a missing aggregate IS the system-404 semantic — no business
+  code is added to the registry, and the router documents this once.
 
 Transaction shape per backend-engineering §5: one ``SELECT ... FOR
 UPDATE``, the invariants, one field mutation block, and exactly one
@@ -579,11 +579,14 @@ class TaskService:
             cutoff = timedelta(minutes=task.claim_cutoff_minutes or 0)
             if deadline < now + cutoff:
                 # spec §9.1: block with a clear error instead of going
-                # live with (almost) no claimable time left.
+                # live with (almost) no claimable time left. 409 joins
+                # the T9 conflict-family mapping for this code (the
+                # claim-side TaskNotClaimableError carries the same
+                # status); the router docstring owns the table.
                 raise BusinessError(
                     ErrorCode.TASK_NOT_CLAIMABLE,
                     _CUTOFF_MESSAGE,
-                    status_code=400,
+                    status_code=409,
                     details={"claim_cutoff_minutes": task.claim_cutoff_minutes},
                 )
         else:

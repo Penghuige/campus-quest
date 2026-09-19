@@ -71,9 +71,13 @@ class RateLimitRule:
             raise ValueError("window_seconds must be >= 1")
 
 
-# One rule per rate-limited identity endpoint (Plan 02 Task 9). Login caps
-# are tighter-window (brute force); send-flavored endpoints cap per hour on
-# top of the OTP service's own per-phone/per-IP caps (spec §33.1/§33.2).
+# One rule per rate-limited endpoint (Plan 02 Task 9 identity rules; Plan 03
+# Task 9 adds the student-heavy task actions). Login caps are tighter-window
+# (brute force); send-flavored endpoints cap per hour on top of the OTP
+# service's own per-phone/per-IP caps (spec §33.1/§33.2). Claim/abandon cap
+# per authenticated user id: both already carry business-side ceilings (the
+# §8.2 quota, the §8.5 daily abandon cap), so these windows are
+# anti-hammering, not quota enforcement.
 RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
     rule.bucket: rule
     for rule in (
@@ -84,6 +88,8 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="auth:password-reset", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:email-verify", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:phone-change", limit=5, window_seconds=3600),
+        RateLimitRule(bucket="tasks:claim", limit=20, window_seconds=60),
+        RateLimitRule(bucket="claims:abandon", limit=10, window_seconds=60),
     )
 }
 

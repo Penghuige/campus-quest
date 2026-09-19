@@ -231,9 +231,7 @@ class AbandonLimitReachedError(BusinessError):
 # --- natural-day window (spec §0, §44.14; backend-engineering §11) --------------------
 
 
-def business_day_window(
-    now: datetime, timezone: ZoneInfo
-) -> tuple[datetime, datetime]:
+def business_day_window(now: datetime, timezone: ZoneInfo) -> tuple[datetime, datetime]:
     """The [start, end) UTC instants of the BUSINESS_TIMEZONE natural day
     containing ``now``.
 
@@ -246,8 +244,7 @@ def business_day_window(
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError(
-            f"now must be a timezone-aware datetime (UTC instant), "
-            f"got naive {now!r}"
+            f"now must be a timezone-aware datetime (UTC instant), got naive {now!r}"
         )
     local_date = now.astimezone(timezone).date()
     start = datetime.combine(local_date, time.min, tzinfo=timezone).astimezone(UTC)
@@ -335,16 +332,14 @@ class AbandonService:
 
         # (3) Daily cap inside the user-row lock (spec §8.5 atomicity).
         window_start, window_end = business_day_window(now, self._timezone)
-        used = (
-            await db.scalar(
-                select(func.count())
-                .select_from(AssignmentClaim)
-                .where(
-                    AssignmentClaim.user_id == user_id,
-                    AssignmentClaim.status == ClaimStatus.ABANDONED,
-                    AssignmentClaim.terminal_at >= window_start,
-                    AssignmentClaim.terminal_at < window_end,
-                )
+        used = await db.scalar(
+            select(func.count())
+            .select_from(AssignmentClaim)
+            .where(
+                AssignmentClaim.user_id == user_id,
+                AssignmentClaim.status == ClaimStatus.ABANDONED,
+                AssignmentClaim.terminal_at >= window_start,
+                AssignmentClaim.terminal_at < window_end,
             )
         )
         if (used or 0) >= self._daily_limit:

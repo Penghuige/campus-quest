@@ -232,8 +232,7 @@ async def _seed(
         tasks = [_task(teacher, title=f"任务{i}") for i in range(len(statuses))]
         await _persist(session, *tasks)
         assignments = [
-            _assignment(task, keyword=f"考研数学{i}")
-            for i, task in enumerate(tasks)
+            _assignment(task, keyword=f"考研数学{i}") for i, task in enumerate(tasks)
         ]
         await _persist(session, *assignments)
         claims = [
