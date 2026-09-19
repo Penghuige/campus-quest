@@ -146,7 +146,7 @@ RewardItem stock=1. Two users request concurrently. Exactly one succeeds; stock 
 
 - [ ] **Step 3: Implement locked reservation transaction**
 
-Lock wallet and RewardItem rows. Validate enabled/time/user-term-limit. Reserve points and one stock unit atomically.
+Lock wallet and RewardItem rows. Validate enabled/time/user-term-limit. Read the Admin-configured `CURRENT_ACADEMIC_TERM` (for example `2026-fall`) and snapshot it on the Redemption. Count per-user limits by `(user_id, reward_item_id, term_key)`; changing the current term later never changes historical rows. Reserve points and one stock unit atomically.
 
 - [ ] **Step 4: Implement approve/reject/fulfill**
 
