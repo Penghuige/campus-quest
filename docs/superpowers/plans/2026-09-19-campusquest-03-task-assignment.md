@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-19-campusquest-design.md`
 
+**Required quality references:** `AGENTS.md`, `docs/quality/backend-engineering.md`, `docs/quality/quality-gates.md`, `docs/quality/agent-tooling.md`.
+
 ## Global Constraints
 
 - Only Teacher/Admin create Tasks.
