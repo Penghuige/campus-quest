@@ -152,25 +152,35 @@ git add backend/app/workers/jobs/send_notification.py backend/tests/workers/test
 git commit -m "feat: deliver notifications idempotently"
 ```
 
-### Task 5: Wire Domain Events to Notifications
+### Task 5: Wire Durable Business Events to Notifications
 
 **Files:**
 - Create: `backend/app/modules/notifications/event_handlers.py`
+- Create: `backend/app/modules/notifications/port.py`
 - Create: `backend/tests/integration/notifications/test_event_notifications.py`
 
 **Interfaces:**
+- Provides `NotificationPort.record_event(session, event_key, event_type, user_id, payload, task_policy=None) -> None` for domain services.
 - Consumes events from Task/Submission/Points/Identity.
-- Produces Notification/Delivery rows for `REVISION_REQUIRED`, `SUBMISSION_APPROVED`, redemption approved/rejected, account security.
+- Produces Notification/Delivery rows for Claim-created deadline scheduling, `REVISION_REQUIRED`, `SUBMISSION_VALIDATION_FAILED`, `SUBMISSION_APPROVED`, redemption approved/rejected, and account security.
 
-- [ ] **Step 1: Write event idempotency test**
+- [ ] **Step 1: Write transaction-durability test**
 
-Process same `REVISION_REQUIRED` event twice; unique event key results in one logical set of deliveries.
+Inside a domain transaction call `NotificationPort.record_event`, then force the transaction to roll back; assert no Notification rows remain. Commit the same operation and assert the Notification rows exist before Celery delivery. This prevents an ephemeral in-memory event from being lost between DB commit and enqueue.
 
-- [ ] **Step 2: Implement handlers**
+- [ ] **Step 2: Write event idempotency test**
 
-No domain state mutation belongs here. Only notification records and delivery scheduling.
+Process the same `REVISION_REQUIRED` event key twice; unique event key results in one logical set of deliveries.
 
-- [ ] **Step 3: Run and commit**
+- [ ] **Step 3: Wire Claim creation and validation failure**
+
+Successful Claim creation records/schedules DDL notifications in the same business transaction. When validation fails and the Claim again requires student action, call the scheduler to create only future, not-yet-fired 24h/4h deliveries. A future delivery already present remains unique.
+
+- [ ] **Step 4: Implement handlers**
+
+No unrelated domain state mutation belongs here. The port persists notification intent; Celery dispatches only after commit.
+
+- [ ] **Step 5: Run and commit**
 
 ```bash
 git add backend/app/modules/notifications/event_handlers.py backend/tests/integration/notifications/test_event_notifications.py
@@ -239,32 +249,42 @@ git add backend/app/workers/jobs/cleanup_files.py backend/tests/workers/test_fil
 git commit -m "feat: enforce task file retention safely"
 ```
 
-### Task 8: Add Notification Inbox APIs and Worker Gate
+### Task 8: Add Due-Delivery Dispatcher, Notification Inbox APIs, and Worker Gate
 
 **Files:**
+- Create: `backend/app/workers/jobs/dispatch_due_notifications.py`
 - Create: `backend/app/modules/notifications/router.py`
 - Modify: `backend/app/main.py`
+- Create: `backend/tests/workers/test_due_notification_dispatch.py`
 - Create: `backend/tests/integration/notifications/test_notification_api.py`
 
 **Interfaces:**
 - Produces `GET /api/v1/notifications`, mark-read endpoint, Admin failed-delivery query later consumed by Plan 08.
 
-- [ ] **Step 1: Write ownership test**
+- [ ] **Step 1: Write due-dispatch test**
+
+Seed two due PENDING deliveries and one future delivery. Dispatcher enqueues exactly the two due IDs; running dispatcher twice does not create new Delivery rows and send jobs remain idempotent.
+
+- [ ] **Step 2: Implement bounded due scan**
+
+Query indexed `status + scheduled_at` in batches, enqueue delivery IDs, and leave sending/idempotency decisions to `send_notification_delivery`.
+
+- [ ] **Step 3: Write ownership test**
 
 Student can list/mark own notifications only.
 
-- [ ] **Step 2: Implement paginated inbox**
+- [ ] **Step 4: Implement paginated inbox**
 
 Do not expose provider internals or another user's delivery data.
 
-- [ ] **Step 3: Run module gate**
+- [ ] **Step 5: Run module gate**
 
 ```bash
 cd backend
 pytest tests/unit/notifications tests/integration/notifications tests/workers/test_notification_delivery.py tests/workers/test_expire_claims.py tests/workers/test_file_cleanup.py -v
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add backend/app/modules/notifications/router.py backend/app/main.py backend/tests
