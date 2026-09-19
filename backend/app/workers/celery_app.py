@@ -28,18 +28,28 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-# celery 5.x ships no py.typed marker; ignore is scoped to the import line.
 from celery import Celery  # type: ignore[import-untyped]
 
 from app.core.config import Settings, get_settings
+
+# Job modules a real worker imports at startup. `@shared_task` decorators
+# only register a task on the apps that exist after their module is
+# imported — a worker process imports no test or caller module, so the
+# modules must be named here explicitly (deterministic and reviewable;
+# no autodiscovery). Each new job module appends itself to this list in
+# its own task.
+JOB_MODULES = ("app.workers.jobs.health",)
 
 
 def create_celery_app(settings: Settings) -> Celery:
     """Build a Celery app from typed settings (pure factory).
 
-    Broker and result backend both come from `settings.redis_url`. Jobs
-    register themselves through `celery.shared_task`, so this factory
-    imports no job modules; start a worker with
+    Broker and result backend both come from `settings.redis_url`. Job
+    registration runs through `include`: the `celery` CLI imports the
+    listed modules at startup (app.loader.import_default_modules), and
+    their `shared_task` decorators then bind to this app — the factory
+    itself still imports no job module, staying cheap to call from tests.
+    Start a worker with
 
         celery -A app.workers.celery_app:celery_app worker
     """
@@ -47,6 +57,7 @@ def create_celery_app(settings: Settings) -> Celery:
         "campusquest",
         broker=settings.redis_url,
         backend=settings.redis_url,
+        include=list(JOB_MODULES),
     )
     app.conf.update(
         task_serializer="json",

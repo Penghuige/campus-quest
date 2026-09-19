@@ -115,8 +115,50 @@ def test_job_signature_shape_receives_ids_and_params_only() -> None:
     # calls a service. The service call behind this job is a plain callable
     # over those parameters — no session, engine, or adapter is held as job
     # state, and the parameter surface is exactly the correlation id.
-    parameters = list(inspect.signature(run_health_check).parameters)
-    assert parameters == ["request_id"]
+    assert list(inspect.signature(run_health_check).parameters) == ["request_id"]
+
+    # The task's own dispatch surface is pinned the same way: bind=True
+    # consumes `self` (used only for §15 job-id logging), so producers pass
+    # exactly one argument — request_id, positionally or by keyword — and
+    # no dependency object ever travels through the task signature.
+    task_parameters = inspect.signature(health_job).parameters
+    assert list(task_parameters) == ["request_id"]
+    assert task_parameters["request_id"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+
+
+def test_worker_cli_style_load_registers_health_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: a real worker process imports no test module, so tasks
+    # must NOT become visible only through in-process shared_task
+    # registration. Build the app CLI-style — factory only, never importing
+    # the job module directly — then run the conf.include import the
+    # `celery` CLI performs at startup (celery/bin/celery.py calls
+    # app.loader.import_default_modules()).
+    _set_required_env(monkeypatch)
+    code = textwrap.dedent(
+        """
+        from app.core.config import Settings
+        from app.workers.celery_app import create_celery_app
+
+        app = create_celery_app(Settings())
+        app.loader.import_default_modules()
+        user_tasks = sorted(
+            name for name in app.tasks if not name.startswith("celery.")
+        )
+        print("TASKS=" + ",".join(user_tasks))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=_BACKEND_DIR,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip().splitlines()[-1] == "TASKS=workers.health_job"
 
 
 def test_eager_execution_needs_no_live_broker(
