@@ -306,6 +306,20 @@ SUSPENDED/BANNED 用户：
 - 已有积分和审计数据保留。
 - 不做物理删除以破坏历史引用。
 
+### 5.8 Teacher / Admin 账号建立
+
+Teacher/Admin 不走 StudentWhitelist 自助注册。
+
+V1 推荐：
+
+1. Admin 在后台创建 Staff 邀请。
+2. Staff 通过一次性、短时有效邀请链接设置密码。
+3. 首次登录必须绑定并启用 TOTP 2FA，未完成前不能进入管理后台。
+4. Recovery Code 只在启用 2FA 时展示一次，服务端仅保存 hash。
+5. Admin 账号的创建、角色提升、角色撤销都必须写 AuditLog。
+
+Staff 的登录标识可以使用独立 username 或 verified email，但不得假冒 Student 学号身份。实现计划必须统一一种 Staff 登录方式，不能让不同页面各自解释。
+
 ## 6. Task
 
 Task 表示“一个可由多人参与的任务”。
@@ -395,6 +409,15 @@ V1 数据爬取 Assignment 至少包含：
 - payload JSONB，可选扩展字段
 - availability_status
 - created_at
+
+availability_status 至少定义：
+
+- AVAILABLE：可被随机领取。
+- OCCUPIED：当前存在 active Claim。
+- COMPLETED：已经有成功完成的 Claim，永久不再分配。
+- RETIRED：管理员主动下架该 Assignment，不参与分配。
+
+ABANDONED / EXPIRED 是 Claim 的终态，不是 Assignment 的永久状态；发生后 Assignment 通常回到 AVAILABLE。
 
 数据库必须保证：
 
@@ -528,6 +551,10 @@ PostgreSQL 推荐逻辑：
 随机策略 MAY 使用预生成 random_key 或其他更高效方案，但必须保持“无法由用户选择具体 Assignment”的产品语义。
 
 数据库必须保证“一个 Assignment 同一时刻最多一个 active Claim”。推荐部分唯一索引或清晰的 availability_status + 行锁不变量。
+
+同一用户连续或并发领取时，还必须防止“3 个上限”被穿透。仅在两个事务中分别 COUNT 当前 Claim 然后 INSERT 是不安全的。claim_random_assignment MUST 在检查用户配额前锁定一个稳定的用户级资源，例如 User 行、专用 ClaimQuota 行或 PostgreSQL advisory lock；同一用户的领取事务必须串行化后再检查计数。
+
+同一用户同一 Task 的非终态 Claim 约束 SHOULD 再由 PostgreSQL partial unique index 兜底；若最终状态模型不适合 partial index，必须提供同等强度的数据库/锁级保证并写并发集成测试。
 
 ### 8.4 领取失败错误
 
@@ -690,6 +717,15 @@ APPROVED 后 Claim -> COMPLETED。
 - reward_tier_locked = 按 submitted_at 计算
 - reward_locked_at = submitted_at
 - locked_reward_points = 按 Claim 的 base_reward_points_snapshot 计算
+
+reward_lock_status V1 明确定义为：
+
+- NONE：尚无机器校验通过的有效提交。
+- PROVISIONAL：已按首次有效提交锁档，等待人工确认。
+- CONFIRMED：人工验收通过，已作为最终奖励依据。
+- INVALIDATED：上一份 provisional lock 因明确恶意/空壳被人工判无效；后续新有效提交可以建立新的 PROVISIONAL lock。
+
+实现可以通过独立 RewardLock 历史表保留多次 lock 变化；无论采用哪种表结构，都不得覆盖掉 INVALIDATED 的审计历史。
 
 普通质量问题导致 REVISION_REQUIRED 时，保留该奖励档位。
 
@@ -998,6 +1034,14 @@ RewardItem 字段建议：
 - 检查库存。
 - 检查每人学期上限。
 - 原子冻结积分。
+- 对有限库存 RewardItem 同时原子预占 1 个库存名额。
+
+库存语义必须明确：
+
+- REQUESTED / UNDER_REVIEW / APPROVED 但未终止的兑换占用库存。
+- REJECTED 或明确取消后释放库存预占。
+- FULFILLED 将预占转为永久消耗。
+- 对 RewardItem 行或库存账户做数据库锁，不能用“先查 stock > 0 再异步减 1”的方式。
 
 ### 16.2 积分冻结
 
@@ -1239,13 +1283,15 @@ Comment 字段：
 Teacher：
 
 - 可治理自己 Task 评论。
-- 不应直接暴露手机号和邮箱。
-- 若显示内部 user id，也必须仅用于治理界面，不在普通页面公开。
+- 在“匿名评论治理上下文”中不得显示 student_number、手机号、邮箱、登录 username 等可直接识别信息。
+- 如治理实现确实需要稳定关联，可显示专用于治理的内部 pseudonymous moderation key；该 key 不得在学生端出现，也不得等同于学号。
+- Teacher 在 Submission/Claim 等非匿名业务页面是否能查看学生学号，由教学业务权限决定；这不能反向用于匿名评论页面去身份化。
 
 Admin：
 
-- 可以追溯真实账号。
-- 每次匿名身份追溯 SHOULD 写 AuditLog。
+- 可以通过专门的“揭示匿名身份”操作追溯真实账号。
+- 该操作必须要求明确权限和 reason。
+- 每次匿名身份追溯 MUST 写 AuditLog；不能因为 Admin 打开普通评论列表就自动把所有匿名作者展开。
 
 ## 22. Vote 与 Emoji Reaction
 
