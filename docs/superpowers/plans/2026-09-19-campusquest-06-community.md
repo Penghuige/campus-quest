@@ -111,7 +111,11 @@ Delete parent with child reply. Public thread contains tombstone parent “该�
 
 Teacher may moderate only owned/collaborating Task and must provide delete reason for moderation delete.
 
-- [ ] **Step 4: Run and commit**
+- [ ] **Step 4: Add Admin hard-hide subtree regression**
+
+For a privacy/legal removal case, Admin may hard-hide the visible content of a comment subtree through a named moderation command with a required reason and audit event. Historical IDs/relations and AuditLog remain; this is not a database cascade delete.
+
+- [ ] **Step 5: Run and commit**
 
 ```bash
 git add backend/app/modules/community/comment_service.py backend/tests/integration/community/test_comment_edit_delete.py
@@ -275,14 +279,18 @@ Student creates anonymous comment -> another Student sees anonymous -> votes/rea
 
 Hot score is server-calculated and replaceable. Never accept client hot score.
 
-- [ ] **Step 3: Run module gate**
+- [ ] **Step 3: Add comment write-rate limiting**
+
+Apply a Redis-backed/user-keyed limiter to comment create, reply, edit, vote, reaction, and report write paths with stricter limits on comment/report creation. Add an API test that repeated requests beyond the configured limit return a stable 429/business error without inserting extra rows.
+
+- [ ] **Step 4: Run module gate**
 
 ```bash
 cd backend
 pytest tests/unit/community tests/integration/community -v
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/app/modules/community/router.py backend/app/main.py backend/tests
