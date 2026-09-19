@@ -49,7 +49,7 @@ Assert version is unique within Claim and monotonically created by service; dupl
 
 - [ ] **Step 2: Implement models and migration**
 
-Submission stores object key, original filename, detected type, size, submitted_at, status, validation report reference. Claim stores latest_submission_id and current reward-lock projection.
+Submission stores object key, original filename, detected type, size, submitted_at, status, validation report reference, `retention_until` or explicit permanent-retention flag, `legal_hold`, and file-deleted metadata. Claim stores latest_submission_id and current reward-lock projection.
 
 - [ ] **Step 3: Run migration/test and commit**
 
