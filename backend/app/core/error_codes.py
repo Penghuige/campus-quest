@@ -1,0 +1,54 @@
+# backend/app/core/error_codes.py
+"""Frozen error-code registry (docs/architecture/interfaces.md).
+
+Single importable source of truth for every §29 envelope code. Pure stdlib
+on purpose — no FastAPI, no settings, no persistence — so domain modules,
+workers, and the API layer share these constants without dragging web
+dependencies into worker or domain imports (verified by
+tests/unit/core/test_error_codes.py).
+
+Business codes mirror the "Canonical codes" table; system codes cover
+framework failures rendered through the same envelope. They are SYSTEM
+codes, not business codes: business logic raises only business codes, and
+the frontend never branches on system codes as domain outcomes.
+
+Adding a code means, in order: update the interfaces.md tables FIRST, then
+this enum, then the frozen membership lists in the test — so doc drift,
+code drift, and test drift each fail loudly on their own.
+"""
+
+from enum import StrEnum
+
+
+class ErrorCode(StrEnum):
+    """Every §29 envelope code; `value == member name` by construction."""
+
+    # Business codes (spec §29; interfaces.md "Canonical codes").
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE"
+    STUDENT_NOT_WHITELISTED = "STUDENT_NOT_WHITELISTED"
+    PHONE_ALREADY_BOUND = "PHONE_ALREADY_BOUND"
+    TASK_NOT_CLAIMABLE = "TASK_NOT_CLAIMABLE"
+    NO_ASSIGNMENT_AVAILABLE = "NO_ASSIGNMENT_AVAILABLE"
+    ASSIGNMENT_LIMIT_REACHED = "ASSIGNMENT_LIMIT_REACHED"
+    TASK_ACTIVE_CLAIM_EXISTS = "TASK_ACTIVE_CLAIM_EXISTS"
+    CLAIM_CUTOFF_REACHED = "CLAIM_CUTOFF_REACHED"
+    CLAIM_NOT_SUBMITTABLE = "CLAIM_NOT_SUBMITTABLE"
+    SUBMISSION_WINDOW_CLOSED = "SUBMISSION_WINDOW_CLOSED"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    FILE_TYPE_NOT_ALLOWED = "FILE_TYPE_NOT_ALLOWED"
+    SUBMISSION_VALIDATION_FAILED = "SUBMISSION_VALIDATION_FAILED"
+    ALREADY_REVIEWED = "ALREADY_REVIEWED"
+    INSUFFICIENT_POINTS = "INSUFFICIENT_POINTS"
+    REWARD_OUT_OF_STOCK = "REWARD_OUT_OF_STOCK"
+    REDEMPTION_LIMIT_REACHED = "REDEMPTION_LIMIT_REACHED"
+    RATING_NOT_ELIGIBLE = "RATING_NOT_ELIGIBLE"
+
+    # System / framework codes (interfaces.md "System / framework codes").
+    # Not business codes; raised only by framework error handlers.
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    HTTP_ERROR = "HTTP_ERROR"

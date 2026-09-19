@@ -19,6 +19,7 @@ fake components without touching real services.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -31,6 +32,11 @@ from app.core.config import get_settings
 from app.db.session import get_async_engine
 
 ComponentStatus = Literal["ok", "down"]
+
+# Probe budget (seconds): a wedged dependency must report `down` within this
+# bound instead of stalling /health/ready (spec §34 wants dependency state
+# judgeable, and orchestrators themselves timeout far later than 2s).
+READINESS_PROBE_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -79,27 +85,48 @@ class ReadinessRegistry:
 
 
 class PostgresReadinessCheck:
-    """`SELECT 1` through the process-wide engine (spec §34: reachable)."""
+    """`SELECT 1` through the process-wide engine (spec §34: reachable).
+
+    The whole probe — engine construction, TCP connect, and the scalar —
+    runs under one `asyncio.wait_for` bound: asyncpg has no default connect
+    timeout, so without the wrapper a black-holed database would hang the
+    ready endpoint until the OS TCP timeout (~minutes). Everything,
+    including a settings failure, reports `down` instead of raising.
+    """
 
     name = "postgres"
 
     async def check(self) -> bool:
-        engine = get_async_engine()
         try:
-            async with engine.connect() as connection:
-                await connection.execute(text("SELECT 1"))
+            await asyncio.wait_for(
+                self._probe(), timeout=READINESS_PROBE_TIMEOUT_SECONDS
+            )
         except Exception:
             return False
         return True
 
+    async def _probe(self) -> None:
+        engine = get_async_engine()
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
 
 class RedisReadinessCheck:
-    """`PING` against the configured Redis URL (spec §34: reachable)."""
+    """`PING` against the configured Redis URL (spec §34: reachable).
+
+    The client is built with both socket timeouts set to the probe budget,
+    bounding connect and reply even though redis-py ships its own (slower)
+    defaults.
+    """
 
     name = "redis"
 
     async def check(self) -> bool:
-        client = aioredis.from_url(get_settings().redis_url)
+        client = aioredis.from_url(
+            get_settings().redis_url,
+            socket_connect_timeout=READINESS_PROBE_TIMEOUT_SECONDS,
+            socket_timeout=READINESS_PROBE_TIMEOUT_SECONDS,
+        )
         try:
             return await client.ping()
         except Exception:

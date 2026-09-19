@@ -256,6 +256,19 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
+### System / framework codes
+
+Framework-level failures reuse the same §29 envelope (same shape, same `request_id` threading) with these codes. They are SYSTEM codes, not business codes: business logic never raises them, and the frontend treats them as transport/framework errors, never as domain branches.
+
+| Code | HTTP | Trigger |
+| --- | --- | --- |
+| `INTERNAL_ERROR` | 500 | unhandled exception; safe generic message, no internals leaked |
+| `NOT_FOUND` | 404 | unknown route (framework 404) |
+| `METHOD_NOT_ALLOWED` | 405 | route exists, method does not |
+| `HTTP_ERROR` | other | any other framework `HTTPException` status |
+
+`VALIDATION_ERROR` is the one code in both worlds: it stays a business code above, and the framework's 422 request-schema handler reuses it. The importable registry (`backend/app/core/error_codes.py`) mirrors both tables; membership is frozen by `backend/tests/unit/core/test_error_codes.py`. New codes require updating this document first (same rule as above).
+
 ## Service Boundaries
 
 Canonical service/use-case names (spec §36). Business rules live in these services; API handlers and Celery jobs must not duplicate them.
