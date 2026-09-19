@@ -7,11 +7,22 @@ docs/architecture/interfaces.md and the notification module's centralized
 template rendering (Plan 07). Free-form subject/body composition would
 scatter rendering across callers. Tests assert exact deliveries via
 `FakeEmailSender.messages`.
+
+`LoggingEmailSender` is the interim production adapter (Plan 02): real
+provider delivery arrives with the notification module (Plan 07), so until
+then the composition root wires a sender that logs the masked recipient
+and template only — NEVER `variables` (the verification token travels
+there) — instead of silently dropping the send.
 """
 
+from __future__ import annotations
+
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -44,3 +55,25 @@ class EmailSender(Protocol):
             UnknownOutcomeError: timeout; retry only with idempotency key.
         """
         ...
+
+
+def _mask_email(email: str) -> str:
+    local, separator, domain = email.partition("@")
+    if not separator or not local:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
+class LoggingEmailSender:
+    """Interim `EmailSender` adapter: log masked, deliver nothing (Plan 02).
+
+    Plan 07 replaces this at the composition root when the notification
+    module ships real provider adapters. Deliberately never raises.
+    """
+
+    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+        logger.info(
+            "email send (interim logging adapter) to=%s template=%s",
+            _mask_email(to),
+            template,
+        )

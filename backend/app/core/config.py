@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # Staff invitation link lifetime (spec §5.8: 一次性、短时有效); 48h is
     # the plan's default window.
     staff_invitation_ttl_hours: int = 48
+    # Email-verification token lifetime (spec §5.5); wired into
+    # `EmailVerificationService` at the composition root.
+    email_verification_token_ttl_hours: int = 24
     # Region for parsing domestic phone input into E.164 (spec §5.4).
     phone_default_region: str = "CN"
 

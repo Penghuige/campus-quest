@@ -42,6 +42,21 @@ FROZEN_BUSINESS_CODES = (
     "REWARD_OUT_OF_STOCK",
     "REDEMPTION_LIMIT_REACHED",
     "RATING_NOT_ELIGIBLE",
+    # Plan 02 additions (registered in interfaces.md before this enum grew):
+    # identity typed-exception codes (spec §5.5, §5.6, §5.8; §33.1, §33.2,
+    # §33.4) surfaced by the identity API routes.
+    "TOTP_SETUP_REQUIRED",
+    "PASSWORD_RESET_NOT_ALLOWED",
+    "EMAIL_ALREADY_BOUND",
+    "INVALID_EMAIL_TOKEN",
+    "OTP_CODE_INVALID",
+    "OTP_TOO_MANY_ATTEMPTS",
+    "OTP_CHALLENGE_EXPIRED",
+    "OTP_CHALLENGE_CONSUMED",
+    "OTP_CHALLENGE_INVALID",
+    "OTP_TOKEN_INVALID",
+    "OTP_RESEND_COOLDOWN",
+    "RATE_LIMITED",
 )
 
 FROZEN_SYSTEM_CODES = (

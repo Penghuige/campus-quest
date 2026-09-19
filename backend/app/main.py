@@ -6,9 +6,12 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
+from app.core import rbac
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
+from app.modules.identity import router as identity_router
+from app.modules.identity.dependencies import get_actor
 from app.workers.celery_app import get_celery_app
 
 
@@ -29,6 +32,18 @@ def create_app() -> FastAPI:
     app = FastAPI(title="CampusQuest API", lifespan=_lifespan)
     app.add_middleware(RequestIDMiddleware)
     register_exception_handlers(app)
+
+    # Identity API (Plan 02): typed-exception envelope handlers first, then
+    # the router under the spec §28 prefix.
+    identity_router.register_identity_exception_handlers(app)
+    app.include_router(identity_router.router, prefix="/api/v1")
+
+    # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
+    # the identity module's actor dependency IS the bearer provider. Done
+    # once, here — an unwired guard must fail loudly (500), never silently
+    # as "deny everyone". (The T7 integration test previewed this exact
+    # wiring; `require_role` consumers reach it through `get_role_bearer`.)
+    app.dependency_overrides[rbac.get_role_bearer] = get_actor
 
     @app.get("/health/live")
     async def live() -> dict[str, str]:

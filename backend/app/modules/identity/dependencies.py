@@ -79,6 +79,7 @@ __all__ = [
     "Actor",
     "Role",
     "TotpSetupRequiredError",
+    "get_access_session_id",
     "get_access_token_codec",
     "get_actor",
     "get_business_clock",
@@ -204,6 +205,30 @@ async def require_active_actor(
             status_code=403,
         )
     return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def get_access_session_id(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+) -> UUID:
+    """The current request's session id (the access token's ``sid`` claim).
+
+    Companion to ``require_active_actor`` for the one use case that needs
+    it: `change_password` keeps the authorizing session alive while every
+    other device is signed out. Pure decode — no database round trip —
+    because it is only ever mounted alongside an authentication guard that
+    already proved the session live against the row; on its own it says
+    nothing about liveness.
+    """
+    if credentials is None:
+        raise _authentication_required()
+    try:
+        claims = codec.decode(credentials.credentials)
+    except AccessTokenError as exc:
+        raise _authentication_required() from exc
+    return UUID(claims.sid)
 
 
 async def require_staff_management_actor(

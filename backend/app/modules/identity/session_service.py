@@ -211,6 +211,31 @@ class SessionService:
         )
         return tokens
 
+    async def revoke_session(self, db: AsyncSession, refresh_token: str) -> None:
+        """Revoke exactly the session named by ``refresh_token`` (logout).
+
+        Idempotent by design: an unknown token (never issued, already
+        rotated away, or garbage from a stale client) is a silent no-op, so
+        a double-clicked logout or a cleared-cookie client never errors.
+        The row is locked ``FOR UPDATE`` so a concurrent rotation of the
+        same token serializes with the revocation; rows are never deleted.
+        """
+        now = self._clock.now()
+        token_hash = hash_refresh_token(refresh_token)
+        row = await db.scalar(
+            select(UserSession)
+            .where(UserSession.refresh_token_hash == token_hash)
+            .with_for_update()
+        )
+        if row is None:
+            logger.info("session logout no-op reason=unknown_token")
+            return
+        if row.revoked_at is None:
+            row.revoked_at = now
+        session_id = row.id
+        await db.commit()
+        logger.info("session revoked session_id=%s", session_id)
+
     async def revoke_all(self, db: AsyncSession, user_id: UUID) -> None:
         """Revoke every still-live session of ``user_id`` (spec §5.6).
 

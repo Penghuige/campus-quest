@@ -19,6 +19,7 @@ outbox wiring) attach to.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -26,6 +27,8 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.modules.identity.enums import Role
+
+logger = logging.getLogger(__name__)
 
 # Audit action names (see module docstring for the audit-vs-notification
 # distinction). Emitted by `staff_service.StaffService`.
@@ -87,3 +90,21 @@ class InMemoryEventCollector:
 
     def of_type(self, event_type: str) -> list[DomainEvent]:
         return [event for event in self.events if event.event_type == event_type]
+
+
+class LoggingEventPublisher:
+    """Interim production adapter: log the event, persist nothing.
+
+    Plan 08's `AuditService`/outbox replaces this at the composition root.
+    Only the event type and aggregate identity are logged — the payload
+    carries PII (emails, roles) and stays out of application logs
+    (backend-engineering §15).
+    """
+
+    def publish(self, event: DomainEvent) -> None:
+        logger.info(
+            "domain event type=%s aggregate_type=%s aggregate_id=%s",
+            event.event_type,
+            event.aggregate_type,
+            event.aggregate_id,
+        )

@@ -7,7 +7,9 @@ insert all run inside one transaction whose final authority is the
 database constraints — spec §5.4 并发注册最终必须由数据库约束兜底. The
 pre-checks exist to produce friendly errors on the sequential path; the
 unique indexes adjudicate every race that slips between check and insert
-(backend-engineering §6-7).
+(backend-engineering §6-7). A phone token whose recorded purpose is not
+REGISTER raises `otp.InvalidTokenError` (purpose confusion, spec §33.2) —
+the router maps it to `OTP_TOKEN_INVALID`.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from app.core.errors import BusinessError
 from app.core.security import validate_password_length
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
+from app.modules.identity.otp import InvalidTokenError, OtpPurpose
 from app.modules.identity.ports import PasswordHasher, PhoneVerificationPort
 from app.modules.identity.repository import StudentWhitelistRepository, UserRepository
 from app.modules.identity.schemas import RegisterStudent
@@ -73,6 +76,11 @@ class IdentityService:
         verified_phone = await self._phone_verification.verify_phone_token(
             command.phone_token
         )
+        if verified_phone.purpose != OtpPurpose.REGISTER:
+            # A proof minted for phone change or password reset must never
+            # authorize account creation (spec §33.2 single-purpose proofs);
+            # the typed error is the router's OTP_TOKEN_INVALID (T9 carry).
+            raise InvalidTokenError
 
         await self._whitelist.require_enabled(session, student_number)
 

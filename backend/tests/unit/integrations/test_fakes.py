@@ -7,6 +7,7 @@ semantics, and raise-on-demand failure programming used by later worker
 tests to simulate provider outages.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -20,11 +21,14 @@ from app.integrations.errors import (
     UnknownOutcomeError,
 )
 from app.integrations.object_storage import ObjectHead
+from app.integrations.rate_limit import RateLimitExceededError
 from app.integrations.sms import SentSms
 from tests.fakes.integrations import (
     FakeEmailSender,
     FakeObjectStorage,
+    FakeRateLimiter,
     FakeSmsSender,
+    RateLimitCheck,
 )
 
 CLAIM_ID = UUID("12345678-1234-5678-1234-567812345678")
@@ -214,3 +218,45 @@ def test_fake_object_storage_recovers_after_programmed_outage() -> None:
     )
     storage.put_object(object_key=url.object_key, size=10)
     assert storage.head_object(object_key=url.object_key) is not None
+
+
+def test_fake_rate_limiter_records_exact_checks() -> None:
+    limiter = FakeRateLimiter()
+
+    asyncio.run(
+        limiter.check(
+            bucket="auth:login", identifier="alice", limit=10, window_seconds=300
+        )
+    )
+
+    assert limiter.checks == [
+        RateLimitCheck(
+            bucket="auth:login", identifier="alice", limit=10, window_seconds=300
+        )
+    ]
+    assert limiter.checks_for("auth:login")[0].identifier == "alice"
+    assert limiter.checks_for("auth:register") == []
+
+
+def test_fake_rate_limiter_programmed_bucket_raises() -> None:
+    limiter = FakeRateLimiter()
+    limiter.fail_on("auth:otp-send")
+
+    with pytest.raises(RateLimitExceededError) as exc_info:
+        asyncio.run(
+            limiter.check(
+                bucket="auth:otp-send",
+                identifier="+8613700137001",
+                limit=5,
+                window_seconds=3600,
+            )
+        )
+    assert exc_info.value.bucket == "auth:otp-send"
+
+    # Other buckets stay allowed; the failing call was still recorded.
+    asyncio.run(
+        limiter.check(
+            bucket="auth:login", identifier="alice", limit=10, window_seconds=300
+        )
+    )
+    assert len(limiter.checks) == 2

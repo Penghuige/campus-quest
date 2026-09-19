@@ -18,6 +18,7 @@ asserted structurally).
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
@@ -384,6 +385,97 @@ async def test_revoke_all_kills_live_sessions(
     fresh = await service.login_student(db_session, _USERNAME, _PASSWORD)
     assert await _count_unrevoked_sessions(db_session, user.id) == 1
     assert fresh.refresh_token
+
+
+@pytest.mark.integration
+async def test_revoke_session_logs_out_only_the_presented_token(
+    db_session: AsyncSession,
+) -> None:
+    # The logout use case (Task 9): revoke exactly the session whose refresh
+    # token was presented; every other device stays signed in. Idempotent by
+    # design — an unknown or already-revoked token is a no-op success, so a
+    # double-clicked logout or a stale cookie never errors.
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    user = await _seed_user(db_session)
+    mine = await service.login_student(db_session, _USERNAME, _PASSWORD)
+    other = await service.login_student(db_session, _USERNAME, _PASSWORD)
+
+    await service.revoke_session(db_session, mine.refresh_token)
+
+    assert await _count_unrevoked_sessions(db_session, user.id) == 1
+    with pytest.raises(BusinessError) as exc_info:
+        await service.rotate_refresh(db_session, mine.refresh_token)
+    assert exc_info.value.code == ErrorCode.AUTHENTICATION_REQUIRED
+    other_rotated = await service.rotate_refresh(db_session, other.refresh_token)
+    assert other_rotated.refresh_token
+
+    # Replay and unknown tokens are silent no-ops.
+    await service.revoke_session(db_session, mine.refresh_token)
+    await service.revoke_session(db_session, "never-issued-token")
+    assert await _count_unrevoked_sessions(db_session, user.id) == 1
+
+
+@pytest.mark.integration
+async def test_concurrent_rotation_of_one_refresh_token_exactly_one_wins(
+    db_engine: AsyncEngine,
+) -> None:
+    # T7 review carry-forward: two connections present the SAME refresh
+    # token concurrently; the FOR UPDATE row lock must serialize them so
+    # exactly one rotation succeeds and the loser's replay is rejected.
+    # Real commits on independent sessions (the rollback harness serializes
+    # everything through one connection and cannot prove a race).
+    username = "30990099998"
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    async with AsyncSession(db_engine) as session:
+        session.add(
+            User(
+                username=username,
+                password_hash=hash_password(_PASSWORD),
+                nickname="并发轮换同学",
+                role=Role.STUDENT,
+                status=UserStatus.ACTIVE,
+            )
+        )
+        await session.commit()
+    try:
+        async with AsyncSession(db_engine) as session:
+            tokens = await service.login_student(session, username, _PASSWORD)
+        refresh = tokens.refresh_token
+
+        async def _rotate() -> SessionTokens | BusinessError:
+            async with AsyncSession(db_engine, expire_on_commit=False) as session:
+                try:
+                    return await service.rotate_refresh(session, refresh)
+                except BusinessError as exc:
+                    return exc
+
+        results = await asyncio.gather(_rotate(), _rotate())
+
+        winners = [result for result in results if isinstance(result, SessionTokens)]
+        losers = [result for result in results if isinstance(result, BusinessError)]
+        assert len(winners) == 1
+        assert len(losers) == 1
+        assert losers[0].code == ErrorCode.AUTHENTICATION_REQUIRED
+        assert losers[0].status_code == 401
+
+        # The stolen token is dead, the winner's successor is alive, and
+        # exactly one unreplaced row remains for the account.
+        async with AsyncSession(db_engine) as verifier:
+            with pytest.raises(BusinessError):
+                await service.rotate_refresh(verifier, refresh)
+            fresh = await service.rotate_refresh(verifier, winners[0].refresh_token)
+            assert fresh.refresh_token
+    finally:
+        async with AsyncSession(db_engine) as session:
+            user = await session.scalar(select(User).where(User.username == username))
+            if user is not None:
+                await session.execute(
+                    delete(UserSession).where(UserSession.user_id == user.id)
+                )
+                await session.delete(user)
+            await session.commit()
 
 
 @pytest.mark.integration

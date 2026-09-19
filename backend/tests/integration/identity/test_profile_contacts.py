@@ -116,18 +116,22 @@ def _otp_service(
         redis=redis,
         clock=frozen,
         sms_sender=sender,
-        policy=OtpPolicy(
-            ttl_seconds=300,
-            max_verify_attempts=5,
-            resend_cooldown_seconds=60,
-            verified_token_ttl_seconds=600,
-            phone_hourly_request_limit=5,
-            phone_daily_request_limit=20,
-            ip_hourly_request_limit=50,
-            ip_daily_request_limit=200,
-            hmac_secret="integration-test-otp-hmac-secret",
-            default_region="CN",
-        ),
+        policy=_otp_policy(),
+    )
+
+
+def _otp_policy() -> OtpPolicy:
+    return OtpPolicy(
+        ttl_seconds=300,
+        max_verify_attempts=5,
+        resend_cooldown_seconds=60,
+        verified_token_ttl_seconds=600,
+        phone_hourly_request_limit=5,
+        phone_daily_request_limit=20,
+        ip_hourly_request_limit=50,
+        ip_daily_request_limit=200,
+        hmac_secret="integration-test-otp-hmac-secret",
+        default_region="CN",
     )
 
 
@@ -145,6 +149,7 @@ def _profile_service(
     return ProfileService(
         clock=frozen,
         otp=_otp_service(redis, frozen, sender),
+        otp_policy=_otp_policy(),
         sessions=_session_service(frozen),
     )
 
@@ -759,6 +764,87 @@ async def test_unbind_email_keeps_login_capability(
     )
 
     assert tokens.refresh_token
+
+
+async def _bind_on_own_session(
+    engine: AsyncEngine,
+    service: EmailVerificationService,
+    user_id: UUID,
+    email: str,
+) -> EmailChallenge | EmailAlreadyBoundError:
+    """Run one email bind on an independent session with real commits, so
+    `asyncio.gather` exercises true unique-index contention."""
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        try:
+            return await service.request_email_verification(session, user_id, email)
+        except EmailAlreadyBoundError as exc:
+            return exc
+
+
+@pytest.mark.integration
+async def test_concurrent_email_bind_same_address_exactly_one_wins(
+    db_engine: AsyncEngine,
+    contacts_redis: aioredis.Redis,
+    clock: FrozenClock,
+    email_sender: FakeEmailSender,
+) -> None:
+    # T8 review carry-forward: two accounts concurrently bind the SAME
+    # email. Both passed the friendly pre-check (the slot was free), so only
+    # the partial unique index `uq_users_email_normalized` can keep V1's
+    # global email uniqueness — exactly one bind lands, the loser gets the
+    # typed EmailAlreadyBoundError.
+    usernames = {_USERNAME_A, _USERNAME_B}
+    async with AsyncSession(db_engine) as session:
+        for username, phone in (
+            (_USERNAME_A, _PHONE_A),
+            (_USERNAME_B, _PHONE_B),
+        ):
+            session.add(
+                User(
+                    username=username,
+                    password_hash=hash_password(_PASSWORD),
+                    nickname=f"并发邮箱{username[-1]}",
+                    phone_e164=phone,
+                    role=Role.STUDENT.value,
+                    status=UserStatus.ACTIVE.value,
+                )
+            )
+        await session.commit()
+    try:
+        service = _email_service(contacts_redis, clock, email_sender)
+        async with AsyncSession(db_engine) as session:
+            user_a = await session.scalar(
+                select(User).where(User.username == _USERNAME_A)
+            )
+            user_b = await session.scalar(
+                select(User).where(User.username == _USERNAME_B)
+            )
+            assert user_a is not None and user_b is not None
+            user_a_id, user_b_id = user_a.id, user_b.id
+
+        results = await asyncio.gather(
+            _bind_on_own_session(db_engine, service, user_a_id, _EMAIL),
+            _bind_on_own_session(db_engine, service, user_b_id, _EMAIL),
+        )
+
+        successes = [result for result in results if isinstance(result, EmailChallenge)]
+        failures = [
+            result for result in results if isinstance(result, EmailAlreadyBoundError)
+        ]
+        assert len(successes) == 1
+        assert len(failures) == 1
+
+        async with AsyncSession(db_engine) as verifier:
+            holders = list(
+                await verifier.scalars(
+                    select(User).where(User.email_normalized == _EMAIL)
+                )
+            )
+            assert len(holders) == 1
+    finally:
+        async with AsyncSession(db_engine) as session:
+            await session.execute(delete(User).where(User.username.in_(usernames)))
+            await session.commit()
 
 
 # --- logging discipline (backend-engineering §15) -----------------------------

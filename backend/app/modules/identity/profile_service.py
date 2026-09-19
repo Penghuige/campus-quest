@@ -88,6 +88,7 @@ from app.modules.identity.otp import (
     ChallengePublic,
     InvalidTokenError,
     OtpChallengeService,
+    OtpPolicy,
     OtpPurpose,
     normalize_phone,
 )
@@ -121,20 +122,30 @@ class ProfileService:
         *,
         clock: Clock,
         otp: OtpChallengeService,
+        otp_policy: OtpPolicy,
         sessions: SessionService,
         phone_default_region: str = "CN",
-        challenge_ttl_seconds: int = 300,
     ) -> None:
-        # `challenge_ttl_seconds` mirrors `OtpPolicy.ttl_seconds`'s default
-        # window: it shapes ONLY the no-enumeration decoy challenge in
-        # `request_password_reset` so a decoy is indistinguishable from a
-        # real challenge's expiry field.
+        # The decoy challenge in `request_password_reset` derives its expiry
+        # window from the SAME `OtpPolicy` that shapes real challenges: an
+        # independent knob here could drift from `policy.ttl_seconds` and the
+        # drift itself would enumerate accounts (T8 review carry-forward).
         self._clock = clock
         self._otp = otp
+        self._otp_policy = otp_policy
         self._sessions = sessions
         self._phone_region = phone_default_region
-        self._challenge_ttl = timedelta(seconds=challenge_ttl_seconds)
+        self._challenge_ttl = timedelta(seconds=otp_policy.ttl_seconds)
         self._users = UserRepository()
+
+    async def profile(self, db: AsyncSession, user_id: UUID) -> User:
+        """The account row for the owner's own profile view (spec §40).
+
+        Read-only counterpart to the state-changing methods: an
+        authenticated-but-suspended account may still read its own page,
+        so this deliberately carries no status gate.
+        """
+        return await self._require_user(db, user_id)
 
     async def change_nickname(
         self, db: AsyncSession, user_id: UUID, nickname: str

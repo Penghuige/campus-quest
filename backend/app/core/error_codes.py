@@ -49,6 +49,21 @@ class ErrorCode(StrEnum):
     REWARD_OUT_OF_STOCK = "REWARD_OUT_OF_STOCK"
     REDEMPTION_LIMIT_REACHED = "REDEMPTION_LIMIT_REACHED"
     RATING_NOT_ELIGIBLE = "RATING_NOT_ELIGIBLE"
+    # Plan 02 identity-API additions (interfaces.md "Canonical codes" and the
+    # "Identity typed-exception mapping" table; spec §5.5, §5.6, §5.8, §33.1,
+    # §33.2, §33.4). Each maps one typed identity exception to one code.
+    TOTP_SETUP_REQUIRED = "TOTP_SETUP_REQUIRED"
+    PASSWORD_RESET_NOT_ALLOWED = "PASSWORD_RESET_NOT_ALLOWED"
+    EMAIL_ALREADY_BOUND = "EMAIL_ALREADY_BOUND"
+    INVALID_EMAIL_TOKEN = "INVALID_EMAIL_TOKEN"
+    OTP_CODE_INVALID = "OTP_CODE_INVALID"
+    OTP_TOO_MANY_ATTEMPTS = "OTP_TOO_MANY_ATTEMPTS"
+    OTP_CHALLENGE_EXPIRED = "OTP_CHALLENGE_EXPIRED"
+    OTP_CHALLENGE_CONSUMED = "OTP_CHALLENGE_CONSUMED"
+    OTP_CHALLENGE_INVALID = "OTP_CHALLENGE_INVALID"
+    OTP_TOKEN_INVALID = "OTP_TOKEN_INVALID"
+    OTP_RESEND_COOLDOWN = "OTP_RESEND_COOLDOWN"
+    RATE_LIMITED = "RATE_LIMITED"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

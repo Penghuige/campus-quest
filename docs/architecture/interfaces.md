@@ -254,8 +254,44 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `REWARD_OUT_OF_STOCK` | §29 |
 | `REDEMPTION_LIMIT_REACHED` | §29 |
 | `RATING_NOT_ELIGIBLE` | §29 |
+| `TOTP_SETUP_REQUIRED` | §5.8, §33.4 |
+| `PASSWORD_RESET_NOT_ALLOWED` | §5.6 |
+| `EMAIL_ALREADY_BOUND` | §5.5 |
+| `INVALID_EMAIL_TOKEN` | §5.5 |
+| `OTP_CODE_INVALID` | §33.2 |
+| `OTP_TOO_MANY_ATTEMPTS` | §33.2 |
+| `OTP_CHALLENGE_EXPIRED` | §33.2 |
+| `OTP_CHALLENGE_CONSUMED` | §33.2 |
+| `OTP_CHALLENGE_INVALID` | §33.2 |
+| `OTP_TOKEN_INVALID` | §33.2 |
+| `OTP_RESEND_COOLDOWN` | §33.2 |
+| `RATE_LIMITED` | §33.1 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
+
+### Identity typed-exception mapping (Plan 02)
+
+The identity domain modules raise typed module exceptions where the frozen
+registry had no code at the time the service landed; the identity API routes
+map each to exactly one envelope code above (one exception type, one code —
+never shared, never reinterpreted):
+
+| Typed exception (module) | Envelope code | HTTP |
+| --- | --- | --- |
+| `staff_service.TotpSetupRequiredError` | `TOTP_SETUP_REQUIRED` | 403 |
+| `profile_service.PasswordResetNotAllowedError` | `PASSWORD_RESET_NOT_ALLOWED` | 403 |
+| `email_verification.EmailAlreadyBoundError` | `EMAIL_ALREADY_BOUND` | 409 |
+| `email_verification.InvalidEmailTokenError` | `INVALID_EMAIL_TOKEN` | 400 |
+| `otp.InvalidPhoneError` | `VALIDATION_ERROR` | 400 |
+| `otp.WrongCodeError` | `OTP_CODE_INVALID` | 400 |
+| `otp.TooManyAttemptsError` | `OTP_TOO_MANY_ATTEMPTS` | 429 |
+| `otp.ChallengeExpiredError` | `OTP_CHALLENGE_EXPIRED` | 400 |
+| `otp.ChallengeAlreadyConsumedError` | `OTP_CHALLENGE_CONSUMED` | 400 |
+| `otp.UnknownChallengeError` | `OTP_CHALLENGE_INVALID` | 400 |
+| `otp.InvalidTokenError` | `OTP_TOKEN_INVALID` | 400 |
+| `otp.ResendCooldownError` | `OTP_RESEND_COOLDOWN` | 429 |
+| `otp.OtpRateLimitError` | `RATE_LIMITED` | 429 |
+| `rate_limit.RateLimitExceededError` | `RATE_LIMITED` | 429 |
 
 ### System / framework codes
 

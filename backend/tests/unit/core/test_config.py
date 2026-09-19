@@ -43,6 +43,8 @@ def test_optional_settings_have_documented_defaults(monkeypatch) -> None:
     assert settings.access_token_ttl_minutes == 15
     assert settings.refresh_token_ttl_days == 30
     assert settings.max_upload_bytes_default == 200 * 1024 * 1024
+    assert settings.staff_invitation_ttl_hours == 48
+    assert settings.email_verification_token_ttl_hours == 24
 
 
 def test_development_accepts_sentinel_otp_hmac_secret(monkeypatch) -> None:

@@ -19,6 +19,7 @@ business time is FrozenClock-driven (backend-engineering §11).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
@@ -104,6 +105,21 @@ def sms() -> FakeSmsSender:
     return FakeSmsSender()
 
 
+def _otp_policy() -> OtpPolicy:
+    return OtpPolicy(
+        ttl_seconds=300,
+        max_verify_attempts=5,
+        resend_cooldown_seconds=60,
+        verified_token_ttl_seconds=600,
+        phone_hourly_request_limit=5,
+        phone_daily_request_limit=20,
+        ip_hourly_request_limit=50,
+        ip_daily_request_limit=200,
+        hmac_secret="integration-test-otp-hmac-secret",
+        default_region="CN",
+    )
+
+
 def _otp_service(
     redis: aioredis.Redis, frozen: FrozenClock, sender: FakeSmsSender
 ) -> OtpChallengeService:
@@ -111,18 +127,7 @@ def _otp_service(
         redis=redis,
         clock=frozen,
         sms_sender=sender,
-        policy=OtpPolicy(
-            ttl_seconds=300,
-            max_verify_attempts=5,
-            resend_cooldown_seconds=60,
-            verified_token_ttl_seconds=600,
-            phone_hourly_request_limit=5,
-            phone_daily_request_limit=20,
-            ip_hourly_request_limit=50,
-            ip_daily_request_limit=200,
-            hmac_secret="integration-test-otp-hmac-secret",
-            default_region="CN",
-        ),
+        policy=_otp_policy(),
     )
 
 
@@ -135,7 +140,12 @@ def _make_services(
         access_codec=AccessTokenCodec(secret=_ACCESS_SECRET, ttl_minutes=15),
         refresh_token_ttl_days=30,
     )
-    return ProfileService(clock=frozen, otp=otp, sessions=sessions), sessions
+    return (
+        ProfileService(
+            clock=frozen, otp=otp, otp_policy=_otp_policy(), sessions=sessions
+        ),
+        sessions,
+    )
 
 
 async def _seed_student(
@@ -248,6 +258,41 @@ async def test_reset_request_unknown_username_is_uniform(
         await service.confirm_password_reset(
             db_session, unknown.challenge_id, "123456", _NEW_PASSWORD
         )
+
+
+@pytest.mark.integration
+async def test_decoy_challenge_ttl_derives_from_otp_policy(
+    db_session: AsyncSession,
+    recovery_redis: aioredis.Redis,
+    clock: FrozenClock,
+    sms: FakeSmsSender,
+) -> None:
+    # T8 review carry-forward: the decoy's expiry window must come from the
+    # SAME OtpPolicy that shapes real challenges. An independent knob could
+    # drift from `policy.ttl_seconds` and turn the decoy shape itself into an
+    # account-enumeration oracle. A non-default TTL (600s) proves derivation,
+    # not coincidence with the old hardcoded 300s default.
+    await _seed_student(db_session)
+    policy = replace(_otp_policy(), ttl_seconds=600)
+    otp = OtpChallengeService(
+        redis=recovery_redis, clock=clock, sms_sender=sms, policy=policy
+    )
+    sessions = SessionService(
+        clock=clock,
+        access_codec=AccessTokenCodec(secret=_ACCESS_SECRET, ttl_minutes=15),
+    )
+    service = ProfileService(clock=clock, otp=otp, otp_policy=policy, sessions=sessions)
+
+    known = await service.request_password_reset(
+        db_session, _USERNAME, client_ip=_CLIENT_IP
+    )
+    unknown = await service.request_password_reset(
+        db_session, "20990099999", client_ip=_CLIENT_IP
+    )
+
+    expected = _T0 + timedelta(seconds=600)
+    assert known.expires_at == expected
+    assert unknown.expires_at == expected  # byte-for-byte the real shape
 
 
 @pytest.mark.integration

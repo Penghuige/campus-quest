@@ -9,6 +9,7 @@ outages with the same taxonomy real adapters raise
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -16,9 +17,55 @@ from uuid import UUID, uuid4
 from app.core.clock import Clock, SystemClock
 from app.integrations.email import SentEmail
 from app.integrations.object_storage import DownloadUrl, ObjectHead, UploadUrl
+from app.integrations.rate_limit import RateLimitExceededError
 from app.integrations.sms import SentSms
 
 _FAKE_HOST = "https://fake-object-storage.test"
+
+
+@dataclass(frozen=True)
+class RateLimitCheck:
+    """One recorded `RateLimiter.check` call, exactly as invoked."""
+
+    bucket: str
+    identifier: str
+    limit: int
+    window_seconds: int
+
+
+class FakeRateLimiter:
+    """In-memory `RateLimiter` recording every check.
+
+    Deterministic and permission-free: every call is appended to ``checks``
+    for exact-identifier assertions, and buckets named in ``failing_buckets``
+    (programmed via `fail_on`) raise `RateLimitExceededError` so tests drive
+    the 429 path without a real Redis window.
+    """
+
+    def __init__(self) -> None:
+        self.checks: list[RateLimitCheck] = []
+        self.failing_buckets: set[str] = set()
+
+    def fail_on(self, bucket: str) -> None:
+        """Program every future check of ``bucket`` to exceed the limit."""
+        self.failing_buckets.add(bucket)
+
+    async def check(
+        self, *, bucket: str, identifier: str, limit: int, window_seconds: int
+    ) -> None:
+        self.checks.append(
+            RateLimitCheck(
+                bucket=bucket,
+                identifier=identifier,
+                limit=limit,
+                window_seconds=window_seconds,
+            )
+        )
+        if bucket in self.failing_buckets:
+            raise RateLimitExceededError(bucket)
+
+    def checks_for(self, bucket: str) -> list[RateLimitCheck]:
+        return [check for check in self.checks if check.bucket == bucket]
 
 
 class _FailureProgrammable:
