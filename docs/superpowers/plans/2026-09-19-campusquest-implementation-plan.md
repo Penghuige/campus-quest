@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-19-campusquest-design.md`
 
+**Mandatory quality references:**
+- `AGENTS.md`
+- `docs/quality/quality-gates.md`
+- Backend/worker/database tasks: `docs/quality/backend-engineering.md`
+- Frontend tasks: `docs/quality/frontend-design-system.md` and `docs/quality/frontend-patterns.md`
+- Skills/tool use: `docs/quality/agent-tooling.md`
+- External examples: `docs/quality/reference-projects.md`
+
+These references are implementation constraints, not optional reading. External templates/skills never override the approved CampusQuest spec.
+
 ## Global Constraints
 
 - Student username is the student number, ASCII digits only, stored as a string, validated against StudentWhitelist, and globally unique.
