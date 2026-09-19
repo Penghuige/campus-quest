@@ -17,6 +17,7 @@ dependencies = [
     "pyotp>=2.9",
     "phonenumbers>=8.13",
     "httpx>=0.27",
+    "regex>=2024.11.6",
 ]
 
 [dependency-groups]
