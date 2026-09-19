@@ -83,7 +83,7 @@ git commit -m "feat: add task assignment and claim persistence"
 
 - [ ] **Step 1: Write failing lifecycle tests**
 
-Cover allowed transitions `DRAFT->PUBLISHED->PAUSED->PUBLISHED->CLOSED->ARCHIVED` and reject direct `DRAFT->ARCHIVED`. Verify FIXED requires `fixed_deadline_at`; RELATIVE requires positive `duration_minutes`.
+Cover allowed transitions `DRAFT->PUBLISHED->PAUSED->PUBLISHED->CLOSED->ARCHIVED` and reject direct `DRAFT->ARCHIVED`. Verify FIXED requires `fixed_deadline_at`; RELATIVE requires positive `duration_minutes`. Also assert PAUSE and default CLOSE stop new claims without cancelling or rewriting already-existing Claims.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -247,7 +247,7 @@ git commit -m "feat: allocate assignments safely under concurrency"
 
 - [ ] **Step 1: Write cutoff tests with FrozenClock**
 
-FIXED task at 4h01m remaining -> allowed; at 4h exactly define according to `remaining <= cutoff` as blocked; at 3h59m -> blocked. RELATIVE ignores global fixed cutoff.
+FIXED task at 4h01m remaining -> allowed; at exactly 4h -> allowed because the approved rule stops new claims only when remaining time is **less than** 4h; at 3h59m -> blocked. RELATIVE ignores global fixed cutoff.
 
 - [ ] **Step 2: Write quota-status tests**
 
