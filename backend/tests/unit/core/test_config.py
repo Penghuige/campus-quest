@@ -12,15 +12,13 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
     monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
     monkeypatch.setenv("S3_BUCKET", "campusquest")
+    monkeypatch.setenv("S3_ACCESS_KEY", "access")
+    monkeypatch.setenv("S3_SECRET_KEY", "secret")
     monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
 
 
 def test_business_timezone_defaults_to_configured_value(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db/test")
-    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
-    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
-    monkeypatch.setenv("S3_BUCKET", "campusquest")
-    monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
+    _set_required_env(monkeypatch)
     settings = Settings()
     assert settings.business_timezone == "Asia/Shanghai"
 

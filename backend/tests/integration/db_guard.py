@@ -21,6 +21,8 @@ INTEGRATION_ENV_DEFAULTS: dict[str, str] = {
     "REDIS_URL": "redis://localhost:6379/0",
     "S3_ENDPOINT_URL": "http://localhost:9000",
     "S3_BUCKET": "campusquest-test",
+    "S3_ACCESS_KEY": "campusquest",
+    "S3_SECRET_KEY": "campusquest-dev",
     "BUSINESS_TIMEZONE": "Asia/Shanghai",
 }
 

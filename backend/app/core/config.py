@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     redis_url: str
     s3_endpoint_url: str
     s3_bucket: str
+    s3_access_key: str
+    s3_secret_key: str
     business_timezone: str
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30

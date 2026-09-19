@@ -23,10 +23,8 @@ from app.core.config import get_settings
 from app.db.session import create_db_engine
 from db_guard import require_test_database
 
-_TEST_CONTAINER_HINT = (
-    "docker run -d --name campusquest-pg-test -e POSTGRES_PASSWORD=test "
-    "-e POSTGRES_USER=test -e POSTGRES_DB=campusquest_test -p 15432:5432 "
-    "postgres:16-alpine"
+_TEST_STACK_HINT = (
+    "docker compose -f infra/docker-compose.yml up -d (from the repository root)"
 )
 
 
@@ -54,7 +52,7 @@ def require_integration_database() -> None:
     except Exception as exc:
         pytest.fail(
             f"Integration database unreachable at {settings.database_url}: {exc!r}. "
-            f"Start the disposable test PostgreSQL first: {_TEST_CONTAINER_HINT}"
+            f"Start the local dependency stack first: {_TEST_STACK_HINT}"
         )
 
 
