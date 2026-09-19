@@ -248,7 +248,7 @@ Detect XLSX ZIP structure, SQLite header, and text CSV plausibility; compare wit
 
 - [ ] **Step 3: Persist structured report**
 
-Include parser version, row count, columns, missing/extra columns, type errors, null ratios, duplicate counts, warnings, errors, duration.
+Include parser version, row count, columns, missing/extra columns, type errors, null ratios, duplicate counts, warnings, errors, duration, plus at most a configured small number of sanitized preview rows. Preview values are plain data only; formulas are never evaluated, large cells are truncated for preview, and sensitive parser internals/object keys are not returned to Student-facing responses.
 
 - [ ] **Step 4: Run worker tests and commit**
 
