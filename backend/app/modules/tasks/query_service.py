@@ -1,6 +1,6 @@
 # backend/app/modules/tasks/query_service.py
 """Task read side: the student surfaces and the statistics aggregate
-(spec §28, §41-§42; plan 03 tasks 3 and 9).
+(spec §28, §41-§42).
 
 Design decisions:
 
@@ -36,20 +36,21 @@ Design decisions:
 - **Offset pagination** is the documented V1 choice for both public
   lists (tasks, own claims): simple to reason about, stable enough at
   V1 volumes, and the route layer owns the limit/offset bounds.
-- **Submission counts are a Plan 04 seam.** The submissions table does
+- **Submission counts are a future seam.** The submissions table does
   not exist yet; the field ships empty and NO submission query is
-  invented here. Plan 04 fills it against its own status axes.
+  invented here. The submission module fills it against its own status
+  axes.
 - **Rating summary** comes from the cross-module ``RatingSummaryPort``
-  (interfaces.md: Plan 03 ships a null port, Plan 06 supplies the
-  concrete adapter backed by TaskRating). The port sketch in
+  (interfaces.md: this module ships a null port; the community module
+  supplies the concrete adapter backed by TaskRating). The port sketch in
   interfaces.md reads ``summary(task_id) -> RatingSummary | None``; the
   Protocol below keeps that name and shape but is ``async`` because the
-  Plan 06 adapter reads PostgreSQL — the adapter receives its session at
+  real adapter reads PostgreSQL — the adapter receives its session at
   construction, like every per-request-scoped port. ``summary`` is
   None-safe: a task nobody rated reports ``rating=None``.
 - **No Clock.** Reads are as-of-now snapshots with no time-dependent
-  business rule, so no clock is injected (plan pre-flight decision;
-  revisit only if a query ever needs business time).
+  business rule, so no clock is injected
+  (revisit only if a query ever needs business time).
 """
 
 from __future__ import annotations
@@ -102,20 +103,21 @@ _STATISTICS_DENIED_MESSAGE = (
 _TASK_READ_DENIED_MESSAGE = "只有任务所有者、协作者或管理员可以查看该任务"
 
 
-# --- cross-module rating port (Plan 06 supplies the real adapter) ----------------
+# --- cross-module rating port (the community module supplies the adapter) -------
 
 
 class RatingSummaryPort(Protocol):
-    """Read-side rating port; Plan 06's adapter is backed by TaskRating."""
+    """Read-side rating port; the community module's adapter is backed by
+    TaskRating."""
 
     async def summary(self, task_id: UUID) -> RatingSummary | None: ...
 
 
 class NullRatingSummaryPort:
-    """The Plan 03 stand-in: every task reports "not rated yet".
+    """The interim stand-in: every task reports "not rated yet".
 
-    Used until Plan 06 wires the community-backed adapter, and by tests
-    that exercise the None path.
+    Used until the community module wires the TaskRating-backed adapter,
+    and by tests that exercise the None path.
     """
 
     async def summary(self, task_id: UUID) -> RatingSummary | None:
@@ -129,9 +131,10 @@ class NullRatingSummaryPort:
 class TaskStatistics:
     """Counts-only task aggregate (spec §41; privacy per §40/§42).
 
-    ``submission_counts`` is the documented Plan 04 seam: empty until
+    ``submission_counts`` is the documented future seam: empty until
     the submission module lands, and its key set will be defined by
-    Plan 04's own status axes (validation / review), not invented here.
+    that module's own status axes (validation / review), not invented
+    here.
     """
 
     task_id: UUID

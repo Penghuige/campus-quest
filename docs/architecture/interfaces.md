@@ -39,6 +39,11 @@ Rules:
 - `Clock` is the only source of business time. Production uses `SystemClock` (UTC-aware); tests use `FrozenClock(current: datetime)`, which rejects naive datetimes (Plan 01, `backend/app/core/clock.py`).
 - `Actor` is the authenticated context passed to service calls. Other modules consume `Actor` and RBAC helpers (`require_role(*roles)`, `require_active_actor()`, `get_actor()`); they never inspect tokens or passwords directly (Plan 02).
 - `DomainEvent.occurred_at` is UTC-aware; `payload` must be JSON-serializable.
+- Domain-event publication follows the outbox direction. `LoggingEventPublisher` (the interim production adapter) may log, but must NOT be replaced with direct Celery/SMS/email side effects inside the DB transaction. When Plan 07/08 lands:
+  - event/audit/notification intent persists in the SAME PostgreSQL transaction as the domain change;
+  - dispatch to external channels happens asynchronously after commit;
+  - delivery is idempotent (a redelivered or replayed intent produces one observable effect).
+  This rules out "event sent but DB commit failed" dual-write bugs. The Plan 07/08 integration tests must include an intentional post-intent DB-transaction failure proving no externally visible side effect escapes.
 
 ## Canonical Enums
 

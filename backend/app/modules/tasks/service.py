@@ -27,22 +27,22 @@ Design decisions:
   pause/resume untouched; ``closed_at`` is set once at close. Both come
   from the injected ``Clock`` (§11), never ``datetime.now``.
 - **Ownership:** lifecycle verbs and edits are owner-or-Admin
-  (``PERMISSION_DENIED`` otherwise); collaborators (T3) carry no
+  (``PERMISSION_DENIED`` otherwise); collaborators carry no
   lifecycle capability in their V1 set, so no seam beyond this check is
   needed yet.
 - **Close never touches Claims** (spec §6.2: default keep; §6.2 禁止
   pause/close secretly cancelling claims). Claim disposition on close —
-  if ever exposed — belongs to the claim service (T6/T8), not here.
+  if ever exposed — belongs to the claim and abandon services, not here.
 - **Edit rule (V1):** DRAFT is fully editable; PUBLISHED/PAUSED accept
   presentation fields only; CLOSED/ARCHIVED are frozen. See
   ``UpdateTask`` for why contract fields freeze at first publish.
-- **Boundaries (plan pre-flight, spec §9.1 "少于 cutoff 时停止"):** blocked
+- **Boundaries (spec §9.1 "少于 cutoff 时停止"):** blocked
   when remaining time is strictly LESS than ``claim_cutoff_minutes``; at
   exactly the cutoff the task is still claimable/publishable.
 - **Unknown task id** raises ``TaskNotFoundError`` carrying the system
-  code ``NOT_FOUND`` (404). The T9 transport review resolved the T2
-  carry: a missing aggregate IS the system-404 semantic — no business
-  code is added to the registry, and the router documents this once.
+  code ``NOT_FOUND`` (404): a missing aggregate IS the system-404
+  semantic — no business code is added to the registry, and the router
+  documents this once.
 
 Transaction shape per backend-engineering §5: one ``SELECT ... FOR
 UPDATE``, the invariants, one field mutation block, and exactly one
@@ -81,7 +81,7 @@ SUPPORTED_NOTIFICATION_CHANNELS: frozenset[str] = frozenset({"SMS", "EMAIL", "IN
 # spec §6: V1 fixes the grace period at 24h with no product entry point.
 DEFAULT_GRACE_PERIOD_MINUTES = 1440
 
-# --- transition table (spec §6.2; the brief, verbatim) ------------------------
+# --- transition table (spec §6.2, verbatim) ------------------------------------
 
 ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.DRAFT: {TaskStatus.PUBLISHED},
@@ -130,7 +130,7 @@ _CUTOFF_MESSAGE = (
 )
 
 
-# --- typed exceptions (router-mapped; T9 seam) --------------------------------
+# --- typed exceptions (router-mapped) -----------------------------------------
 
 
 class TaskNotFoundError(BusinessError):
@@ -477,7 +477,7 @@ class TaskService:
     # -- claimability -------------------------------------------------------------
 
     def is_claimable(self, task: Task, *, now: datetime | None = None) -> bool:
-        """The claim gate the claim service (T6) will reuse (spec §6.2, §9.1).
+        """The claim gate the claim service reuses (spec §6.2, §9.1).
 
         Only PUBLISHED is claimable — DRAFT is invisible, PAUSED/CLOSED
         stop new claims. FIXED additionally needs remaining time >= the
@@ -555,7 +555,7 @@ class TaskService:
         one created through ``create_task``.
 
         Order: reward -> deadline policy -> submission schema -> file
-        policy -> size cap (the brief's order).
+        policy -> size cap.
         """
         if task.base_reward_points is None or task.base_reward_points <= 0:
             raise BusinessError(
@@ -580,7 +580,7 @@ class TaskService:
             if deadline < now + cutoff:
                 # spec §9.1: block with a clear error instead of going
                 # live with (almost) no claimable time left. 409 joins
-                # the T9 conflict-family mapping for this code (the
+                # the conflict-family mapping for this code (the
                 # claim-side TaskNotClaimableError carries the same
                 # status); the router docstring owns the table.
                 raise BusinessError(

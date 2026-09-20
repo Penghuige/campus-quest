@@ -1,10 +1,10 @@
 # backend/app/modules/identity/otp.py
 """Phone OTP challenge lifecycle (spec §5.4, §33.2).
 
-`OtpChallengeService` is the real implementation behind the Task-3
-`PhoneVerificationPort` seam plus the two challenge-lifecycle operations the
-plan froze for this task: ``request_phone_challenge`` and
-``verify_phone_challenge``. All dependencies (Redis client, Clock,
+`OtpChallengeService` is the real implementation behind the
+`PhoneVerificationPort` seam plus the two challenge-lifecycle operations
+``request_phone_challenge`` and ``verify_phone_challenge``. All
+dependencies (Redis client, Clock,
 SmsSender, policy) are constructor-injected — no global state.
 
 Design decisions:
@@ -43,13 +43,13 @@ Design decisions:
   counters, so a cooldown rejection never burns a cap, and the cooldown key
   is written before the SMS send, so a failed send still throttles resends.
 - Redis replies are exchanged as ``str``; the service decodes ``bytes``
-  replies too, so production wiring (Task 9 routes, mirroring
+  replies too, so production wiring (the identity routes, mirroring
   `app.core.readiness`) may construct the client with or without
   ``decode_responses=True``.
 
 Error taxonomy: module-level exceptions, not `BusinessError` — the
 §29/`error_codes.py` registry is frozen and gains codes doc-first
-(interfaces.md) at the router task, where each exception maps to an
+(interfaces.md); the router maps each exception to an
 envelope response. Callers can already branch precisely today.
 """
 
@@ -114,8 +114,8 @@ class VerifiedPhoneToken:
     """Single-use proof returned by a successful code verification.
 
     Carries the opaque token and its expiry; the phone itself is only
-    resolvable through ``verify_phone_token`` (the Task-3 port), so a
-    caller that never consumes the token never learns the number.
+    resolvable through ``verify_phone_token`` (the port in ``ports.py``),
+    so a caller that never consumes the token never learns the number.
     """
 
     token: str
@@ -185,7 +185,8 @@ class OtpPolicy:
     ``OtpPolicy.from_settings`` maps the typed deployment settings; unit
     tests construct policies directly so no environment is needed. Kept in
     the module (not `enums.py`) because the frozen interfaces.md registry
-    does not yet list OTP contracts; the router task promotes what it needs.
+    does not yet list OTP contracts; promote it when a second consumer
+    needs the type.
     """
 
     ttl_seconds: int
@@ -436,7 +437,7 @@ class OtpChallengeService:
         distinguishing the cases would only leak lifecycle state.
 
         The returned phone carries the challenge's ``purpose`` so consumers
-        can reject a proof minted for a different operation: Task 8's phone
+        can reject a proof minted for a different operation: phone
         change and password reset — and registration too, which enforces
         ``REGISTER`` itself (``IdentityService.register_student`` rejects
         any other purpose; no consumer may ignore the field).
@@ -537,10 +538,11 @@ def normalize_phone(raw: str, region: str) -> str:
     Raw formatting (spaces, +86 vs 0086, domestic trunk) is parsed away by
     the standard library and never stored: only the E.164 form keys
     cooldown/caps and reaches the SmsSender and the challenge record.
-    Public since Task 8: the profile service normalizes a caller-supplied
-    new phone BEFORE requesting a challenge, so the friendly
-    bound-elsewhere pre-check compares the same canonical form the index
-    enforces (backend-engineering §7) without re-implementing parsing.
+    Public for cross-module use: the profile service normalizes a
+    caller-supplied new phone BEFORE requesting a challenge, so the
+    friendly bound-elsewhere pre-check compares the same canonical form
+    the index enforces (backend-engineering §7) without re-implementing
+    parsing.
     """
     try:
         parsed = phonenumbers.parse(raw, region)

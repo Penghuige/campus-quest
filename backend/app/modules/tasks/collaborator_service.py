@@ -1,8 +1,8 @@
 # backend/app/modules/tasks/collaborator_service.py
 """Task collaborator use cases: grant and remove capability sets
-(spec §4.2 "管理自己 Task 的协作者"; plan 03 task 3).
+(spec §4.2 "管理自己 Task 的协作者").
 
-Pinned permission model (the brief's rules, made explicit):
+Pinned permission model, made explicit:
 
 - **Who may grant.** The task owner and Admin (spec §4.3: 全部 Task
   管理) may add any Teacher with any non-empty subset of the four frozen
@@ -13,8 +13,8 @@ Pinned permission model (the brief's rules, made explicit):
   Teacher, Student) modifying collaborators is ``PERMISSION_DENIED``.
 - **Who may remove.** Owner/Admin only. The spec is silent on
   collaborator-initiated removal (including a collaborator removing
-  themselves); plan 03 resolves it to owner/Admin — reopening that later
-  means changing one check here, not the persistence shape.
+  themselves); this service resolves it to owner/Admin — reopening that
+  later means changing one check here, not the persistence shape.
 - **Who may be granted.** Target must be a Teacher, verified through the
   identity ``UserDirectory`` port (interfaces.md: modules outside
   identity read account facts ONLY through the port, never identity ORM).
@@ -26,7 +26,8 @@ Pinned permission model (the brief's rules, made explicit):
   stored in canonical definition order. The column CHECK
   (``permissions <@ ARRAY[...]``, non-empty) is the database-boundary
   backstop; parity between the enum and the models' closed set is pinned
-  by the integration tests, mirroring the T2 file-type parity tests.
+  by the integration tests (the same parity discipline as the file-type
+  sets in task_service).
 
 Duplicates: ``(task_id, teacher_id)`` is UNIQUE; the service pre-checks
 for a friendly typed conflict and translates the IntegrityError race
@@ -68,7 +69,7 @@ __all__ = [
 ]
 
 
-# --- the frozen capability set (plan 03 task 3) --------------------------------
+# --- the frozen capability set --------------------------------------------------
 
 
 class CollaboratorPermission(StrEnum):
@@ -110,7 +111,7 @@ _COLLABORATOR_MISSING_MESSAGE = "任务协作者不存在"
 _DUPLICATE_CONSTRAINT_NAME = "uq_task_collaborators_task_id_teacher_id"
 
 
-# --- typed exceptions (router-mapped; T9 seam) ----------------------------------
+# --- typed exceptions (router-mapped) --------------------------------------------
 
 
 class DuplicateCollaboratorError(BusinessError):
@@ -118,7 +119,7 @@ class DuplicateCollaboratorError(BusinessError):
 
     The error-code registry has no dedicated collaborator-conflict code
     (unlike identity's ``USERNAME_ALREADY_EXISTS``); this carries
-    ``VALIDATION_ERROR`` with HTTP 409 and the T9 router may remap it if
+    ``VALIDATION_ERROR`` with HTTP 409 and the router may remap it if
     interfaces.md registers one (doc-first rule) — same posture as
     ``TaskNotFoundError``.
     """
@@ -198,7 +199,7 @@ class TaskCollaboratorService:
     """Grant and remove Task collaborator capability sets (spec §4.2).
 
     ``user_directory`` is the frozen identity port; the concrete adapter
-    is injected by the composition root (T9), tests pass the real
+    is injected by the composition root; tests pass the real
     PostgreSQL-backed adapter or a stub.
     """
 

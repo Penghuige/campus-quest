@@ -16,8 +16,8 @@ Design decisions:
   matches — no account enumeration via response or timing. Password
   verification precedes the status check: an attacker without the password
   learns nothing about the account's existence or state. The same uniform
-  failure answers a correct password on a non-STUDENT account (review fix,
-  mirroring staff_service's reverse STUDENT check): the student login door
+  failure answers a correct password on a non-STUDENT account (mirroring
+  staff_service's reverse STUDENT check): the student login door
   must never mint a password-only session for staff.
 - **Rotation is one transaction guarded by a row lock.** The presented
   session row is selected `FOR UPDATE`, so two concurrent rotations of the
@@ -36,13 +36,13 @@ Design decisions:
   `ACCOUNT_NOT_ACTIVE`), unlike `otp.py`'s module-level taxonomy: these two
   codes already exist in the frozen §29 registry (docs/architecture/
   interfaces.md), so there is nothing doc-first to add.
-- **`change_password` is Task 8's**, deliberately: it needs the old-password
-  check plus the reset-token flow; the §5.6 obligation ("修改密码、找回密码后
-  SHOULD 使旧 Refresh Session 失效") is discharged by `revoke_all`, which T8
-  calls verbatim.
+- **`change_password` lives in `profile_service`**, deliberately: it needs
+  the old-password check plus the reset-token flow; the §5.6 obligation
+  ("修改密码、找回密码后 SHOULD 使旧 Refresh Session 失效") is discharged by
+  `revoke_all`, which it calls verbatim.
 - Nothing here reads settings or the environment: clock, access-token
   codec, and refresh TTL are constructor-injected; the composition root
-  (router task) builds them from `Settings`.
+  builds them from `Settings`.
 """
 
 from __future__ import annotations
@@ -257,7 +257,7 @@ class SessionService:
         """Revoke every still-live session of ``user_id`` (spec §5.6).
 
         One UPDATE, one transaction. Called by password change/reset
-        (Task 8) so old refresh sessions die with the old password; rows
+        so old refresh sessions die with the old password; rows
         are never deleted — revocation is part of the audit trail.
         """
         revoked_count = await self._revoke(db, user_id, keep_session_id=None)
@@ -268,7 +268,7 @@ class SessionService:
     ) -> None:
         """Revoke every live session of ``user_id`` except ``keep_session_id``.
 
-        The `change_password` variant (Task 8): the caller passes the
+        The `change_password` variant: the caller passes the
         access token's ``sid`` so the session that AUTHORIZED the change
         stays usable while every other device is signed out. Like
         ``revoke_all`` this commits — deliberately: ``change_password``

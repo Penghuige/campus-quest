@@ -6,6 +6,8 @@ PostgreSQL itself rejects duplicates and hides finished assignments even
 when the application forgets:
 
 - UNIQUE(task_id, platform, keyword) on assignments (§31.3);
+- grace_period_minutes is CHECK-pinned to exactly 1440 minutes (spec §6
+  fixes V1 grace at 24 hours; any other value is rejected);
 - at most one active Claim per Assignment via partial unique index (§31.4);
 - at most one non-terminal Claim per user per Task via partial unique
   index (§31.5), and terminal Claims (COMPLETED/ABANDONED/EXPIRED) free
@@ -163,6 +165,34 @@ async def test_same_keyword_other_platform_or_task_allowed(
         _assignment(task_a, keyword="考研英语", platform="zhihu"),
         _assignment(task_b, keyword="考研英语", platform="xiaohongshu"),
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("grace_minutes", [1439, 1441, 0])
+async def test_grace_period_off_pinned_value_rejected(
+    db_session: AsyncSession, grace_minutes: int
+) -> None:
+    """The grace period is pinned at exactly 1440 minutes in V1 (spec §6):
+    values just below, just above, and zero are all rejected by the
+    database CHECK, not only by application validation."""
+    owner = _teacher()
+    await _flush(db_session, owner)
+
+    db_session.add(_task(owner, grace_period_minutes=grace_minutes))
+    with pytest.raises(IntegrityError, match="ck_tasks_grace_period_minutes"):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+@pytest.mark.integration
+async def test_grace_period_pinned_value_accepted(
+    db_session: AsyncSession,
+) -> None:
+    """The pinned value itself inserts cleanly, including when set
+    explicitly rather than left to the column default."""
+    owner = _teacher()
+    await _flush(db_session, owner)
+    await _flush(db_session, _task(owner, grace_period_minutes=1440))
 
 
 @pytest.mark.integration

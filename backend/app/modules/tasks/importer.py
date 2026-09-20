@@ -1,5 +1,5 @@
 # backend/app/modules/tasks/importer.py
-"""Assignment batch import: preview then confirm (spec §7.1; plan 03 T4).
+"""Assignment batch import: preview then confirm (spec §7.1).
 
 Flow (spec §7.1 MUST): upload -> parse -> pre-check -> present valid
 count / error count / per-row errors -> explicit user confirmation ->
@@ -143,7 +143,7 @@ class ImportErrorCode(StrEnum):
 
     ``FILE_TOO_LARGE`` reuses the §29 registry code name for oversize
     uploads; the rest are import-specific and travel only inside the
-    preview DTO (T9 may surface them through the API layer verbatim).
+    preview DTO (the API layer surfaces them verbatim).
     """
 
     EMPTY_PLATFORM = "EMPTY_PLATFORM"
@@ -182,7 +182,7 @@ _PREVIOUS_IMPORT_MESSAGE = "部分组合已存在于该任务，请移除后重�
 _TOKEN_INVALID_MESSAGE = "导入预览不存在、已失效或已被确认"
 
 
-# --- typed exceptions (router-mapped; T9 seam) -------------------------------------
+# --- typed exceptions (router-mapped) ---------------------------------------------
 
 
 class DuplicateAssignmentsError(BusinessError):
@@ -638,7 +638,7 @@ class AssignmentImportService:
         if conflicts:
             raise DuplicateAssignmentsError(sorted(conflicts))
 
-        # Deadlock avoidance (final-review fix): two concurrent confirms
+        # Deadlock avoidance: two concurrent confirms
         # whose previews stored the same pair set in DIFFERENT row orders
         # ([A,B] vs [B,A]) would otherwise take the
         # UNIQUE(task_id, platform, keyword) index slots in opposite
@@ -648,7 +648,7 @@ class AssignmentImportService:
         # 500). Sorting gives every transaction one canonical slot
         # acquisition order, so the loser queues on the first slot and
         # surfaces the typed 409 instead (verified by reproduction: the
-        # reversed-order barrier test deadlocked on every pre-fix run).
+        # reversed-order barrier test deadlocks without the sort).
         ordered_rows = tuple(sorted(rows, key=lambda row: (row.platform, row.keyword)))
 
         db.add_all(

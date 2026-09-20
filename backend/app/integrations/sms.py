@@ -5,9 +5,9 @@ Domain modules call `SmsSender.send`; provider specifics (Aliyun, Twilio,
 ...) live in real adapters, not here. Tests assert exact deliveries via
 `FakeSmsSender.messages` (docs/architecture/interfaces.md, Adapter Ports).
 
-`LoggingSmsSender` is the interim production adapter (Plan 02): the
-notification module (Plan 07) owns real provider delivery, so until it
-lands the composition root wires a sender that logs the masked recipient
+`LoggingSmsSender` is the interim production adapter: the notification
+module owns real provider delivery, so until it lands the composition
+root wires a sender that logs the masked recipient
 and template only — NEVER `variables` (the OTP code travels there, spec
 §33.2) — instead of silently dropping the send.
 """
@@ -59,10 +59,10 @@ class SmsSender(Protocol):
 
 
 class LoggingSmsSender:
-    """Interim `SmsSender` adapter: log masked, deliver nothing (Plan 02).
+    """Interim `SmsSender` adapter: log masked, deliver nothing.
 
-    Plan 07 replaces this at the composition root when the notification
-    module ships real provider adapters. Deliberately never raises: a
+    The notification module replaces this at the composition root when
+    it ships real provider adapters. Deliberately never raises: a
     dev-deployment log sink failing must not fail the request.
     """
 

@@ -1,6 +1,6 @@
 # backend/app/modules/tasks/deadlines.py
 """Deadline and reward-tier calculator (spec §9, §9.3, §11.5, §31.1,
-§31.14; backend-engineering §11; plan 03 T5).
+§31.14; backend-engineering §11).
 
 Pure functions only: no database, no clock, no I/O. Every instant is an
 input — `datetime.now` never appears (backend-engineering §11: business
@@ -16,17 +16,19 @@ Deadline computation (spec §9.1/§9.2), snapshotted at claim time:
   claims of the task; `claimed_at` does not participate.
 - RELATIVE:  ``deadline_at = claimed_at + task.duration_minutes`` — a
   later Teacher edit of `duration` cannot affect existing claims
-  (§9.2); this function's return value is what the claim service (T6)
+  (§9.2); this function's return value is what the claim service
   persists into the §6.2 MUST-snapshot columns.
 
 Grace width decision: spec §9 writes ``grace_deadline_at = deadline_at +
 24h`` and §6 fixes V1 grace at 1440 minutes with no product entry point.
 The implementation therefore reads ``task.grace_period_minutes`` — the
-database column, NOT NULL with server_default 1440 — rather than
-hardcoding 1440, so a future spec change is a data/config change rather
-than a code change. For rows not yet flushed through PostgreSQL (unit
-tests, in-memory construction) the column reads None; that is treated
-as the column default, 1440. Positivity mirrors the database CHECK.
+database column, NOT NULL with server_default 1440 and CHECK-pinned to
+exactly 1440 — rather than hardcoding 1440, so a future spec change is
+a data/config change rather than a code change. For rows not yet
+flushed through PostgreSQL (unit tests, in-memory construction) the
+column reads None; that is treated as the column default, 1440. The
+positivity guard below therefore only defends unflushed in-memory rows;
+persisted rows are already pinned by the database CHECK.
 
 Reward tiers (spec §9.3), the exact comparison table — note which edges
 are inclusive:

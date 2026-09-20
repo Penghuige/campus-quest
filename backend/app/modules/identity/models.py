@@ -13,7 +13,8 @@ Design decisions:
 - `username` (student number) is VARCHAR and is never converted to an
   integer: leading zeros must survive (spec §5.2). The 64-character bound is
   an unbounded-input guard only; the configurable 6-20 digit rule for
-  students is application validation (Task 2), as is the whitelist hit.
+  students is application validation (`validation.py`), as is the whitelist
+  hit.
 - `phone_e164` is nullable with a partial unique index
   (`WHERE phone_e164 IS NOT NULL`): a STUDENT sits in PENDING_PHONE before
   the OTP flow binds a phone, and staff accounts may carry no phone at all,

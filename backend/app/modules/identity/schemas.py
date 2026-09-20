@@ -7,7 +7,7 @@ Three deliberately different shapes (backend-engineering §9):
   request model: the HTTP request schema (untrusted transport input) lives
   alongside it below and constructs this command after its own parsing.
 - The ``*Request`` models are the untrusted transport input of the identity
-  API (Task 9): plain Pydantic models carrying raw caller strings only —
+  API: plain Pydantic models carrying raw caller strings only —
   normalization and business validation belong to the services.
 - The ``*Response``/public models are the response contract. Each
   enumerates its fields and is built explicitly from the ORM object —
@@ -33,11 +33,11 @@ class RegisterStudent:
     """Command for ``IdentityService.register_student`` (spec §5.1-5.4).
 
     ``student_number`` and ``nickname`` are raw caller input; the service
-    validates/normalizes them through the Task-2 validators before any
-    persistence. ``phone_token`` references an already-verified phone
-    challenge (Task 4 owns the lifecycle). ``password`` is plaintext in
-    memory only and is hashed through the ``PasswordHasher`` port before
-    the User row exists.
+    validates/normalizes them through `app.modules.identity.validation`
+    before any persistence. ``phone_token`` references an already-verified
+    phone challenge (the OTP service owns the lifecycle). ``password`` is
+    plaintext in memory only and is hashed through the ``PasswordHasher``
+    port before the User row exists.
     """
 
     student_number: str
@@ -46,7 +46,7 @@ class RegisterStudent:
     password: str
 
 
-# --- Transport request models (Task 9; raw caller input, validated by services)
+# --- Transport request models (raw caller input, validated by services)
 
 
 class PhoneChallengeRequest(BaseModel):
@@ -246,7 +246,7 @@ class PhoneTokenResponse(BaseModel):
 class TokenPairResponse(BaseModel):
     """One issued session (spec §5.6) — cookie-only refresh delivery.
 
-    The long-lived refresh token NEVER rides in the body (PR review fix):
+    The long-lived refresh token NEVER rides in the body:
     it travels exclusively in the HttpOnly refresh cookie the response
     sets, so a JSON body (loggers, proxies, XSS-readable storage) can
     never leak a live refresh credential. The body's ``access_token`` is

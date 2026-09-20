@@ -55,7 +55,7 @@ class ErrorCode(StrEnum):
     REWARD_OUT_OF_STOCK = "REWARD_OUT_OF_STOCK"
     REDEMPTION_LIMIT_REACHED = "REDEMPTION_LIMIT_REACHED"
     RATING_NOT_ELIGIBLE = "RATING_NOT_ELIGIBLE"
-    # Plan 02 identity-API additions (interfaces.md "Canonical codes" and the
+    # Identity-API additions (interfaces.md "Canonical codes" and the
     # "Identity typed-exception mapping" table; spec §5.5, §5.6, §5.8, §33.1,
     # §33.2, §33.4). Each maps one typed identity exception to one code.
     TOTP_SETUP_REQUIRED = "TOTP_SETUP_REQUIRED"

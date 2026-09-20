@@ -1,5 +1,5 @@
 # backend/app/modules/identity/router.py
-"""Identity HTTP API: thin routes + the module's composition root (Task 9).
+"""Identity HTTP API: thin routes + the module's composition root.
 
 Spec §5 (identity flows), §28 (``/api/v1`` prefix), §29 (envelope), §33.1
 (cookies/CSRF/rate limit), §33.4 (management 2FA); backend-engineering §3
@@ -25,7 +25,7 @@ decisions live here:
   cookie value may send the refresh token in the body instead and never
   receives the CSRF obligation — the dependency only engages when the
   refresh cookie is present, so a body-token request carries no ambient
-  cookie authority to forge. DELIVERY is cookie-only (PR review fix):
+  cookie authority to forge. DELIVERY is cookie-only:
   ``TokenPairResponse`` carries the short-lived access token plus the
   ``csrf_token`` mirror of the readable cookie — never the refresh token.
   The V1 client is the cookie-using Next.js PWA; a deliberate token-client
@@ -46,8 +46,8 @@ decisions live here:
   process-cached; services are assembled per request from injected clock,
   settings, codec, and sender dependencies, so tests override a
   dependency, never service internals (backend-engineering §11, §21).
-  Real SMS/Email provider adapters arrive with the notification module
-  (Plan 07); until then the interim logging adapters record masked
+  Real SMS/Email provider adapters arrive with the notification
+  module; until then the interim logging adapters record masked
   deliveries (never ``variables`` — the OTP code and email token travel
   there).
 - **Staff TOTP setup sits behind ``require_active_staff_actor``**: staff
@@ -239,7 +239,7 @@ def _token_pair_response(
     response: Response, tokens: SessionTokens, settings: Settings
 ) -> TokenPairResponse:
     csrf_token = _issue_session_cookies(response, tokens, settings)
-    # Cookie-only refresh delivery (PR review fix): the long-lived refresh
+    # Cookie-only refresh delivery: the long-lived refresh
     # token travels exclusively in the HttpOnly Set-Cookie header, never in
     # the JSON body. The body's access token is short-lived and bears no
     # refresh capability, so it is not the credential an XSS-leaked body
@@ -344,17 +344,18 @@ def get_rate_limiter(
 
 
 def get_sms_sender() -> SmsSender:
-    """Interim adapter (Plan 07 replaces with a real provider)."""
+    """Interim adapter; the notification module wires a real provider."""
     return LoggingSmsSender()
 
 
 def get_email_sender() -> EmailSender:
-    """Interim adapter (Plan 07 replaces with a real provider)."""
+    """Interim adapter; the notification module wires a real provider."""
     return LoggingEmailSender()
 
 
 def get_event_publisher() -> DomainEventPublisher:
-    """Interim adapter: log the event, persist nothing (Plan 08 audit)."""
+    """Interim adapter; the audit/outbox module wires persistent dispatch
+    (see the outbox contract in docs/architecture/interfaces.md)."""
     return LoggingEventPublisher()
 
 

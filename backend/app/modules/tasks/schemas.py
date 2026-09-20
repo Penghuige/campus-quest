@@ -5,12 +5,12 @@ engineering §9).
 Four shapes, mirroring the identity module's split:
 
 - ``CreateTask`` / ``UpdateTask`` are internal command dataclasses, not
-  Pydantic request models. The untrusted HTTP surface (T9) carries its own
+  Pydantic request models. The untrusted HTTP surface carries its own
   ``*Request`` models below and constructs these commands after its own
   parsing; raw caller strings are validated and normalized by
   ``TaskService``, never trusted here.
 - ``TaskCard`` / ``ClaimView`` / ``PublishedTaskDetail`` are the read-side
-  DTOs the query service returns (T9). They live in this module — not
+  DTOs the query service returns. They live in this module — not
   query_service.py — because the Pydantic response models build from them
   and query_service must not import the transport layer. ``ClaimView`` is
   the ONLY student-facing shape allowed to carry an Assignment's
@@ -25,10 +25,10 @@ Four shapes, mirroring the identity module's split:
   column are unrepresentable in a student response, privacy by
   construction (spec §40).
 
-Notification defaults are explicit-with-default because of the plan-03
-task-1 carry: the columns' ``server_default true`` is only a fail-safe
-fallback; the command layer is where "on unless configured off" (spec
-§25.1: SMS on, EMAIL on for verified email, IN_APP on) becomes visible.
+Notification defaults are explicit-with-default by design: the columns'
+``server_default true`` is only a fail-safe fallback; the command layer
+is where "on unless configured off" (spec §25.1: SMS on, EMAIL on for
+verified email, IN_APP on) becomes visible.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ class CreateTask:
     claim_cutoff_minutes: int = 240
     submission_schema: Mapping[str, Any] | None = None
     submission_schema_version: int | None = None
-    # spec §25.1 defaults, explicit at the command layer (task-1 carry).
+    # spec §25.1 defaults, explicit at the command layer.
     notify_24h: bool = True
     notify_4h: bool = True
     notification_channels: Sequence[str] = DEFAULT_NOTIFICATION_CHANNELS
@@ -134,7 +134,7 @@ class TaskPublic:
     """Privacy-safe Task read DTO (spec §6, §40).
 
     Deliberately minimal: owner identity, submission schema, file policy
-    details, and notification config are not part of this shape. The T9
+    details, and notification config are not part of this shape. The
     read side builds the richer card/detail views (``TaskCard``,
     ``PublishedTaskDetail``) with availability counts; this stays the
     minimal shared shape services may return directly.
@@ -175,7 +175,7 @@ class PublishResult:
     """Outcome of a successful transition into PUBLISHED.
 
     ``claimable`` is the same ``TaskService.is_claimable`` verdict the
-    claim side (T6) will enforce, computed at publish time — a FIXED task
+    claim side enforces, computed at publish time — a FIXED task
     published exactly at its cutoff edge reports True; anything closer is
     rejected outright (spec §9.1), so a published task carrying False can
     only mean the deadline crossed the cutoff between publish and read.
@@ -187,7 +187,7 @@ class PublishResult:
     claimable: bool
 
 
-# --- read-side DTOs (T9; consumed by TaskQueryService, serialized below) ----------
+# --- read-side DTOs (consumed by TaskQueryService, serialized below) ---------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +231,8 @@ class TaskCard:
     deadline mode + remaining-time source (``fixed_deadline_at`` for FIXED;
     ``duration_minutes`` for RELATIVE — the countdown is UX, the server
     instant rules, spec §42), the AVAILABLE count — never the assignment
-    list — and the rating slot (None until Plan 06)."""
+    list — and the rating slot (None until the community module wires
+    the adapter)."""
 
     id: UUID
     title: str
@@ -266,7 +267,7 @@ class PublishedTaskDetail:
     my_claim: ClaimView | None
 
 
-# --- transport request models (T9; raw caller input, validated by services) --------
+# --- transport request models (raw caller input, validated by services) ------------
 
 
 class TaskCreateRequest(BaseModel):
@@ -337,7 +338,7 @@ class ImportConfirmRequest(BaseModel):
     preview_token: str = Field(min_length=1)
 
 
-# --- transport response models (T9; explicit builders, never ORM dumps) -------------
+# --- transport response models (explicit builders, never ORM dumps) ----------------
 
 
 class RatingSummaryResponse(BaseModel):
@@ -557,8 +558,8 @@ class TeacherTaskResponse(BaseModel):
 
 
 class TaskTransitionResponse(BaseModel):
-    """One lifecycle verb's outcome, normalized across verbs (the T2
-    carry): where the task landed, whether it is claimable there
+    """One lifecycle verb's outcome, normalized across verbs:
+    where the task landed, whether it is claimable there
     (``TaskService.is_claimable``, the same verdict the claim side
     enforces), and the lifecycle timestamps."""
 

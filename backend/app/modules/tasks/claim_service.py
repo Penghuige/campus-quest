@@ -1,6 +1,6 @@
 # backend/app/modules/tasks/claim_service.py
 """Concurrency-safe random assignment claiming (spec §8.2-8.4, §6.2, §9;
-backend-engineering §5-§7; plan 03 tasks 6-7).
+backend-engineering §5-§7).
 
 Transaction shape (spec §8.3, one transaction, one commit at the end):
 
@@ -18,14 +18,14 @@ Transaction shape (spec §8.3, one transaction, one commit at the end):
    the claimer's non-terminal claims (the quota and same-task facts)
    still under the user-row lock, then ``check`` runs the whole §8.2
    checklist head — account, task claimability, FIXED cutoff, quota,
-   same-task — as pure rules over the locked rows and the clock (task 7;
-   backend-engineering §4/§21: the predicates stay unit-testable without
+   same-task — as pure rules over the locked rows and the clock
+   (backend-engineering §4/§21: the predicates stay unit-testable without
    a database because every count arrives as an input). The clock
    instant (``claimed_at``) is sampled immediately BEFORE this step —
    after all locks are held — so lock-wait can never skew the RELATIVE
    deadline anchor, the FIXED cutoff comparison, or the persisted
-   claimed_at (the final-review pre-lock-sampling fix; see the CLOCK
-   SAMPLING CONTRACT comment in ``claim_random_assignment``).
+   claimed_at (see the CLOCK SAMPLING CONTRACT comment in
+   ``claim_random_assignment``).
 4. Candidate selection: ``... WHERE availability_status = AVAILABLE AND
    id NOT IN (this user's ABANDONED/EXPIRED assignments) ORDER BY
    random() LIMIT 1 FOR UPDATE SKIP LOCKED`` — two transactions can never
@@ -34,8 +34,8 @@ Transaction shape (spec §8.3, one transaction, one commit at the end):
 5. Claim insert + Assignment -> OCCUPIED + snapshot all in the same
    transaction; exactly one ``commit``.
 
-The lock order (user row -> Task FOR SHARE -> assignment locks) is the
-T6 review's carry-forward and MUST NOT be reordered.
+The lock order (user row -> Task FOR SHARE -> assignment locks) is
+load-bearing and MUST NOT be reordered.
 
 Design decisions:
 
@@ -56,9 +56,10 @@ Design decisions:
   all four ACTIVE_CLAIM_STATUSES, matching both partial unique indexes.
 - **Errors:** every §8.4 checklist failure raises its stable business
   code with a 4xx status. 409 marks the state-conflict family
-  (provisional pending the T9 transport review, like deadlines.py's 400);
-  ACCOUNT_NOT_ACTIVE stays 403 per the identity precedent; a missing
-  user or task is 404 NOT_FOUND like TaskNotFoundError.
+  (mirroring deadlines.py's provisional 400; the router docstring owns
+  the status table); ACCOUNT_NOT_ACTIVE stays 403 per the identity
+  precedent; a missing user or task is 404 NOT_FOUND like
+  TaskNotFoundError.
 - **IntegrityError mapping:** the two claim partial unique indexes are
   the database backstop for races SKIP LOCKED and the user lock cannot
   produce in practice. Expected violations translate to their §8.4 codes
@@ -196,7 +197,7 @@ _ACTIVE_CLAIM_EXISTS_MESSAGE = "该任务已有进行中的领取，不能重复
 _NO_ASSIGNMENT_MESSAGE = "该任务已无可领取的数据单元"
 
 
-# --- typed exceptions (router-mapped; T9 seam) --------------------------------------
+# --- typed exceptions (router-mapped) ---------------------------------------------
 
 
 class UserNotFoundError(BusinessError):
@@ -314,7 +315,7 @@ def _map_claim_integrity_error(
     return None
 
 
-# --- eligibility rules (task 7) ------------------------------------------------------
+# --- eligibility rules ---------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,7 +380,7 @@ class ClaimEligibilityService:
         """Run the §8.2 checklist head; return (None) when eligible.
 
         Raises the §8.4 business code of the FIRST failed rule, in the
-        T6 precedence order: account -> task -> cutoff -> quota ->
+        precedence order: account -> task -> cutoff -> quota ->
         same-task. ``active_claims`` is required (no default): the quota
         and same-task rules are only as strong as the facts fed to them.
         """
@@ -516,7 +517,7 @@ class ClaimService:
         if task is None:
             raise TaskNotFoundError(task_id)
 
-        # CLOCK SAMPLING CONTRACT (final-review fix): ``claimed_at`` is
+        # CLOCK SAMPLING CONTRACT: ``claimed_at`` is
         # sampled HERE — after every lock the flow takes (user row FOR
         # UPDATE above, Task FOR SHARE above) and before the first
         # eligibility rule that consumes it. Sampling before the locks
@@ -533,7 +534,7 @@ class ClaimService:
         # (3) The §8.2 checklist head inside the locked transaction:
         # facts still under the user-row lock, then the pure rules —
         # task claimability + FIXED cutoff, the global quota, and the
-        # same-task non-terminal conflict (task 7).
+        # same-task non-terminal conflict.
         active_claims = await ClaimEligibilityService.load_active_claims(db, user_id)
         self._eligibility.check(claimer, task, claimed_at, active_claims=active_claims)
 

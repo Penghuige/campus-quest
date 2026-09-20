@@ -56,8 +56,8 @@ class RewardLockStatus(StrEnum):
     """Frozen by interfaces.md (spec §11.2).
 
     It lives in this module because `AssignmentClaim.reward_lock_status`
-    needs it from Plan 03 on; the Plan 04 submission module imports it from
-    here instead of redefining the frozen member set.
+    needs it; the submission module imports it from here instead of
+    redefining the frozen member set.
     """
 
     NONE = "NONE"

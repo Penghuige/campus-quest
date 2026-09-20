@@ -1,17 +1,17 @@
 # backend/app/modules/identity/ports.py
 """Ports owned by the identity module (docs/architecture/interfaces.md).
 
-Task sequencing: registration (Task 3) depends on the port shapes below
-long before the real implementations land, so the seams are frozen here and
-tests inject deterministic fakes.
+The port shapes are frozen here independent of the implementations that
+satisfy them; tests inject deterministic fakes.
 
-- ``PasswordHasher`` is a plain callable: Task 5 plugs in the Argon2id
-  implementation (spec §5.6), and registration never needs verify/rehash
+- ``PasswordHasher`` is a plain callable: the Argon2id implementation
+  (spec §5.6) plugs in here, and registration never needs verify/rehash
   behavior, so a function signature is the whole contract.
 - ``PhoneVerificationPort`` resolves an already-verified phone-challenge
-  token (spec §33.2) to its normalized E.164 number. Task 4 owns the
-  challenge lifecycle — TTL, attempt limits, single-use consumption;
-  registration only consumes a token that already passed verification.
+  token (spec §33.2) to its normalized E.164 number. `app.modules.identity
+  .otp` owns the challenge lifecycle — TTL, attempt limits, single-use
+  consumption; registration only consumes a token that already passed
+  verification.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ class VerifiedPhone:
     """A phone number certified by a completed OTP challenge (spec §5.4).
 
     The E.164 form is the only phone representation registration ever sees:
-    raw input was normalized at challenge-creation time (Task 4), and the
+    raw input is normalized at challenge-creation time, and the
     original formatting is never a uniqueness key.
 
-    ``purpose`` is the challenge's recorded purpose (Task 8): consumers
+    ``purpose`` is the challenge's recorded purpose: consumers
     that authorize a specific operation (phone change, password reset)
     reject a proof minted for any other purpose, so a code a user received
     for — say — registration can never be replayed into a password reset.

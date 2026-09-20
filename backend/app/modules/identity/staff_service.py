@@ -27,23 +27,23 @@ Design decisions:
   possession of the single-use link plus a fresh password, and every JWT
   claim stays truthful (no fabricated session ids). It is NOT a management
   session — `authenticate_staff` refuses the account until TOTP is
-  confirmed (`TotpSetupRequiredError`), and Task 7's dependencies enforce
-  the same two-factor state on management endpoints (spec §5.8 step 3).
-  Keeping the refresh capability means an interrupted setup (closed tab,
-  lost phone) can resume within the refresh window. PAST the refresh
-  window, an account whose TOTP was never confirmed is stranded — login
-  refuses it and setup needs a live session — and only the Plan 08
-  admin reset/re-invite flow can recover it; no such tool exists in V1
-  (deliberate scope cut, not an oversight).
+  confirmed (`TotpSetupRequiredError`), and the identity dependencies
+  enforce the same two-factor state on management endpoints (spec §5.8
+  step 3). Keeping the refresh capability means an interrupted setup
+  (closed tab, lost phone) can resume within the refresh window. PAST
+  the refresh window, an account whose TOTP was never confirmed is
+  stranded — login refuses it and setup needs a live session — and only
+  a future admin reset/re-invite flow can recover it; no such tool
+  exists in V1 (deliberate scope cut, not an oversight).
 - **Email is verified-on-acceptance (V1 simplification, documented)**: the
   invitation link was delivered to that address, and only its recipient
   can consume the single-use token, so `email_verified_at` is set at
   accept time instead of a separate verification round-trip (spec §5.5's
-  full email-verification flow is student-facing, Task 8). The staff
-  login identifier is this verified email (plan decision fixing one way,
-  spec §5.8): staff usernames ARE the normalized email, which can never
-  collide with a 6-20 digit student number, so staff cannot impersonate
-  student identities.
+  full email-verification flow is student-facing). The staff
+  login identifier is this verified email (a deliberate choice fixing one
+  way, spec §5.8): staff usernames ARE the normalized email, which can
+  never collide with a 6-20 digit student number, so staff cannot
+  impersonate student identities.
 - **TOTP secrets rest encrypted** (Fernet under
   `Settings.totp_encryption_key`; see `totp.py` for the primitive choice),
   **recovery codes rest as Argon2id hashes** and are returned exactly
@@ -60,14 +60,14 @@ Design decisions:
   attempts are counted via server-side rejection logs (rate limiting is
   deliberately deferred; the login already requires the password).
 - **Audit events** (`events.py`) are published inside the transaction,
-  before commit, so Plan 08's `AuditService` can persist them atomically;
-  the in-memory collector is the interim adapter.
+  before commit, so the audit/outbox module's `AuditService` can persist
+  them atomically; the in-memory collector is the interim adapter.
 
 Error taxonomy: `BusinessError` with existing registry codes
 (`PERMISSION_DENIED`, `VALIDATION_ERROR`, `AUTHENTICATION_REQUIRED`,
 `ACCOUNT_NOT_ACTIVE`, `USERNAME_ALREADY_EXISTS`); `TotpSetupRequiredError`
 is a module-level exception (like `otp.py`'s taxonomy) because the frozen
-§29 registry has no setup-required code — the router task maps it.
+§29 registry has no setup-required code — the router maps it.
 """
 
 from __future__ import annotations
@@ -142,7 +142,7 @@ class TotpSetupRequiredError(Exception):
     Raised only after email AND password verified, for a TEACHER/ADMIN
     account whose credential is missing or unconfirmed — the caller must
     complete `begin_totp_setup`/`confirm_totp_setup` (spec §5.8 step 3).
-    The router task maps this to its HTTP response; no registry code
+    The router maps this to its HTTP response; no registry code
     exists for it yet (frozen §29 table).
     """
 
@@ -165,7 +165,7 @@ class PendingStaffSession:
 
     ``must_setup_totp`` is the contract marker: the tokens are a real
     (revocable) session pair usable for the TOTP setup endpoints, but the
-    account cannot pass `authenticate_staff` (or, per Task 7, management
+    account cannot pass `authenticate_staff` (or the management
     dependencies) until the credential's ``confirmed_at`` is set.
     """
 
@@ -586,8 +586,8 @@ class StaffService:
 
         Full RFC-style validation is out of scope here: the address is
         Admin-typed and becomes an account only after the invitee
-        completes the flow; Task 8 owns the real email-verification
-        machinery (spec §5.5).
+        completes the flow; the student-facing email-verification
+        machinery (spec §5.5) lives in `email_verification.py`.
         """
         normalized = value.strip().lower()
         if (

@@ -23,7 +23,7 @@ Design decisions:
 - **Rules are declared once** in `RATE_LIMIT_RULES` and looked up by bucket
   name, so endpoints and tests share one definition of every cap.
 
-Limits are per-process-deployment defaults chosen in Plan 02; they protect
+Limits are per-process-deployment defaults; they protect
 against credential stuffing and send-spam, not a dedicated abuse pipeline
 (§33.1 calls for API rate limiting; a global gateway limiter can layer on
 top without touching this contract).
@@ -71,8 +71,8 @@ class RateLimitRule:
             raise ValueError("window_seconds must be >= 1")
 
 
-# One rule per rate-limited endpoint (Plan 02 Task 9 identity rules; Plan 03
-# Task 9 adds the student-heavy task actions). Login caps are tighter-window
+# One rule per rate-limited endpoint: identity endpoints plus the
+# student-heavy task actions. Login caps are tighter-window
 # (brute force); send-flavored endpoints cap per hour on top of the OTP
 # service's own per-phone/per-IP caps (spec §33.1/§33.2). Claim/abandon cap
 # per authenticated user id: both already carry business-side ceilings (the

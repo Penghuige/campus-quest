@@ -45,9 +45,9 @@ class IdentityService:
         password_hasher: PasswordHasher,
         phone_verification: PhoneVerificationPort,
     ) -> None:
-        # Ports are constructor-injected so Task 5 (Argon2id hashing) and
-        # Task 4 (OTP challenge lifecycle) plug in without touching this
-        # transaction; tests inject deterministic fakes (Task 3 seams).
+        # Ports are constructor-injected so the real hashing and OTP
+        # implementations plug in without touching this transaction; tests
+        # inject deterministic fakes through the same seams.
         self._hash_password = password_hasher
         self._phone_verification = phone_verification
         self._whitelist = StudentWhitelistRepository()
@@ -79,7 +79,7 @@ class IdentityService:
         if verified_phone.purpose != OtpPurpose.REGISTER:
             # A proof minted for phone change or password reset must never
             # authorize account creation (spec §33.2 single-purpose proofs);
-            # the typed error is the router's OTP_TOKEN_INVALID (T9 carry).
+            # the typed error is the router's OTP_TOKEN_INVALID.
             raise InvalidTokenError
 
         await self._whitelist.require_enabled(session, student_number)

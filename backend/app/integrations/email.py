@@ -1,15 +1,15 @@
 # backend/app/integrations/email.py
 """Email port: template-based sends with typed delivery records.
 
-Design choice (recorded per task brief): `send` takes a template plus
-variables — not subject/body — matching the frozen port shape in
-docs/architecture/interfaces.md and the notification module's centralized
-template rendering (Plan 07). Free-form subject/body composition would
+Design choice (frozen port shape in
+docs/architecture/interfaces.md): `send` takes a template plus
+variables — not subject/body — matching the notification module's
+centralized template rendering. Free-form subject/body composition would
 scatter rendering across callers. Tests assert exact deliveries via
 `FakeEmailSender.messages`.
 
-`LoggingEmailSender` is the interim production adapter (Plan 02): real
-provider delivery arrives with the notification module (Plan 07), so until
+`LoggingEmailSender` is the interim production adapter: real provider
+delivery arrives with the notification module, so until
 then the composition root wires a sender that logs the masked recipient
 and template only — NEVER `variables` (the verification token travels
 there) — instead of silently dropping the send.
@@ -60,10 +60,10 @@ class EmailSender(Protocol):
 
 
 class LoggingEmailSender:
-    """Interim `EmailSender` adapter: log masked, deliver nothing (Plan 02).
+    """Interim `EmailSender` adapter: log masked, deliver nothing.
 
-    Plan 07 replaces this at the composition root when the notification
-    module ships real provider adapters. Deliberately never raises.
+    The notification module replaces this at the composition root when
+    it ships real provider adapters. Deliberately never raises.
     """
 
     def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:

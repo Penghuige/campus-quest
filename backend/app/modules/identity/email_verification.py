@@ -1,9 +1,8 @@
 # backend/app/modules/identity/email_verification.py
-"""Student email binding, verification, and unbinding (spec §5.5; Task 8).
+"""Student email binding, verification, and unbinding (spec §5.5).
 
 `EmailVerificationService` is the student-facing email-verification
-machinery `staff_service` deferred to this task (staff emails are
-verified-on-invitation-acceptance instead).
+machinery (staff emails are verified-on-invitation-acceptance instead).
 
 Design decisions:
 
@@ -48,8 +47,9 @@ Design decisions:
 Error taxonomy: `BusinessError` for registered codes
 (`VALIDATION_ERROR`, `AUTHENTICATION_REQUIRED`); typed module exceptions
 (`EmailAlreadyBoundError`, `InvalidEmailTokenError`) for the two states
-no frozen registry code covers — T9 maps them doc-first, following
-`otp.py` / `TotpSetupRequiredError`.
+no frozen registry code covers — the router maps them through the
+identity typed-exception table, following `otp.py` /
+`TotpSetupRequiredError`.
 """
 
 from __future__ import annotations
@@ -144,10 +144,10 @@ class EmailVerificationService:
         redis: aioredis.Redis,
         token_ttl_hours: int = 24,
     ) -> None:
-        # 24h is the plan's default window. A constructor knob (like
+        # 24h is the default window (spec §5.5). A constructor knob (like
         # `StaffService.invitation_ttl_hours`) rather than a Settings read:
-        # the router task wires deployment settings into constructors at
-        # the composition root, where config.py is in scope.
+        # the composition root wires deployment settings into
+        # constructors, where config.py is in scope.
         self._clock = clock
         self._email_sender = email_sender
         self._redis = redis

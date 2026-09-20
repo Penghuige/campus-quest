@@ -8,9 +8,9 @@ Design decisions:
   (adding a member is a constraint swap, not ALTER TYPE). The short CHECK
   names compose with the naming convention in `app.db.base` into e.g.
   `ck_tasks_status`; a full "ck_tasks_status" here would render doubled
-  (the 0002 gotcha).
+  (`ck_tasks_ck_tasks_status`).
 - Collaborator capabilities are a PostgreSQL ARRAY of VARCHAR guarded by a
-  CHECK (`<@` against the closed capability set from plan 03 task 3:
+  CHECK (`<@` against the closed capability set:
   VIEW_TASK / MANAGE_ASSIGNMENTS / REVIEW_SUBMISSIONS / MODERATE_COMMUNITY),
   not a free-form JSONB blob: the database boundary itself rejects unknown
   or misspelled capabilities. Grant semantics (who may grant what) stay in
@@ -18,16 +18,18 @@ Design decisions:
 - `allowed_file_types` and `notification_channels` follow the same
   ARRAY + `<@` CHECK pattern. `notification_channels` values are the frozen
   `NotificationChannel` members (SMS/EMAIL/IN_APP, interfaces.md); the enum
-  class itself arrives with the notification module (plan 07). An empty
+  class itself arrives with the notification module. An empty
   `allowed_file_types` array is representable but useless — publish-time
-  validation (plan 03 task 2) requires a non-empty file policy, a deadline
-  policy, and a submission schema, so DRAFT rows may legitimately carry
-  incomplete configuration and there is deliberately no table-level
+  validation (`TaskService.publish`) requires a non-empty file policy, a
+  deadline policy, and a submission schema, so DRAFT rows may legitimately
+  carry incomplete configuration and there is deliberately no table-level
   deadline-mode/fixed-deadline consistency CHECK either.
-- `grace_period_minutes` is NOT NULL with server_default 1440 but is not
-  CHECK-pinned to 1440: spec §6 fixes the value for V1 by not offering a
-  product entry point, not as an eternal database invariant — pinning it
-  would turn any future configurability into a constraint migration.
+- `grace_period_minutes` is NOT NULL with server_default 1440 and is
+  CHECK-pinned to exactly 1440: spec §6 fixes V1 grace at 24 hours with
+  no product entry point, and the database enforces the pinned value so
+  no write path can drift. If the product later makes grace
+  configurable, the migration introducing that feature relaxes the
+  CHECK.
 - `Assignment.keyword` is TEXT compared byte-exactly (spec §7: 中文场景按
   精确文本). "trim-stored" is a service-layer write-time normalization;
   the UNIQUE(task_id, platform, keyword) constraint then deduplicates the
@@ -55,7 +57,8 @@ Design decisions:
   ladder (spec §9.3: 100/80/50/20), not a string tier name — the ladder
   shape itself is versioned inside `reward_policy_snapshot`.
 - `latest_submission_id` is a plain nullable UUID with no FK: the
-  submissions table arrives in plan 04, which will add the FK then.
+  submissions table does not exist yet; the module that introduces it adds
+  the FK then.
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -87,7 +90,7 @@ from app.modules.tasks.enums import ClaimStatus
 
 # Claim statuses that hold an Assignment/user slot (spec §8.2, §31.4-31.5).
 # COMPLETED/ABANDONED/EXPIRED are terminal and excluded from both partial
-# unique indexes below; the claim service (plan 03 task 6) reuses this
+# unique indexes below; the claim service reuses this
 # tuple for its availability predicates.
 ACTIVE_CLAIM_STATUSES: tuple[ClaimStatus, ...] = (
     ClaimStatus.CLAIMED,
@@ -148,7 +151,7 @@ class Task(Base):
             name="duration_minutes",
         ),
         CheckConstraint(
-            "grace_period_minutes > 0",
+            "grace_period_minutes = 1440",
             name="grace_period_minutes",
         ),
         CheckConstraint(
@@ -186,8 +189,9 @@ class Task(Base):
     deadline_mode: Mapped[str] = mapped_column(String(16))
     fixed_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
-    # V1 fixes grace at 1440 minutes (spec §6); see module docstring for why
-    # this is a server default rather than a CHECK-pinned constant.
+    # V1 fixes grace at exactly 1440 minutes (spec §6); the table CHECK
+    # pins the value. A future configurable grace period relaxes the CHECK
+    # in the migration that introduces the feature (module docstring).
     grace_period_minutes: Mapped[int] = mapped_column(
         Integer, server_default=text("1440")
     )
@@ -349,7 +353,8 @@ class AssignmentClaim(Base):
     reward_tier_locked: Mapped[int | None] = mapped_column(Integer)
     reward_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_reward_points: Mapped[int | None] = mapped_column(Integer)
-    # Plain UUID on purpose: submissions arrive in plan 04, which adds the FK.
+    # Plain UUID on purpose: the submissions table does not exist yet; the
+    # module that introduces it adds the FK.
     latest_submission_id: Mapped[UUID | None] = mapped_column()
     revision_deadline_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)

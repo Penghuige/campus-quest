@@ -23,9 +23,10 @@ real one through FastAPI's own extension point::
 
     app.dependency_overrides[rbac.get_role_bearer] = identity_get_actor
 
-(T9's composition root installs this once at startup; the account-status
-integration test shows the same wiring.) An unwired guard therefore fails
-loudly as a 500 ``INTERNAL_ERROR`` — never silently as "deny everyone".
+(The composition root in app/main.py installs this once at startup; the
+account-status integration test shows the same wiring.) An unwired guard
+therefore fails loudly as a 500 ``INTERNAL_ERROR`` — never silently as
+"deny everyone".
 
 Denials raise ``BusinessError`` with the frozen §29 code
 ``PERMISSION_DENIED`` (403): a role mismatch is an authorization outcome,

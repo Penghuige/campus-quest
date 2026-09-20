@@ -1,20 +1,20 @@
 # backend/app/modules/identity/events.py
-"""Domain primitives and the audit-event seam (interfaces.md).
+"""Domain primitives and the audit-event port (interfaces.md).
 
 `Actor` and `DomainEvent` are the frozen "Core Primitives" shapes from
-docs/architecture/interfaces.md, verbatim. They land here (Plan 02, Task 6)
-because staff onboarding needs both before Task 7's `dependencies.py`
-exists; Task 7 re-exports `Actor` as the authenticated request context
-instead of redefining it, so there is exactly one Actor type.
+docs/architecture/interfaces.md, verbatim. They live here — next to the
+staff flows that need them first — so there is exactly one Actor type:
+the identity dependencies re-export `Actor` as the authenticated request
+context instead of redefining it.
 
-The audit action names below are audit-stream identifiers consumed by Plan
-08's `AuditService` (spec §5.8: 账号创建、角色提升、角色撤销必须写 AuditLog).
-They are deliberately NOT additions to the §25 notification event list in
-interfaces.md — that list is the notification-delivery contract; this is
-the audit contract. Persistence arrives with Plan 08; until then the
-service publishes through `DomainEventPublisher`, whose in-memory
-implementation (`InMemoryEventCollector`) is what tests (and Plan 08's
-outbox wiring) attach to.
+The audit action names below are audit-stream identifiers consumed by
+the audit/outbox module's `AuditService` (spec §5.8: 账号创建、角色提升、
+角色撤销必须写 AuditLog). They are deliberately NOT additions to the §25
+notification event list in interfaces.md — that list is the
+notification-delivery contract; this is the audit contract. Persistence
+arrives with the audit/outbox module; until then the service publishes
+through `DomainEventPublisher`, whose in-memory implementation
+(`InMemoryEventCollector`) is what tests attach to.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class DomainEvent:
     """One immutable business/audit occurrence (interfaces.md).
 
     ``occurred_at`` is UTC-aware; ``payload`` must be JSON-serializable so
-    Plan 08 can persist it without a second projection.
+    the audit outbox can persist it without a second projection.
     """
 
     event_type: str
@@ -67,9 +67,9 @@ class DomainEvent:
 class DomainEventPublisher(Protocol):
     """Port through which services emit domain/audit events.
 
-    The production adapter (Plan 08 `AuditService` / outbox) attaches inside
-    the domain transaction; the in-memory collector below is the test and
-    interim-production adapter.
+    The production adapter (the audit/outbox module's `AuditService`)
+    attaches inside the domain transaction; the in-memory collector below
+    is the test and interim-production adapter.
     """
 
     def publish(self, event: DomainEvent) -> None: ...
@@ -78,8 +78,9 @@ class DomainEventPublisher(Protocol):
 class InMemoryEventCollector:
     """Deterministic `DomainEventPublisher` fake: records, delivers nothing.
 
-    Tests assert on ``events`` (ordered); Plan 08 swaps this for the
-    persistent audit write without touching the publishing services.
+    Tests assert on ``events`` (ordered); the audit/outbox module swaps
+    this for the persistent audit write without touching the publishing
+    services.
     """
 
     def __init__(self) -> None:
@@ -95,8 +96,11 @@ class InMemoryEventCollector:
 class LoggingEventPublisher:
     """Interim production adapter: log the event, persist nothing.
 
-    Plan 08's `AuditService`/outbox replaces this at the composition root.
-    Only the event type and aggregate identity are logged — the payload
+    The audit/outbox module replaces this at the composition root; the
+    replacement must follow the outbox contract in
+    docs/architecture/interfaces.md (DomainEvent/adapter section): intent
+    persists in the domain transaction, dispatch runs after commit. Only
+    the event type and aggregate identity are logged — the payload
     carries PII (emails, roles) and stays out of application logs
     (backend-engineering §15).
     """

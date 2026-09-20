@@ -1,9 +1,9 @@
 # backend/app/modules/identity/profile_service.py
-"""Student profile, contacts, and account recovery (spec §5.3-5.6; Task 8).
+"""Student profile, contacts, and account recovery (spec §5.3-5.6).
 
-`ProfileService` owns the four flows the plan froze for this task:
-nickname change (§5.3), phone change (§5.4), password recovery via the
-bound phone (§5.6), and the Task-5-deferred `change_password`.
+`ProfileService` owns four flows: nickname change (§5.3), phone change
+(§5.4), password recovery via the bound phone (§5.6), and
+`change_password`.
 
 Design decisions:
 
@@ -29,7 +29,7 @@ Design decisions:
   through `verify_phone_challenge` + `verify_phone_token` and reject a
   proof whose purpose is not PHONE_CHANGE / PASSWORD_RESET: a code the
   user received for registration can never authorize a phone swap or a
-  password reset (the token carries the purpose since this task).
+  password reset (the token carries its purpose end to end).
 - **Password reset is phone-factor only and enumeration-free.** Only
   STUDENT accounts can complete it — the confirm step resolves the OTP to a
   phone and requires a STUDENT account still bound to it, so a staff
@@ -40,7 +40,7 @@ Design decisions:
   the response shape is byte-for-byte what a real request returns, no SMS
   goes out, and confirming against the decoy fails exactly like any other
   unknown challenge (`UnknownChallengeError`). Staff recovery is a future
-  admin workflow (Plan 08). Response CONTENT is uniform; wall-clock timing
+  admin workflow. Response CONTENT is uniform; wall-clock timing
   of the SMS send is inherently observable and is not claimed.
 - **Band validation never burns a single-use proof** (the registration
   ordering principle): `confirm_password_reset` checks the 10-128 band
@@ -60,9 +60,9 @@ Design decisions:
 
 Error taxonomy: `BusinessError` with frozen-registry codes
 (`VALIDATION_ERROR`, `AUTHENTICATION_REQUIRED`, `PHONE_ALREADY_BOUND`);
-OTP lifecycle errors propagate as `otp`'s typed module exceptions. The
-former `PasswordResetNotAllowedError` is gone (PR review fix): the staff
-reset-request branch now answers with the same decoy as every other
+OTP lifecycle errors propagate as `otp`'s typed module exceptions. There
+is deliberately no `PasswordResetNotAllowedError`: the staff
+reset-request branch answers with the same decoy as every other
 non-usable identifier, so no distinct typed error — and no registry code —
 exists for it.
 """
@@ -124,7 +124,7 @@ class ProfileService:
         # The decoy challenge in `request_password_reset` derives its expiry
         # window from the SAME `OtpPolicy` that shapes real challenges: an
         # independent knob here could drift from `policy.ttl_seconds` and the
-        # drift itself would enumerate accounts (T8 review carry-forward).
+        # drift itself would enumerate accounts.
         self._clock = clock
         self._otp = otp
         self._otp_policy = otp_policy
@@ -147,9 +147,9 @@ class ProfileService:
     ) -> User:
         """Validate and persist a new nickname (spec §5.3).
 
-        The Task-2 `normalize_nickname` is the single authority (grapheme
-        counting, control-character stripping, trim), so the persisted value
-        is always its normalized output.
+        The `validation.normalize_nickname` helper is the single authority
+        (grapheme counting, control-character stripping, trim), so the
+        persisted value is always its normalized output.
         """
         user = await self._require_user(db, user_id)
         user.nickname = self._validated_nickname(nickname)
@@ -241,7 +241,7 @@ class ProfileService:
     ) -> ChallengePublic:
         """Issue a PASSWORD_RESET OTP to the account's BOUND phone (§5.6).
 
-        Enumeration-free on EVERY branch (PR review fix): an unknown
+        Enumeration-free on EVERY branch: an unknown
         username, a STAFF account, and a student without a usable bound
         phone all return the identical decoy challenge — same shape, same
         `OtpPolicy`-derived TTL, no SMS — exactly what a real request
@@ -249,7 +249,7 @@ class ProfileService:
         belongs to staff (or to anyone at all). Staff accounts can never
         complete the student reset flow: `confirm_password_reset` resolves
         the OTP to a phone and requires a STUDENT account still bound to it.
-        Staff recovery is a future admin workflow (Plan 08), never this
+        Staff recovery is a future admin workflow, never this
         endpoint. Status is deliberately NOT checked: a SUSPENDED student
         may rotate the password, and login still refuses the account — the
         reset neither leaks status nor bypasses it.
@@ -259,7 +259,7 @@ class ProfileService:
             return self._decoy_challenge()
         if user.role != Role.STUDENT:
             # Uniform decoy, not a typed rejection: a distinct branch here
-            # was a staff-username enumeration oracle.
+            # would be a staff-username enumeration oracle.
             logger.info(
                 "password reset decoy served user_id=%s reason=not_student", user.id
             )
@@ -340,9 +340,9 @@ class ProfileService:
         """Verify the code, consume the token, enforce the purpose.
 
         OTP lifecycle failures (unknown/expired/consumed challenge, wrong
-        code) propagate as `otp`'s typed exceptions for T9 to map. The
-        two-step resolution mirrors registration: the challenge yields an
-        opaque token, the token yields the certified phone + purpose.
+        code) propagate as `otp`'s typed exceptions for the router to map.
+        The two-step resolution mirrors registration: the challenge yields
+        an opaque token, the token yields the certified phone + purpose.
         """
         token = await self._otp.verify_phone_challenge(challenge_id, code)
         verified = await self._otp.verify_phone_token(token.token)

@@ -1,11 +1,11 @@
 # backend/app/modules/tasks/abandon_service.py
 """Student-initiated claim abandon and assignment release (spec §8.5,
-§8.2, §0, §44.14; backend-engineering §11; plan 03 task 8).
+§8.2, §0, §44.14; backend-engineering §11).
 
 Transaction shape (one transaction, exactly one commit at the end):
 
 1. ``SELECT status FROM users WHERE id = :user_id FOR UPDATE`` — the SAME
-   stable user-level resource the claim flow (T6) locks FIRST, so one
+   stable user-level resource the claim flow locks FIRST, so one
    user's claims and abandons share a single serialization queue. This
    is what makes the daily count safe: spec §8.5 requires the concurrent
    daily check to be atomic, and COUNT-then-UPDATE is only sound inside
@@ -19,16 +19,15 @@ Transaction shape (one transaction, exactly one commit at the end):
    The clock instant (``now``) is sampled immediately BEFORE this step —
    after the user-row and claim-row locks are held, before the assignment
    lock — so lock-wait can never skew the daily abandon window, the
-   persisted ``terminal_at``, or the audit event's ``occurred_at`` (the
-   final-review symmetry fix; see the CLOCK SAMPLING CONTRACT comment in
-   ``abandon_claim``).
+   persisted ``terminal_at``, or the audit event's ``occurred_at`` (see
+   the CLOCK SAMPLING CONTRACT comment in ``abandon_claim``).
 4. Assignment release under FOR UPDATE, then Claim -> ABANDONED +
    ``terminal_at = clock.now()``; flush, publish, one commit.
 
-The lock order (user row -> claim row -> assignment row) keeps the T6
-convention of taking the assignment last; claim-side candidates use FOR
-UPDATE SKIP LOCKED and never wait on the assignment row, so no cycle can
-form between the two services.
+The lock order (user row -> claim row -> assignment row) keeps the claim
+flow's convention of taking the assignment last; claim-side candidates
+use FOR UPDATE SKIP LOCKED and never wait on the assignment row, so no
+cycle can form between the two services.
 
 Design decisions and rulings:
 
@@ -57,18 +56,18 @@ Design decisions and rulings:
   resurrected by an abandon; the claim still reaches ABANDONED so the
   quota and the reassignment exclusion apply regardless.
 - **Reassignment exclusion:** ``ClaimService`` already excludes this
-  user's ABANDONED assignments from random candidates (T6), which is
+  user's ABANDONED assignments from random candidates, which is
   the §8.5 "当前用户后续不得重新随机到同一个 Assignment" guarantee; this
   service only produces the ABANDONED row that feeds it.
 - **Behavior history (spec §8.5 写行为历史):** the durable record is the
   claim row itself (status ABANDONED + ``terminal_at``); the audit
   trail is one ``CLAIM_ABANDONED`` DomainEvent published through the
-  identity events seam (the Core Primitives port; Plan 08's AuditService/
-  outbox persists it, the in-memory collector serves tests) — no schema
-  change required. Like staff_service, the event is published after the
-  flush and before the commit; the interim in-memory adapter accepts
-  that a failed commit could leave a phantom event, and the Plan 08
-  outbox attaches inside the transaction. It is an audit-stream
+  identity events port (the Core Primitives port; the audit/outbox
+  module's AuditService persists it, the in-memory collector serves
+  tests) — no schema change required. Like staff_service, the event is
+  published after the flush and before the commit; the interim in-memory
+  adapter accepts that a failed commit could leave a phantom event, and
+  the outbox attaches inside the transaction. It is an audit-stream
   identifier, deliberately NOT a §25 notification event.
 - **Account gate:** the abandon refuses non-ACTIVE accounts exactly like
   claiming (defense in depth on the row already locked; real traffic
@@ -76,14 +75,14 @@ Design decisions and rulings:
   on the same status).
 - **Errors:** ABANDON_LIMIT_REACHED and CLAIM_NOT_ABANDONABLE are 409
   (the state-conflict family, matching ASSIGNMENT_LIMIT_REACHED; the
-  transport statuses are provisional pending the T9 review), ownership
-  is 403 PERMISSION_DENIED, a missing claim 404, and a missing user
-  reuses the claim module's typed errors.
+  transport statuses are provisional, mirroring deadlines.py's 400),
+  ownership is 403 PERMISSION_DENIED, a missing claim 404, and a missing
+  user reuses the claim module's typed errors.
 - **Cross-module boundary:** interfaces.md forbids importing identity ORM
   models; the user-row lock goes through the same style of typed
   Core-level ``users`` light table claim_service built (a twin
-  definition — claim_service's is private and this task cannot republish
-  it; if interfaces.md ever registers a locking-read port, both queries
+  definition — claim_service's is private and not republished here; if
+  interfaces.md ever registers a locking-read port, both queries
   move behind it together).
 """
 
@@ -163,7 +162,7 @@ _NOT_ABANDONABLE_MESSAGE = "该领取当前状态不可放弃"
 _ABANDON_LIMIT_MESSAGE = "今日放弃次数已达到上限"
 
 
-# --- typed exceptions (router-mapped; T9 seam) ----------------------------------------
+# --- typed exceptions (router-mapped) -------------------------------------------------
 
 
 class ClaimNotFoundError(BusinessError):
@@ -334,8 +333,8 @@ class AbandonService:
         if status not in ABANDONABLE_STATUSES:
             raise ClaimNotAbandonableError(status)
 
-        # CLOCK SAMPLING CONTRACT (final-review symmetry fix, same as
-        # claim_service): ``now`` is sampled HERE — after every lock the
+        # CLOCK SAMPLING CONTRACT (mirrors claim_service):
+        # ``now`` is sampled HERE — after every lock the
         # flow takes before its first time consumer (user row FOR UPDATE
         # above, claim row FOR UPDATE above) and before the daily-window
         # computation below. Sampling before the locks would let the

@@ -26,7 +26,7 @@ Design decisions:
   whitespace inside the nickname (e.g. U+0020) is preserved; only the edges
   are trimmed.
 - Two further nickname guards close holes grapheme counting alone leaves
-  open (whole-branch review):
+  open:
   - a total code-point cap aligned to the ``users.nickname`` varchar(255)
     column: one grapheme cluster can span hundreds of code points (a long
     ZWJ-joined emoji chain), and an oversized value would fail the INSERT

@@ -1,6 +1,5 @@
 # backend/app/modules/tasks/router.py
-"""Task/claim HTTP API: thin routes + the module's composition root
-(plan 03 task 9).
+"""Task/claim HTTP API: thin routes + the module's composition root.
 
 Spec §6-§9 (tasks/assignments/claims/deadlines), §28 (``/api/v1`` prefix
 and URL shapes), §29 (envelope), §33.1 (rate limit), §40/§42 (privacy:
@@ -49,8 +48,8 @@ DELETE       ``/teacher/tasks/{task_id}/collaborators/{teacher_id}``
 GET          ``/teacher/tasks/{task_id}/statistics``
 ===========  =========================================================
 
-Status-code mapping (the T7/T8 carry, now frozen)
--------------------------------------------------
+Status-code mapping
+-------------------
 
 Every tasks-module typed exception subclasses ``BusinessError`` and
 reaches the core envelope handler unchanged — this table IS the mapping,
@@ -61,7 +60,7 @@ gates 403, unknown aggregates 404.
 Typed exception                                Envelope code             HTTP
 ============================================  =======================  ======
 ``TaskNotFoundError`` (and the read side's     ``NOT_FOUND``              404
-not-visible/unknown id paths — the T2 carry:
+not-visible/unknown id paths:
 a missing aggregate IS the system-404 semantic,
 no registry change)
 ``UserNotFoundError``                          ``NOT_FOUND``              404
@@ -114,11 +113,12 @@ Other transport decisions
 - **Providers are the module composition root.** The Redis client is
   process-cached; services are assembled per request from injected
   clock/settings/publisher dependencies, so tests override a dependency,
-  never service internals. ``Settings``-driven wiring per the T8 carry:
+  never service internals. ``Settings``-driven wiring:
   ``daily_abandon_limit`` + ``business_timezone`` into
   ``AbandonService``, the ``assignment_import_*`` caps into the importer,
   ``max_upload_bytes_default`` into ``TaskService``. The rating summary
-  port ships as ``NullRatingSummaryPort`` until Plan 06.
+  port ships as ``NullRatingSummaryPort`` until the community module
+  wires the real adapter.
 """
 
 from __future__ import annotations
@@ -252,12 +252,14 @@ def get_rate_limiter(clock: ClockDep, redis: RedisDep) -> RateLimiter:
 
 
 def get_event_publisher() -> DomainEventPublisher:
-    """Interim adapter: log the event, persist nothing (Plan 08 audit)."""
+    """Interim adapter; the audit/outbox module wires persistent dispatch
+    (see the outbox contract in docs/architecture/interfaces.md)."""
     return LoggingEventPublisher()
 
 
 def get_rating_summary_port() -> RatingSummaryPort:
-    """Plan 03 stand-in; Plan 06 wires the TaskRating-backed adapter."""
+    """Interim stand-in; the community module wires the TaskRating-backed
+    adapter."""
     return NullRatingSummaryPort()
 
 
@@ -528,7 +530,7 @@ async def update_task(
 
 
 def _transition_response(service: TaskService, task: Task) -> TaskTransitionResponse:
-    """Normalize a lifecycle verb's outcome (the T2 carry): the landing
+    """Normalize a lifecycle verb's outcome: the landing
     status plus the claim verdict the claim side itself enforces."""
     return TaskTransitionResponse(
         task_id=task.id,

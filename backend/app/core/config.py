@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # sentinel pattern — development default, production refuses it.
     totp_encryption_key: str = _INSECURE_TOTP_ENCRYPTION_KEY
     # Staff invitation link lifetime (spec §5.8: 一次性、短时有效); 48h is
-    # the plan's default window.
+    # the product default window.
     staff_invitation_ttl_hours: int = 48
     # Email-verification token lifetime (spec §5.5); wired into
     # `EmailVerificationService` at the composition root.

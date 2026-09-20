@@ -32,20 +32,20 @@ Design decisions:
   JOIN query (user + session liveness together); the staff guard adds
   one ``totp_credentials`` primary-key get. No caching layer: revocation
   correctness beats the round trip at V1 scale; revisit with evidence.
-- **Pending staff tokens are normal JWTs** (T6: identity was proven by
+- **Pending staff tokens are normal JWTs** (identity was proven by
   the single-use invitation link + fresh password), so ``get_actor``
   resolves them like any session. The management gate is THIS module's
   ``confirmed_at IS NOT NULL`` check — server-side only (spec §5.8 step
   3: 未完成 2FA 前不能进入管理后台; a fabricated client claim changes
   nothing). Unconfirmed staff gets ``TotpSetupRequiredError`` — a typed
-  exception, not an envelope code, because the frozen §29 registry has
-  no setup-required code yet; T9 maps it doc-first (T6 carry).
+  exception rather than a direct envelope raise, so the service layer
+  stays transport-free; the router maps it to the documented §29 code.
 - **Check order in the staff guard:** role (``PERMISSION_DENIED``) ->
   status (``ACCOUNT_NOT_ACTIVE``) -> 2FA (``TotpSetupRequiredError``) —
   capability gate, then account-state gate, then second-factor gate,
   each more specific than the last.
 - ``Actor`` and ``Role`` are re-exported from their single definitions
-  (``events.py`` / ``enums.py`` — the T6 carry); consumers import them
+  (``events.py`` / ``enums.py``); consumers import them
   from here or there, never redefine them.
 - Nothing here reads the environment directly: codec, session, and clock
   arrive as dependencies so tests can freeze time and point at the
@@ -282,9 +282,9 @@ async def require_staff_management_actor(
     real actors), an ACTIVE account, and a CONFIRMED TOTP credential
     (``totp_credentials.confirmed_at IS NOT NULL``). Pending staff —
     setup not started or unconfirmed — gets ``TotpSetupRequiredError``,
-    the distinct setup-forcing error; T9 maps it to its doc-first §29
-    code. Routers mount this dependency; they never re-derive these
-    rules (backend-engineering §3, §16).
+    the distinct setup-forcing error, which the router maps to its
+    documented §29 code. Routers mount this dependency; they never
+    re-derive these rules (backend-engineering §3, §16).
     """
     user = await _resolve_user(credentials, db, codec, clock)
     if not rbac.is_staff(user.role):
