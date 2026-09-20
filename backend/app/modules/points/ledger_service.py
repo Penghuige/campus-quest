@@ -48,10 +48,16 @@ Design decisions:
   second wallet increment. Only the expected constraint is caught;
   anything else re-raises (backend-engineering §7).
 - **Friendly gates first (backend-engineering §6).** Zero amounts,
-  reason-less admin adjustments (spec §15), and ranking rows without a
-  period attribution (spec §17.2) are rejected as ``VALIDATION_ERROR``
-  before PostgreSQL sees them; the database CHECKs — including 0011's
-  admin-reason CHECK — remain the backstop.
+  reason-less admin adjustments (spec §15), ranking rows without a
+  period attribution (spec §17.2), and — the T2 review fold —
+  source-less non-ADMIN_ADJUSTMENT entries are rejected as
+  ``VALIDATION_ERROR`` before PostgreSQL sees them; the database
+  CHECKs — including 0011's admin-reason CHECK — remain the backstop.
+  The source gate exists because a REWARD_REDEMPTION or ASSIGNMENT_*
+  entry without its source object would silently mint a random UUID,
+  breaking the (source_type, source_id, ledger_type) idempotency
+  semantics (spec §31.6): only ADMIN_ADJUSTMENT rows are their own
+  source event and may omit the id (models.py).
 - ``get_spendable_points`` is a lock-free point-in-time read
   (available minus ACTIVE reservations, spec §16.2). The redemption
   service must re-check spendability under the wallet lock before
@@ -117,8 +123,10 @@ class PostLedgerEntry:
     affects_balance: bool
     affects_ranking: bool
     ranking_effective_at: datetime | None = None
-    # None -> the service mints a fresh source id: each entry is its own
-    # source event (the ADMIN_ADJUSTMENT shape, models.py).
+    # None -> the service mints a fresh source id: allowed ONLY for
+    # ADMIN_ADJUSTMENT (each adjustment is its own source event,
+    # models.py); every other type must point at its source object —
+    # the T2 review fold gate in ``_validate`` enforces it.
     source_id: UUID | None = None
     reversal_of_id: UUID | None = None
     operator_id: UUID | None = None
@@ -153,6 +161,16 @@ def _validate(command: PostLedgerEntry) -> None:
         raise InvalidLedgerEntryError(
             "ranking_effective_at", "不影响排名的积分流水不应提供排名生效时间"
         )
+    # The T2 review fold: only ADMIN_ADJUSTMENT is its own source event;
+    # every other type's source triple IS the idempotency mechanism, so
+    # a missing source_id must fail loudly instead of minting a random
+    # UUID that can never be replayed against (spec §31.6; models.py).
+    if command.source_id is None and command.ledger_type is not (
+        LedgerType.ADMIN_ADJUSTMENT
+    ):
+        raise InvalidLedgerEntryError(
+            "source_id", "该类型积分流水必须显式提供 source_id（指向其来源对象）"
+        )
 
 
 # --- the service ----------------------------------------------------------------------
@@ -173,7 +191,7 @@ class LedgerService:
         touches_earned = command.affects_ranking and command.amount > 0
         wallet: PointWallet | None = None
         if touches_balance or touches_earned:
-            wallet = await self._locked_or_created_wallet(db, command.user_id)
+            wallet = await self.locked_or_created_wallet(db, command.user_id)
 
         reason = command.reason.strip() if command.reason is not None else None
         reason_text = reason or None
@@ -293,12 +311,19 @@ class LedgerService:
                 raise
             return existing
 
-    async def _locked_or_created_wallet(
+    async def locked_or_created_wallet(
         self, db: AsyncSession, user_id: UUID
     ) -> PointWallet:
         """The user's wallet row under FOR UPDATE, creating it on the
         first entry. Concurrency-safe by construction: see the module
-        docstring's wallet-lifecycle ruling."""
+        docstring's wallet-lifecycle ruling.
+
+        Public because it is the module's ONE wallet-row lock: the
+        redemption service takes the same lock (in the same order every
+        ledger post does) before recomputing spendability under it, so
+        same-user requests serialize against both redemptions and
+        balance-changing posts (spec §16.3).
+        """
         await db.execute(
             pg_insert(PointWallet)
             .values(user_id=user_id)

@@ -339,6 +339,7 @@ async def test_wallet_projection_failure_rolls_back_ledger_insert(
         ledger_type=LedgerType.REWARD_REDEMPTION,
         amount=-1000,
         source_type="REWARD_REDEMPTION",
+        source_id=uuid4(),
         affects_balance=True,
         affects_ranking=False,
     )
@@ -603,6 +604,7 @@ async def test_post_entry_projects_wallet_columns(
                 ledger_type=LedgerType.ASSIGNMENT_REWARD,
                 amount=0,
                 source_type="ASSIGNMENT_CLAIM",
+                source_id=uuid4(),
                 affects_balance=True,
                 affects_ranking=True,
                 ranking_effective_at=_LOCK_TIME,
@@ -627,11 +629,40 @@ async def test_post_entry_projects_wallet_columns(
                 ledger_type=LedgerType.ASSIGNMENT_REWARD,
                 amount=5,
                 source_type="ASSIGNMENT_CLAIM",
+                source_id=uuid4(),
                 affects_balance=True,
                 affects_ranking=True,
                 ranking_effective_at=None,
             ),
             "ranking_effective_at",
+        ),
+        # The T2 review fold: a non-ADMIN_ADJUSTMENT entry without its
+        # source object would silently mint a random UUID, breaking the
+        # (source_type, source_id, ledger_type) idempotency mechanism
+        # (spec §31.6) — both redemption-shaped and assignment-shaped
+        # types must fail the friendly gate instead.
+        (
+            PostLedgerEntry(
+                user_id=None,
+                ledger_type=LedgerType.REWARD_REDEMPTION,
+                amount=-200,
+                source_type="REWARD_REDEMPTION",
+                affects_balance=True,
+                affects_ranking=False,
+            ),
+            "source_id",
+        ),
+        (
+            PostLedgerEntry(
+                user_id=None,
+                ledger_type=LedgerType.ASSIGNMENT_REWARD,
+                amount=100,
+                source_type="ASSIGNMENT_CLAIM",
+                affects_balance=True,
+                affects_ranking=True,
+                ranking_effective_at=_LOCK_TIME,
+            ),
+            "source_id",
         ),
     ],
 )
@@ -642,8 +673,9 @@ async def test_post_entry_friendly_gates_reject_invalid_commands(
 ) -> None:
     """The service raises its typed VALIDATION_ERROR ahead of the
     database (backend-engineering §6: friendly errors first) — zero
-    amounts, reason-less admin adjustments, and ranking rows without a
-    period attribution never reach PostgreSQL."""
+    amounts, reason-less admin adjustments, ranking rows without a
+    period attribution, and source-less non-admin entries never reach
+    PostgreSQL."""
     service = LedgerService()
     student = _student()
     await _flush(db_session, student)
