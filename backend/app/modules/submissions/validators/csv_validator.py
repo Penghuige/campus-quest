@@ -81,21 +81,21 @@ import codecs
 import csv
 import io
 import time
-from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
-from types import MappingProxyType
+from collections.abc import Callable, Iterator
 from typing import Any, BinaryIO
 
 from app.modules.submissions.enums import FileType
 from app.modules.submissions.schema import ColumnRule, SubmissionSchema
 
 from .common import (
-    UNIQUE_TRACKING_CAP,
+    ScanAggregates,
     ValidationCode,
     ValidationLimits,
     ValidationReport,
     ValidationReportBuilder,
-    check_cell_type,
+    analyze_header,
+    check_row,
+    finalize_scan,
 )
 
 __all__ = ["PARSER_VERSION", "validate_csv"]
@@ -115,20 +115,7 @@ _FIELD_SIZE_CEILING = 2**28
 
 _ENCODING_MESSAGE = "文件编码必须是 UTF-8（可带 BOM）；请转换为 UTF-8 后重新上传"
 _STRUCTURE_MESSAGE = "CSV 结构无法解析（例如未闭合的引号）"
-
-
-@dataclass(frozen=True, slots=True)
-class _Aggregates:
-    """The countable §12.4 fields a scan accumulated (empty on early
-    file-level rejections)."""
-
-    row_count: int = 0
-    detected_columns: tuple[str, ...] = ()
-    missing_required_columns: tuple[str, ...] = ()
-    extra_columns: tuple[str, ...] = ()
-    type_error_counts: Mapping[str, int] = field(default_factory=dict)
-    null_ratios: Mapping[str, float] = field(default_factory=dict)
-    duplicate_counts: Mapping[str, int] = field(default_factory=dict)
+_NO_DATA_MESSAGE = "CSV 只有表头，没有数据行"
 
 
 class _ReplayStream(io.RawIOBase):
@@ -205,31 +192,31 @@ def _scan(
     builder: ValidationReportBuilder,
     clock: Callable[[], float],
     started: float,
-) -> _Aggregates:
+) -> ScanAggregates:
     """Bounded prefix sniff, then the streaming row scan."""
     prefix = stream.read(_SNIFF_BYTES)
     if not prefix:
         builder.add_error(ValidationCode.EMPTY_FILE, "CSV 文件为空（没有表头）")
-        return _Aggregates()
+        return ScanAggregates()
     if b"\x00" in prefix:
         builder.add_error(
             ValidationCode.BINARY_CONTENT,
             "文件包含二进制内容（检测到 NUL 字节），不是文本 CSV",
         )
-        return _Aggregates()
+        return ScanAggregates()
     try:
         sample = _decode_sniff(prefix)
     except UnicodeDecodeError:
         builder.add_error(ValidationCode.INVALID_ENCODING, _ENCODING_MESSAGE)
-        return _Aggregates()
+        return ScanAggregates()
     if not sample.strip():
         builder.add_error(ValidationCode.EMPTY_FILE, "CSV 文件为空（没有表头）")
-        return _Aggregates()
+        return ScanAggregates()
     _ensure_field_size_limit()
     dialect = _sniff_dialect(sample, schema)
     if dialect is None:
         builder.add_error(ValidationCode.MALFORMED_CSV, "无法识别 CSV 分隔符格式")
-        return _Aggregates()
+        return ScanAggregates()
     # newline="" keeps \r\n intact for the csv reader; errors="strict"
     # turns later invalid bytes into UnicodeDecodeError inside the
     # iteration, converted to a validation outcome in _consume.
@@ -279,56 +266,6 @@ def _sniff_dialect(
     return None
 
 
-def _analyze_header(
-    header_cells: list[str],
-    schema: SubmissionSchema,
-    limits: ValidationLimits,
-    builder: ValidationReportBuilder,
-) -> tuple[list[tuple[int, ColumnRule]], list[str], list[str]] | None:
-    """Classify the header; ``None`` means the column cap aborted.
-
-    Returns the positional validation plan (header position -> rule;
-    extras are never type-checked), the missing required names, and
-    the extra names — errors are already recorded here.
-    """
-    if len(header_cells) > limits.max_columns:
-        builder.add_error(
-            ValidationCode.TOO_MANY_COLUMNS,
-            f"表头列数 {len(header_cells)} 超过上限 {limits.max_columns}",
-        )
-        return None
-    seen: set[str] = set()
-    for name in header_cells:
-        if name in seen:
-            builder.add_error(
-                ValidationCode.DUPLICATE_HEADER,
-                f"表头列名重复: {name!r}",
-                column=name,
-            )
-        seen.add(name)
-    missing = [rule.name for rule in schema.required_columns if rule.name not in seen]
-    for name in missing:
-        builder.add_error(
-            ValidationCode.MISSING_REQUIRED_COLUMN,
-            f"缺少必填列: {name}",
-            column=name,
-        )
-    extra = [name for name in dict.fromkeys(header_cells) if name not in schema.columns]
-    if not schema.allow_extra_columns:
-        for name in extra:
-            builder.add_error(
-                ValidationCode.EXTRA_COLUMN,
-                f"未在 schema 中声明的列: {name}",
-                column=name,
-            )
-    plan = [
-        (index, rule)
-        for index, name in enumerate(header_cells)
-        if (rule := schema.columns.get(name)) is not None
-    ]
-    return plan, missing, extra
-
-
 def _consume(
     reader: Iterator[list[str]],
     schema: SubmissionSchema,
@@ -336,7 +273,7 @@ def _consume(
     builder: ValidationReportBuilder,
     clock: Callable[[], float],
     started: float,
-) -> _Aggregates:
+) -> ScanAggregates:
     """Stream the rows, accumulating bounded state only."""
     header_cells: list[str] | None = None
     plan: list[tuple[int, ColumnRule]] = []
@@ -361,9 +298,9 @@ def _consume(
                 continue  # blank line: not a spreadsheet row
             if header_cells is None:
                 candidate = [cell.strip() for cell in raw]
-                analysis = _analyze_header(candidate, schema, limits, builder)
+                analysis = analyze_header(candidate, schema, limits, builder)
                 if analysis is None:
-                    return _Aggregates(
+                    return ScanAggregates(
                         detected_columns=tuple(candidate[: limits.max_columns])
                     )
                 header_cells = candidate
@@ -383,7 +320,7 @@ def _consume(
                 )
                 scan_incomplete = True
                 break
-            _check_row(
+            check_row(
                 raw,
                 row_count,
                 header_cells,
@@ -403,7 +340,7 @@ def _consume(
         builder.add_error(ValidationCode.INVALID_ENCODING, _ENCODING_MESSAGE)
         scan_incomplete = True
 
-    return _finalize(
+    return finalize_scan(
         header_cells=header_cells,
         plan=plan,
         missing=missing,
@@ -416,162 +353,5 @@ def _consume(
         schema=schema,
         limits=limits,
         builder=builder,
-    )
-
-
-def _check_row(
-    raw: list[str],
-    row_number: int,
-    header_cells: list[str],
-    plan: list[tuple[int, ColumnRule]],
-    limits: ValidationLimits,
-    builder: ValidationReportBuilder,
-    null_counts: dict[str, int],
-    type_errors: dict[str, int],
-    duplicate_counts: dict[str, int],
-    unique_seen: dict[str, set[str]],
-    degraded_columns: set[str],
-) -> None:
-    """Classify one data row; every outcome is a bounded finding."""
-    if len(raw) != len(header_cells):
-        builder.add_error(
-            ValidationCode.ROW_SHAPE_MISMATCH,
-            f"第 {row_number} 行列数 {len(raw)} 与表头列数 {len(header_cells)} 不一致",
-            row=row_number,
-        )
-    for index, rule in plan:
-        if index >= len(raw):
-            break  # short row: the shape error already covers it
-        cell = raw[index]
-        if len(cell) > limits.max_cell_length:
-            builder.add_error(
-                ValidationCode.CELL_TOO_LONG,
-                f"第 {row_number} 行列 {rule.name} 的单元格超过最大长度"
-                f" {limits.max_cell_length}",
-                row=row_number,
-                column=rule.name,
-            )
-            continue
-        value = cell.strip()
-        if not value:
-            null_counts[rule.name] = null_counts.get(rule.name, 0) + 1
-            if not rule.nullable:
-                builder.add_error(
-                    ValidationCode.NULL_VIOLATION,
-                    f"第 {row_number} 行列 {rule.name} 不允许为空",
-                    row=row_number,
-                    column=rule.name,
-                )
-            continue
-        if not check_cell_type(value, rule.type):
-            type_errors[rule.name] = type_errors.get(rule.name, 0) + 1
-            builder.add_error(
-                ValidationCode.TYPE_ERROR,
-                f"第 {row_number} 行列 {rule.name} 的值不符合 {rule.type.value} 类型",
-                row=row_number,
-                column=rule.name,
-                value=value,
-            )
-        if rule.unique:
-            seen_values = unique_seen.setdefault(rule.name, set())
-            if value in seen_values:
-                duplicate_counts[rule.name] = duplicate_counts.get(rule.name, 0) + 1
-                builder.add_error(
-                    ValidationCode.DUPLICATE_VALUE,
-                    f"第 {row_number} 行列 {rule.name} 的值重复",
-                    row=row_number,
-                    column=rule.name,
-                    value=value,
-                )
-            elif rule.name not in degraded_columns:
-                if len(seen_values) >= UNIQUE_TRACKING_CAP:
-                    degraded_columns.add(rule.name)
-                    builder.add_warning(
-                        ValidationCode.UNIQUE_TRACKING_DEGRADED,
-                        f"列 {rule.name} 的唯一值超过 {UNIQUE_TRACKING_CAP} 个，"
-                        "重复检测退化为已知值匹配，duplicate_counts 为下界",
-                        column=rule.name,
-                    )
-                else:
-                    seen_values.add(value)
-
-
-def _finalize(
-    *,
-    header_cells: list[str] | None,
-    plan: list[tuple[int, ColumnRule]],
-    missing: list[str],
-    extra: list[str],
-    row_count: int,
-    scan_incomplete: bool,
-    null_counts: dict[str, int],
-    type_errors: dict[str, int],
-    duplicate_counts: dict[str, int],
-    schema: SubmissionSchema,
-    limits: ValidationLimits,
-    builder: ValidationReportBuilder,
-) -> _Aggregates:
-    """End-of-scan checks (min/max rows, null ratios) and the counts."""
-    detected = tuple(header_cells) if header_cells is not None else ()
-    column_names = list(dict.fromkeys(rule.name for _, rule in plan))
-    null_ratios = {
-        name: round(null_counts.get(name, 0) / row_count, 6) if row_count else 0.0
-        for name in column_names
-    }
-    for rule in schema.columns.values():
-        if rule.max_null_ratio is None or rule.name not in null_ratios or not row_count:
-            continue
-        if null_counts.get(rule.name, 0) / row_count > rule.max_null_ratio:
-            builder.add_error(
-                ValidationCode.NULL_RATIO_EXCEEDED,
-                f"列 {rule.name} 的空值占比超过上限 {rule.max_null_ratio}",
-                column=rule.name,
-            )
-    if scan_incomplete:
-        builder.add_warning(
-            ValidationCode.ROW_COUNT_TRUNCATED,
-            "行数统计提前停止，row_count 为下界",
-        )
-        if row_count > limits.row_cap:
-            builder.add_error(
-                ValidationCode.ROW_LIMIT_EXCEEDED,
-                f"数据行数超过校验行数上限 {limits.row_cap}，已提前停止",
-            )
-    # An incomplete scan (row cap, timeout, structural/encoding abort)
-    # proves nothing about how many rows follow: the presence and
-    # min-row verdicts that need a completed scan are skipped
-    # (max_rows stays — a count already past the bound is conclusive
-    # either way).
-    if not scan_incomplete:
-        if row_count == 0 and header_cells is not None:
-            builder.add_error(
-                ValidationCode.NO_DATA_ROWS,
-                "CSV 只有表头，没有数据行",
-            )
-        if schema.min_rows is not None and row_count < schema.min_rows:
-            builder.add_error(
-                ValidationCode.MIN_ROWS_NOT_MET,
-                f"数据行数 {row_count} 少于 min_rows {schema.min_rows}",
-            )
-    if schema.max_rows is not None and row_count > schema.max_rows:
-        builder.add_error(
-            ValidationCode.MAX_ROWS_EXCEEDED,
-            f"数据行数 {row_count} 超过 max_rows {schema.max_rows}",
-        )
-    return _Aggregates(
-        row_count=row_count,
-        detected_columns=detected,
-        missing_required_columns=tuple(missing),
-        extra_columns=tuple(extra),
-        type_error_counts=MappingProxyType(
-            {name: type_errors.get(name, 0) for name in column_names}
-        ),
-        null_ratios=MappingProxyType(null_ratios),
-        duplicate_counts=MappingProxyType(
-            {
-                rule.name: duplicate_counts.get(rule.name, 0)
-                for rule in schema.columns.values()
-                if rule.unique and rule.name in null_ratios
-            }
-        ),
+        no_data_message=_NO_DATA_MESSAGE,
     )

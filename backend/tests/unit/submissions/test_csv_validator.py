@@ -58,7 +58,7 @@ from app.modules.submissions.schema import (
     MAX_ROWS_CEILING,
     SubmissionSchema,
 )
-from app.modules.submissions.validators import csv_validator
+from app.modules.submissions.validators import common
 from app.modules.submissions.validators.common import (
     ValidationCode,
     ValidationLimits,
@@ -539,6 +539,49 @@ def test_null_ratio_above_cap_fails() -> None:
     assert report.null_ratios["likes"] == round(2 / 3, 6)
 
 
+def _nullable_ratio_schema() -> SubmissionSchema:
+    return make_schema(
+        optional_columns=[
+            {
+                "name": "likes",
+                "type": "integer",
+                "nullable": True,
+                "max_null_ratio": 0.05,
+            },
+        ],
+    )
+
+
+def test_timeout_aborted_scan_does_not_conclude_null_ratio() -> None:
+    # T4 carry: a timeout aborts at row 4096 with every counted likes
+    # cell empty (observed ratio 1.0 on truncated counts) — the full
+    # file may well sit under the 0.05 cap, so no ratio verdict fires.
+    rows = [f"https://a.example/{i},T,2026-01-02," for i in range(5000)]
+    report = run(
+        csv_bytes(*rows),
+        _nullable_ratio_schema(),
+        ValidationLimits(timeout_seconds=1.0),
+        clock=FakeClock(step=10.0),
+    )
+
+    assert ValidationCode.TIMEOUT in error_codes(report)
+    assert ValidationCode.ROW_COUNT_TRUNCATED in warning_codes(report)
+    assert ValidationCode.NULL_RATIO_EXCEEDED not in error_codes(report)
+    # The partial ratio itself is still reported (informational):
+    # 4095 of the 4096 counted rows were classified before the abort.
+    assert report.null_ratios["likes"] == pytest.approx(4095 / 4096)
+
+
+def test_row_cap_aborted_scan_does_not_conclude_null_ratio() -> None:
+    rows = [f"https://a.example/{i},T,2026-01-02," for i in range(10)]
+    report = run(
+        csv_bytes(*rows), _nullable_ratio_schema(), ValidationLimits(row_cap=5)
+    )
+
+    assert ValidationCode.ROW_LIMIT_EXCEEDED in error_codes(report)
+    assert ValidationCode.NULL_RATIO_EXCEEDED not in error_codes(report)
+
+
 def test_row_shape_mismatch_is_row_level_error() -> None:
     report = run(csv_bytes("https://a.example/1,First"))
 
@@ -565,7 +608,8 @@ def test_blank_lines_skipped() -> None:
 def test_unique_set_overflow_degrades_to_sampled_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(csv_validator, "UNIQUE_TRACKING_CAP", 3)
+    # The cap lives in the shared scan layer since task 5.
+    monkeypatch.setattr(common, "UNIQUE_TRACKING_CAP", 3)
     rows = [
         "https://a/1,T,2026-01-02,",
         "https://a/2,T,2026-01-02,",

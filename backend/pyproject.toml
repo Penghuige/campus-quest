@@ -20,6 +20,7 @@ dependencies = [
     "regex>=2024.11.6",
     "pyjwt>=2.8",
     "cryptography>=43.0",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]
@@ -76,3 +77,9 @@ plugins = ["pydantic.mypy"]
 python_version = "3.12"
 strict = true
 files = ["app"]
+
+[[tool.mypy.overrides]]
+# openpyxl 3.1.5 ships no py.typed (same situation as boto3/celery above);
+# the XLSX validator (plan 04 task 5) drives it through `Any` boundaries.
+module = "openpyxl.*"
+ignore_missing_imports = true
