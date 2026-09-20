@@ -18,19 +18,35 @@ Design decisions (each pinned by a test):
   - declared total uncompressed > 512 MB -> ``ARCHIVE_TOO_LARGE``;
   - sharedStrings part > 128 MB -> ``ARCHIVE_TOO_LARGE`` (openpyxl
     materializes that table as Python strings — measured ~4x the XML
-    size — so it gets a dedicated, tighter cap);
-  - any whole-read part (content types, workbook, styles, theme,
-    rels, doc props, pivot caches — the parts openpyxl reads whole
-    and parses into objects) > 16 MB -> ``PART_TOO_LARGE``:
-    whole-read parsing amplifies ~12x (review F1 measured a
-    legitimate-looking 100 MB manifest at 1.23 GB peak / 35.8 s /
-    passed=True under every other cap), and legitimate whole-read
-    parts stay under ~1 MB even at the entry cap, so 16 MB bounds a
-    parsed part's peak at ~200 MB with an order of magnitude of
-    headroom. Peak-memory bound after this cap: the SUM of the parsed
-    whole parts (~a handful × 16 MB × ~12x) plus sharedStrings
-    (128 MB × ~4x) plus streaming row work — no single uncapped
-    materialization remains;
+    size — so it gets a dedicated, tighter cap under its canonical
+    name);
+  - DEFAULT-DENY per-part cap (fix rounds 1+2): every part not in a
+    streaming-exempt family — ``xl/worksheets/*`` (row-by-row
+    streaming), ``xl/sharedStrings*`` (the 128 MB cap above),
+    ``xl/media/*`` / ``xl/drawings/*`` (never parsed by the read-only
+    data path); ``*.rels`` is never exempt because relationship
+    parts are always read whole — is capped at 16 MB ->
+    ``PART_TOO_LARGE``. Whole-read parsing amplifies ~12x (review F1
+    measured a legitimate-looking 100 MB manifest at 1.23 GB peak /
+    35.8 s / passed=True under every other cap), and legitimate
+    capped parts stay under ~1 MB even at the entry cap, so 16 MB
+    bounds a parsed part's peak at ~200 MB with an order of
+    magnitude of headroom;
+  - rename hardening (fix round 2): openpyxl resolves the WORKBOOK
+    and SHAREDSTRINGS parts through the manifest's content types,
+    not by name, so by-name caps were sidestepped by renaming an
+    oversized part (re-review: an 18 MB workbook renamed to
+    xl/big.xml passed at 150 MB peak). The preflight therefore also
+    scans ``[Content_Types].xml`` — itself default-capped ≤ 16 MB,
+    streamed element-by-element with cleared elements — and any
+    Override target resolving to those roles carries the 16 MB cap
+    under ANY name, including placements inside streaming-exempt
+    families. A renamed string table gets the stricter 16 MB default
+    rather than the canonical 128 MB (documented choice; it is
+    streamed by content-type resolution when admissible). Invariant:
+    every part either streams in an exempt family or is per-part
+    capped — by default, and for the content-type-resolved roles
+    under any name;
   - per-entry OR aggregate compression ratio > 100:1 ->
     ``SUSPICIOUS_COMPRESSION_RATIO`` (deflate's theoretical ceiling is
     ~1032:1, zeros hit ~1027:1; measured legitimate workbook XML sits
@@ -124,6 +140,7 @@ import time
 import zipfile
 from collections.abc import Callable
 from typing import Any, BinaryIO
+from xml.etree import ElementTree
 
 from openpyxl import load_workbook
 from openpyxl.cell.read_only import EmptyCell, ReadOnlyCell
@@ -152,17 +169,16 @@ PARSER_VERSION = "xlsx-1"
 _MAX_ARCHIVE_ENTRIES = 4096
 _MAX_TOTAL_UNCOMPRESSED = 512 * 1024 * 1024
 _MAX_SHARED_STRINGS_XML = 128 * 1024 * 1024
-#: Per-part cap for the parts openpyxl reads WHOLE and parses into
-#: objects (content types, workbook, styles, theme, rels, doc props,
-#: pivot caches — verified against openpyxl 3.1.5's reader). The
-#: largest legitimate value stays under ~1 MB even at the 4096-entry
-#: cap (a workbook.xml/styles.xml for 4096 sheets), so 16 MB leaves
-#: an order of magnitude of headroom while bounding a parsed part's
-#: materialized peak (~12x amplification measured in review F1) at
-#: ~200 MB instead of the ~6 GB the 512 MB total cap alone admitted.
-#: Worksheets stream row-by-row, sharedStrings carries its own cap,
-#: and media/drawings are never parsed in this path — those stay
-#: exempt (fix-round-1 F1).
+#: DEFAULT per-part cap (fix rounds 1+2): every part is capped at
+#: 16 MB unless it belongs to a streaming-exempt family. openpyxl
+#: reads several parts WHOLE and parses them into objects (~12x
+#: amplification measured in review F1), and it resolves the workbook
+#: and sharedStrings parts by manifest CONTENT TYPE — so a by-name
+#: allowlist was sidestepped in review round 2 by renaming an
+#: oversized part (fix-round-2). The largest legitimate capped part
+#: stays under ~1 MB even at the 4096-entry cap, so 16 MB leaves an
+#: order of magnitude of headroom while bounding a parsed part's
+#: materialized peak at ~200 MB.
 _MAX_WHOLE_READ_PART = 16 * 1024 * 1024
 _MAX_COMPRESSION_RATIO = 100.0
 
@@ -182,12 +198,25 @@ _EMPTY_SHEET_MESSAGE = "XLSX 工作表为空（没有任何内容）"
 _NOT_XLSX_MESSAGE = "文件不是有效的 XLSX（ZIP）归档"
 _UNPARSEABLE_MESSAGE = "工作簿无法解析（结构损坏或不是有效的 XLSX）"
 
-#: Whole-read part shapes: exact names, directory prefixes, and the
-#: rels suffix (relationship parts are looked up wherever they sit).
-_WHOLE_READ_PART_NAMES = frozenset(
-    {"[Content_Types].xml", "xl/workbook.xml", "xl/styles.xml"}
+#: The streaming families: iterated row-by-row (worksheets, bounded
+#: by the row/timeout caps), materialized under their own dedicated
+#: cap (sharedStrings, canonical name only), or never parsed by the
+#: read-only data path (media, drawings).
+_STREAMING_EXEMPT_PREFIXES = (
+    "xl/worksheets/",
+    "xl/sharedStrings",
+    "xl/media/",
+    "xl/drawings/",
 )
-_WHOLE_READ_PART_PREFIXES = ("xl/theme/", "xl/pivotCache/", "docProps/")
+#: Override content types that resolve to a whole-read or materialized
+#: ROLE wherever the part sits (openpyxl finds the workbook and
+#: sharedStrings parts through the manifest, not by name).
+_WHOLE_READ_ROLE_TYPES = frozenset(
+    {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+    }
+)
 
 Source = str | os.PathLike[str] | BinaryIO
 
@@ -306,8 +335,9 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
 
     ``False`` means a fatal violation was recorded; warnings (external
     links) do not abort. First fatal violation wins, deterministic
-    order: entry count, then per-entry (name, whole-read part size,
-    sharedStrings size, ratio), then totals (size, aggregate ratio).
+    order: entry count, then per-entry (name, default part size,
+    sharedStrings size, ratio), then totals (size, aggregate ratio),
+    then the manifest scan (rename hardening).
     """
     try:
         archive = zipfile.ZipFile(reader)
@@ -315,82 +345,91 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
         builder.add_error(ValidationCode.MALFORMED_XLSX, _NOT_XLSX_MESSAGE)
         return False
     try:
-        infos = archive.infolist()
-    except (zipfile.BadZipFile, struct.error):
-        builder.add_error(ValidationCode.MALFORMED_XLSX, _NOT_XLSX_MESSAGE)
-        return False
-    finally:
-        archive.close()
-
-    if len(infos) > _MAX_ARCHIVE_ENTRIES:
-        builder.add_error(
-            ValidationCode.ARCHIVE_TOO_LARGE,
-            f"归档条目数 {len(infos)} 超过上限 {_MAX_ARCHIVE_ENTRIES}",
-        )
-        return False
-
-    total_uncompressed = 0
-    total_compressed = 0
-    external_links = False
-    for info in infos:
-        name = info.filename
-        if _is_suspicious_name(name):
-            builder.add_error(
-                ValidationCode.SUSPICIOUS_ARCHIVE_ENTRY,
-                f"归档内条目路径可疑: {name!r}",
-            )
+        try:
+            infos = archive.infolist()
+        except (zipfile.BadZipFile, struct.error):
+            builder.add_error(ValidationCode.MALFORMED_XLSX, _NOT_XLSX_MESSAGE)
             return False
-        if _is_whole_read_part(name) and info.file_size > _MAX_WHOLE_READ_PART:
-            builder.add_error(
-                ValidationCode.PART_TOO_LARGE,
-                f"归档部件 {name} 声明解压后 {info.file_size} 字节超过单部件上限"
-                f" {_MAX_WHOLE_READ_PART}（该部件会被整体读入内存）",
-            )
-            return False
-        if name.startswith("xl/externalLinks/"):
-            external_links = True
-        if name.startswith("xl/sharedStrings") and info.file_size > (
-            _MAX_SHARED_STRINGS_XML
-        ):
+
+        if len(infos) > _MAX_ARCHIVE_ENTRIES:
             builder.add_error(
                 ValidationCode.ARCHIVE_TOO_LARGE,
-                f"sharedStrings 部分 {info.file_size} 字节超过上限"
-                f" {_MAX_SHARED_STRINGS_XML}，已拒绝解析",
+                f"归档条目数 {len(infos)} 超过上限 {_MAX_ARCHIVE_ENTRIES}",
             )
             return False
-        if info.file_size and (
-            info.compress_size == 0
-            or info.file_size / info.compress_size > _MAX_COMPRESSION_RATIO
+
+        total_uncompressed = 0
+        total_compressed = 0
+        external_links = False
+        for info in infos:
+            name = info.filename
+            if _is_suspicious_name(name):
+                builder.add_error(
+                    ValidationCode.SUSPICIOUS_ARCHIVE_ENTRY,
+                    f"归档内条目路径可疑: {name!r}",
+                )
+                return False
+            # DEFAULT-DENY (fix round 2): a part is exempt from the
+            # per-part cap only as a member of a streaming family;
+            # any other name — including renamed whole-read parts —
+            # is capped.
+            if not _is_streaming_exempt(name) and info.file_size > (
+                _MAX_WHOLE_READ_PART
+            ):
+                builder.add_error(
+                    ValidationCode.PART_TOO_LARGE,
+                    f"归档部件 {name} 声明解压后 {info.file_size} 字节超过单部件"
+                    f"上限 {_MAX_WHOLE_READ_PART}",
+                )
+                return False
+            if name.startswith("xl/externalLinks/"):
+                external_links = True
+            if name.startswith("xl/sharedStrings") and info.file_size > (
+                _MAX_SHARED_STRINGS_XML
+            ):
+                builder.add_error(
+                    ValidationCode.ARCHIVE_TOO_LARGE,
+                    f"sharedStrings 部分 {info.file_size} 字节超过上限"
+                    f" {_MAX_SHARED_STRINGS_XML}，已拒绝解析",
+                )
+                return False
+            if info.file_size and (
+                info.compress_size == 0
+                or info.file_size / info.compress_size > _MAX_COMPRESSION_RATIO
+            ):
+                builder.add_error(
+                    ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
+                    f"条目 {name} 的压缩比超过 {_MAX_COMPRESSION_RATIO}:1"
+                    f"（声明解压后 {info.file_size} 字节）",
+                )
+                return False
+            total_uncompressed += info.file_size
+            total_compressed += info.compress_size
+        if total_uncompressed > _MAX_TOTAL_UNCOMPRESSED:
+            builder.add_error(
+                ValidationCode.ARCHIVE_TOO_LARGE,
+                f"归档声明解压后总大小 {total_uncompressed} 字节超过上限"
+                f" {_MAX_TOTAL_UNCOMPRESSED}",
+            )
+            return False
+        if total_compressed and (
+            total_uncompressed / total_compressed > _MAX_COMPRESSION_RATIO
         ):
             builder.add_error(
                 ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
-                f"条目 {name} 的压缩比超过 {_MAX_COMPRESSION_RATIO}:1"
-                f"（声明解压后 {info.file_size} 字节）",
+                f"归档整体压缩比超过 {_MAX_COMPRESSION_RATIO}:1",
             )
             return False
-        total_uncompressed += info.file_size
-        total_compressed += info.compress_size
-    if total_uncompressed > _MAX_TOTAL_UNCOMPRESSED:
-        builder.add_error(
-            ValidationCode.ARCHIVE_TOO_LARGE,
-            f"归档声明解压后总大小 {total_uncompressed} 字节超过上限"
-            f" {_MAX_TOTAL_UNCOMPRESSED}",
-        )
-        return False
-    if total_compressed and (
-        total_uncompressed / total_compressed > _MAX_COMPRESSION_RATIO
-    ):
-        builder.add_error(
-            ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
-            f"归档整体压缩比超过 {_MAX_COMPRESSION_RATIO}:1",
-        )
-        return False
-    if external_links:
-        builder.add_warning(
-            ValidationCode.EXTERNAL_LINK,
-            "工作簿包含指向外部文件的链接；校验过程不会访问任何外部资源",
-        )
-    return True
+        if _renamed_role_violation(archive, infos, builder):
+            return False
+        if external_links:
+            builder.add_warning(
+                ValidationCode.EXTERNAL_LINK,
+                "工作簿包含指向外部文件的链接；校验过程不会访问任何外部资源",
+            )
+        return True
+    finally:
+        archive.close()
 
 
 def _is_suspicious_name(name: str) -> bool:
@@ -402,18 +441,73 @@ def _is_suspicious_name(name: str) -> bool:
     return ".." in name.replace("\\", "/").split("/")
 
 
-def _is_whole_read_part(name: str) -> bool:
-    """Is this a part openpyxl reads whole and parses into objects?
+def _is_streaming_exempt(name: str) -> bool:
+    """Is this part a member of a streaming family?
 
-    The list mirrors openpyxl 3.1.5's reader: the content-types
-    manifest, the workbook part, styles, theme, every relationship
-    part, doc properties, and pivot caches. Worksheets stream
-    row-by-row and sharedStrings has its own dedicated cap, so they
-    are deliberately absent (fix-round-1 F1).
+    Worksheets iterate row-by-row (row/timeout capped), the canonical
+    sharedStrings part streams under its own dedicated 128 MB cap,
+    and media/drawings are never parsed by the read-only data path.
+    Relationship parts (``*.rels``) are ALWAYS read whole wherever
+    they sit, so they are never exempt. Everything else falls to the
+    default per-part cap (fix-round-2 default-deny).
     """
     if name.endswith(".rels"):
-        return True
-    return name in _WHOLE_READ_PART_NAMES or name.startswith(_WHOLE_READ_PART_PREFIXES)
+        return False
+    return name.startswith(_STREAMING_EXEMPT_PREFIXES)
+
+
+def _renamed_role_violation(
+    archive: zipfile.ZipFile,
+    infos: list[zipfile.ZipInfo],
+    builder: ValidationReportBuilder,
+) -> bool:
+    """Reject whole-read ROLE parts hidden under streaming-exempt names.
+
+    openpyxl resolves the workbook and sharedStrings parts through the
+    manifest's content types, not by name — the fix-round-2 rename
+    bypass. The manifest itself is default-capped (≤ 16 MB) before
+    this scan runs, and the scan streams it element-by-element with
+    cleared elements, so it is bounded work. A target under its
+    CANONICAL sharedStrings name keeps the 128 MB streaming cap; any
+    other placement of those roles carries the 16 MB default. Scan
+    failures degrade to "no extra targets": the name-based defaults
+    still apply and openpyxl rejects the malformed manifest anyway.
+    """
+    targets = _manifest_role_targets(archive)
+    if not targets:
+        return False
+    sizes = {info.filename: info.file_size for info in infos}
+    for target in sorted(targets):
+        if target.startswith("xl/sharedStrings"):
+            continue  # canonical placement: the 128 MB family cap rules
+        if sizes.get(target, 0) > _MAX_WHOLE_READ_PART:
+            builder.add_error(
+                ValidationCode.PART_TOO_LARGE,
+                f"归档部件 {target} 通过 content type 解析为需整体读取的角色，"
+                f"声明解压后 {sizes[target]} 字节超过单部件上限"
+                f" {_MAX_WHOLE_READ_PART}（改名部件同样受限）",
+            )
+            return True
+    return False
+
+
+def _manifest_role_targets(archive: zipfile.ZipFile) -> set[str]:
+    """Override part names whose content type maps to a whole-read role."""
+    try:
+        with archive.open("[Content_Types].xml") as manifest:
+            targets: set[str] = set()
+            for _, element in ElementTree.iterparse(manifest, events=("end",)):
+                if (
+                    element.tag.rpartition("}")[2] == "Override"
+                    and element.get("ContentType", "") in _WHOLE_READ_ROLE_TYPES
+                ):
+                    part = element.get("PartName", "")
+                    if part:
+                        targets.add(part.lstrip("/"))
+                element.clear()
+            return targets
+    except (KeyError, OSError, zipfile.BadZipFile, ElementTree.ParseError):
+        return set()
 
 
 def _parse(

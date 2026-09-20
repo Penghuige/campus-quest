@@ -135,6 +135,9 @@ _CT_RELS = "application/vnd.openxmlformats-package.relationships+xml"
 _CT_XML = "application/xml"
 _CT_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
 _CT_SHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+_CT_SHARED_STRINGS = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+)
 
 _CT = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="{_NS_PACKAGE}">
@@ -647,6 +650,198 @@ def test_streamed_or_untouched_families_not_part_capped(name: str) -> None:
 
     assert ValidationCode.PART_TOO_LARGE not in error_codes(report)
     assert error_codes(report) == {ValidationCode.MALFORMED_XLSX}
+
+
+# --- rename bypass (fix round 2): parts are capped by DEFAULT, and the
+# two content-type-resolved roles carry their caps under any name ----
+
+
+def craft_renamed_workbook(
+    part_name: str, workbook_padding: int = 17 * 1024 * 1024
+) -> bytes:
+    """A REAL workbook whose main part lives at `part_name`.
+
+    openpyxl locates the workbook part by its manifest content type
+    (an Override), not by name: with the Override pointed at
+    `part_name`, an oversized main part parses exactly as it would
+    under xl/workbook.xml. The padding is incompressible random ASCII
+    inside an XML comment — real, valid bytes the parser tolerates,
+    sized past the 16 MB per-part cap while under the ratio cap.
+    """
+    import random
+
+    random.seed(23)
+    padding = "".join(
+        random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        for _ in range(workbook_padding)
+    )
+    ct = _CT.replace(
+        f'<Override PartName="/xl/workbook.xml" ContentType="{_CT_MAIN}"/>',
+        f'<Override PartName="/{part_name}" ContentType="{_CT_MAIN}"/>',
+    )
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f"<!--{padding}-->"
+        f'<workbook xmlns="{_NS_MAIN}" xmlns:r="{_NS_OFFICE}">'
+        '<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets>'
+        "</workbook>"
+    )
+    # openpyxl derives the workbook's rels from the part's own path.
+    directory, _, base = part_name.rpartition("/")
+    workbook_rels_name = f"{directory}/_rels/{base}.rels"
+    return _zip_bytes(
+        {
+            "[Content_Types].xml": ct,
+            "_rels/.rels": _RELS,
+            part_name: workbook,
+            workbook_rels_name: _WORKBOOK_RELS,
+            "xl/worksheets/sheet1.xml": _VALID_SHEET,
+        }
+    )
+
+
+def test_renamed_oversized_workbook_part_capped() -> None:
+    # Fix-round-2 regression, the re-reviewer's probe: an 18 MB main
+    # workbook part renamed to xl/big.xml (Override fixed accordingly)
+    # sailed through the by-name caps — byte-identical to the pre-fix
+    # baseline (150 MB peak, passed=True). Default-deny caps it.
+    import tracemalloc
+
+    data = craft_renamed_workbook("xl/big.xml")
+    tracemalloc.start()
+    started = time.monotonic()
+    report = run(data)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    elapsed = time.monotonic() - started
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+    assert report.row_count == 0
+    assert peak < 64 * 1024 * 1024  # the padded part is never read
+    assert elapsed < 5.0
+
+
+@pytest.mark.parametrize("hiding_place", ["xl/media/", "xl/drawings/"])
+def test_renamed_workbook_hidden_in_streaming_family_capped(
+    hiding_place: str,
+) -> None:
+    # The same rename taken one step further: the oversized main part
+    # parked INSIDE a streaming-exempt family name. The manifest scan
+    # maps Override content types back to roles, so the cap follows
+    # the part under any name.
+    data = lying_manifest_zip(
+        f"{hiding_place}big.xml",
+        declared_size=18 * 1024 * 1024,
+        declared_compressed=1 * 1024 * 1024,
+        content_type=_CT_MAIN,
+    )
+    report = run(data)
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+
+
+def test_renamed_string_table_capped() -> None:
+    # A giant shared-string table under a non-canonical name: the
+    # canonical 128 MB streaming cap applies to the canonical name
+    # only; anything else falls to the 16 MB default (documented
+    # decision — renamed tables get the stricter bound).
+    data = lying_manifest_zip(
+        "xl/strings.xml",
+        declared_size=20 * 1024 * 1024,
+        declared_compressed=1 * 1024 * 1024,
+        content_type=_CT_SHARED_STRINGS,
+    )
+    report = run(data)
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+
+
+def test_renamed_string_table_hidden_in_media_family_capped() -> None:
+    data = lying_manifest_zip(
+        "xl/media/strings.xml",
+        declared_size=20 * 1024 * 1024,
+        declared_compressed=1 * 1024 * 1024,
+        content_type=_CT_SHARED_STRINGS,
+    )
+    report = run(data)
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+
+
+def test_canonical_shared_strings_keep_their_streaming_cap() -> None:
+    # 20 MB under the CANONICAL name and content type: below the
+    # dedicated 128 MB cap, above the 16 MB default — the streaming
+    # exemption must keep it admissible (it reaches openpyxl, which
+    # then rejects the lying archive as unparseable, NOT as too large).
+    data = lying_manifest_zip(
+        "xl/sharedStrings.xml",
+        declared_size=20 * 1024 * 1024,
+        declared_compressed=1 * 1024 * 1024,
+        content_type=_CT_SHARED_STRINGS,
+    )
+    report = run(data)
+
+    assert ValidationCode.PART_TOO_LARGE not in error_codes(report)
+    assert error_codes(report) == {ValidationCode.MALFORMED_XLSX}
+
+
+def test_small_non_canonical_part_still_passes() -> None:
+    # Default-deny must not reject ordinary small oddities: a 1 KB
+    # part under an unrecognized name validates fine alongside real
+    # data.
+    data = craft_xlsx(extra_parts={"xl/customStuff/notes.xml": "<notes/>"})
+    report = run(data)
+
+    assert report.passed is True
+    assert report.row_count == 1
+
+
+def lying_manifest_zip(
+    name: str,
+    *,
+    declared_size: int,
+    declared_compressed: int,
+    content_type: str,
+) -> bytes:
+    """A lying single-part zip plus a REAL [Content_Types].xml mapping
+    `name` to `content_type` — the manifest resolution openpyxl uses.
+
+    The lying entry's sizes are attacker-declared, so it cannot be
+    written through zipfile; the two archives are spliced at the byte
+    level with a corrected EOCD.
+    """
+    manifest = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Types xmlns="{_NS_PACKAGE}">'
+        f'<Override PartName="/{name}" ContentType="{content_type}"/>'
+        "</Types>"
+    )
+    real = _zip_bytes({"[Content_Types].xml": manifest})
+    lying = lying_zip(
+        name, declared_size=declared_size, declared_compressed=declared_compressed
+    )
+    real_central_at = real.rfind(b"PK\x01\x02")
+    real_local = real[:real_central_at]
+    real_central = real[real_central_at : real.rfind(b"PK\x05\x06")]
+    lying_central_at = lying.rfind(b"PK\x01\x02")
+    lying_local = lying[:lying_central_at]
+    lying_central = bytearray(lying[lying_central_at : lying.rfind(b"PK\x05\x06")])
+    # The lying central directory was built for a standalone zip: repoint
+    # its local-header offset (last field of the fixed record) to where
+    # the local header lands inside the splice.
+    struct.pack_into("<I", lying_central, 42, len(real_local))
+    eocd = struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,
+        0,
+        0,
+        2,
+        2,
+        len(real_central) + len(lying_central),
+        len(real_local) + len(lying_local),
+        0,
+    )
+    return real_local + lying_local + real_central + bytes(lying_central) + eocd
 
 
 # --- resource bounds ---------------------------------------------------------
