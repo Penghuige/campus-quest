@@ -117,9 +117,15 @@ Design decisions (each pinned by a test):
   workbook must never crash the worker; openpyxl's malformed-file
   exceptions span ``BadZipFile``, XML ``ParseError``, ``KeyError`` on
   missing parts, encrypted-archive ``RuntimeError``, ...) with
-  ``OSError`` deliberately re-raised — storage failures are
-  infrastructure the worker retries, not a property of the file
-  (same policy as the CSV validator).
+  ``OSError`` deliberately re-raised — including openpyxl's own
+  ``OSError('File contains no valid workbook part')`` on
+  manifest-valid-but-workbook-less archives (the T5 carry shape).
+  In-process callers see the raw ``OSError``; in the production path
+  (the sandboxed child) the child ENTRY converts it into a terminal
+  ``MALFORMED_XLSX`` outcome — the file is a local temp the parent
+  already downloaded, so the infrastructure-retry class is the
+  parent's ``download_to_file`` call alone (same policy as the CSV
+  validator).
 - **Bounded reads:** the caller's stream is wrapped in a clamping
   proxy (``_BoundedReads``) so no code path — zipfile's end-of-
   central-directory probe issues an unbounded ``read()`` — can slurp
@@ -326,8 +332,10 @@ def _run(
 def _open_source(source: Source) -> tuple[BinaryIO, bool]:
     """Normalize path/stream input; returns (stream, close_when_done).
 
-    ``OSError`` (missing path, storage) propagates deliberately — an
-    infrastructure failure is not a property of the file.
+    ``OSError`` (missing path, unreadable file) propagates deliberately
+    — in the production path the sandboxed child entry converts it
+    into the ``MALFORMED_XLSX`` outcome (see the module docstring's
+    failure-surface bullet).
     """
     if isinstance(source, (str, os.PathLike)):
         return open(source, "rb"), True
@@ -526,8 +534,9 @@ def _parse(
 
     The broad ``except Exception`` is the §14 contract: openpyxl's
     malformed-file surface spans many exception types and an untrusted
-    workbook must never crash the worker. ``OSError`` stays
-    infrastructure (re-raised).
+    workbook must never crash the worker. ``OSError`` is re-raised and
+    the sandboxed child entry answers it as ``MALFORMED_XLSX`` (the
+    module docstring's failure-surface bullet).
     """
     workbook: Any = None
     try:

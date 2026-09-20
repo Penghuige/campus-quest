@@ -42,7 +42,8 @@ Coverage matrix:
   scripted clocks; cell length cap on TEXT and BLOB
 - failure surface: non-UTF8 TEXT -> INVALID_ENCODING mid-scan with
   partial counts; corrupt tail after a valid magic -> MALFORMED_SQLITE;
-  a missing path re-raises OSError (infrastructure, worker retry owns)
+  a missing path re-raises OSError (in-process callers see the raw
+  exception; the sandboxed child entry converts it to MALFORMED_SQLITE)
 - surface: path with spaces / unicode / '?' opens (URI quoting),
   embedded-quote identifiers quoted by doubling, parser_version /
   file_type / duration_ms fields

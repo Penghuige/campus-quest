@@ -70,6 +70,13 @@ state produced here.
 The service never reads the environment: clock, storage port,
 sandbox, and preview bounds arrive as constructor dependencies the
 composition root wires from Settings (backend-engineering §11/§17).
+
+Session requirement: the session/sessionmaker handed in must be built
+with ``expire_on_commit=False`` (as both the app factory and the job's
+per-job sessionmaker do) — the flow reads ORM attributes AFTER the
+tx1 commit (``submission.declared_type`` in the parse phase, the
+run row's id in tx2), which an expired-on-commit session would turn
+into refresh round trips or detached-instance failures.
 """
 
 from __future__ import annotations

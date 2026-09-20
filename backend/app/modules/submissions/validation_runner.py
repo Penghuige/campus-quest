@@ -33,10 +33,17 @@ limits); stdout carries exactly one JSON object
 ``null`` when the content matched none of the three types (detection
 runs INSIDE the child so a hostile archive dies against the child's
 limits, not the worker's). The child imports only the validator
-modules — no database, no services.
-
-``OSError`` from launching the child (fork failure, missing python)
-propagates: infrastructure is retryable, not a property of the file.
+modules — no database, no services. An ``OSError`` escaping VALIDATOR
+EXECUTION is converted INSIDE the child into a structured
+``MALFORMED_*`` report (exit 0): by then the file is a local temp the
+parent already downloaded, so an I/O-level parse failure is a
+property of the untrusted content — the crash class above stays
+reserved for actual crashes, and no terminal report promises a retry
+the terminal replay path cannot deliver. The only
+infrastructure-RETRY class is the PARENT's storage download
+(``download_to_file``, see the validation service), plus launch-level
+``OSError`` from spawning the child itself (fork failure, missing
+python), which propagates.
 """
 
 from __future__ import annotations

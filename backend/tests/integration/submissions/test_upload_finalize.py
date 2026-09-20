@@ -63,6 +63,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.clock import FrozenClock
+from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
@@ -953,5 +954,73 @@ async def test_finalize_replay_after_claim_moved_to_validating_returns_same_subm
             ).all()
             assert len(rows) == 1
             assert rows[0].version == 1
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+@pytest.mark.integration
+async def test_open_intent_finalize_on_validating_claim_is_not_submittable(
+    db_engine: AsyncEngine,
+) -> None:
+    """The moved gate's own code-order path (the create-side gate is
+    covered by the intent-creation tests): an OPEN — not a replay —
+    intent whose claim has since moved to VALIDATING answers the typed
+    409 CLAIM_NOT_SUBMITTABLE, writes no Submission, and leaves the
+    intent consumable."""
+    factory = _factory(db_engine)
+    clock = FrozenClock(_NOW)
+    storage = FakeObjectStorage(clock=clock)
+    service = _service(clock, storage)
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = await _seed(factory, run)
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+
+        # Intent issued while the claim was CLAIMED; the upload lands.
+        async with factory() as session:
+            receipt = await service.create_upload_intent(
+                session,
+                _actor(seed.student),
+                seed.claim.id,
+                "数据.csv",
+                "CSV",
+                _DECLARED_SIZE,
+            )
+        storage.put_object(object_key=receipt.object_key, size=_DECLARED_SIZE)
+
+        # The claim moves on before the client finalizes (the validation
+        # worker's claim transition, simulated directly as in the replay
+        # test above).
+        async with factory() as session:
+            await session.execute(
+                update(AssignmentClaim)
+                .where(AssignmentClaim.id == seed.claim.id)
+                .values(status=ClaimStatus.VALIDATING.value)
+            )
+            await session.commit()
+
+        async with factory() as session:
+            with pytest.raises(BusinessError) as excinfo:
+                await service.finalize_upload(
+                    session, _actor(seed.student), receipt.intent_id
+                )
+        assert excinfo.value.code is ErrorCode.CLAIM_NOT_SUBMITTABLE
+        assert excinfo.value.status_code == 409
+
+        async with factory() as session:
+            rows = (
+                await session.scalars(
+                    select(Submission).where(Submission.claim_id == seed.claim.id)
+                )
+            ).all()
+            assert rows == []
+            intent = await session.get(UploadIntent, receipt.intent_id)
+            assert intent is not None
+            assert intent.consumed_at is None  # still consumable
+            assert intent.finalized_submission_id is None
     finally:
         await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)

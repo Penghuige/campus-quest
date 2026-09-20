@@ -35,9 +35,16 @@ list member names. THIS MODULE IS BUILT TO RUN INSIDE THE SANDBOXED
 VALIDATOR CHILD (spec §33.3 解析器隔离): a hostile archive that turns the
 member listing into a memory bomb dies against the child's RLIMIT_AS,
 never in the worker process. Do not call it from request handlers.
-``OSError`` from reading the file propagates deliberately — a vanished
-or unreadable file is infrastructure the worker retries, not a property
-of the submission (the same policy as every format validator).
+
+``OSError`` from reading the file propagates deliberately. In the
+production path that means it escapes the CHILD and lands in the
+parent's crash class (``VALIDATION_WORKER_CRASHED``): by the time the
+child runs, the parent has already downloaded the object to a local
+temp file, so a file this code cannot even read is not a retryable
+storage condition — the only infrastructure-retry class is the
+PARENT's ``download_to_file`` call. (An ``OSError`` during the parse
+AFTER detection is different: the child entry converts that into a
+structured ``MALFORMED_*`` outcome.)
 """
 
 from __future__ import annotations
@@ -66,9 +73,11 @@ Source = str | PathLike[str]
 def detect_file_type(path: Source) -> FileType | None:
     """Classify file content into the uploadable universe, or ``None``.
 
-    Raises ``OSError`` for an unreadable/missing path (infrastructure,
-    retryable) and nothing else — every content-level outcome is a
-    return value.
+    Raises ``OSError`` for an unreadable/missing path and nothing else
+    — every content-level outcome is a return value. In the sandboxed
+    child an escaping ``OSError`` here is crash-classified by the
+    parent (see the module docstring: the parent's download is the
+    only retry path, and it already succeeded).
     """
     with open(path, "rb") as handle:
         head = handle.read(_SNIFF_BYTES)

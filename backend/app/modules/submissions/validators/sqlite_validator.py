@@ -15,9 +15,12 @@ Design decisions (each pinned by a test):
 - **Real SQLite 3 files only.** The first 16 bytes must equal the
   SQLite magic ``"SQLite format 3\\0"`` — checked BEFORE any SQLite
   open, so a fake ``.sqlite`` never reaches the library. A missing path
-  raises ``OSError`` from this pre-read (infrastructure the worker
-  retries, not a property of the file — same policy as CSV/XLSX). An
-  empty file is ``EMPTY_FILE``; a wrong magic is ``MALFORMED_SQLITE``.
+  raises ``OSError`` from this pre-read; in the production path (the
+  sandboxed child) the child entry converts an escaping ``OSError``
+  into a terminal ``MALFORMED_SQLITE`` outcome — same policy as
+  CSV/XLSX (the infrastructure-retry class is the parent's
+  ``download_to_file`` call alone). An empty file is ``EMPTY_FILE``; a
+  wrong magic is ``MALFORMED_SQLITE``.
 - **Read-only, immutable open (spec §12.3).** The connection URI is
   ``file:<quoted>?mode=ro&immutable=1``. ``mode=ro`` is the hard
   read-only flag; ``immutable=1`` (documented choice) additionally
@@ -127,7 +130,9 @@ Design decisions (each pinned by a test):
   for everything else (corrupt pages, truncated file, not-a-database)
   — with mid-scan failures keeping the counts so far and the
   ``ROW_COUNT_TRUNCATED`` warning, mirroring the CSV/XLSX contracts.
-  ``OSError`` is deliberately NOT converted.
+  ``OSError`` is deliberately NOT converted here: in-process callers
+  see the raw exception, and the sandboxed child entry answers it as
+  ``MALFORMED_SQLITE`` (see the module docstring).
 """
 
 from __future__ import annotations
@@ -231,7 +236,8 @@ def validate_sqlite(
     inside the report (backend-engineering §14). ``preview`` collects
     the first N data rows rendered to plain text (§12.4 安全预览 —
     BLOBs preview as empty cells: binary content is not plain data).
-    ``OSError`` from storage propagates deliberately.
+    ``OSError`` propagates deliberately; the sandboxed child entry
+    converts it into the ``MALFORMED_SQLITE`` outcome.
     """
     effective_limits = ValidationLimits() if limits is None else limits
     started = clock()
@@ -261,9 +267,10 @@ def _run(
     started: float,
 ) -> ScanAggregates:
     """Header gate, then the guarded read-only run."""
-    # OSError (missing path, unreadable storage) propagates: the
-    # pre-read is what makes a nonexistent file an infrastructure
-    # error rather than a sqlite3 "unable to open" misclassification.
+    # OSError (missing path, unreadable file) propagates: the pre-read
+    # is what keeps a nonexistent file from being misclassified as a
+    # sqlite3 "unable to open" corruption verdict; the sandboxed child
+    # entry answers the escape as MALFORMED_SQLITE.
     with open(path, "rb") as handle:
         head = handle.read(len(SQLITE_MAGIC))
     if not head:

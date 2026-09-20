@@ -306,6 +306,23 @@ def _xlsx_bytes() -> bytes:
         return payload.read_bytes()
 
 
+def _manifest_only_xlsx() -> bytes:
+    """The T5 carry shape: a manifest-valid archive with no workbook
+    part — openpyxl answers OSError('File contains no valid workbook
+    part'), which the validators re-raise."""
+    import io
+    import zipfile
+
+    manifest = (
+        b'<?xml version="1.0"?><Types xmlns='
+        b'"http://schemas.openxmlformats.org/package/2006/content-types"/>'
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", manifest)
+    return buffer.getvalue()
+
+
 # --- the state machine ----------------------------------------------------------------
 
 
@@ -637,6 +654,53 @@ def test_invalid_task_schema_fails_with_schema_invalid() -> None:
         assert [error.code.value for error in result.report.errors] == [
             "SCHEMA_INVALID"
         ]
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_openpyxl_oserror_shape_fails_malformed_not_crashed() -> None:
+    """F1 regression: the T5 carry shape — a manifest-valid XLSX archive
+    with no workbook part makes openpyxl raise OSError inside the child
+    — must persist as a terminal MALFORMED_XLSX validation failure, NOT
+    VALIDATION_WORKER_CRASHED (whose retry-later message a terminal
+    replay can never deliver)."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        content = _manifest_only_xlsx()
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                declared_type="XLSX",
+                content=content,
+                task_schema={"required_columns": [{"name": "url", "type": "string"}]},
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, content))
+        service = _service(storage)
+
+        result = _validate(service, factory, seed.submission.id)
+        assert result.status is ValidationStatus.VALIDATION_FAILED
+        assert result.detected_type is FileType.XLSX
+        assert [error.code.value for error in result.report.errors] == [
+            "MALFORMED_XLSX"
+        ]
+
+        async def _inspect() -> None:
+            submission = await factory().get(Submission, seed.submission.id)
+            assert submission is not None
+            assert submission.validation_status == "VALIDATION_FAILED"
+            report = submission.validation_report
+            assert report is not None
+            assert report["errors"][0]["code"] == "MALFORMED_XLSX"
+
+        asyncio.run(_inspect())
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
 

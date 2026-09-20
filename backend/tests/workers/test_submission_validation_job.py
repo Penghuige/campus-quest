@@ -65,6 +65,29 @@ _CSV_REQUEST = {
     "preview": {"max_rows": 10, "max_value_length": 200},
 }
 
+_XLSX_REQUEST = {
+    "schema": {"required_columns": [{"name": "url", "type": "string"}]},
+    "preview": {"max_rows": 10, "max_value_length": 200},
+}
+
+
+def _manifest_only_xlsx() -> bytes:
+    """The T5 carry shape: a real ZIP with a valid [Content_Types].xml
+    but no workbook part — openpyxl answers ``OSError('File contains
+    no valid workbook part')``, which the validators deliberately
+    re-raise."""
+    import io
+    import zipfile
+
+    manifest = (
+        b'<?xml version="1.0"?><Types xmlns='
+        b'"http://schemas.openxmlformats.org/package/2006/content-types"/>'
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", manifest)
+    return buffer.getvalue()
+
 
 def _set_required_env(
     monkeypatch: pytest.MonkeyPatch, redis_url: str = "redis://redis:6379/0"
@@ -195,6 +218,30 @@ def test_sandbox_crashing_child_reports_crash_with_stderr_detail() -> None:
     assert "fixture: simulated parser crash" in (outcome.stderr_tail or "")
     serialized = json.dumps(outcome.report.errors[0].message) if outcome.report else ""
     assert "fixture" not in serialized  # report carries the stable code only
+
+
+def test_sandbox_converts_child_parse_oserror_into_malformed_outcome(
+    tmp_path: Path,
+) -> None:
+    # F1 regression: the T5 carry shape (openpyxl answers OSError on a
+    # manifest-valid archive with no workbook part) must come back
+    # through the FULL subprocess path as a structured MALFORMED_XLSX
+    # report — exit 0, no crash classification. The crash class stays
+    # reserved for actual crashes (non-zero exit / unparseable stdout /
+    # timeout / OOM), and no terminal report ever promises a retry the
+    # terminal replay path cannot deliver.
+    upload = tmp_path / "upload.bin"
+    upload.write_bytes(_manifest_only_xlsx())
+    outcome = _runner(**_default_limits()).run(
+        path=upload, request=_XLSX_REQUEST, declared_type=FileType.XLSX
+    )
+    assert outcome.failure_code is None
+    assert outcome.detected_type is FileType.XLSX
+    assert outcome.report is not None
+    assert [error.code.value for error in outcome.report.errors] == ["MALFORMED_XLSX"]
+    assert outcome.report.parser_version == "xlsx-1"
+    serialized = json.dumps(outcome.report.errors[0].message)
+    assert "重试" not in serialized  # no retry promise on a terminal verdict
 
 
 def _elapsed_marker() -> float:

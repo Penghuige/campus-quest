@@ -143,9 +143,11 @@ def test_sqlite_magic_prefix_of_otherwise_text_is_sqlite(tmp_path: Path) -> None
     assert detect_file_type(path) is FileType.SQLITE
 
 
-def test_missing_path_is_transient_infrastructure_error(tmp_path: Path) -> None:
-    # A vanished file is infrastructure (the worker retries), never a
-    # property of the submission: the same policy as the validators.
+def test_missing_path_raises_oserror(tmp_path: Path) -> None:
+    # A vanished file raises OSError rather than answering a content
+    # verdict; in the production path that escape lands in the child,
+    # so the parent classifies it crash-side (the parent's download is
+    # the only retry path, and it already succeeded).
     missing = tmp_path / "vanished.bin"
     try:
         detect_file_type(missing)

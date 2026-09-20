@@ -70,9 +70,13 @@ Design decisions:
 - Cells are classified per the shared contract documented in
   ``validators/common.py`` (edge-trimmed; whitespace-only is NULL).
   The stream is consumed but never closed — lifecycle belongs to the
-  caller. ``OSError`` from the underlying storage is deliberately NOT
-  converted: it is an infrastructure failure the worker retries, not
-  a property of the file.
+  caller. ``OSError`` from the underlying read is deliberately NOT
+  converted here: in-process callers see the raw exception. In the
+  production path (the sandboxed child), the child ENTRY converts an
+  escaping ``OSError`` into a terminal ``MALFORMED_CSV`` outcome — the
+  file is a local temp the parent already downloaded, so the
+  infrastructure-retry class is the parent's ``download_to_file``
+  call alone.
 """
 
 from __future__ import annotations
