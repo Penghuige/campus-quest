@@ -11,6 +11,14 @@ Covers the state machine the worker owns:
   returns the persisted report and appends NO history row;
 - a stale VALIDATING submission (a worker died between its two
   transactions) is re-run-safe: a fresh run row, terminal state;
+- the failure back-edge (final-review C1 fix): a terminal
+  VALIDATION_FAILED rolls the claim back to an actionable state —
+  CLAIMED, or REVISION_REQUIRED while a teacher-set revision window is
+  open — never disturbs a newer version's in-flight claim, and the
+  terminal replay leaves the restored status in place;
+- §38.4 row 19 end to end (the C1 proof): v1 fails -> the claim rolls
+  back -> a NEW upload intent is issuable -> v2 finalizes as version 2
+  -> validates -> the chained reward lock -> the teacher approve;
 - actual-type detection (spec §38.4): a fake binary .csv and a fake
   .sqlite (really XLSX bytes) fail FILE_TYPE_NOT_ALLOWED by CONTENT,
   and the detected truth is persisted;
@@ -51,12 +59,15 @@ from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.events import Actor, InMemoryEventCollector
 from app.modules.identity.models import User
 from app.modules.submissions.enums import FileType, ValidationStatus
 from app.modules.submissions.models import (
     RewardLockHistory,
     Submission,
+    SubmissionReview,
     SubmissionValidation,
+    UploadIntent,
 )
 from app.modules.tasks.enums import (
     AssignmentAvailability,
@@ -112,6 +123,7 @@ async def _seed(
     task_schema: dict[str, Any] | None = None,
     allowed_types: list[str] | None = None,
     claim_status: ClaimStatus = ClaimStatus.VALIDATING,
+    revision_deadline_at: datetime | None = None,
 ) -> Seed:
     async with factory() as session:
         teacher = User(
@@ -172,6 +184,7 @@ async def _seed(
             base_reward_points_snapshot=100,
             submission_schema_version=1,
             reward_lock_status=RewardLockStatus.NONE,
+            revision_deadline_at=revision_deadline_at,
             terminal_at=(
                 _NOW
                 if claim_status
@@ -192,6 +205,10 @@ async def _seed(
             retention_until=_NOW + timedelta(days=180),
         )
         session.add(submission)
+        await session.flush()
+        # The finalize invariant: the claim's latest pointer tracks the
+        # submission before the validation pipeline ever sees it.
+        claim.latest_submission_id = submission.id
         await session.commit()
         return Seed(
             teacher=teacher,
@@ -215,15 +232,25 @@ async def _cleanup(
                 AssignmentClaim.task_id.in_(task_ids)
             )
             await session.execute(
+                delete(UploadIntent).where(UploadIntent.claim_id.in_(claim_ids))
+            )
+            await session.execute(
                 delete(SubmissionValidation).where(
                     SubmissionValidation.submission_id.in_(
                         select(Submission.id).where(Submission.claim_id.in_(claim_ids))
                     )
                 )
             )
-            # The chained reward lock (the job's on_validation_passed
-            # step) writes append-only history rows referencing both the
-            # claim and the submission — they go before either.
+            # Review decisions (approve) reference submissions; the
+            # chained reward lock's history rows reference both the
+            # claim and the submission — both go before either.
+            await session.execute(
+                delete(SubmissionReview).where(
+                    SubmissionReview.submission_id.in_(
+                        select(Submission.id).where(Submission.claim_id.in_(claim_ids))
+                    )
+                )
+            )
             await session.execute(
                 delete(RewardLockHistory).where(
                     RewardLockHistory.claim_id.in_(claim_ids)
@@ -457,9 +484,14 @@ def test_failed_validation_is_terminal_and_replays_idempotently() -> None:
     task_ids: list[UUID] = []
     user_ids: list[UUID] = []
     try:
-        # A CSV whose unique url column repeats: VALIDATION_FAILED.
+        # A CSV whose unique url column repeats: VALIDATION_FAILED. The
+        # claim enters CLAIMED (the realistic finalize shape) so the
+        # whole back-edge runs: tx1 CLAIMED -> VALIDATING, failed tx2
+        # VALIDATING -> CLAIMED.
         content = b"url,title\nhttps://a.com,t\nhttps://a.com,t2\n"
-        seed = asyncio.run(_seed(factory, run, content=content))
+        seed = asyncio.run(
+            _seed(factory, run, content=content, claim_status=ClaimStatus.CLAIMED)
+        )
         task_ids.append(seed.task.id)
         user_ids.extend((seed.teacher.id, seed.student.id))
         storage = asyncio.run(_store(factory, seed, content))
@@ -484,6 +516,112 @@ def test_failed_validation_is_terminal_and_replays_idempotently() -> None:
             return len(result.scalars().all())
 
         assert asyncio.run(_count()) == 1
+
+        # C1 regression: the claim is ACTIONABLE after the failure —
+        # rolled back to CLAIMED (no revision window was open) — and
+        # the terminal replay does not disturb it.
+        async def _claim() -> AssignmentClaim:
+            claim = await factory().get(AssignmentClaim, seed.claim.id)
+            assert claim is not None
+            return claim
+
+        claim = asyncio.run(_claim())
+        assert claim.status == ClaimStatus.CLAIMED.value
+        assert claim.latest_submission_id == seed.submission.id
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_failed_validation_in_revision_window_restores_revision_required() -> None:
+    """The back-edge's other arm: a claim that entered validation from
+    REVISION_REQUIRED (a teacher-set revision window is open) rolls
+    back to REVISION_REQUIRED, keeping the deadline untouched."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        content = b"url,title\nhttps://a.com,t\nhttps://a.com,t2\n"
+        revision_deadline = _GRACE + timedelta(hours=24)
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                content=content,
+                claim_status=ClaimStatus.REVISION_REQUIRED,
+                revision_deadline_at=revision_deadline,
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, content))
+        service = _service(storage)
+
+        result = _validate(service, factory, seed.submission.id)
+        assert result.status is ValidationStatus.VALIDATION_FAILED
+
+        async def _claim() -> AssignmentClaim:
+            claim = await factory().get(AssignmentClaim, seed.claim.id)
+            assert claim is not None
+            return claim
+
+        claim = asyncio.run(_claim())
+        assert claim.status == ClaimStatus.REVISION_REQUIRED.value
+        assert claim.revision_deadline_at == revision_deadline
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_failed_validation_never_disturbs_a_newer_versions_claim() -> None:
+    """The back-edge's latest-version guard: an old run finishing late
+    (v1 still non-terminal while the claim's pipeline is led by v2)
+    must fail v1 WITHOUT rolling back the claim that v2's validation
+    still owns."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        content = b"url,title\nhttps://a.com,t\nhttps://a.com,t2\n"
+        seed = asyncio.run(_seed(factory, run, content=content))
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, content))
+
+        async def _add_v2_and_lead() -> None:
+            async with factory() as session:
+                v2 = Submission(
+                    claim_id=seed.claim.id,
+                    version=2,
+                    object_key=f"submissions/{seed.claim.id}/{uuid4()}",
+                    original_filename="数据v2.csv",
+                    declared_type="CSV",
+                    file_size=32,
+                    submitted_at=_NOW,
+                    retention_until=_NOW + timedelta(days=180),
+                )
+                session.add(v2)
+                await session.flush()
+                claim = await session.get(AssignmentClaim, seed.claim.id)
+                assert claim is not None
+                claim.latest_submission_id = v2.id
+                await session.commit()
+
+        asyncio.run(_add_v2_and_lead())
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+        assert result.status is ValidationStatus.VALIDATION_FAILED
+
+        async def _claim_status() -> str:
+            claim = await factory().get(AssignmentClaim, seed.claim.id)
+            assert claim is not None
+            return claim.status
+
+        # v1 failed, but the pointer leads at v2: the claim stays
+        # VALIDATING — the newer version's pipeline still owns it.
+        assert asyncio.run(_claim_status()) == ClaimStatus.VALIDATING.value
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
 
@@ -952,6 +1090,253 @@ def test_missing_submission_raises_typed_not_found() -> None:
     with pytest.raises(BusinessError) as excinfo:
         _validate(service, factory, uuid4())
     assert excinfo.value.code is ErrorCode.NOT_FOUND
+
+
+# --- §38.4 row 19: fail -> resubmit -> valid -> review (the C1 proof) ----------------
+
+
+@dataclass(slots=True)
+class World:
+    """A claim-only graph: the row-19 pipeline test builds every
+    submission through the real upload service (intent -> PUT ->
+    finalize), so version allocation and the claim pointer are the
+    production shapes, not seeded shortcuts."""
+
+    teacher: User
+    student: User
+    task: Task
+    assignment: Assignment
+    claim: AssignmentClaim
+
+
+async def _seed_world(factory: async_sessionmaker[AsyncSession], run: str) -> World:
+    async with factory() as session:
+        teacher = User(
+            username=f"t{run}",
+            password_hash=_PASSWORD_HASH,
+            nickname=f"老师{run[-4:]}",
+            phone_e164=None,
+            role=Role.TEACHER,
+            status=UserStatus.ACTIVE,
+        )
+        student = User(
+            username=f"2025{run}001",
+            password_hash=_PASSWORD_HASH,
+            nickname=f"同学{run[-4:]}",
+            phone_e164=None,
+            role=Role.STUDENT,
+            status=UserStatus.ACTIVE,
+        )
+        session.add_all((teacher, student))
+        await session.flush()
+        task = Task(
+            owner_teacher_id=teacher.id,
+            title="小红书考研经验帖数据采集",
+            description="采集指定关键词下的笔记正文与互动数据。",
+            task_type=TaskType.DATA_CRAWL,
+            rarity=TaskRarity.NORMAL,
+            base_reward_points=100,
+            status=TaskStatus.PUBLISHED,
+            deadline_mode=DeadlineMode.RELATIVE,
+            duration_minutes=4320,
+            submission_schema=_CSV_SCHEMA,
+            submission_schema_version=1,
+            allowed_file_types=["CSV", "XLSX"],
+            max_file_size_bytes=10 * 1024 * 1024,
+            notification_channels=["SMS"],
+        )
+        session.add(task)
+        await session.flush()
+        assignment = Assignment(
+            task_id=task.id,
+            platform="xiaohongshu",
+            keyword=f"考研{run[-4:]}",
+            availability_status=AssignmentAvailability.OCCUPIED,
+        )
+        session.add(assignment)
+        await session.flush()
+        claim = AssignmentClaim(
+            assignment_id=assignment.id,
+            task_id=task.id,
+            user_id=student.id,
+            status=ClaimStatus.CLAIMED.value,
+            claimed_at=_NOW - timedelta(days=1),
+            deadline_at=_GRACE - timedelta(minutes=1440),
+            grace_deadline_at=_GRACE,
+            reward_policy_snapshot={"version": 1},
+            base_reward_points_snapshot=100,
+            submission_schema_version=1,
+            reward_lock_status=RewardLockStatus.NONE,
+        )
+        session.add(claim)
+        await session.commit()
+        return World(
+            teacher=teacher,
+            student=student,
+            task=task,
+            assignment=assignment,
+            claim=claim,
+        )
+
+
+def _run(factory: async_sessionmaker[AsyncSession], fn):
+    """Run one async service call on its own session inside its own
+    loop (the ``_validate`` generalization for the multi-service
+    pipeline test)."""
+
+    async def _call():
+        async with factory() as session:
+            return await fn(session)
+
+    return asyncio.run(_call())
+
+
+async def _claim_row(
+    factory: async_sessionmaker[AsyncSession], claim_id: UUID
+) -> AssignmentClaim:
+    claim = await factory().get(AssignmentClaim, claim_id)
+    assert claim is not None
+    return claim
+
+
+@pytest.mark.integration
+def test_row19_failed_v1_rolls_back_claim_and_v2_reaches_review() -> None:
+    """Spec §38.4 matrix row 19, end to end (the C1 regression proof):
+    v1 fails machine validation and the claim rolls back to an
+    actionable state; the student can then obtain a NEW upload intent
+    (impossible while the claim was wedged VALIDATING), v2 finalizes as
+    version 2, passes validation, locks the reward at its own submit
+    instant, and the teacher review approves it. Version and pointer
+    asserted at every step."""
+    from app.modules.submissions.review_service import ReviewService
+    from app.modules.submissions.reward_lock_service import RewardLockService
+    from app.modules.submissions.upload_service import UploadService
+    from tests.fakes.points import FakePointsRewardPort
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        world = asyncio.run(_seed_world(factory, run))
+        task_ids.append(world.task.id)
+        user_ids.extend((world.teacher.id, world.student.id))
+
+        clock = FrozenClock(_NOW)
+        storage = FakeObjectStorage(clock=clock)
+        uploads = UploadService(clock=clock, storage=storage)
+        validator = _service(storage)
+        collector = InMemoryEventCollector()
+        points = FakePointsRewardPort()
+        locks = RewardLockService(clock=clock, events=collector)
+        reviews = ReviewService(clock=clock, events=collector, points=points)
+        student = Actor(user_id=world.student.id, role=Role.STUDENT)
+        owner = Actor(user_id=world.teacher.id, role=Role.TEACHER)
+
+        bad = b"url,title\nhttps://a.com,t\nhttps://a.com,t2\n"
+        good = _valid_csv(3)
+
+        # v1: intent -> client PUT -> finalize (version 1).
+        v1_intent = _run(
+            factory,
+            lambda session: uploads.create_upload_intent(
+                session, student, world.claim.id, "数据.csv", "CSV", len(bad)
+            ),
+        )
+        storage.put_object(object_key=v1_intent.object_key, content=bad)
+        v1 = _run(
+            factory,
+            lambda session: uploads.finalize_upload(
+                session, student, v1_intent.intent_id
+            ),
+        )
+        assert v1.version == 1
+
+        # v1 fails machine validation; the claim rolls back actionable.
+        first = _validate(validator, factory, v1.id)
+        assert first.status is ValidationStatus.VALIDATION_FAILED
+        claim = asyncio.run(_claim_row(factory, world.claim.id))
+        assert claim.status == ClaimStatus.CLAIMED.value
+        assert claim.latest_submission_id == v1.id
+
+        # The C1 proof: a NEW intent is issuable on the rolled-back
+        # claim (pre-fix this raised CLAIM_NOT_SUBMITTABLE on VALIDATING).
+        v2_intent = _run(
+            factory,
+            lambda session: uploads.create_upload_intent(
+                session, student, world.claim.id, "数据v2.csv", "CSV", len(good)
+            ),
+        )
+        storage.put_object(object_key=v2_intent.object_key, content=good)
+        v2 = _run(
+            factory,
+            lambda session: uploads.finalize_upload(
+                session, student, v2_intent.intent_id
+            ),
+        )
+        assert v2.version == 2
+
+        claim = asyncio.run(_claim_row(factory, world.claim.id))
+        assert claim.latest_submission_id == v2.id
+
+        # v2 passes; the chained reward lock makes the claim reviewable.
+        second = _validate(validator, factory, v2.id)
+        assert second.status is ValidationStatus.VALIDATED
+        assert second.report.row_count == 3
+        locked = _run(
+            factory, lambda session: locks.on_validation_passed(session, v2.id)
+        )
+        assert locked.status == ClaimStatus.UNDER_REVIEW.value
+        assert locked.latest_submission_id == v2.id
+        assert locked.reward_lock_status == RewardLockStatus.PROVISIONAL.value
+        # submitted_at (_NOW) sits past the deadline but inside grace:
+        # the late tier, 20% of the 100-point snapshot.
+        assert locked.reward_tier_locked == 20
+        assert locked.locked_reward_points == 20
+        assert locked.reward_locked_at == _NOW
+
+        # Reviewable end state: the teacher approves v2.
+        approval = _run(
+            factory,
+            lambda session: reviews.approve_submission(session, owner, v2.id),
+        )
+        assert approval.already_reviewed is False
+        assert approval.grant is not None
+        assert approval.grant.points_granted == 20
+
+        async def _final() -> None:
+            claim = await _claim_row(factory, world.claim.id)
+            assert claim.status == ClaimStatus.COMPLETED.value
+            assert claim.terminal_at == _NOW
+            assert claim.reward_lock_status == RewardLockStatus.CONFIRMED.value
+            rows = (
+                (
+                    await factory().execute(
+                        select(Submission)
+                        .where(Submission.claim_id == claim.id)
+                        .order_by(Submission.version.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert [row.version for row in rows] == [1, 2]
+            # Honest history: v1 keeps its terminal failure report; v2
+            # is the approved one.
+            assert rows[0].validation_status == ValidationStatus.VALIDATION_FAILED.value
+            assert rows[0].review_status == "PENDING_REVIEW"
+            assert rows[1].validation_status == ValidationStatus.VALIDATED.value
+            assert rows[1].review_status == "APPROVED"
+            assignment = await factory().get(Assignment, world.assignment.id)
+            assert assignment is not None
+            assert (
+                assignment.availability_status == AssignmentAvailability.COMPLETED.value
+            )
+
+        asyncio.run(_final())
+        assert points.grant_count == 1
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
 
 
 # --- the Celery job end-to-end ----------------------------------------------------

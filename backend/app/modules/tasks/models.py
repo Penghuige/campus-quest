@@ -56,9 +56,10 @@ Design decisions:
 - `reward_tier_locked` is the locked percentage from the snapshotted
   ladder (spec §9.3: 100/80/50/20), not a string tier name — the ladder
   shape itself is versioned inside `reward_policy_snapshot`.
-- `latest_submission_id` is a plain nullable UUID with no FK: the
-  submissions table does not exist yet; the module that introduces it adds
-  the FK then.
+- `latest_submission_id` is a plain nullable UUID with no FK (the 0005
+  decision): submissions already FK to claims, and a reciprocal FK pair
+  would be circular; consistency is kept transactionally by the upload
+  finalize service with UNIQUE(claim_id, version) as the anchor.
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """

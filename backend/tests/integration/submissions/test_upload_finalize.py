@@ -1,7 +1,7 @@
 # backend/tests/integration/submissions/test_upload_finalize.py
 """Presigned upload intent + finalize end-to-end against real PostgreSQL
 and the FakeObjectStorage port (spec §10 steps 1-7, §11, §13, §31.11,
-§32; plan 04 task 2; backend-engineering §13: tests use fakes).
+§32; backend-engineering §13: tests use fakes).
 
 Scenarios:
 

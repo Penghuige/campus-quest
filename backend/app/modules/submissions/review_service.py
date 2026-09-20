@@ -58,17 +58,19 @@ before the rollback because it expires every ORM instance):
 - Stale version -> ``StaleSubmissionVersionError``: only the claim's
   ``latest_submission_id`` can be reviewed — older VALIDATED versions
   exist once the student resubmitted.
-- Lock-shape gates: invalidate requires PROVISIONAL (CONFIRMED is
-  final — the reward was granted on it; NONE has nothing to cancel);
-  approve requires PROVISIONAL (step 7 confirms values that only a
-  provisional lock carries).
 - Reviewer permission -> ``ReviewerPermissionDeniedError``: the task
   owner, an Admin, or a collaborator holding REVIEW_SUBMISSIONS (spec
   §4.2/§4.3). The check reuses the tasks-module collaborator query
   pattern — ``Task``/``TaskCollaborator`` are read through the frozen
   ``CollaboratorPermission`` vocabulary from the tasks module's
   collaborator service (no identity ORM: account facts stay behind the
-  ``UserDirectory`` port per interfaces.md).
+  ``UserDirectory`` port per interfaces.md). It runs BEFORE the
+  lock-shape gates (approve only): an unauthorized teacher must learn
+  PERMISSION_DENIED, never the claim's lock state.
+- Lock-shape gates: invalidate requires PROVISIONAL (CONFIRMED is
+  final — the reward was granted on it; NONE has nothing to cancel);
+  approve requires PROVISIONAL (step 7 confirms values that only a
+  provisional lock carries).
 
 The approve transaction, §14's ten steps verbatim: (1) lock claim;
 (2) verify the claim is still reviewable; (3) verify the submission is
@@ -539,6 +541,13 @@ class ReviewService:
         assert submission is not None
         await self._require_submission_gates(db, claim, submission)
 
+        # Step 4: reviewer permission (owner / REVIEW_SUBMISSIONS
+        # collaborator / Admin) — deliberately BEFORE the lock-shape
+        # gate below (the invalidate path's permission-first ordering):
+        # an unauthorized teacher must learn PERMISSION_DENIED, never
+        # the claim's lock state (a lock-state oracle for free).
+        await self._require_review_permission(db, claim, actor)
+
         # Step 7 needs real values to confirm: only a PROVISIONAL lock
         # carries them (the on_validation_passed race, or a lock
         # invalidated pending resubmission, is a typed rejection).
@@ -547,10 +556,6 @@ class ReviewService:
             observed_claim_id = claim.id
             await db.rollback()
             raise LockNotProvisionalError(observed_claim_id, observed_lock_status)
-
-        # Step 4: reviewer permission (owner / REVIEW_SUBMISSIONS
-        # collaborator / Admin).
-        await self._require_review_permission(db, claim, actor)
 
         # CLOCK SAMPLING CONTRACT (reward_lock_service precedent):
         # ``now`` is sampled after every lock and before its first
@@ -595,14 +600,23 @@ class ReviewService:
 
         # Step 9: Assignment -> COMPLETED — permanently unallocatable
         # (§8.2: COMPLETED never returns to AVAILABLE). Locked AFTER the
-        # claim, the sanctioned claim -> assignment order.
+        # claim, the sanctioned claim -> assignment order. Only OCCUPIED
+        # flips (the abandon_service guard): RETIRED/COMPLETED are
+        # sticky terminal assignment states, so a unit that already left
+        # OCCUPIED is a no-op here with the same terminal outcome — the
+        # claim still completes, and a pre-terminal assignment must
+        # never error or resurrect the approve.
         assignment = await db.scalar(
             select(Assignment)
             .where(Assignment.id == claim.assignment_id)
             .with_for_update()
         )
         assert assignment is not None  # claims.assignment_id FK
-        assignment.availability_status = AssignmentAvailability.COMPLETED.value
+        if (
+            AssignmentAvailability(assignment.availability_status)
+            is AssignmentAvailability.OCCUPIED
+        ):
+            assignment.availability_status = AssignmentAvailability.COMPLETED.value
 
         await db.flush()
 

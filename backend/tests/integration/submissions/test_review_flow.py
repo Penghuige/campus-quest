@@ -28,9 +28,12 @@ approve_submission) plus the §11.3 x §11.4 re-lock clamp in
   result);
 - the gates: permission matrix (owner / REVIEW_SUBMISSIONS
   collaborator / Admin allowed; VIEW_TASK-only collaborator, unrelated
-  teacher, and the student denied), stale versions rejected, terminal
-  claims rejected, CONFIRMED/NONE locks not invalidatable, approve
-  requires a PROVISIONAL lock.
+  teacher, and the student denied), permission judged BEFORE the
+  approve lock-state gate (an unauthorized teacher never learns the
+  lock shape), stale versions rejected, terminal claims rejected,
+  CONFIRMED/NONE locks not invalidatable, approve requires a
+  PROVISIONAL lock, and a RETIRED/pre-COMPLETED assignment is sticky
+  under approve (no-op flip, claim still completes).
 
 Harness notes (same conventions as test_reward_lock.py): explicit
 committed sessions from a NullPool engine factory — every asyncio.run
@@ -1136,6 +1139,91 @@ def test_approve_requires_a_provisional_lock() -> None:
 
 
 # --- the gates: permission, staleness, state -------------------------------------
+
+
+@pytest.mark.integration
+def test_approve_denies_unauthorized_reviewer_before_lock_state() -> None:
+    """Gate order (final-review M1): the reviewer permission check runs
+    BEFORE the LockNotProvisional gate — an unauthorized teacher on a
+    non-provisional claim learns PERMISSION_DENIED, never the claim's
+    lock state (the invalidate path's permission-first ordering)."""
+    factory = _new_factory()
+    for lock_status in (RewardLockStatus.NONE, RewardLockStatus.INVALIDATED):
+        run = uuid4().hex[:8]
+        task_ids: list[UUID] = []
+        try:
+            seed = asyncio.run(
+                _seed(
+                    factory,
+                    run,
+                    reward_lock_status=lock_status,
+                    reward_tier_locked=None,
+                    locked_reward_points=None,
+                    reward_locked_at=None,
+                )
+            )
+            task_ids.append(seed.task.id)
+            service, _collector, points = _service(_REVIEWED_AT)
+
+            with pytest.raises(BusinessError) as excinfo:
+                _call(
+                    factory,
+                    lambda session, svc=service, world=seed: svc.approve_submission(
+                        session,
+                        world.actor(world.teacher_other),
+                        world.submissions[1].id,
+                    ),
+                )
+            assert isinstance(excinfo.value, ReviewerPermissionDeniedError)
+            assert excinfo.value.code is ErrorCode.PERMISSION_DENIED
+            assert points.grant_count == 0
+            claim, _assignment, submission = asyncio.run(
+                _reload(factory, seed.claim.id)
+            )
+            assert claim.status == ClaimStatus.UNDER_REVIEW.value
+            assert claim.terminal_at is None
+            assert submission.review_status == "PENDING_REVIEW"
+            assert asyncio.run(_review_rows(factory, seed.submissions[1].id)) == []
+        finally:
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
+
+
+@pytest.mark.integration
+def test_approve_on_sticky_assignment_status_still_completes_claim() -> None:
+    """Assignment stickiness (final-review M2): a RETIRED or
+    pre-COMPLETED assignment is terminal (§8.2) — the approve no-ops the
+    availability flip instead of erroring, and the claim still
+    completes with the lock confirmed and exactly one grant."""
+    factory = _new_factory()
+    for sticky in (AssignmentAvailability.COMPLETED, AssignmentAvailability.RETIRED):
+        run = uuid4().hex[:8]
+        task_ids: list[UUID] = []
+        try:
+            seed = asyncio.run(_seed(factory, run, assignment_status=sticky))
+            task_ids.append(seed.task.id)
+            service, _collector, points = _service(_REVIEWED_AT)
+
+            result = _call(
+                factory,
+                lambda session, svc=service, world=seed: svc.approve_submission(
+                    session, world.actor(world.owner), world.submissions[1].id
+                ),
+            )
+            assert isinstance(result, ApprovalResult)
+            assert result.already_reviewed is False
+            assert result.grant is not None
+            assert result.grant.points_granted == 100
+
+            claim, assignment, submission = asyncio.run(_reload(factory, seed.claim.id))
+            assert claim.status == ClaimStatus.COMPLETED.value
+            assert claim.terminal_at == _REVIEWED_AT
+            assert claim.reward_lock_status == RewardLockStatus.CONFIRMED.value
+            assert submission.review_status == "APPROVED"
+            # The sticky terminal assignment state is untouched.
+            assert assignment.availability_status == sticky.value
+            assert points.grant_count == 1
+        finally:
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration

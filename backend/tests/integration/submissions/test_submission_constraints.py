@@ -7,7 +7,7 @@ PostgreSQL itself rejects the violations even when the application forgets:
 - UNIQUE(claim_id, version) on submissions: Submission version is unique
   per Claim (§31.11). Version numbering is per-Claim, so the same integer
   under another Claim inserts cleanly; monotonic allocation is a service
-  duty (plan 04 task 2), the database only guarantees uniqueness;
+  duty (the upload finalize service), the database only guarantees uniqueness;
 - UNIQUE(object_key): the server-generated storage key is globally unique
   (spec §10: keys are generated server-side, never from the original
   filename);

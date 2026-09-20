@@ -9,7 +9,7 @@ Design decisions:
   into e.g. `ck_submissions_validation_status` (the 0003 gotcha).
 - `version` uniqueness is scoped per Claim (§31.11) through
   UNIQUE(claim_id, version); monotonic allocation of the next version is a
-  service duty (upload finalize, plan 04 task 2) — the database only
+  service duty (the upload finalize service) — the database only
   guarantees that a duplicated version cannot be committed.
 - `object_key` is the server-generated object-storage key (spec §10: never
   derived from the client filename) and globally unique: one stored object

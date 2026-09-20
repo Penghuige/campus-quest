@@ -415,9 +415,9 @@ lookups join the caller's transaction (`session` in, answer out, no inner
 commit), same shape as the other cross-module ports.
 
 Locking-read seam: `UserDirectory` will gain a documented locking read
-(e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a second
-module needs one; until then, the lightweight typed Core reads over the
-`users` table in the claim/abandon services (`_USERS_LOCK` — `id` +
-`status` + `role`, through the frozen `UserStatus`/`Role` vocabularies)
-are the sanctioned interim, and both queries move behind the port
-unchanged when it registers one.
+(e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a new module
+needs one; until then, the lightweight typed Core reads over the `users`
+table — the three `_USERS_LOCK` twins in the claim, abandon, and upload
+(`id` + `status` + `role`, through the frozen `UserStatus`/`Role`
+vocabularies) — are the sanctioned interim, and all three queries move
+behind the port unchanged when it registers one.

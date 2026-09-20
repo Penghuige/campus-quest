@@ -93,7 +93,9 @@ Design decisions (each pinned by a test):
   scan — bounded time on the million-empty-row sheet. Data after
   such a run is not read; that is the documented trade-off, and the
   scan is NOT marked incomplete (trailing styled-empty padding is
-  normal in real workbooks).
+  normal in real workbooks). Known limitation: rows hidden after a
+  long empty streak therefore escape machine checks entirely —
+  teacher review is the backstop that catches them.
 - **Row budget / timeout / unique tracking / bounded findings:** the
   shared scan layer in ``validators/common.py`` (``analyze_header``,
   ``check_row``, ``finalize_scan``) — same semantics as the CSV

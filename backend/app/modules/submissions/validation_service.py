@@ -37,7 +37,12 @@ because a multi-second parse must never hold the row lock:
   reports describe the same frozen object), persist the full §12.4
   report onto BOTH the submission projection (latest-run copy) and
   the run history row, plus ``detected_type``, final status,
-  finished_at / duration_ms. Commit.
+  finished_at / duration_ms. On the FAILURE side tx2 also owns the
+  claim back-edge (see ``_restore_actionable_claim``): the claim tx1
+  moved to VALIDATING is rolled back to an actionable status, so the
+  first ordinary bad file costs a resubmission, never the claim. On
+  the SUCCESS side nothing claim-side happens here — the reward-lock
+  service owns VALIDATING -> UNDER_REVIEW. Commit.
 
 Type detection is CONTENT truth (spec §12: fake .csv/.sqlite must
 fail by detection), run inside the sandboxed child; this service owns
@@ -65,10 +70,12 @@ string cells, truncated values, cached XLSX values only — formulas
 are never evaluated), no object keys, no parser internals.
 
 Scope note (plan boundary): this service owns the SUBMISSION state and
-the claim's VALIDATING intermediate (set in tx1 above). The reward
-lock and the claim's UNDER_REVIEW entry on VALIDATED belong to the
-reward-lock service (task 8, ``reward_lock_service``), which consumes
-the VALIDATED state produced here.
+the claim's VALIDATING intermediate (set in tx1 above) including its
+failure back-edge (tx2's VALIDATING -> CLAIMED/REVISION_REQUIRED
+restore — the student-actionable side of the same intermediate). The
+reward lock and the claim's UNDER_REVIEW entry on VALIDATED belong to
+the reward-lock service (task 8, ``reward_lock_service``), which
+consumes the VALIDATED state produced here.
 
 The service never reads the environment: clock, storage port,
 sandbox, and preview bounds arrive as constructor dependencies the
@@ -295,6 +302,14 @@ class ValidationService:
         submission.validation_report = report_json
         if detected is not None:
             submission.detected_type = detected.value
+        if terminal is ValidationStatus.VALIDATION_FAILED:
+            # The failure back-edge: tx1 moved the claim to VALIDATING;
+            # a terminal failure must hand it back to the student, or
+            # the first ordinary bad file wedges the claim and the
+            # assignment forever (SUBMITTABLE_STATUSES, the abandon
+            # gates, and the teacher review gates all exclude
+            # VALIDATING). See _restore_actionable_claim.
+            await self._restore_actionable_claim(db, submission)
         finished_run = await db.get(
             SubmissionValidation,
             run.id,
@@ -318,6 +333,49 @@ class ValidationService:
         )
 
     # --- the parse phase ------------------------------------------------
+
+    async def _restore_actionable_claim(
+        self, db: AsyncSession, submission: Submission
+    ) -> None:
+        """tx2 failure back-edge: VALIDATING -> REVISION_REQUIRED when a
+        revision window is already open (``revision_deadline_at`` set),
+        else CLAIMED.
+
+        Narrow on purpose — only the claim this submission still leads
+        (the ``latest_submission_id`` pointer) and that is still
+        VALIDATING moves:
+
+        - a twin run that already rolled it back leaves a
+          non-VALIDATING status: this call is then an idempotent no-op
+          (the terminal submission gate at tx1 already prevents replayed
+          jobs from reaching here at all; this guards the twin shape);
+        - an old job finishing late must not disturb a newer version's
+          in-flight claim (the pointer has advanced past it);
+        - anything else that owns the claim now (the expiry worker, a
+          terminal race) keeps its state — a terminal claim is never
+          resurrected, an UNDER_REVIEW claim is not ours to move.
+
+        Lock order submission -> claim, exactly as tx1: no service
+        takes the claim lock and then the submission lock.
+        """
+        claim = await db.scalar(
+            select(AssignmentClaim)
+            .where(AssignmentClaim.id == submission.claim_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if claim is None:
+            # The FK guarantees the row exists; nothing to restore.
+            return
+        if claim.latest_submission_id != submission.id:
+            return
+        if ClaimStatus(claim.status) is not ClaimStatus.VALIDATING:
+            return
+        claim.status = (
+            ClaimStatus.REVISION_REQUIRED.value
+            if claim.revision_deadline_at is not None
+            else ClaimStatus.CLAIMED.value
+        )
 
     async def _execute(
         self, db: AsyncSession, submission_id: UUID, *, declared: FileType
