@@ -34,7 +34,11 @@ asserts:
   same terminal result without a second count or a second event.
 - **Guards:** VALIDATING/UNDER_REVIEW (and other terminal) claims are
   not a student abandon action (CLAIM_NOT_ABANDONABLE); a foreign or
-  missing claim is 403/404; a non-ACTIVE account is refused.
+  missing claim is 403/404; a non-ACTIVE account is refused; a
+  non-STUDENT role is refused with PERMISSION_DENIED at the locked
+  user-row read (spec §4.1: abandon is a Student capability — the role
+  gate fires before ownership is even judged, so direct service callers
+  cannot bypass it).
 - **No points side effects:** abandon touches only the claim's terminal
   state and the assignment's availability — reward-lock fields stay
   untouched and exactly one CLAIM_ABANDONED audit event is emitted.
@@ -966,6 +970,59 @@ async def test_abandon_guards_missing_foreign_and_suspended(
                 await service.abandon_claim(session, suspended.id, suspended_claim.id)
         assert inactive.value.code == ErrorCode.ACCOUNT_NOT_ACTIVE
         assert inactive.value.status_code == 403
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+@pytest.mark.integration
+async def test_non_student_account_cannot_abandon(db_engine: AsyncEngine) -> None:
+    """Spec §4.1: abandon is a Student capability. The locked user-row
+    read selects and judges BOTH status and role, so a TEACHER calling
+    the service directly is refused with PERMISSION_DENIED before
+    ownership is even judged — and the targeted claim stays untouched."""
+    factory = _factory(db_engine)
+    service = _service(_NOW)
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        async with factory() as session:
+            teacher = _user(username=f"t{run}", role=Role.TEACHER)
+            student = _user(username=f"2025{run}001")
+            await _persist(session, teacher, student)
+            task = _task(teacher)
+            await _persist(session, task)
+            assignment = _assignment(task, keyword="考研英语")
+            await _persist(session, assignment)
+            claim = _claim(
+                assignment,
+                student,
+                status=ClaimStatus.CLAIMED,
+                claimed_at=_NOW - timedelta(hours=2),
+            )
+            assignment.availability_status = AssignmentAvailability.OCCUPIED
+            await _persist(session, claim)
+            await session.commit()
+            task_ids.append(task.id)
+            user_ids.extend([teacher.id, student.id])
+
+        async with factory() as session:
+            with pytest.raises(BusinessError) as exc_info:
+                await service.abandon_claim(session, teacher.id, claim.id)
+        assert exc_info.value.code == ErrorCode.PERMISSION_DENIED
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.details["role"] == Role.TEACHER.value
+
+        async with factory() as session:
+            loaded = await session.get(AssignmentClaim, claim.id)
+            assert loaded is not None
+            assert loaded.status == ClaimStatus.CLAIMED
+            assert loaded.terminal_at is None
+        assert (
+            await _assignment_status(factory, assignment.id)
+            == AssignmentAvailability.OCCUPIED
+        )
     finally:
         await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
 

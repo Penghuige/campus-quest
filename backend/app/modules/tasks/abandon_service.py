@@ -4,12 +4,15 @@
 
 Transaction shape (one transaction, exactly one commit at the end):
 
-1. ``SELECT status FROM users WHERE id = :user_id FOR UPDATE`` — the SAME
-   stable user-level resource the claim flow locks FIRST, so one
-   user's claims and abandons share a single serialization queue. This
-   is what makes the daily count safe: spec §8.5 requires the concurrent
-   daily check to be atomic, and COUNT-then-UPDATE is only sound inside
-   that lock (the §8.3 argument, applied to abandons).
+1. ``SELECT status, role FROM users WHERE id = :user_id FOR UPDATE`` —
+   the SAME stable user-level resource the claim flow locks FIRST, so
+   one user's claims and abandons share a single serialization queue.
+   This is what makes the daily count safe: spec §8.5 requires the
+   concurrent daily check to be atomic, and COUNT-then-UPDATE is only
+   sound inside that lock (the §8.3 argument, applied to abandons).
+   Both columns are judged on the locked row — status (§5.7) and role
+   (§4.1: abandon is a Student capability), so direct service callers
+   and concurrent role changes cannot bypass the invariant.
 2. ``SELECT ... FROM assignment_claims WHERE id = :claim_id FOR UPDATE``
    — the claim row lock. Ownership and status are judged on the row we
    locked, so a concurrent transition of the same claim linearizes here.
@@ -69,10 +72,11 @@ Design decisions and rulings:
   adapter accepts that a failed commit could leave a phantom event, and
   the outbox attaches inside the transaction. It is an audit-stream
   identifier, deliberately NOT a §25 notification event.
-- **Account gate:** the abandon refuses non-ACTIVE accounts exactly like
-  claiming (defense in depth on the row already locked; real traffic
-  cannot reach here with an inactive account because API access gates
-  on the same status).
+- **Account gate:** the abandon refuses non-STUDENT roles
+  (PERMISSION_DENIED, judged role-first like the claim flow) and
+  non-ACTIVE accounts exactly like claiming (defense in depth on the row
+  already locked; real traffic cannot reach here with the wrong shape
+  because the transport guard gates on the same facts).
 - **Errors:** ABANDON_LIMIT_REACHED and CLAIM_NOT_ABANDONABLE are 409
   (the state-conflict family, matching ASSIGNMENT_LIMIT_REACHED; the
   transport statuses are provisional, mirroring deadlines.py's 400),
@@ -98,10 +102,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.identity.enums import UserStatus
+from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import DomainEvent, DomainEventPublisher
 from app.modules.tasks.claim_service import (
     AccountNotActiveError,
+    ClaimerNotStudentError,
     UserNotFoundError,
 )
 from app.modules.tasks.enums import (
@@ -145,11 +150,12 @@ CLAIM_ABANDONED = "CLAIM_ABANDONED"
 
 # Lock/verify seam for the users table (see module docstring): a typed
 # Core-level light table, NOT the identity ORM model. Twin of
-# claim_service._USERS_LOCK.
+# claim_service._USERS_LOCK — both account-gate columns ride one read.
 _USERS_LOCK = table(
     "users",
     column("id", Uuid),
     column("status", String),
+    column("role", String),
 )
 
 
@@ -300,17 +306,21 @@ class AbandonService:
         """
         # (1) Same-user serialization FIRST (see module docstring): the
         # stable user-level resource the claim flow also locks, so the
-        # daily count below runs under a queue shared with claims.
-        status_value = (
+        # daily count below runs under a queue shared with claims. Both
+        # account-gate columns are judged on the row we locked — role
+        # first, then status, the claim flow's precedence.
+        account = (
             await db.execute(
-                select(_USERS_LOCK.c.status)
+                select(_USERS_LOCK.c.status, _USERS_LOCK.c.role)
                 .where(_USERS_LOCK.c.id == user_id)
                 .with_for_update()
             )
-        ).scalar_one_or_none()
-        if status_value is None:
+        ).one_or_none()
+        if account is None:
             raise UserNotFoundError(user_id)
-        if UserStatus(status_value) is not UserStatus.ACTIVE:
+        if Role(account.role) is not Role.STUDENT:
+            raise ClaimerNotStudentError(user_id, Role(account.role))
+        if UserStatus(account.status) is not UserStatus.ACTIVE:
             raise AccountNotActiveError(user_id)
 
         # (2) Claim row under FOR UPDATE: ownership and status are judged

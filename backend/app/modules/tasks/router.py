@@ -14,18 +14,33 @@ The heavier design decisions live here:
 Endpoints
 ---------
 
-Student surfaces (``require_active_actor``; spec §4.1, §5.7 — an ACTIVE
-account of any role may browse and claim):
+Student surfaces, split by role policy (spec §4.1: 领取/放弃/claim
+history are Student capabilities — Teacher/Admin never enter the claim
+lifecycle; browsing stays broader so staff can inspect the published
+catalogue):
 
 ===========  =========================================================
 Method path  Purpose
 ===========  =========================================================
-GET          ``/tasks`` — offset-paginated PUBLISHED cards (§42).
-GET          ``/tasks/{task_id}`` — published detail + own claim.
-POST         ``/tasks/{task_id}/claim`` — random claim (§8.3).
-GET          ``/me/claims`` — own claim history (all statuses).
-POST         ``/claims/{claim_id}/abandon`` — abandon + release (§8.5).
+GET          ``/tasks`` — offset-paginated PUBLISHED cards (§42);
+             ``require_active_actor``: any ACTIVE role may browse.
+GET          ``/tasks/{task_id}`` — published detail + own claim;
+             ``require_active_actor`` (same browsing policy).
+POST         ``/tasks/{task_id}/claim`` — random claim (§8.3);
+             ``require_active_student_actor``.
+GET          ``/me/claims`` — own claim history (all statuses);
+             ``require_active_student_actor`` (a Student surface by
+             policy: staff never own claims, and a 403 pins that
+             boundary instead of an empty list).
+POST         ``/claims/{claim_id}/abandon`` — abandon + release (§8.5);
+             ``require_active_student_actor``.
 ===========  =========================================================
+
+A non-STUDENT role on the three claim-lifecycle routes gets
+``PERMISSION_DENIED`` (403) — a role mismatch is a permission outcome,
+not an account-state one, so an inactive STUDENT keeps the distinct
+``ACCOUNT_NOT_ACTIVE`` answer. The services re-check the same invariant
+under the user-row lock (see claim_service / abandon_service).
 
 Teacher surfaces (``require_staff_management_actor``; spec §4.2-§4.3,
 §33.4 — staff role + ACTIVE + confirmed TOTP; ownership/collaborator
@@ -149,6 +164,7 @@ from app.integrations.rate_limit import (
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
+    require_active_student_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
@@ -308,6 +324,7 @@ def get_task_query_service() -> TaskQueryService:
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 ActiveActor = Annotated[Actor, Depends(require_active_actor)]
+StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 RatingPortDep = Annotated[RatingSummaryPort, Depends(get_rating_summary_port)]
@@ -381,14 +398,15 @@ async def get_task(
 @router.post("/tasks/{task_id}/claim", response_model=ClaimResponse, status_code=201)
 async def claim_task(
     task_id: uuid.UUID,
-    actor: ActiveActor,
+    actor: StudentActor,
     db: DbSession,
     claims: ClaimServiceDep,
     queries: QueryServiceDep,
     limiter: LimiterDep,
     body: ClaimRequest | None = None,
 ) -> ClaimResponse:
-    """Claim one random AVAILABLE assignment (spec §8.3).
+    """Claim one random AVAILABLE assignment (spec §8.3) — a Student
+    capability (spec §4.1); staff roles are refused at the guard.
 
     ``ClaimRequest`` is fieldless and forbids extras: the caller cannot
     name an assignment — the server picks randomly under lock. The
@@ -403,14 +421,16 @@ async def claim_task(
 
 @router.get("/me/claims", response_model=MyClaimsResponse)
 async def list_my_claims(
-    actor: ActiveActor,
+    actor: StudentActor,
     db: DbSession,
     queries: QueryServiceDep,
     limit: PageLimit = DEFAULT_PAGE_LIMIT,
     offset: PageOffset = 0,
 ) -> MyClaimsResponse:
     """The actor's own claim history, newest first; assignment
-    platform/keyword are visible here because every row is the owner's."""
+    platform/keyword are visible here because every row is the owner's.
+    A Student surface by policy (spec §4.1): staff never own claims, and
+    the 403 pins that boundary instead of serving an empty list."""
     views, total = await queries.list_own_claims(
         db, user_id=actor.user_id, limit=limit, offset=offset
     )
@@ -425,14 +445,15 @@ async def list_my_claims(
 @router.post("/claims/{claim_id}/abandon", response_model=ClaimResponse)
 async def abandon_claim(
     claim_id: uuid.UUID,
-    actor: ActiveActor,
+    actor: StudentActor,
     db: DbSession,
     abandons: AbandonServiceDep,
     queries: QueryServiceDep,
     limiter: LimiterDep,
 ) -> ClaimResponse:
     """Abandon the actor's own claim and release its assignment (spec
-    §8.5); replaying a successful abandon returns the same terminal row."""
+    §8.5) — a Student capability (spec §4.1); replaying a successful
+    abandon returns the same terminal row."""
     await _enforce_rate_limit(limiter, "claims:abandon", str(actor.user_id))
     claim = await abandons.abandon_claim(db, actor.user_id, claim_id)
     view = await queries.claim_view(db, claim)

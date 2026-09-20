@@ -28,6 +28,12 @@ that status is CLAIMED or REVISION_REQUIRED (VALIDATING/UNDER_REVIEW do
 not occupy a slot — the student cannot influence review speed — and the
 terminal COMPLETED/ABANDONED/EXPIRED never do).
 
+Role matrix (spec §4.1): claiming is a Student capability — TEACHER and
+ADMIN claimers are refused with PERMISSION_DENIED (403) even on an
+otherwise-eligible ACTIVE account, and the role gate precedes the
+status gate (a SUSPENDED staff account answers PERMISSION_DENIED, not
+ACCOUNT_NOT_ACTIVE — a role mismatch is a permission outcome).
+
 Same-task rule (spec §8.2): any non-terminal claim on the same task ->
 TASK_ACTIVE_CLAIM_EXISTS; terminal history and other tasks' active
 claims do not block.
@@ -51,7 +57,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.clock import FrozenClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.identity.enums import UserStatus
+from app.modules.identity.enums import Role, UserStatus
 from app.modules.tasks.claim_service import (
     MAX_ACTIVE_CLAIMS,
     ActiveClaim,
@@ -77,8 +83,12 @@ _UQ_ACTIVE_USER_TASK = "uq_assignment_claims_active_user_task"
 ALL_CLAIM_STATUSES = list(ClaimStatus)
 
 
-def _claimer(*status: UserStatus) -> Claimer:
-    return Claimer(id=uuid4(), status=status[0] if status else UserStatus.ACTIVE)
+def _claimer(*status: UserStatus, role: Role = Role.STUDENT) -> Claimer:
+    return Claimer(
+        id=uuid4(),
+        status=status[0] if status else UserStatus.ACTIVE,
+        role=role,
+    )
 
 
 def _task(**overrides: Any) -> Task:
@@ -253,6 +263,47 @@ def test_non_active_account_is_rejected(status: UserStatus) -> None:
         403,
     )
     assert error.details == {"user_id": str(user.id)}
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        pytest.param(Role.TEACHER, id="teacher"),
+        pytest.param(Role.ADMIN, id="admin"),
+    ],
+)
+def test_non_student_role_is_rejected(role: Role) -> None:
+    """Spec §4.1: claiming is a Student capability; a staff role is
+    PERMISSION_DENIED (403) even on an otherwise-eligible ACTIVE account —
+    the role arrives from the locked user row, never a client claim."""
+    user = _claimer(role=role)
+    error = _assert_blocked(
+        ClaimEligibilityService(),
+        user,
+        _task(),
+        NOW,
+        (),
+        ErrorCode.PERMISSION_DENIED,
+        403,
+    )
+    assert error.details["role"] == role.value
+    assert error.details["user_id"] == str(user.id)
+
+
+def test_role_gate_precedes_the_status_gate() -> None:
+    """A SUSPENDED staff account answers PERMISSION_DENIED, not
+    ACCOUNT_NOT_ACTIVE: the role mismatch is the more specific fact, the
+    same capability-then-state order the transport guard uses."""
+    error = _assert_blocked(
+        ClaimEligibilityService(),
+        _claimer(UserStatus.SUSPENDED, role=Role.TEACHER),
+        _task(),
+        NOW,
+        (),
+        ErrorCode.PERMISSION_DENIED,
+        403,
+    )
+    assert error.details["role"] == Role.TEACHER.value
 
 
 @pytest.mark.parametrize(

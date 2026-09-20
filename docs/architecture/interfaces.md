@@ -405,6 +405,6 @@ Locking-read seam: `UserDirectory` will gain a documented locking read
 (e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a second
 module needs one; until then, the lightweight typed Core reads over the
 `users` table in the claim/abandon services (`_USERS_LOCK` — `id` +
-`status` only, through the frozen `UserStatus` vocabulary) are the
-sanctioned interim, and both queries move behind the port unchanged when
-it registers one.
+`status` + `role`, through the frozen `UserStatus`/`Role` vocabularies)
+are the sanctioned interim, and both queries move behind the port
+unchanged when it registers one.

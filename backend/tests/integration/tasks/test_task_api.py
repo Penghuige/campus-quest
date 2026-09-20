@@ -9,6 +9,11 @@ through the surfaces the task brief freezes:
   collaborator standing cannot edit another Teacher's Task (403 — and a
   VIEW_TASK grant opens reads, never edits); a claim request cannot carry
   ``assignment_id`` (the schema forbids it, 422, and no claim happens);
+- the student-action role boundary (spec §4.1): staff roles — including
+  an invited Teacher whose TOTP is not yet confirmed — cannot claim,
+  abandon, or read /me/claims (403 PERMISSION_DENIED; role mismatch,
+  distinct from the ACCOUNT_NOT_ACTIVE an inactive Student gets), while
+  browsing published tasks stays open to every ACTIVE role;
 - the happy chain: teacher creates + publishes + imports previews/confirms,
   the student lists cards (availability COUNT only — never an assignment
   list), claims (response shows the OWN assignment's platform/keyword only),
@@ -57,6 +62,7 @@ from app.modules.tasks.enums import (
     AssignmentAvailability,
     ClaimStatus,
     DeadlineMode,
+    RewardLockStatus,
     TaskRarity,
     TaskStatus,
     TaskType,
@@ -254,6 +260,35 @@ def _bearer(tokens: dict) -> dict[str, str]:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
+async def _seed_staff_account(
+    db: AsyncSession,
+    api_clock: FrozenClock,
+    *,
+    username: str,
+    role: Role,
+    totp_confirmed: bool,
+) -> tuple[User, dict]:
+    """A staff-role account holding a normal ACTIVE session.
+
+    ``totp_confirmed`` decides whether the row would also pass
+    ``require_staff_management_actor``; the student-action guard reads
+    neither the credential nor its confirmation — the unconfirmed case is
+    the invited-teacher-before-2FA shape. The secret bytes are opaque to
+    both guards (only ``confirmed_at`` is read).
+    """
+    user = await _seed_user(db, username=username, role=role)
+    if totp_confirmed:
+        db.add(
+            TotpCredential(
+                user_id=user.id,
+                secret_encrypted=b"test-stand-in-secret",
+                confirmed_at=api_clock.now(),
+            )
+        )
+        await db.flush()
+    return user, await _session_tokens(db, api_clock, user)
+
+
 async def _seed_management_teacher(
     db: AsyncSession, api_clock: FrozenClock, *, username: str
 ) -> tuple[User, dict]:
@@ -263,16 +298,9 @@ async def _seed_management_teacher(
     secret bytes are opaque to it (only ``confirmed_at`` is read), so the
     test seeds a stand-in instead of running the whole onboarding flow.
     """
-    teacher = await _seed_user(db, username=username, role=Role.TEACHER)
-    db.add(
-        TotpCredential(
-            user_id=teacher.id,
-            secret_encrypted=b"test-stand-in-secret",
-            confirmed_at=api_clock.now(),
-        )
+    return await _seed_staff_account(
+        db, api_clock, username=username, role=Role.TEACHER, totp_confirmed=True
     )
-    await db.flush()
-    return teacher, await _session_tokens(db, api_clock, teacher)
 
 
 def _seed_task(owner_id: Any, **overrides: Any) -> Task:
@@ -460,7 +488,177 @@ async def test_claim_request_cannot_choose_an_assignment(
     assert assignment.availability_status == AssignmentAvailability.AVAILABLE.value
 
 
-# --- the frozen happy chain (brief step 2) -----------------------------------------
+# --- the student-action role boundary (spec §4.1) ------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("role", "totp_confirmed"),
+    [
+        pytest.param(Role.TEACHER, True, id="teacher-confirmed-totp"),
+        pytest.param(Role.ADMIN, True, id="admin-confirmed-totp"),
+        pytest.param(Role.TEACHER, False, id="invited-teacher-totp-unconfirmed"),
+    ],
+)
+async def test_staff_roles_cannot_claim(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+    role: Role,
+    totp_confirmed: bool,
+) -> None:
+    """Spec §4.1: claiming is a Student capability. Teacher/Admin — with
+    confirmed TOTP, and the invited Teacher whose 2FA is still pending
+    (a normal ACTIVE session before setup completes) — are refused with
+    PERMISSION_DENIED and nothing is claimed."""
+    owner, _ = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    _, staff_tokens = await _seed_staff_account(
+        db_session,
+        api_clock,
+        username=f"staff-{role.value.lower()}-{int(totp_confirmed)}",
+        role=role,
+        totp_confirmed=totp_confirmed,
+    )
+    task = _seed_task(owner.id)
+    db_session.add(task)
+    await db_session.flush()
+    assignment = _seed_assignment(task.id, "考研经验")
+    db_session.add(assignment)
+    await db_session.flush()
+
+    denied = await client.post(
+        f"/api/v1/tasks/{task.id}/claim", headers=_bearer(staff_tokens)
+    )
+    assert denied.status_code == 403, denied.text
+    assert _envelope(denied)["code"] == "PERMISSION_DENIED"
+
+    claims = await db_session.scalar(select(func.count()).select_from(AssignmentClaim))
+    assert claims == 0
+    await db_session.refresh(assignment)
+    assert assignment.availability_status == AssignmentAvailability.AVAILABLE.value
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
+async def test_staff_roles_cannot_abandon_or_read_claim_history(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+    role: Role,
+) -> None:
+    """The whole student claim surface is role-gated, not just the claim
+    verb: staff get PERMISSION_DENIED on abandon and on /me/claims (the
+    claim history is a Student surface by policy — staff never own
+    claims, and the 403 pins that boundary instead of serving an empty
+    list a future client could mistake for a staff tool)."""
+    owner, _ = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    student = await _seed_user(db_session, username=_STUDENT_NUMBER, role=Role.STUDENT)
+    _, staff_tokens = await _seed_staff_account(
+        db_session,
+        api_clock,
+        username=f"staff-{role.value.lower()}-abandon",
+        role=role,
+        totp_confirmed=True,
+    )
+    task = _seed_task(owner.id)
+    db_session.add(task)
+    await db_session.flush()
+    assignment = _seed_assignment(task.id, "考研经验")
+    db_session.add(assignment)
+    await db_session.flush()
+    claim = AssignmentClaim(
+        assignment_id=assignment.id,
+        task_id=task.id,
+        user_id=student.id,
+        status=ClaimStatus.CLAIMED,
+        claimed_at=api_clock.now(),
+        deadline_at=api_clock.now() + timedelta(days=3),
+        grace_deadline_at=api_clock.now() + timedelta(days=4),
+        reward_policy_snapshot={"version": 1},
+        base_reward_points_snapshot=100,
+        submission_schema_version=1,
+        reward_lock_status=RewardLockStatus.NONE,
+    )
+    db_session.add(claim)
+    await db_session.flush()
+
+    denied_abandon = await client.post(
+        f"/api/v1/claims/{claim.id}/abandon", headers=_bearer(staff_tokens)
+    )
+    assert denied_abandon.status_code == 403, denied_abandon.text
+    assert _envelope(denied_abandon)["code"] == "PERMISSION_DENIED"
+
+    denied_history = await client.get(
+        "/api/v1/me/claims", headers=_bearer(staff_tokens)
+    )
+    assert denied_history.status_code == 403, denied_history.text
+    assert _envelope(denied_history)["code"] == "PERMISSION_DENIED"
+
+    # The student's claim is untouched by either attempt.
+    await db_session.refresh(claim)
+    assert claim.status == ClaimStatus.CLAIMED
+    assert claim.terminal_at is None
+
+
+@pytest.mark.integration
+async def test_inactive_student_claim_answer_is_account_not_active(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """The two 403s stay distinct: a role mismatch is PERMISSION_DENIED
+    (capability), an inactive STUDENT is ACCOUNT_NOT_ACTIVE (spec §5.7
+    state gate) — the client's recovery action differs."""
+    owner, _ = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    student = await _seed_user(db_session, username=_STUDENT_NUMBER, role=Role.STUDENT)
+    student.status = UserStatus.SUSPENDED
+    await db_session.flush()
+    task = _seed_task(owner.id)
+    db_session.add(task)
+    await db_session.flush()
+    tokens = await _session_tokens(db_session, api_clock, student)
+
+    denied = await client.post(
+        f"/api/v1/tasks/{task.id}/claim", headers=_bearer(tokens)
+    )
+    assert denied.status_code == 403, denied.text
+    assert _envelope(denied)["code"] == "ACCOUNT_NOT_ACTIVE"
+
+    claims = await db_session.scalar(select(func.count()).select_from(AssignmentClaim))
+    assert claims == 0
+
+
+@pytest.mark.integration
+async def test_staff_still_browses_published_tasks(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """The deliberate boundary: browsing published tasks stays open to
+    every ACTIVE role (spec §4.2-4.3 — staff inspect the catalogue
+    through the same cards students see); only the claim lifecycle is
+    student-only."""
+    owner, owner_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    task = _seed_task(owner.id)
+    db_session.add(task)
+    await db_session.flush()
+
+    listed = await client.get("/api/v1/tasks", headers=_bearer(owner_tokens))
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["id"] == str(task.id)
+
+    detail = await client.get(f"/api/v1/tasks/{task.id}", headers=_bearer(owner_tokens))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["my_claim"] is None
 
 
 @pytest.mark.integration

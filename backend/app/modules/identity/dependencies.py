@@ -6,10 +6,14 @@ Three FastAPI dependencies, one per policy layer:
 
 - ``get_actor`` — authentication only: Bearer access token -> verified
   JWT -> live session -> ``Actor(user_id, role)``.
-- ``require_active_actor`` — the guard for state-changing student
-  operations: ``get_actor`` plus ``status == ACTIVE`` (spec §5.7:
-  SUSPENDED/BANNED 不能领取、提交、新增社区内容) -> ``ACCOUNT_NOT_ACTIVE``
-  403.
+- ``require_active_actor`` — the guard for account-state-gated reads
+  every ACTIVE role may reach (task browsing, profile): ``get_actor``
+  plus ``status == ACTIVE`` (spec §5.7: SUSPENDED/BANNED 不能领取、提交、
+  新增社区内容) -> ``ACCOUNT_NOT_ACTIVE`` 403.
+- ``require_active_student_actor`` — the guard for the Student claim
+  lifecycle (claim / abandon / own-claim history, spec §4.1): adds
+  ``role == STUDENT`` on top of ``require_active_actor``'s checks, read
+  from the user row like every role decision here (stale-role defense).
 - ``require_staff_management_actor`` — the guard for ALL management
   endpoints (spec §33.4): staff role (TEACHER/ADMIN) + ACTIVE + CONFIRMED
   TOTP credential.
@@ -44,6 +48,14 @@ Design decisions:
   status (``ACCOUNT_NOT_ACTIVE``) -> 2FA (``TotpSetupRequiredError``) —
   capability gate, then account-state gate, then second-factor gate,
   each more specific than the last.
+- **PERMISSION_DENIED vs ACCOUNT_NOT_ACTIVE in the student guard:** a
+  non-STUDENT role is a permission outcome — the actor is who it claims
+  to be and its account is fine, but the capability belongs to another
+  role — so it answers ``PERMISSION_DENIED`` even when the account is
+  also non-ACTIVE (role first, the same capability-then-state order as
+  the staff guard). ``ACCOUNT_NOT_ACTIVE`` is reserved for a STUDENT
+  whose account state bars action (§5.7); conflating the two would tell
+  a suspended teacher to "activate" instead of using the staff surface.
 - ``Actor`` and ``Role`` are re-exported from their single definitions
   (``events.py`` / ``enums.py``); consumers import them
   from here or there, never redefine them.
@@ -85,12 +97,14 @@ __all__ = [
     "get_business_clock",
     "require_active_actor",
     "require_active_staff_actor",
+    "require_active_student_actor",
     "require_staff_management_actor",
 ]
 
 _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许执行该操作"
 _MANAGEMENT_PERMISSION_MESSAGE = "仅教师或管理员可访问管理功能"
+_STUDENT_ACTION_PERMISSION_MESSAGE = "仅学生账号可执行该操作"
 _TOTP_SETUP_REQUIRED_MESSAGE = "必须先完成 TOTP 两步验证才能使用管理功能"
 
 # auto_error=False: a missing or malformed Authorization header is OUR
@@ -199,6 +213,46 @@ async def require_active_actor(
     anything the client carries.
     """
     user = await _resolve_user(credentials, db, codec, clock)
+    if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_active_student_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The guard for the Student claim lifecycle (spec §4.1: 领取/放弃/
+    claim history are Student capabilities — Teacher/Admin never enter it).
+
+    ``require_active_actor``'s checks plus ``role == STUDENT``, resolved
+    per request from the user row (the stale-role defense: a staff
+    account is a staff account no matter what any token snapshot says).
+    A non-STUDENT role answers ``PERMISSION_DENIED`` (403) — a permission
+    outcome, deliberately NOT ``ACCOUNT_NOT_ACTIVE``, and deliberately
+    NOT a 2FA error: an invited Teacher holding a normal ACTIVE session
+    before TOTP confirmation is still the wrong role for these routes,
+    so the student guard never consults ``totp_credentials``. Check
+    order: role, then status, mirroring the staff guard's
+    capability-then-state precedence. The claim/abandon services re-check
+    the same invariant under the user-row lock; this guard is the
+    transport boundary, not the only line of defense.
+    """
+    user = await _resolve_user(credentials, db, codec, clock)
+    if not rbac.is_student(user.role):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _STUDENT_ACTION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
     if user.status != UserStatus.ACTIVE:
         raise BusinessError(
             ErrorCode.ACCOUNT_NOT_ACTIVE,

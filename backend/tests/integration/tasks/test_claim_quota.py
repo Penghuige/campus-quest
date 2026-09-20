@@ -23,6 +23,11 @@ commit — and asserts the §8.4 code the checklist must surface:
   claims (spec §9.1: blocked only when LESS than the cutoff remains) and
   snapshots the FIXED deadlines (§9.1: deadline_at = fixed_deadline_at,
   grace = +24h).
+- **Role matrix (spec §4.1):** claiming is a Student capability — a
+  direct service call for a TEACHER or ADMIN is refused with
+  PERMISSION_DENIED at the locked user-row read itself, so no caller
+  can bypass the transport guard and a concurrent role change
+  linearizes behind the same quota-serialization lock.
 
 Harness notes: seeding, mutations, and assertions use independent
 committed sessions from the engine factory (the savepoint-wrapped
@@ -469,5 +474,64 @@ async def test_fixed_task_exactly_at_cutoff_still_claims(
             assert claim.claimed_at == _NOW
             assert claim.deadline_at == fixed_deadline
             assert claim.grace_deadline_at == fixed_deadline + timedelta(minutes=1440)
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+# --- role matrix: claiming is a Student capability (spec §4.1) ----------------------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "role",
+    [
+        pytest.param(Role.TEACHER, id="teacher"),
+        pytest.param(Role.ADMIN, id="admin"),
+    ],
+)
+async def test_non_student_roles_are_refused_by_the_service_lock(
+    db_engine: AsyncEngine, role: Role
+) -> None:
+    """Spec §4.1: the domain invariant holds without the HTTP route. The
+    locked user-row read — the same FOR UPDATE that serializes the quota
+    — selects and judges BOTH status and role, so a non-STUDENT caller is
+    refused with PERMISSION_DENIED while holding the lock and nothing is
+    written (no claim row, no occupancy change)."""
+    factory = _factory(db_engine)
+    service = ClaimService(clock=FrozenClock(_NOW))
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        async with factory() as session:
+            owner = _user(username=f"t{run}", role=Role.TEACHER)
+            staff = _user(username=f"staff{run}", role=role)
+            await _persist(session, owner, staff)
+            task = _task(owner, title="教师账号尝试领取的任务")
+            await _persist(session, task)
+            assignment = _assignment(task, keyword="考研逻辑")
+            await _persist(session, assignment)
+            await session.commit()
+            task_ids.append(task.id)
+            user_ids.extend([owner.id, staff.id])
+
+        async with factory() as session:
+            with pytest.raises(BusinessError) as exc_info:
+                await service.claim_random_assignment(session, staff.id, task.id)
+        assert exc_info.value.code == ErrorCode.PERMISSION_DENIED
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.details["role"] == role.value
+
+        async with factory() as session:
+            loaded = await session.get(Assignment, assignment.id)
+            assert loaded is not None
+            assert loaded.availability_status == AssignmentAvailability.AVAILABLE
+            claim_ids = (
+                await session.scalars(
+                    select(AssignmentClaim.id).where(AssignmentClaim.task_id == task.id)
+                )
+            ).all()
+            assert claim_ids == []
     finally:
         await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)

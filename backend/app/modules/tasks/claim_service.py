@@ -4,12 +4,15 @@ backend-engineering §5-§7).
 
 Transaction shape (spec §8.3, one transaction, one commit at the end):
 
-1. ``SELECT status FROM users WHERE id = :user_id FOR UPDATE`` — a stable
-   user-level resource is locked FIRST so concurrent claims by the same
-   user serialize before any counting (spec §8.3: COUNT-then-INSERT alone
-   is unsafe). Chosen over a ClaimQuota row / advisory lock because it
-   needs no new table, the row always exists, and it doubles as the
-   account-status gate.
+1. ``SELECT status, role FROM users WHERE id = :user_id FOR UPDATE`` — a
+   stable user-level resource is locked FIRST so concurrent claims by the
+   same user serialize before any counting (spec §8.3: COUNT-then-INSERT
+   alone is unsafe). Chosen over a ClaimQuota row / advisory lock because
+   it needs no new table, the row always exists, and it doubles as the
+   account gate: BOTH columns are judged on the locked row — status
+   (§5.7) and role (§4.1: claiming is a Student capability), so direct
+   service callers cannot bypass the transport guard and a concurrent
+   role change linearizes behind the same lock.
 2. Task gate: the Task row is read ``FOR SHARE`` — concurrent claims
    share the lock freely (claims stay parallel), while a lifecycle
    ``FOR UPDATE`` (pause/close) excludes them, so a PAUSED commit
@@ -41,10 +44,11 @@ Design decisions:
 
 - **Cross-module boundary:** interfaces.md forbids importing identity ORM
   models from this module; the lock therefore goes through a typed
-  Core-level ``users`` light table reading only ``status`` (whose value
-  vocabulary is the frozen ``UserStatus`` enum — the same import seam
-  collaborator_service uses for ``Role``). The port has no locking read;
-  if interfaces.md registers one, this query moves behind it.
+  Core-level ``users`` light table reading only ``status`` and ``role``
+  (whose value vocabularies are the frozen ``UserStatus`` / ``Role``
+  enums — the same import seam collaborator_service uses for ``Role``).
+  The port has no locking read; if interfaces.md registers one, this
+  query moves behind it.
 - **Random strategy:** ``ORDER BY random()`` sorts the candidate set per
   claim — acceptable at V1 volumes and preserves the "user cannot pick a
   specific assignment" semantics. Spec §8.3 MAY pre-generates a
@@ -58,8 +62,11 @@ Design decisions:
   code with a 4xx status. 409 marks the state-conflict family
   (mirroring deadlines.py's provisional 400; the router docstring owns
   the status table); ACCOUNT_NOT_ACTIVE stays 403 per the identity
-  precedent; a missing user or task is 404 NOT_FOUND like
-  TaskNotFoundError.
+  precedent, and a non-STUDENT claimer is PERMISSION_DENIED 403 — a role
+  mismatch is a permission outcome, judged role-first so a suspended
+  staff account still answers PERMISSION_DENIED (the transport guard's
+  capability-then-state order); a missing user or task is 404 NOT_FOUND
+  like TaskNotFoundError.
 - **IntegrityError mapping:** the two claim partial unique indexes are
   the database backstop for races SKIP LOCKED and the user lock cannot
   produce in practice. Expected violations translate to their §8.4 codes
@@ -102,7 +109,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.identity.enums import UserStatus
+from app.modules.identity.enums import Role, UserStatus
 from app.modules.tasks.deadlines import compute_claim_deadlines
 from app.modules.tasks.enums import (
     AssignmentAvailability,
@@ -133,6 +140,7 @@ __all__ = [
     "ClaimEligibilityService",
     "ClaimService",
     "Claimer",
+    "ClaimerNotStudentError",
     "NoAssignmentAvailableError",
     "TaskNotClaimableError",
     "UserNotFoundError",
@@ -171,11 +179,13 @@ REWARD_POLICY_SNAPSHOT_V1: dict[str, Any] = {
 }
 
 # Lock/verify seam for the users table (see module docstring): a typed
-# Core-level light table, NOT the identity ORM model.
+# Core-level light table, NOT the identity ORM model. Both columns the
+# account gate judges — status and role — ride the single locked read.
 _USERS_LOCK = table(
     "users",
     column("id", Uuid),
     column("status", String),
+    column("role", String),
 )
 
 # Partial unique indexes on assignment_claims (models.py) — the integrity
@@ -190,6 +200,7 @@ _CONSTRAINT_IN_MESSAGE = re.compile(r'constraint "(?P<name>[^"]+)"')
 
 _USER_NOT_FOUND_MESSAGE = "用户不存在"
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许执行该操作"
+_NOT_STUDENT_MESSAGE = "仅学生账号可领取任务"
 _TASK_NOT_CLAIMABLE_MESSAGE = "任务当前不可领取"
 _CUTOFF_REACHED_MESSAGE = "距任务截止时间已不足，已停止新领取"
 _LIMIT_REACHED_MESSAGE = "当前进行中的任务已达到上限"
@@ -221,6 +232,21 @@ class AccountNotActiveError(BusinessError):
             _ACCOUNT_NOT_ACTIVE_MESSAGE,
             status_code=403,
             details={"user_id": str(user_id)},
+        )
+
+
+class ClaimerNotStudentError(BusinessError):
+    """The claimer's role is not STUDENT (spec §4.1: claiming is a
+    Student capability; Teacher/Admin never enter the claim lifecycle).
+    Raised while holding the user-row lock, so direct service callers
+    and concurrent role changes cannot bypass it."""
+
+    def __init__(self, user_id: UUID, role: Role) -> None:
+        super().__init__(
+            ErrorCode.PERMISSION_DENIED,
+            _NOT_STUDENT_MESSAGE,
+            status_code=403,
+            details={"user_id": str(user_id), "role": role.value},
         )
 
 
@@ -321,12 +347,13 @@ def _map_claim_integrity_error(
 @dataclass(frozen=True, slots=True)
 class Claimer:
     """The claiming user as the eligibility rules see them: the locked row
-    reduced to id + status, so identity ORM models stay behind the module
-    seam (interfaces.md) while ``ClaimEligibilityService.check`` remains a
-    pure rule over planted inputs."""
+    reduced to id + status + role, so identity ORM models stay behind the
+    module seam (interfaces.md) while ``ClaimEligibilityService.check``
+    remains a pure rule over planted inputs."""
 
     id: UUID
     status: UserStatus
+    role: Role
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,8 +371,8 @@ class ClaimEligibilityService:
 
     ``check`` evaluates every checklist rule that depends only on the
     locked rows, the clock, and the claimer's current claims: account
-    status, task claimability (PUBLISHED + schema version + FIXED
-    cutoff), the global actionable-claim quota, and the same-task
+    role and status, task claimability (PUBLISHED + schema version +
+    FIXED cutoff), the global actionable-claim quota, and the same-task
     non-terminal conflict. All facts — counts included — arrive as
     inputs, so the §9.1 cutoff boundary and the §8.2 quota-status matrix
     are unit-testable with a FrozenClock and no database
@@ -380,19 +407,26 @@ class ClaimEligibilityService:
         """Run the §8.2 checklist head; return (None) when eligible.
 
         Raises the §8.4 business code of the FIRST failed rule, in the
-        precedence order: account -> task -> cutoff -> quota ->
-        same-task. ``active_claims`` is required (no default): the quota
-        and same-task rules are only as strong as the facts fed to them.
+        precedence order: account (role, then status) -> task -> cutoff
+        -> quota -> same-task. ``active_claims`` is required (no
+        default): the quota and same-task rules are only as strong as
+        the facts fed to them.
         """
-        self.require_active_account(user)
+        self.require_claimable_account(user)
         self._require_claimable_task(task, now)
         self._require_quota_slot(active_claims)
         self._require_no_same_task_claim(task.id, active_claims)
 
-    def require_active_account(self, user: Claimer) -> None:
-        """User ACTIVE gate (§8.2); exposed separately because the claim
-        flow applies it directly at the user-row lock, before spending
-        the FOR SHARE task read."""
+    def require_claimable_account(self, user: Claimer) -> None:
+        """Account gate on the locked row (spec §4.1, §5.7, §8.2): role
+        STUDENT and status ACTIVE. Role first — a role mismatch is a
+        permission outcome (PERMISSION_DENIED) even on a non-ACTIVE
+        account, mirroring the transport guard's capability-then-state
+        order — then the §5.7 state gate for STUDENT accounts. Exposed
+        separately because the claim flow applies it directly at the
+        user-row lock, before spending the FOR SHARE task read."""
+        if user.role is not Role.STUDENT:
+            raise ClaimerNotStudentError(user.id, user.role)
         if user.status is not UserStatus.ACTIVE:
             raise AccountNotActiveError(user.id)
 
@@ -497,18 +531,22 @@ class ClaimService:
         """
         # (1) Same-user serialization: lock the stable user-level resource
         # FIRST (spec §8.3), then gate on the row we actually locked —
-        # before spending the FOR SHARE task read.
-        status_value = (
+        # BOTH role and status, before spending the FOR SHARE task read.
+        account = (
             await db.execute(
-                select(_USERS_LOCK.c.status)
+                select(_USERS_LOCK.c.status, _USERS_LOCK.c.role)
                 .where(_USERS_LOCK.c.id == user_id)
                 .with_for_update()
             )
-        ).scalar_one_or_none()
-        if status_value is None:
+        ).one_or_none()
+        if account is None:
             raise UserNotFoundError(user_id)
-        claimer = Claimer(id=user_id, status=UserStatus(status_value))
-        self._eligibility.require_active_account(claimer)
+        claimer = Claimer(
+            id=user_id,
+            status=UserStatus(account.status),
+            role=Role(account.role),
+        )
+        self._eligibility.require_claimable_account(claimer)
 
         # (2) Task gate under FOR SHARE (see module docstring).
         task = await db.scalar(
