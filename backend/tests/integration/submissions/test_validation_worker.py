@@ -107,6 +107,7 @@ async def _seed(
     content: bytes = b"",
     task_schema: dict[str, Any] | None = None,
     allowed_types: list[str] | None = None,
+    claim_status: ClaimStatus = ClaimStatus.VALIDATING,
 ) -> Seed:
     async with factory() as session:
         teacher = User(
@@ -159,7 +160,7 @@ async def _seed(
             assignment_id=assignment.id,
             task_id=task.id,
             user_id=student.id,
-            status=ClaimStatus.VALIDATING,
+            status=claim_status.value,
             claimed_at=_NOW - timedelta(days=1),
             deadline_at=_GRACE - timedelta(minutes=1440),
             grace_deadline_at=_GRACE,
@@ -167,6 +168,12 @@ async def _seed(
             base_reward_points_snapshot=100,
             submission_schema_version=1,
             reward_lock_status=RewardLockStatus.NONE,
+            terminal_at=(
+                _NOW
+                if claim_status
+                in (ClaimStatus.COMPLETED, ClaimStatus.ABANDONED, ClaimStatus.EXPIRED)
+                else None
+            ),
         )
         session.add(claim)
         await session.flush()
@@ -507,12 +514,16 @@ def test_stale_validating_submission_is_rerun_safe() -> None:
         assert result.already_terminal is False
 
         async def _runs() -> list[str]:
+            # Deterministic order: the interrupted run is the one that
+            # never finished (started_at is tied — both rows carry the
+            # frozen clock's instant — and the fresh row's tx2 UPDATE
+            # can reorder the heap, so started_at alone is not stable).
             rows = (
                 (
                     await factory().execute(
                         select(SubmissionValidation)
                         .where(SubmissionValidation.submission_id == seed.submission.id)
-                        .order_by(SubmissionValidation.started_at)
+                        .order_by(SubmissionValidation.finished_at.asc().nulls_first())
                     )
                 )
                 .scalars()
@@ -523,6 +534,75 @@ def test_stale_validating_submission_is_rerun_safe() -> None:
         # The interrupted run stays as honest history; the fresh run
         # completed. Exactly one row per attempt, no duplicates.
         assert asyncio.run(_runs()) == ["VALIDATING", "VALIDATED"]
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+# --- the claim-side intermediate (plan 04 task 8) ------------------------------------
+
+
+@pytest.mark.integration
+def test_validation_start_moves_actionable_claim_to_validating() -> None:
+    """tx1 maps the claim out of the student-actionable statuses at
+    validation START (spec §8.1/§8.2: VALIDATING no longer occupies one
+    of the 3 actionable-claim slots). The reward-lock service (task 8)
+    owns the further VALIDATING -> UNDER_REVIEW step."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        # The realistic entry state: finalize left the claim CLAIMED and
+        # the job is what moves it.
+        seed = asyncio.run(
+            _seed(factory, run, content=_valid_csv(), claim_status=ClaimStatus.CLAIMED)
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, _valid_csv()))
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+        assert result.status is ValidationStatus.VALIDATED
+
+        async def _claim_status() -> str:
+            claim = await factory().get(AssignmentClaim, seed.claim.id)
+            assert claim is not None
+            return claim.status
+
+        # Moved by tx1 and left there by tx2 — only the reward-lock
+        # service (invoked after validation completes) goes further.
+        assert asyncio.run(_claim_status()) == "VALIDATING"
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_validation_start_leaves_terminal_claim_untouched() -> None:
+    """A terminal claim (the expiry worker won between finalize and this
+    job) is never resurrected by validation: the submission still
+    validates — machine validation is content truth — but the claim
+    stays EXPIRED for the reward-lock service to no-op on."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(
+            _seed(factory, run, content=_valid_csv(), claim_status=ClaimStatus.EXPIRED)
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, _valid_csv()))
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+        assert result.status is ValidationStatus.VALIDATED
+
+        async def _claim_status() -> str:
+            claim = await factory().get(AssignmentClaim, seed.claim.id)
+            assert claim is not None
+            return claim.status
+
+        assert asyncio.run(_claim_status()) == "EXPIRED"
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
 

@@ -17,8 +17,10 @@ because a multi-second parse must never hold the row lock:
   idempotency — a retried job replays, it never duplicates); UPLOADED
   -> proceed; a stale VALIDATING (a worker died between its two
   transactions) is re-run-safe: proceed with a fresh run row while
-  the interrupted row stays as honest history. Set VALIDATING, insert
-  the ``submission_validations`` run row (status VALIDATING, report
+  the interrupted row stays as honest history. Set VALIDATING, move
+  the claim CLAIMED/REVISION_REQUIRED -> VALIDATING (the §8.2 slot
+  semantics; terminal claims are never resurrected), insert the
+  ``submission_validations`` run row (status VALIDATING, report
   NULL, ``parser_version`` "pending" — the column is NOT NULL and the
   real parser version only exists after the run; tx2 overwrites it),
   commit.
@@ -62,10 +64,11 @@ list + ``preview_rows``): bounded sanitized preview rows (plain
 string cells, truncated values, cached XLSX values only — formulas
 are never evaluated), no object keys, no parser internals.
 
-Scope note (plan boundary): this service sets SUBMISSION state only.
-The claim transition on VALIDATED (reward lock, CLAIMED ->
-UNDER_REVIEW) is task 8's service, which consumes the VALIDATED
-state produced here.
+Scope note (plan boundary): this service owns the SUBMISSION state and
+the claim's VALIDATING intermediate (set in tx1 above). The reward
+lock and the claim's UNDER_REVIEW entry on VALIDATED belong to the
+reward-lock service (task 8, ``reward_lock_service``), which consumes
+the VALIDATED state produced here.
 
 The service never reads the environment: clock, storage port,
 sandbox, and preview bounds arrive as constructor dependencies the
@@ -108,6 +111,7 @@ from app.modules.submissions.validators.common import (
     report_from_json,
     report_to_json,
 )
+from app.modules.tasks.enums import ClaimStatus
 from app.modules.tasks.models import AssignmentClaim, Task
 
 __all__ = [
@@ -127,6 +131,15 @@ DETECTION_PARSER_VERSION = "detect-1"
 #: transaction. A row still carrying this value is the fingerprint of
 #: an interrupted run.
 RUN_STARTED_PARSER_VERSION = "pending"
+
+#: The claim statuses tx1 maps to VALIDATING at validation start (spec
+#: §8.2: the two statuses that still need student action; VALIDATING
+#: frees the actionable-claim slot because the student can no longer
+#: influence the pipeline's speed).
+_CLAIM_ACTIONABLE_STATUSES: tuple[ClaimStatus, ...] = (
+    ClaimStatus.CLAIMED,
+    ClaimStatus.REVISION_REQUIRED,
+)
 
 _SUBMISSION_NOT_FOUND_MESSAGE = "提交记录不存在"
 
@@ -232,6 +245,28 @@ class ValidationService:
 
         started_at = self._clock.now()
         submission.validation_status = ValidationStatus.VALIDATING.value
+        # Claim-side intermediate (spec §8.1/§8.2; plan 04 task 8): the
+        # validation phase maps the claim out of the student-actionable
+        # statuses at validation START, so a file already in the
+        # pipeline no longer occupies one of the 3 actionable-claim
+        # slots. Only CLAIMED/REVISION_REQUIRED move — a stale rerun's
+        # VALIDATING stays, an UNDER_REVIEW claim stays, and a terminal
+        # claim (expiry/abandon won the race between finalize and this
+        # job) is never resurrected: the submission still validates
+        # because machine validation is content truth, and the
+        # reward-lock service no-ops on the terminal claim afterward.
+        # Lock order submission -> claim is safe: no service takes the
+        # claim lock and then the submission lock.
+        claim = await db.scalar(
+            select(AssignmentClaim)
+            .where(AssignmentClaim.id == submission.claim_id)
+            .with_for_update()
+        )
+        if (
+            claim is not None
+            and ClaimStatus(claim.status) in _CLAIM_ACTIONABLE_STATUSES
+        ):
+            claim.status = ClaimStatus.VALIDATING.value
         run = SubmissionValidation(
             submission_id=submission.id,
             parser_version=RUN_STARTED_PARSER_VERSION,
