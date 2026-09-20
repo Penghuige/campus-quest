@@ -96,10 +96,10 @@ uses binary floats, §31.1/§31.14), ``submission_schema_version``, and
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import String, Uuid, column, func, select, table
@@ -142,6 +142,7 @@ __all__ = [
     "Claimer",
     "ClaimerNotStudentError",
     "NoAssignmentAvailableError",
+    "NotificationEventRecorder",
     "TaskNotClaimableError",
     "UserNotFoundError",
 ]
@@ -505,6 +506,35 @@ class ClaimEligibilityService:
         )
 
 
+# --- notifications seam (interfaces.md cross-module port) --------------------------
+
+
+class NotificationEventRecorder(Protocol):
+    """The duck-typed ``NotificationPort.record_event`` seam
+    (interfaces.md "Cross-module ports": persists notification intent
+    inside the domain transaction).
+
+    tasks must not import the notifications module (its dependency
+    direction is notifications -> identity), so the claim flow declares
+    the callable it needs and the composition root injects the concrete
+    ``app.modules.notifications.port.NotificationPort``. The default
+    (None) keeps ClaimService notification-free — existing callers and
+    fakes are unchanged. The accepted event types and payload keys are
+    owned by ``app.modules.notifications.event_handlers`` ("CLAIM_CREATED"
+    here; canonical NotificationEventType members elsewhere).
+    """
+
+    async def record_event(
+        self,
+        db: AsyncSession,
+        event_key: str,
+        event_type: str,
+        user_id: UUID,
+        payload: Mapping[str, Any],
+        task_policy: Any = None,
+    ) -> None: ...
+
+
 # --- the service ---------------------------------------------------------------------
 
 
@@ -513,13 +543,22 @@ class ClaimService:
 
     ``max_active_claims`` is injectable for tests (forwarded to the
     eligibility rules); production wires the spec §8.2 default of 3.
+    ``notification_recorder`` (optional) records the claim:...:created
+    trigger inside the claim transaction so the notifications module
+    plans the deadline reminders in the same commit (plan 07 T5); None
+    disables notification scheduling entirely.
     """
 
     def __init__(
-        self, *, clock: Clock, max_active_claims: int = MAX_ACTIVE_CLAIMS
+        self,
+        *,
+        clock: Clock,
+        max_active_claims: int = MAX_ACTIVE_CLAIMS,
+        notification_recorder: NotificationEventRecorder | None = None,
     ) -> None:
         self._clock = clock
         self._eligibility = ClaimEligibilityService(max_active_claims=max_active_claims)
+        self._notification_recorder = notification_recorder
 
     async def claim_random_assignment(
         self, db: AsyncSession, user_id: UUID, task_id: UUID
@@ -623,5 +662,24 @@ class ClaimService:
             if mapped is None:
                 raise
             raise mapped from exc
+        # (6) Notification intent joins THIS transaction (interfaces.md
+        # outbox rule): the deadline reminder rows the notifications
+        # port plans here commit with the claim or not at all, and
+        # dispatch only ever sees committed rows. Duck-typed through
+        # NotificationEventRecorder so this module never imports
+        # notifications.
+        if self._notification_recorder is not None:
+            await self._notification_recorder.record_event(
+                db,
+                event_key=f"claim:{claim.id}:created",
+                event_type="CLAIM_CREATED",
+                user_id=user_id,
+                payload={
+                    "claim_id": claim.id,
+                    "deadline_at": deadlines.deadline_at,
+                    "task_title": task.title,
+                },
+                task_policy=task,
+            )
         await db.commit()
         return claim
