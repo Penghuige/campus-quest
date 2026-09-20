@@ -349,7 +349,7 @@ async def _cleanup(
     factory: async_sessionmaker[AsyncSession],
     *,
     task_ids: list[UUID],
-    user_ids: list[UUID],
+    run: str,
 ) -> None:
     async with factory() as session:
         if task_ids:
@@ -382,8 +382,12 @@ async def _cleanup(
                 delete(Assignment).where(Assignment.task_id.in_(task_ids))
             )
             await session.execute(delete(Task).where(Task.id.in_(task_ids)))
-        if user_ids:
-            await session.execute(delete(User).where(User.id.in_(user_ids)))
+        # ALL seeded users go by the run token: every username this
+        # module mints ends with it (prefix + run), so the six-role cast
+        # (and anything a future seed adds) is cleaned by construction
+        # — the T9 carry fix for the owner+student-only id lists that
+        # leaked the other four roles per test.
+        await session.execute(delete(User).where(User.username.endswith(run)))
         await session.commit()
 
 
@@ -468,21 +472,9 @@ def test_late_review_sets_revision_deadline_and_preserves_reward() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend(
-            user.id
-            for user in (
-                seed.owner,
-                seed.student,
-                seed.admin,
-                seed.teacher_review,
-                seed.teacher_view,
-                seed.teacher_other,
-            )
-        )
         reviewed_at = _GRACE + timedelta(days=2)
         service, collector, _points = _service(reviewed_at)
 
@@ -530,7 +522,7 @@ def test_late_review_sets_revision_deadline_and_preserves_reward() -> None:
         )
         assert events[0].payload["submission_id"] == str(seed.submissions[1].id)
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -541,7 +533,6 @@ def test_review_before_deadline_keeps_grace_as_revision_deadline() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(
             _seed(
@@ -551,7 +542,6 @@ def test_review_before_deadline_keeps_grace_as_revision_deadline() -> None:
             )
         )
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         reviewed_at = _DEADLINE - timedelta(hours=2)
         service, _collector, _points = _service(reviewed_at)
 
@@ -564,7 +554,7 @@ def test_review_before_deadline_keeps_grace_as_revision_deadline() -> None:
         assert isinstance(claim, AssignmentClaim)
         assert claim.revision_deadline_at == _GRACE
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -575,11 +565,9 @@ def test_second_rejection_recomputes_deadline_from_new_reviewed_at() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         first_reviewed_at = _DEADLINE + timedelta(hours=2)
         service1, _collector1, _points1 = _service(first_reviewed_at)
 
@@ -629,7 +617,7 @@ def test_second_rejection_recomputes_deadline_from_new_reviewed_at() -> None:
         assert len(rows) == 1
         assert rows[0].action == ReviewAction.REQUIRE_REVISION.value
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 # --- the §11.3 invalidation ------------------------------------------------------
@@ -640,11 +628,9 @@ def test_invalidate_reward_lock_reason_is_mandatory() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         service, collector, _points = _service(_REVIEWED_AT)
 
         for blank in ("", "   "):
@@ -671,7 +657,7 @@ def test_invalidate_reward_lock_reason_is_mandatory() -> None:
         assert asyncio.run(_review_rows(factory, seed.submissions[1].id)) == []
         assert collector.events == []
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -683,11 +669,9 @@ def test_invalidate_cancels_provisional_lock_and_audits() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         reviewed_at = _DEADLINE + timedelta(hours=1)
         service, collector, _points = _service(reviewed_at)
         reason = "空壳提交：仅含表头，无任何数据行。"
@@ -742,7 +726,7 @@ def test_invalidate_cancels_provisional_lock_and_audits() -> None:
         )
         assert events[0].payload["lock_status_to"] == RewardLockStatus.INVALIDATED.value
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -753,11 +737,9 @@ def test_later_valid_submission_after_invalidation_relocks_at_own_tier() -> None
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         reviewed_at = _DEADLINE + timedelta(hours=1)
         service, _collector, _points = _service(reviewed_at)
         claim = _call(
@@ -804,7 +786,7 @@ def test_later_valid_submission_after_invalidation_relocks_at_own_tier() -> None
         assert relock_rows[0].locked_reward_points == 50
         assert len(lock_collector.of_type(REWARD_LOCKED)) == 1
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -816,7 +798,6 @@ def test_relock_in_revision_window_past_grace_clamps_to_lowest_tier() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(
             _seed(
@@ -852,7 +833,6 @@ def test_relock_in_revision_window_past_grace_clamps_to_lowest_tier() -> None:
             )
         )
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         # Not RewardWindowInconsistentError, not any 500: the call returns.
         lock_service, lock_collector = _lock_service(_GRACE + timedelta(hours=26))
         relocked = _call(
@@ -882,7 +862,7 @@ def test_relock_in_revision_window_past_grace_clamps_to_lowest_tier() -> None:
         assert len(events) == 1
         assert events[0].payload["reward_tier_locked"] == 20
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -897,7 +877,6 @@ def test_invalidate_rejected_without_provisional_lock() -> None:
     ):
         run = uuid4().hex[:8]
         task_ids: list[UUID] = []
-        user_ids: list[UUID] = []
         try:
             seed = asyncio.run(
                 _seed(
@@ -909,7 +888,6 @@ def test_invalidate_rejected_without_provisional_lock() -> None:
                 )
             )
             task_ids.append(seed.task.id)
-            user_ids.extend([seed.owner.id, seed.student.id])
             service, collector, _points = _service(_REVIEWED_AT)
 
             with pytest.raises(BusinessError) as excinfo:
@@ -935,7 +913,7 @@ def test_invalidate_rejected_without_provisional_lock() -> None:
             assert asyncio.run(_history_rows(factory, seed.claim.id)) == []
             assert collector.events == []
         finally:
-            asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 # --- the §14 approve transaction -------------------------------------------------
@@ -946,11 +924,9 @@ def test_approve_writes_all_ten_transaction_effects() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         service, collector, points = _service(_REVIEWED_AT)
 
         result = _call(
@@ -1009,7 +985,7 @@ def test_approve_writes_all_ten_transaction_effects() -> None:
         assert events[0].payload["locked_reward_points"] == 100
         assert events[0].payload["reviewer_id"] == str(seed.owner.id)
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -1022,11 +998,9 @@ def test_concurrent_double_approve_grants_exactly_once() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.teacher_review.id, seed.student.id])
         service, collector, points = _service(_REVIEWED_AT)
         actor = seed.actor(seed.owner)
 
@@ -1069,7 +1043,7 @@ def test_concurrent_double_approve_grants_exactly_once() -> None:
         assert len(asyncio.run(_review_rows(factory, seed.submissions[1].id))) == 1
         assert len(collector.of_type(SUBMISSION_APPROVED_EVENT)) == 1
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -1077,7 +1051,6 @@ def test_approve_on_completed_claim_is_idempotent_already_reviewed() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(
             _seed(
@@ -1089,7 +1062,6 @@ def test_approve_on_completed_claim_is_idempotent_already_reviewed() -> None:
             )
         )
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         service, collector, points = _service(_REVIEWED_AT)
 
         result = _call(
@@ -1109,7 +1081,7 @@ def test_approve_on_completed_claim_is_idempotent_already_reviewed() -> None:
         assert asyncio.run(_review_rows(factory, seed.submissions[1].id)) == []
         assert collector.events == []
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -1125,7 +1097,6 @@ def test_approve_requires_a_provisional_lock() -> None:
     ):
         run = uuid4().hex[:8]
         task_ids: list[UUID] = []
-        user_ids: list[UUID] = []
         try:
             seed = asyncio.run(
                 _seed(
@@ -1138,7 +1109,6 @@ def test_approve_requires_a_provisional_lock() -> None:
                 )
             )
             task_ids.append(seed.task.id)
-            user_ids.extend([seed.owner.id, seed.student.id])
             service, _collector, fake = _service(_REVIEWED_AT)
 
             with pytest.raises(BusinessError) as excinfo:
@@ -1162,7 +1132,7 @@ def test_approve_requires_a_provisional_lock() -> None:
                 assignment.availability_status == AssignmentAvailability.OCCUPIED.value
             )
         finally:
-            asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 # --- the gates: permission, staleness, state -------------------------------------
@@ -1187,7 +1157,6 @@ def test_review_permission_matrix() -> None:
         run = uuid4().hex[:8]
         seed = asyncio.run(_seed(factory, run))
         task_ids = [seed.task.id]
-        user_ids = [seed.owner.id, seed.student.id]
         try:
             service, _collector, _points = _service(_REVIEWED_AT)
             user = getattr(seed, field)
@@ -1221,7 +1190,7 @@ def test_review_permission_matrix() -> None:
                 assert reloaded.status == ClaimStatus.UNDER_REVIEW.value
                 assert asyncio.run(_review_rows(factory, seed.submissions[1].id)) == []
         finally:
-            asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -1232,7 +1201,6 @@ def test_stale_submission_version_is_rejected() -> None:
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(
             _seed(
@@ -1246,7 +1214,6 @@ def test_stale_submission_version_is_rejected() -> None:
             )
         )
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         owner = seed.actor(seed.owner)
 
         service_rev, _c1, _p1 = _service(_REVIEWED_AT)
@@ -1280,7 +1247,7 @@ def test_stale_submission_version_is_rejected() -> None:
         assert assignment.availability_status == AssignmentAvailability.OCCUPIED.value
         assert asyncio.run(_review_rows(factory, seed.submissions[1].id)) == []
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
 
 @pytest.mark.integration
@@ -1289,11 +1256,9 @@ def test_review_actions_reject_terminal_claims_and_unvalidated_submissions() -> 
     # EXPIRED: the expiry side won; no review action may resurrect it.
     run = uuid4().hex[:8]
     task_ids: list[UUID] = []
-    user_ids: list[UUID] = []
     try:
         seed = asyncio.run(_seed(factory, run, claim_status=ClaimStatus.EXPIRED))
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         owner = seed.actor(seed.owner)
         for action in (
             lambda service, session: service.require_revision(
@@ -1313,13 +1278,12 @@ def test_review_actions_reject_terminal_claims_and_unvalidated_submissions() -> 
         claim, _assignment, _submission = asyncio.run(_reload(factory, seed.claim.id))
         assert claim.status == ClaimStatus.EXPIRED.value
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
 
     # Not machine-VALIDATED: the human stage is unreachable (§11.1).
     factory = _new_factory()
     run = uuid4().hex[:8]
     task_ids = []
-    user_ids = []
     try:
         seed = asyncio.run(
             _seed(
@@ -1333,7 +1297,6 @@ def test_review_actions_reject_terminal_claims_and_unvalidated_submissions() -> 
             )
         )
         task_ids.append(seed.task.id)
-        user_ids.extend([seed.owner.id, seed.student.id])
         service, _collector, _points = _service(_REVIEWED_AT)
         with pytest.raises(BusinessError) as excinfo:
             _call(
@@ -1346,4 +1309,4 @@ def test_review_actions_reject_terminal_claims_and_unvalidated_submissions() -> 
         claim, _assignment, _submission = asyncio.run(_reload(factory, seed.claim.id))
         assert claim.status == ClaimStatus.UNDER_REVIEW.value
     finally:
-        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))

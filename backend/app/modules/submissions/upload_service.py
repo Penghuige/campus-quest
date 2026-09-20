@@ -111,6 +111,20 @@ Design decisions:
   task; the service-level guarantee — replaying finalize returns the
   same Submission and the database admits one submission per intent —
   holds without one.
+- **Async validation handoff (spec §10 step 8):** finalize does not
+  validate. When a ``ValidationDispatcher`` port is injected, a
+  successful finalize hands the fresh Submission to it — AFTER the
+  commit, so the job can never race a row that is not yet visible, and
+  only while the submission is still UPLOADED: a replay whose pipeline
+  already started (VALIDATING or terminal) skips the enqueue, while a
+  replay that still finds UPLOADED re-dispatches — that is exactly the
+  recovery shape for an enqueue lost to a process death or broker
+  outage between the commit and the dispatch (the client's natural
+  retry of upload-complete re-arms it). The dispatch happens outside
+  every transaction: an enqueue failure surfaces after the Submission
+  already exists, and the retry path above makes the flow self-healing
+  rather than compensating. The port is a sync callable (a ``.delay``
+  publish), so the fake in tests captures calls without any broker.
 - **Error vocabulary** stays inside the frozen registry: ownership and
   role are PERMISSION_DENIED 403, non-ACTIVE accounts ACCOUNT_NOT_ACTIVE
   403, non-submittable claims CLAIM_NOT_SUBMITTABLE 409, closed windows
@@ -123,8 +137,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
-from uuid import UUID
+from typing import Any, Protocol, cast, runtime_checkable
+from uuid import UUID, uuid4
 
 from sqlalchemy import String, Uuid, column, func, select, table, update
 from sqlalchemy.engine import CursorResult
@@ -136,7 +150,11 @@ from app.core.errors import BusinessError
 from app.integrations.object_storage import ObjectStorage
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
-from app.modules.submissions.enums import FileType, RetentionPolicy
+from app.modules.submissions.enums import (
+    FileType,
+    RetentionPolicy,
+    ValidationStatus,
+)
 from app.modules.submissions.models import Submission, UploadIntent
 from app.modules.tasks.abandon_service import (
     ClaimNotFoundError,
@@ -170,6 +188,7 @@ __all__ = [
     "UploadService",
     "UploadSizeMismatchError",
     "UploadTypeMismatchError",
+    "ValidationDispatcher",
     "retention_snapshot",
     "sanitize_filename",
     "submission_window_open",
@@ -549,6 +568,24 @@ class UploadPolicyService:
             )
 
 
+# --- the async-validation handoff port (spec §10 step 8) ----------------------------
+
+
+@runtime_checkable
+class ValidationDispatcher(Protocol):
+    """Hand a freshly finalized Submission to the async validation
+    pipeline (the Celery job in production; a capturing fake in tests).
+
+    ``enqueue_validation`` is a SYNC publish (a ``.delay`` call): the
+    broker round trip is the port implementation's business, and keeping
+    it sync means the no-broker fake is a plain list append.
+    ``request_id`` is the correlation id the job threads through its
+    logs (spec §15/§34); callers that have none get a generated hex.
+    """
+
+    def enqueue_validation(self, submission_id: UUID, request_id: str) -> None: ...
+
+
 # --- the service ----------------------------------------------------------------------
 
 
@@ -576,7 +613,10 @@ class UploadService:
     ``clock`` is the business time source, ``storage`` the object-storage
     port (fake in tests), and the TTLs/byte cap are injectable scalars
     the composition root wires from Settings — the service itself never
-    reads the environment (backend-engineering §11/§17).
+    reads the environment (backend-engineering §11/§17). ``dispatcher``
+    (optional) receives the async-validation handoff on a successful
+    finalize (see the module docstring's dispatch rule); ``None`` keeps
+    the pre-pipeline behavior for direct service callers.
     """
 
     def __init__(
@@ -587,6 +627,7 @@ class UploadService:
         upload_url_ttl: timedelta = DEFAULT_UPLOAD_URL_TTL,
         intent_ttl: timedelta = DEFAULT_INTENT_TTL,
         max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+        dispatcher: ValidationDispatcher | None = None,
     ) -> None:
         self._clock = clock
         self._storage = storage
@@ -594,6 +635,7 @@ class UploadService:
         self._intent_ttl = intent_ttl
         self._max_upload_bytes = max_upload_bytes
         self._policy = UploadPolicyService()
+        self._dispatcher = dispatcher
 
     async def create_upload_intent(
         self,
@@ -687,7 +729,12 @@ class UploadService:
         )
 
     async def finalize_upload(
-        self, db: AsyncSession, actor: Actor, intent_id: UUID
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        intent_id: UUID,
+        *,
+        request_id: str | None = None,
     ) -> Submission:
         """Verify the uploaded object and create the Submission version.
 
@@ -695,6 +742,10 @@ class UploadService:
         §32); a burned or expired intent answers intent-not-found. Raises
         the typed business codes (4xx) otherwise; commits exactly once on
         the success path (the burn path commits its consumption alone).
+        A successful finalize hands the Submission to the injected
+        ``ValidationDispatcher`` when the pipeline has not started yet
+        (see the module docstring's dispatch rule); ``request_id`` is the
+        correlation id threaded to the job.
         """
         # (1) Same-user serialization + account gate as in create.
         await self._lock_account(db, actor)
@@ -746,6 +797,7 @@ class UploadService:
                 # Unreachable while the FK holds; fail safe, never
                 # fabricate a second submission.
                 raise UploadIntentNotFoundError(intent_id)
+            self._dispatch_if_pipeline_not_started(submission, request_id)
             return submission
         if intent.consumed_at is not None:
             # Burned by a failed verification: the only remedy is a fresh
@@ -812,6 +864,10 @@ class UploadService:
             declared_type=intent.declared_type,
             file_size=head.size,
             submitted_at=now,
+            # Explicit (not the server default): the dispatch rule below
+            # reads the attribute right after the commit, and an unloaded
+            # server-default column would turn that read into a lazy load.
+            validation_status=ValidationStatus.UPLOADED.value,
             retention_until=retention_until,
             retention_permanent=retention_permanent,
         )
@@ -841,7 +897,25 @@ class UploadService:
         # (9) Claim projection + one commit.
         claim.latest_submission_id = submission.id
         await db.commit()
+        self._dispatch_if_pipeline_not_started(submission, request_id)
         return submission
+
+    def _dispatch_if_pipeline_not_started(
+        self, submission: Submission, request_id: str | None
+    ) -> None:
+        """Hand the submission to the async-validation pipeline when it is
+        still UPLOADED (see the module docstring): after the commit on the
+        fresh path, and on the replay path only as the lost-enqueue
+        recovery — VALIDATING or terminal replays mean the pipeline is
+        alive and the job's own idempotency already covers it.
+        """
+        if self._dispatcher is None:
+            return
+        if submission.validation_status != ValidationStatus.UPLOADED.value:
+            return
+        self._dispatcher.enqueue_validation(
+            submission.id, request_id if request_id is not None else uuid4().hex
+        )
 
     async def _lock_account(self, db: AsyncSession, actor: Actor) -> Claimer:
         """Lock the actor's user row and gate role+status on it (the

@@ -53,7 +53,11 @@ from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.submissions.enums import FileType, ValidationStatus
-from app.modules.submissions.models import Submission, SubmissionValidation
+from app.modules.submissions.models import (
+    RewardLockHistory,
+    Submission,
+    SubmissionValidation,
+)
 from app.modules.tasks.enums import (
     AssignmentAvailability,
     ClaimStatus,
@@ -215,6 +219,14 @@ async def _cleanup(
                     SubmissionValidation.submission_id.in_(
                         select(Submission.id).where(Submission.claim_id.in_(claim_ids))
                     )
+                )
+            )
+            # The chained reward lock (the job's on_validation_passed
+            # step) writes append-only history rows referencing both the
+            # claim and the submission — they go before either.
+            await session.execute(
+                delete(RewardLockHistory).where(
+                    RewardLockHistory.claim_id.in_(claim_ids)
                 )
             )
             await session.execute(

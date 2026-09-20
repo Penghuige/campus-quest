@@ -90,6 +90,11 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="me:phone-change", limit=5, window_seconds=3600),
         RateLimitRule(bucket="tasks:claim", limit=20, window_seconds=60),
         RateLimitRule(bucket="claims:abandon", limit=10, window_seconds=60),
+        # The presigned-upload grant: per authenticated user id. Each
+        # intent issues a short-lived presigned URL against the object
+        # store, so hammering it burns provider signing quota; the
+        # business ceilings (window, size caps) live in the upload service.
+        RateLimitRule(bucket="submissions:upload-intent", limit=10, window_seconds=60),
     )
 }
 

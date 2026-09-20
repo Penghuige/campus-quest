@@ -1,13 +1,28 @@
 # backend/app/workers/jobs/validate_submission.py
-"""Submission validation job (spec §10 step 8: Worker 异步验证; §32
-worker idempotency; docs/quality/backend-engineering.md §12 worker
-rules; plan 04 task 7).
+"""Submission validation job (spec §10 step 8: Worker 异步验证; §11.2
+reward lock; §32 worker idempotency; docs/quality/backend-engineering.md
+§12 worker rules; plan 04 task 7, chained in task 10).
 
 An orchestration shell, nothing more: IDs and parameters in ->
 construct dependencies -> call ``ValidationService.validate_submission``
--> summary dict out. Every domain rule (the state machine, detection
-gates, report assembly) lives in the service; this module must never
-grow an alternate version of it (design §3).
+-> (on VALIDATED) call ``RewardLockService.on_validation_passed`` ->
+summary dict out. Every domain rule (the state machine, detection
+gates, report assembly, the lock semantics) lives in the services;
+this module must never grow an alternate version of it (design §3).
+
+Worker-owns-orchestration chaining: the reward lock + UNDER_REVIEW
+entry run IN THE JOB, right after a VALIDATED result, not in the API
+polling path — the request handler stays thin, and the pipeline
+progresses even if no client ever polls the report. The chained call
+is dependency-injected like everything else (the event publisher
+arrives as ``events``; tests pass the in-memory collector, production
+uses the logging adapter). Idempotency needs no extra gate: a replayed
+job re-reads the terminal state (``already_terminal``) and
+``on_validation_passed`` is itself replay-safe (terminal-claim no-op,
+preserved-lock no-op), so a re-run locks exactly once. A failure INSIDE
+the chained call (only the documented truly-unreachable corruption
+shape) fails the job after the submission is already VALIDATED — the
+terminal replay makes a manual re-enqueue sufficient recovery.
 
 Correlation (§15): ``request_id`` arrives as an explicit task argument
 and is threaded through unchanged — start/end logs carry it together
@@ -26,7 +41,7 @@ resume. Content-level outcomes (VALIDATED / VALIDATION_FAILED) are
 RESULTS, never exceptions.
 
 Import discipline (pinned by tests/workers/test_celery_wiring.py):
-importing this module must stay lazy and database-free — the service
+importing this module must stay lazy and database-free — the services
 and the session factory are imported INSIDE ``run_submission_validation``.
 The default per-job engine is created and disposed per invocation
 because each job runs ``asyncio.run`` on a fresh event loop; reusing a
@@ -47,13 +62,17 @@ from app.core.clock import Clock, SystemClock
 from app.core.config import Settings, get_settings
 from app.integrations.errors import TemporaryProviderError, UnknownOutcomeError
 from app.integrations.object_storage import ObjectStorage
+from app.modules.submissions.enums import ValidationStatus
 from app.modules.submissions.validation_runner import SandboxLimits, ValidatorSandbox
 from app.modules.submissions.validators.common import PreviewSpec
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.modules.identity.events import DomainEventPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +85,21 @@ _MAX_RETRIES = 5
 
 
 def _default_storage() -> ObjectStorage:
-    """Storage adapter seam: the real S3/MinIO adapter arrives with the
-    plan-07 provider wiring. Until then the job is only reachable with
-    an explicitly injected adapter (tests pass ``FakeObjectStorage``);
-    failing loudly beats silently talking to nothing."""
+    """Storage adapter factory (the worker-side composition seam).
+
+    The object-storage provider adapter (S3/MinIO against the frozen
+    ``ObjectStorage`` port) is not implemented yet, so no environment
+    has a default binding: development and test composition inject the
+    adapter through ``run_submission_validation(storage=...)`` (the
+    in-memory fake in tests); when the provider adapter lands, this
+    factory constructs it from ``Settings`` (s3_endpoint_url /
+    s3_bucket / credentials are already typed). Failing loudly beats
+    silently talking to nothing.
+    """
     raise NotImplementedError(
-        "no production ObjectStorage adapter is wired yet (plan 07 provider "
-        "wiring); inject one through run_submission_validation(storage=...)"
+        "no ObjectStorage adapter is bound (object-storage provider "
+        "adapter not implemented); inject one through "
+        "run_submission_validation(storage=...)"
     )
 
 
@@ -121,13 +148,16 @@ def run_submission_validation(
     session_source: Any = None,
     sandbox: ValidatorSandbox | None = None,
     settings: Settings | None = None,
+    events: DomainEventPublisher | None = None,
 ) -> dict[str, Any]:
-    """Construct the dependencies and call the service (the §12 shell).
+    """Construct the dependencies and call the service chain (the §12
+    shell).
 
     Every dependency is injectable; each ``None`` falls back to the
     worker default (settings-derived sandbox/preview bounds, system
-    clock, per-job session, storage seam). Returns a JSON-serializable
-    summary — row data never travels through job results (§15).
+    clock, per-job session, storage seam, logging event publisher).
+    Returns a JSON-serializable summary — row data never travels
+    through job results (§15).
     """
     from uuid import UUID as _UUID
 
@@ -155,7 +185,12 @@ def run_submission_validation(
 
     async def _call() -> Any:
         async with session_source() as session:
-            return await service.validate_submission(session, _UUID(submission_id))
+            result = await service.validate_submission(session, _UUID(submission_id))
+            if result.status is ValidationStatus.VALIDATED:
+                await _lock_reward_after_validation(
+                    session, _UUID(submission_id), clock=clock, events=events
+                )
+            return result
 
     result = asyncio.run(_call())
     return {
@@ -170,6 +205,31 @@ def run_submission_validation(
         ),
         "already_terminal": result.already_terminal,
     }
+
+
+async def _lock_reward_after_validation(
+    session: AsyncSession,
+    submission_id: UUID,
+    *,
+    clock: Clock,
+    events: DomainEventPublisher | None,
+) -> None:
+    """The chained post-VALIDATED step (worker-owns-orchestration):
+    ``RewardLockService.on_validation_passed`` on the SAME session —
+    both services control their own transactions, so the sequence is
+    two short ones, never one spanning the parse.
+
+    Lazy imports keep the module import database-free (the reward-lock
+    service pulls SQLAlchemy); the publisher defaults to the interim
+    logging adapter exactly like the API composition root."""
+    from app.modules.identity.events import LoggingEventPublisher
+    from app.modules.submissions.reward_lock_service import RewardLockService
+
+    locks = RewardLockService(
+        clock=clock,
+        events=events if events is not None else LoggingEventPublisher(),
+    )
+    await locks.on_validation_passed(session, submission_id)
 
 
 @shared_task(  # type: ignore[untyped-decorator]
