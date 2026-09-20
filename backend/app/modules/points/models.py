@@ -130,6 +130,13 @@ class PointsLedger(Base):
             "NOT affects_ranking OR ranking_effective_at IS NOT NULL",
             name="ranking_effective_required",
         ),
+        # Spec §15: Admin 调整必须有 reason — the database backstop for
+        # the service's friendly gate (migration 0011; the T1 review
+        # fold). Non-adjustment types keep reason optional.
+        CheckConstraint(
+            "ledger_type <> 'ADMIN_ADJUSTMENT' OR reason IS NOT NULL",
+            name="admin_reason_required",
+        ),
         # Idempotency key for ORIGINAL entries (spec §31.6): one row per
         # source per ledger_type, so a Claim's reward (and, separately, its
         # reversal) can be written at most once.
