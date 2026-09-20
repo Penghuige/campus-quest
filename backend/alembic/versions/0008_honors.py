@@ -139,9 +139,7 @@ def upgrade() -> None:
             "user_id", "honor_id", name="uq_user_honors_user_id_honor_id"
         ),
     )
-    op.create_index(
-        "ix_user_honors_user_id", "user_honors", ["user_id"], unique=False
-    )
+    op.create_index("ix_user_honors_user_id", "user_honors", ["user_id"], unique=False)
     op.create_index(
         "ix_user_honors_honor_id", "user_honors", ["honor_id"], unique=False
     )

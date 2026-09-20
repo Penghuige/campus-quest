@@ -235,9 +235,7 @@ def test_display_profile_delegates_nickname_and_resolves_the_title():
 
 
 def test_display_profile_unknown_user_is_none():
-    directory, _, resolver = _make_display_directory(
-        [_make_user()], title="今日卷王"
-    )
+    directory, _, resolver = _make_display_directory([_make_user()], title="今日卷王")
 
     assert _run(directory.get_display_profile(None, uuid4())) is None
     # The unknown account short-circuits before the honor read fires.

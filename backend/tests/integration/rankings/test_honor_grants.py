@@ -212,9 +212,7 @@ async def _seed_claims(
         )
 
 
-async def _granted_names(
-    db_session: AsyncSession, user_id: UUID
-) -> set[str]:
+async def _granted_names(db_session: AsyncSession, user_id: UUID) -> set[str]:
     rows = (
         await db_session.execute(
             select(Honor.name)
@@ -237,9 +235,7 @@ async def _newly_granted_names(
     return set(rows)
 
 
-async def _user_honors(
-    db_session: AsyncSession, user_id: UUID
-) -> list[UserHonor]:
+async def _user_honors(db_session: AsyncSession, user_id: UUID) -> list[UserHonor]:
     return list(
         (
             await db_session.execute(
@@ -251,10 +247,7 @@ async def _user_honors(
 
 async def _ledger_count(db_session: AsyncSession) -> int:
     return int(
-        await db_session.scalar(
-            select(func.count()).select_from(PointsLedger)
-        )
-        or 0
+        await db_session.scalar(select(func.count()).select_from(PointsLedger)) or 0
     )
 
 
@@ -641,9 +634,7 @@ async def test_commemorative_honor_admin_only_idempotent_and_never_ranks(
             trigger=HonorTrigger.DAILY_RANK_KNOWN, rank=1, period="2026-09-21"
         ),
     )
-    auto_honor = await db_session.scalar(
-        select(Honor).where(Honor.is_auto.is_(True))
-    )
+    auto_honor = await db_session.scalar(select(Honor).where(Honor.is_auto.is_(True)))
     assert auto_honor is not None
     with pytest.raises(CommemorativeHonorRequiredError):
         await honors.grant_commemorative_honor(
@@ -685,9 +676,7 @@ async def test_period_coherence_check(db_session: AsyncSession) -> None:
     )
     await _assert_integrity_error(
         db_session,
-        Honor(
-            honor_type="TOTAL_COMPLETED", name="y", is_auto=True, period="2026-09"
-        ),
+        Honor(honor_type="TOTAL_COMPLETED", name="y", is_auto=True, period="2026-09"),
     )
     await _assert_integrity_error(
         db_session, Honor(honor_type="BOGUS", name="z", is_auto=True, period=None)
@@ -695,9 +684,7 @@ async def test_period_coherence_check(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.integration
-async def test_auto_definition_and_grant_uniqueness(
-    db_session: AsyncSession
-) -> None:
+async def test_auto_definition_and_grant_uniqueness(db_session: AsyncSession) -> None:
     """The partial unique indexes keep one auto row per (type, name[,
     period]) — a different period is a DIFFERENT row — and
     UNIQUE(user_id, honor_id) keeps one grant. A same-named

@@ -155,13 +155,9 @@ class HonorEvaluationEvent:
     def __post_init__(self) -> None:
         if self.trigger in _LIFETIME_TRIGGERS:
             if self.rank is not None:
-                raise ValueError(
-                    f"trigger {self.trigger.value} carries no rank fact"
-                )
+                raise ValueError(f"trigger {self.trigger.value} carries no rank fact")
             if self.period is not None:
-                raise ValueError(
-                    f"trigger {self.trigger.value} carries no period fact"
-                )
+                raise ValueError(f"trigger {self.trigger.value} carries no period fact")
             return
         if self.trigger not in _RANK_TRIGGERS:  # pragma: no cover - exhaustiveness
             raise ValueError(f"unknown trigger {self.trigger!r}")
@@ -430,17 +426,13 @@ class HonorService:
             )
         granted: list[UserHonor] = []
         for definition in matching_honor_definitions(event, facts):
-            honor = await self._ensure_definition_row(
-                session, definition, event.period
-            )
+            honor = await self._ensure_definition_row(session, definition, event.period)
             user_honor = await self._grant_once(session, user_id, honor)
             if user_honor is not None:
                 granted.append(user_honor)
         return granted
 
-    async def _completed_count(
-        self, session: AsyncSession, user_id: UUID
-    ) -> int:
+    async def _completed_count(self, session: AsyncSession, user_id: UUID) -> int:
         """Total COMPLETED claims (spec §19 累计完成任务数口径)."""
         stmt = (
             select(func.count())
@@ -452,9 +444,7 @@ class HonorService:
         )
         return int(await session.scalar(stmt) or 0)
 
-    async def _on_time_streak(
-        self, session: AsyncSession, user_id: UUID
-    ) -> int:
+    async def _on_time_streak(self, session: AsyncSession, user_id: UUID) -> int:
         """Current consecutive on-time completions, newest first
         (spec §19 当前连续按时数): walk the COMPLETED claims from the most
         recent and stop at the first non-tier-100 one."""
@@ -488,9 +478,7 @@ class HonorService:
         partial unique index arbitrates a create race; the loser adopts
         the winner's row."""
         period_value = period if definition.periodic else None
-        existing = await self._find_definition_row(
-            session, definition, period_value
-        )
+        existing = await self._find_definition_row(session, definition, period_value)
         if existing is not None:
             return existing
         honor = Honor(
@@ -506,9 +494,7 @@ class HonorService:
                 await session.flush()
             return honor
         except IntegrityError:
-            adopted = await self._find_definition_row(
-                session, definition, period_value
-            )
+            adopted = await self._find_definition_row(session, definition, period_value)
             if adopted is None:
                 # Not the definition race we meant to absorb.
                 raise
@@ -556,9 +542,7 @@ class HonorService:
             # itself (same discipline as _ensure_definition_row).
             raced = await session.scalar(
                 select(UserHonor.id)
-                .where(
-                    UserHonor.user_id == user_id, UserHonor.honor_id == honor.id
-                )
+                .where(UserHonor.user_id == user_id, UserHonor.honor_id == honor.id)
                 .limit(1)
             )
             if raced is None:
@@ -568,9 +552,7 @@ class HonorService:
     async def _require_user(self, session: AsyncSession, user_id: UUID) -> None:
         if (
             await session.scalar(
-                select(_USERS_DISPLAY.c.id).where(
-                    _USERS_DISPLAY.c.id == user_id
-                )
+                select(_USERS_DISPLAY.c.id).where(_USERS_DISPLAY.c.id == user_id)
             )
             is None
         ):
