@@ -16,6 +16,11 @@ identity ORM models. The contract is deliberately minimal:
 - ``find_by_email`` normalizes its argument (strip + lowercase) exactly
   once, mirroring how identity itself normalizes emails, so consumers may
   pass raw user input.
+- ``get_display_profile`` resolves the display-honor title through the
+  ``users.display_honor_id`` pointer (Plan 05 Task 7's honors module
+  owns the choice). The honors table is rankings-owned, so the name
+  rides a typed Core light table — identity never imports rankings
+  models, mirroring the tasks module's ``_USERS_LOCK`` seam in reverse.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
+from sqlalchemy import String, Uuid, column, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity.enums import Role, UserStatus
@@ -36,6 +42,30 @@ __all__ = [
     "UserDirectory",
     "UserSummary",
 ]
+
+# Lock/verify seam for the rankings-owned honors table (see module
+# docstring): a typed Core-level light table, NOT the rankings ORM
+# model — the Python-level dependency direction of interfaces.md stays
+# identity <- rankings, and only the two columns the display read needs
+# ride the join.
+_HONORS_TITLE = table(
+    "honors",
+    column("id", Uuid),
+    column("name", String),
+)
+
+# The display-profile read's seam over users: nickname plus the
+# display-honor pointer in ONE fresh SELECT. A Core light table rather
+# than the identity-mapped ORM row on purpose — the pointer is written
+# by rankings' own Core UPDATE (honor_service.set_display_honor over
+# ITS light table), which the identity map would otherwise mask until
+# expiry.
+_USERS_PROFILE = table(
+    "users",
+    column("id", Uuid),
+    column("nickname", String),
+    column("display_honor_id", Uuid),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,9 +83,10 @@ class DisplayProfile:
     """The ranking-safe display facts of one account (spec §17/§40).
 
     Exactly nickname plus the optional display-honor title: no username
-    (student number), no ids, no contact fields. The honor title stays a
-    ``None``-safe placeholder until the honors tables land (Plan 05 Task 7
-    joins ``UserHonor`` here); rankings reads never block on it.
+    (student number), no ids, no contact fields. The title is the ONE
+    honor the user chose to display (``users.display_honor_id``; the
+    Plan 05 Task 7 honors module owns the choice) and stays ``None``
+    while unset.
     """
 
     nickname: str
@@ -126,12 +157,28 @@ class SqlAlchemyUserDirectory:
     ) -> DisplayProfile | None:
         """The account's ranking display facts (spec §17: nickname + honor).
 
-        The Plan 05 Task 6 shape reads ``users.nickname`` only; the display
-        honor title arrives with the honors module (Task 7) as a join over
-        ``UserHonor`` and is ``None`` until then, so a leaderboard read
-        never blocks on a table that does not exist yet.
+        The honor title is the user's CHOSEN display honor
+        (``users.display_honor_id``, migration 0008) — not "any honor
+        they own" — and stays ``None`` while unset or pointing at a
+        row the light-table read cannot find. Both columns ride fresh
+        Core SELECTs (see ``_USERS_PROFILE``): the pointer is written
+        cross-module by rankings' Core UPDATE, so an identity-mapped
+        ORM read could serve a stale choice.
         """
-        user = await self._users.find_by_id(session, user_id)
-        if user is None:
+        row = (
+            await session.execute(
+                select(
+                    _USERS_PROFILE.c.nickname, _USERS_PROFILE.c.display_honor_id
+                ).where(_USERS_PROFILE.c.id == user_id)
+            )
+        ).one_or_none()
+        if row is None:
             return None
-        return DisplayProfile(nickname=user.nickname, display_honor_title=None)
+        title: str | None = None
+        if row.display_honor_id is not None:
+            title = await session.scalar(
+                select(_HONORS_TITLE.c.name).where(
+                    _HONORS_TITLE.c.id == row.display_honor_id
+                )
+            )
+        return DisplayProfile(nickname=row.nickname, display_honor_title=title)
