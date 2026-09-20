@@ -1,6 +1,6 @@
 # backend/app/modules/points/ledger_service.py
 """Append-only ledger posting with the wallet projection kept in one
-transaction (spec §15/§15.1; plan 05 task 2).
+transaction (spec §15/§15.1; plan 05 tasks 2 and 5).
 
 Design decisions:
 
@@ -62,6 +62,36 @@ Design decisions:
   (available minus ACTIVE reservations, spec §16.2). The redemption
   service must re-check spendability under the wallet lock before
   freezing points; this read feeds displays and advisory checks.
+- **Reward reversal is admin-grade and append-only (spec §17.2; task
+  5).** ``reverse_assignment_reward`` NEVER touches the original row:
+  it posts one new ``ASSIGNMENT_REWARD_REVERSAL`` entry with amount
+  ``-original.amount``, ``reversal_of_id`` pointing back, the original's
+  source triple with a different ledger_type — so UNIQUE(source_type,
+  source_id, ledger_type) makes the reversal one-per-claim exactly as
+  it makes the grant one-per-claim (§31.6) — ``affects_balance`` and
+  ``affects_ranking`` both true (正常作弊冲销两者都影响), and the
+  ORIGINAL's ``ranking_effective_at``: a September decision repairs the
+  August period and all-time, never September. Reason is mandatory and
+  the actor must be ADMIN (spec §15 人工积分调整/冲销 channel): a teacher
+  cannot reverse a paid reward — the teacher's correction channel is
+  the review-side INVALIDATE_REWARD_LOCK (§11.3); a reversal of points
+  that were already spent OVERDRAFS ``available_points`` negative
+  (migration 0012 controller ruling — see models.py; user veto point at
+  PR). A second reversal — sequential replay or UNIQUE-race loser, both
+  mapped through the savepoint recovery to the same typed error — is
+  REJECTED, not silently idempotent: a reversal is a recorded admin
+  decision (its reason and operator are the audit trail, §38.6 奖励冲销),
+  so returning an existing row would hide that THIS request's reason
+  was never recorded.
+- **The ranking-projection seam is a post-commit port (task 6).** The
+  reversal may hand the affected user to a ``RankingProjection-
+  Dispatcher`` — task 6's recompute-from-PostgreSQL channel (ZADD the
+  absolute aggregate, never ZINCRBY). Because this service owns no
+  transactions (the rule above), the enqueue is registered on the
+  CALLER's session ``after_commit`` hook: a rollback never enqueues a
+  user whose reversal never landed, and the flush-only contract stays
+  intact. Production wiring (the real job publish) belongs to the S1b
+  stream at merge; tests inject a recording fake.
 - **The frozen port adapter.** ``PointsRewardPortAdapter`` implements
   the interfaces.md ``PointsRewardPort`` signature over this service
   for the Plan-04 review-approve caller: it grants ``locked_points``
@@ -77,16 +107,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import Protocol, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, event, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session as OrmSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.identity.enums import Role
+from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, ReservationStatus
 from app.modules.points.models import PointReservation, PointsLedger, PointWallet
 from app.modules.submissions.review_service import GrantResult
@@ -94,9 +127,15 @@ from app.modules.tasks.models import AssignmentClaim
 
 __all__ = [
     "InvalidLedgerEntryError",
+    "LedgerEntryNotFoundError",
+    "LedgerEntryNotReversibleError",
     "LedgerService",
     "PointsRewardPortAdapter",
     "PostLedgerEntry",
+    "RankingProjectionDispatcher",
+    "RewardAlreadyReversedError",
+    "RewardReversalPermissionDeniedError",
+    "RewardReversalReasonRequiredError",
 ]
 
 # The §31.6 idempotency mechanism's name (migration 0007): only this
@@ -173,6 +212,129 @@ def _validate(command: PostLedgerEntry) -> None:
         )
 
 
+# --- reward reversal: the task-6 port and typed errors (plan 05 task 5) ---------------
+
+
+class RankingProjectionDispatcher(Protocol):
+    """Hand a user whose ranking projection is stale to task 6's
+    recompute channel (plan 05 task 6: recompute the user's authoritative
+    period scores from PostgreSQL and ZADD the ABSOLUTE aggregate —
+    never ZINCRBY — so a repeated trigger converges).
+
+    ``enqueue_ranking_update`` is a SYNC publish (a job ``.delay`` call,
+    the ``ValidationDispatcher`` shape): the broker round trip is the
+    implementation's business, and keeping it sync means the test fake
+    is a plain list append. The trigger needs only the user: the worker
+    re-derives every ranking-affecting period from the ledger, so the
+    August repair and the all-time repair both happen without the
+    caller naming periods. Production wiring (the real publish) is the
+    S1b stream's at merge; until then callers may omit the dispatcher.
+    """
+
+    def enqueue_ranking_update(self, user_id: UUID) -> None: ...
+
+
+class RewardReversalPermissionDeniedError(BusinessError):
+    """The actor is not ADMIN — reversal is 人工积分调整/冲销, an
+    admin-grade channel (spec §15); a teacher's correction channel is
+    the review-side INVALIDATE_REWARD_LOCK (§11.3), never a reversal."""
+
+    def __init__(self, actor_id: UUID, role: Role) -> None:
+        super().__init__(
+            ErrorCode.PERMISSION_DENIED,
+            "只有管理员可以冲销任务奖励",
+            status_code=403,
+            details={"actor_id": str(actor_id), "role": role.value},
+        )
+
+
+class RewardReversalReasonRequiredError(BusinessError):
+    """A reversal without a non-blank reason: the correction IS its audit
+    trail (spec §15 reason principle, §38.6 奖励冲销), so blank is not a
+    reason."""
+
+    def __init__(self, ledger_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.VALIDATION_ERROR,
+            "冲销任务奖励必须填写原因",
+            status_code=422,
+            details={"ledger_id": str(ledger_id), "field": "reason"},
+        )
+
+
+class LedgerEntryNotFoundError(BusinessError):
+    """No PointsLedger row for the id (the claim-service 404 shape)."""
+
+    def __init__(self, ledger_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.NOT_FOUND,
+            "积分流水不存在",
+            status_code=404,
+            details={"ledger_id": str(ledger_id)},
+        )
+
+
+class LedgerEntryNotReversibleError(BusinessError):
+    """The target is not an ASSIGNMENT_REWARD row: a reversal itself
+    cannot re-reverse, redemptions have their own future refund channel,
+    and admin adjustments are their own correction channel (spec §15)."""
+
+    def __init__(self, ledger_id: UUID, ledger_type: str) -> None:
+        super().__init__(
+            ErrorCode.VALIDATION_ERROR,
+            "只有任务奖励流水可以被冲销",
+            status_code=422,
+            details={"ledger_id": str(ledger_id), "ledger_type": ledger_type},
+        )
+
+
+class RewardAlreadyReversedError(BusinessError):
+    """A reversal of this claim's reward already exists — the UNIQUE
+    triple ('ASSIGNMENT_CLAIM', claim, 'ASSIGNMENT_REWARD_REVERSAL')
+    makes the reversal one-per-claim (spec §31.6 shape), and a second
+    request is a typed rejection, not a silent replay: the recorded
+    reason and operator are the decision's audit trail."""
+
+    def __init__(
+        self,
+        *,
+        ledger_id: UUID,
+        source_id: UUID,
+        reversal_ledger_id: UUID,
+    ) -> None:
+        super().__init__(
+            ErrorCode.VALIDATION_ERROR,
+            "该任务奖励已被冲销",
+            status_code=409,
+            details={
+                "ledger_id": str(ledger_id),
+                "source_id": str(source_id),
+                "reversal_ledger_id": str(reversal_ledger_id),
+            },
+        )
+
+
+def _enqueue_ranking_update_after_commit(
+    db: AsyncSession,
+    dispatcher: RankingProjectionDispatcher,
+    user_id: UUID,
+) -> None:
+    """Register the ranking-projection trigger on the CALLER's commit.
+
+    This service owns no transactions, so the only correct moment it can
+    observe is the caller's ``after_commit`` session hook: a rollback
+    leaves the listener unfired (no phantom enqueue for a reversal that
+    never landed) and ``once=True`` keeps the listener from leaking
+    across later commits. The port itself stays a sync publish, so the
+    production adapter (the S1b stream's wiring) decides durability.
+    """
+
+    def _fire(session: OrmSession) -> None:
+        dispatcher.enqueue_ranking_update(user_id)
+
+    event.listen(db.sync_session, "after_commit", _fire, once=True)
+
+
 # --- the service ----------------------------------------------------------------------
 
 
@@ -211,8 +373,12 @@ class LedgerService:
         db.add(entry)
         # The entry lands BEFORE the wallet mutates: a UNIQUE race or
         # constraint failure surfaces with the wallet untouched, and a
-        # wallet CHECK failure (overspend) still rolls back through the
-        # caller — the two writes share one transaction either way.
+        # wallet-update failure still rolls back through the caller —
+        # the two writes share one transaction either way. (Overspend
+        # is no longer a database CHECK failure: migration 0012 lets a
+        # reversal drive available_points negative; redemption overspend
+        # is gated by the redemption service under this same wallet
+        # lock, models.py's 0012 ruling.)
         await db.flush()
 
         if wallet is not None:
@@ -311,6 +477,109 @@ class LedgerService:
                 raise
             return existing
 
+    async def reverse_assignment_reward(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        ledger_id: UUID,
+        reason: str | None,
+        *,
+        ranking_dispatcher: RankingProjectionDispatcher | None = None,
+    ) -> PointsLedger:
+        """Post the admin reversal of one ASSIGNMENT_REWARD (spec §17.2).
+
+        The ORIGINAL row is never touched: this writes exactly one new
+        ``ASSIGNMENT_REWARD_REVERSAL`` entry — amount ``-original.amount``,
+        linked through ``reversal_of_id``, the original's source triple
+        under a different ledger_type (UNIQUE makes it one-per-claim),
+        both effect flags true (正常作弊冲销), the ORIGINAL's
+        ``ranking_effective_at`` (a September decision repairs August and
+        all-time, never the current month), the admin as operator, and
+        the mandatory reason. The wallet lock (inside ``post_entry``)
+        serializes concurrent reversals; an already-spent reward
+        overdrafts ``available_points`` negative (migration 0012 ruling,
+        models.py). Flush only — the caller owns the transaction, and a
+        provided ``ranking_dispatcher`` fires on that commit.
+
+        Raises the typed gates in order — reason, actor, target row,
+        target type, already-reversed — before anything is written; the
+        UNIQUE-race loser maps its violation to the same
+        already-reversed error through the savepoint recovery.
+        """
+        reason_text = reason.strip() if isinstance(reason, str) else ""
+        if not reason_text:
+            raise RewardReversalReasonRequiredError(ledger_id)
+        if actor.role is not Role.ADMIN:
+            raise RewardReversalPermissionDeniedError(actor.user_id, actor.role)
+
+        original = await db.get(PointsLedger, ledger_id)
+        if original is None:
+            raise LedgerEntryNotFoundError(ledger_id)
+        if original.ledger_type != LedgerType.ASSIGNMENT_REWARD.value:
+            raise LedgerEntryNotReversibleError(ledger_id, original.ledger_type)
+        # Captured before any savepoint work: the race-recovery path
+        # expires session state, and both the recovery read and the
+        # typed error must not depend on refreshing the original to
+        # answer (a lazy refresh outside the greenlet would raise
+        # MissingGreenlet — the grant path's discipline).
+        source_type = original.source_type
+        source_id = original.source_id
+        user_id = original.user_id
+
+        existing = await db.scalar(self._claim_reversal_filter(source_type, source_id))
+        if existing is not None:
+            raise RewardAlreadyReversedError(
+                ledger_id=ledger_id,
+                source_id=source_id,
+                reversal_ledger_id=existing.id,
+            )
+
+        try:
+            # The savepoint bounds the race loser's damage: the UNIQUE
+            # violation aborts only this insert, leaving the caller's
+            # transaction usable for the recovery read below.
+            async with db.begin_nested():
+                reversal = await self.post_entry(
+                    db,
+                    PostLedgerEntry(
+                        user_id=user_id,
+                        ledger_type=LedgerType.ASSIGNMENT_REWARD_REVERSAL,
+                        amount=-original.amount,
+                        source_type=source_type,
+                        source_id=source_id,
+                        affects_balance=True,
+                        affects_ranking=True,
+                        ranking_effective_at=original.ranking_effective_at,
+                        reversal_of_id=ledger_id,
+                        operator_id=actor.user_id,
+                        reason=reason_text,
+                    ),
+                )
+        except IntegrityError as exc:
+            if _SOURCE_TRIPLE_UQ not in str(exc):
+                raise  # unknown database failure, not our one-per-claim race
+            # The wallet lock serialized us behind the winner's commit,
+            # so the row is visible now. Expire savepoint-scoped state
+            # before re-reading (the captured locals above are expiry-
+            # proof), then answer with the typed rejection.
+            db.expire_all()
+            winner = await db.scalar(
+                self._claim_reversal_filter(source_type, source_id)
+            )
+            if winner is None:
+                raise
+            raise RewardAlreadyReversedError(
+                ledger_id=ledger_id,
+                source_id=source_id,
+                reversal_ledger_id=winner.id,
+            ) from exc
+        # The post-commit seam, armed only on the success path: a typed
+        # rejection or a caller rollback never enqueues a user whose
+        # reversal never landed.
+        if ranking_dispatcher is not None:
+            _enqueue_ranking_update_after_commit(db, ranking_dispatcher, user_id)
+        return reversal
+
     async def locked_or_created_wallet(
         self, db: AsyncSession, user_id: UUID
     ) -> PointWallet:
@@ -341,6 +610,19 @@ class LedgerService:
             PointsLedger.source_type == _ASSIGNMENT_CLAIM_SOURCE,
             PointsLedger.source_id == claim_id,
             PointsLedger.ledger_type == LedgerType.ASSIGNMENT_REWARD.value,
+        )
+
+    @staticmethod
+    def _claim_reversal_filter(
+        source_type: str, source_id: UUID
+    ) -> Select[tuple[PointsLedger]]:
+        """The one-per-claim reversal lookup: the ORIGINAL's source
+        triple under the reversal's ledger_type — the same UNIQUE
+        constraint's read-side twin (spec §31.6 shape)."""
+        return select(PointsLedger).where(
+            PointsLedger.source_type == source_type,
+            PointsLedger.source_id == source_id,
+            PointsLedger.ledger_type == LedgerType.ASSIGNMENT_REWARD_REVERSAL.value,
         )
 
 

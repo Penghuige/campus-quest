@@ -35,12 +35,21 @@ Design decisions:
   source of truth: available_points (spendable balance) and earned_points
   (cumulative task contribution for the total board and honors) are always
   derivable from the ledger, updated in the same transaction as the ledger
-  insert, and never negative (spendable-balance invariant §31.12 enforced
-  as a CHECK at the database boundary — the reservation service's job is
-  only to keep friendly errors ahead of it). `user_id` is the primary key:
-  exactly one wallet row per user. Redemption decreases available_points
-  only; earned_points and historical ranking contribution are untouched by
-  spending (spec §15.1).
+  insert. CONTROLLER RULING (migration 0012_wallet_overdraft, plan 05
+  task 5 — user veto point at PR): available_points may go NEGATIVE as a
+  reversal overdraft. Spec §17.2 mandates the reversal entry exist even
+  when the points were already spent (不应自动扣用户历史积分；错误发放通过
+  反向流水冲销), and the ledger==wallet rebuild invariant forbids clamping
+  the projection, so a -200 reversal against a 50-point wallet lands at
+  -150. Spec §31.12 only forbids REDEMPTION making spendable points
+  negative — that protection lives in the redemption-service gate under
+  the wallet row lock (spendable is rechecked before freezing points),
+  NOT in a wallet CHECK; 0007's `available_points >= 0` was broader than
+  the spec and 0012 drops it. earned_points stays >= 0 (it only ever
+  counts positive task contributions, §15.1). `user_id` is the primary
+  key: exactly one wallet row per user. Redemption decreases
+  available_points only; earned_points and historical ranking
+  contribution are untouched by spending (spec §15.1).
 - `PointReservation` (spec §16.2) freezes points for an open redemption
   request: spendable = ledger balance - active reservations. The lifecycle
   is ACTIVE -> CONSUMED (approved; the freeze becomes a negative
@@ -193,13 +202,20 @@ class PointWallet(Base):
     the same transaction as the ledger insert. ``user_id`` is the primary
     key — exactly one row per user. A mutable projection, so updated_at
     carries onupdate unlike the append-only audit tables.
+
+    Migration 0012 controller ruling (user veto point at PR):
+    available_points has NO lower bound — a reversal of already-spent
+    points overdrafts it negative (spec §17.2), while redemption overspend
+    is prevented by the redemption-service gate under the wallet row lock
+    (spec §31.12 forbids only REDEMPTION going negative). earned_points
+    stays CHECK >= 0: it only ever accumulates positive task
+    contributions, so a negative value would be corruption, not policy.
     """
 
     __tablename__ = "point_wallets"
     __table_args__ = (
-        # Spendable-balance invariant (spec §31.12) at the database
-        # boundary: the wallet can never be persisted negative.
-        CheckConstraint("available_points >= 0", name="available_points"),
+        # 0012 dropped `available_points >= 0` here: see the class
+        # docstring's overdraft ruling. earned keeps its boundary.
         CheckConstraint("earned_points >= 0", name="earned_points"),
     )
 

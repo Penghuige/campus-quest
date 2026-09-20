@@ -10,11 +10,12 @@ What these tests prove, against real PostgreSQL:
   once — the UNIQUE(source_type, source_id, ledger_type) triple is the
   idempotency mechanism (spec §31.6: 绝不能发两次积分).
 - **Same-transaction projection:** when the wallet update fails after
-  the ledger insert flushed (an overspending redemption trips
-  ``ck_point_wallets_available_points``), the caller's rollback removes
-  the ledger row too — the service never commits (backend-engineering
-  §5: the use-case boundary owns the transaction) and never leaves a
-  half-applied entry.
+  the ledger insert flushed (a test-scoped trigger injects the failure —
+  migration 0012 removed the old overspend CHECK, since a reversal of
+  spent points legitimately overdrafts ``available_points``), the
+  caller's rollback removes the ledger row too — the service never
+  commits (backend-engineering §5: the use-case boundary owns the
+  transaction) and never leaves a half-applied entry.
 - **Concurrent first entry:** two parallel posts for a wallet-less user
   produce ONE wallet row with the summed balance (INSERT ... ON CONFLICT
   DO NOTHING + FOR UPDATE, backend-engineering §7).
@@ -56,7 +57,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.modules.identity.enums import Role, UserStatus
@@ -323,10 +324,19 @@ async def test_wallet_projection_failure_rolls_back_ledger_insert(
     db_session: AsyncSession,
 ) -> None:
     """Backend-engineering §5/§6: the ledger insert and the wallet update
-    are ONE unit. An overspending redemption (-1000 against a 100-point
-    wallet) trips the wallet CHECK after the ledger row flushed; the
-    caller's rollback must remove that row too — the service never
-    commits and never leaves a half-applied entry."""
+    are ONE unit. A wallet UPDATE failure after the ledger row flushed
+    must take that row down with the caller's rollback — the service
+    never commits and never leaves a half-applied entry.
+
+    Failure injection: migration 0012 removed the wallet's
+    ``available_points >= 0`` CHECK (an overspend no longer fails — a
+    reversal of spent points legitimately overdrafts the projection;
+    see test_reward_reversal.py), so the test installs its own BEFORE
+    UPDATE trigger on point_wallets. Both the trigger and its pg_temp
+    function are transactional DDL created AFTER the grant's savepoint
+    release, so the same rollback that proves the property removes them
+    — nothing leaks to other sessions (pg_temp is connection-local
+    anyway) and the outer-transaction teardown stays clean."""
     service = LedgerService()
     student = _student()
     await _flush(db_session, student)
@@ -334,17 +344,32 @@ async def test_wallet_projection_failure_rolls_back_ledger_insert(
     await _grant(service, db_session, student.id)  # available = 100
     await db_session.commit()
 
-    overspending = PostLedgerEntry(
+    await db_session.execute(
+        text(
+            "CREATE FUNCTION pg_temp.fail_wallet_update() RETURNS trigger "
+            "LANGUAGE plpgsql AS $fn$ "
+            "BEGIN RAISE EXCEPTION 'injected wallet update failure'; END "
+            "$fn$"
+        )
+    )
+    await db_session.execute(
+        text(
+            "CREATE TRIGGER wallet_update_fails BEFORE UPDATE ON point_wallets "
+            "FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_wallet_update()"
+        )
+    )
+
+    spending = PostLedgerEntry(
         user_id=student_id,
         ledger_type=LedgerType.REWARD_REDEMPTION,
-        amount=-1000,
+        amount=-30,
         source_type="REWARD_REDEMPTION",
         source_id=uuid4(),
         affects_balance=True,
         affects_ranking=False,
     )
-    with pytest.raises(IntegrityError, match="ck_point_wallets_available_points"):
-        await service.post_entry(db_session, overspending)
+    with pytest.raises(DBAPIError, match="injected wallet update failure"):
+        await service.post_entry(db_session, spending)
     await db_session.rollback()  # the caller owns the transaction
 
     amounts = (

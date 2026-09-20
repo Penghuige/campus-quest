@@ -13,8 +13,12 @@ PostgreSQL itself rejects the violations even when the application forgets:
 - a ranking-affecting row must carry ranking_effective_at (spec §17.2: a
   reversal repairs the ORIGINAL ranking period, so the period attribution is
   mandatory exactly when the row counts);
-- wallet projections cannot go negative (spec §15.1/§31.12) and one wallet
-  row exists per user (user_id primary key);
+- wallet ``earned_points`` cannot go negative (spec §15.1) and one
+  wallet row exists per user (user_id primary key); ``available_points``
+  MAY go negative as a reversal overdraft (migration 0012 controller
+  ruling — spec §17.2 mandates the reversal of spent points; §31.12's
+  no-negative rule binds only REDEMPTION, gated by the redemption
+  service under the wallet lock);
 - RewardItem stock is null (unlimited) or non-negative and point_cost is
   positive (spec §16/§31.13/14);
 - redemption status is the frozen five-member set (interfaces.md, spec
@@ -223,18 +227,18 @@ async def test_ledger_closed_set_and_ranking_coherence_reject_invalid(
 @pytest.mark.parametrize(
     ("overrides", "constraint"),
     [
-        ({"available_points": -1}, "ck_point_wallets_available_points"),
         ({"earned_points": -1}, "ck_point_wallets_earned_points"),
     ],
 )
-async def test_wallet_negative_rejected(
+async def test_wallet_earned_negative_rejected(
     db_session: AsyncSession,
     overrides: dict[str, Any],
     constraint: str,
 ) -> None:
-    """Wallet projections never go negative (spec §15.1/§31.12): the
-    spendable-balance invariant is enforced at the database boundary, not
-    only by the reservation service."""
+    """Wallet ``earned_points`` never goes negative (spec §15.1): it only
+    accumulates positive task contributions, so a negative value would be
+    corruption, not policy. (``available_points`` lost this CHECK in
+    migration 0012 — see the overdraft test below.)"""
     student = _student()
     await _flush(db_session, student)
 
@@ -242,6 +246,26 @@ async def test_wallet_negative_rejected(
     with pytest.raises(IntegrityError, match=constraint):
         await db_session.flush()
     await db_session.rollback()
+
+
+@pytest.mark.integration
+async def test_wallet_available_overdraft_persists(
+    db_session: AsyncSession,
+) -> None:
+    """Migration 0012's controller ruling (user veto point at PR):
+    ``available_points`` may go NEGATIVE — a reversal of already-spent
+    points (spec §17.2: the reversal entry must exist even then; the
+    ledger==wallet projection invariant forbids clamping) overdrafts the
+    wallet instead of being rejected. Spec §31.12 binds only REDEMPTION,
+    which the redemption service gates under the wallet row lock — so a
+    negative balance cannot be spent from."""
+    student = _student()
+    await _flush(db_session, student)
+
+    wallet = PointWallet(user_id=student.id, available_points=-150)
+    await _flush(db_session, wallet)
+    assert wallet.available_points == -150
+    assert wallet.earned_points == 0
 
 
 @pytest.mark.integration

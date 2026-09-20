@@ -21,9 +21,13 @@ Design decisions:
   request path re-derives ``available - SUM(ACTIVE reservations)``
   while holding the wallet row, where the reservation sum is stable —
   every reservation lifecycle transition (creation, CONSUME, RELEASE)
-  happens under that same lock. The wallet CHECK (available >= 0)
-  stays the database backstop (§31.12); this service's job is the
-  friendly typed errors ahead of it.
+  happens under that same lock. THIS gate is spec §31.12's entire
+  enforcement since migration 0012 (task 5's overdraft ruling): the
+  wallet's ``available_points >= 0`` CHECK is gone because a reversal
+  of already-spent points legitimately overdrafts the projection, so
+  redemption must never rely on the database refusing a negative
+  balance — it refuses first, under the lock, with the friendly typed
+  error.
 - **Approve/reject lock redemption -> wallet -> reservation.** The
   redemption row lock serializes the lifecycle; the wallet lock (taken
   AFTER the redemption row) keeps the reservation-sum discipline
