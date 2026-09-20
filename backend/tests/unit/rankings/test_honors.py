@@ -6,7 +6,7 @@ catalog (which definitions exist) and the matcher (which definitions a
 fact state qualifies for) are pure functions, so every threshold and
 rank cutoff is pinned here without a database. The DB half — one Honor
 row per period, idempotent grants, display selection — lives in
-tests/integration/rankings/test_honors.py.
+tests/integration/rankings/test_honor_grants.py.
 
 Threshold provenance: TOTAL_COMPLETED 1/10/50 and ON_TIME_STREAK 10 are
 spec §18 examples; TOTAL_EARNED_POINTS 500/2000/10000 and the monthly

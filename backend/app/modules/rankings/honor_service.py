@@ -22,11 +22,12 @@ points_changed / daily_rank_known / monthly_rank_known); lifetime facts
 (completed count, on-time streak, earned points) are recomputed from
 the claim and ledger tables inside this service, READ-ONLY, through the
 sanctioned cross-module seams (rankings already reads ``PointsLedger``
-in ``repository.py``; claim reads mirror the ``_USERS_LOCK`` light-table
-precedent). Because every lifetime rule is "current fact >= threshold",
-a lost trigger heals on any later evaluation — no running totals to
-drift. Rank facts (rank + period) ride on the event because they are
-projection knowledge only the caller has.
+in ``repository.py``; the claim reads import the tasks module's
+``AssignmentClaim`` ORM model the way submissions reads tasks). Because
+every lifetime rule is "current fact >= threshold", a lost trigger
+heals on any later evaluation — no running totals to drift. Rank facts
+(rank + period) ride on the event because they are projection
+knowledge only the caller has.
 
 On-time semantics (spec §19): a completed claim counts as on-time iff
 its FINAL valid reward lock opened from a submission with
@@ -550,8 +551,18 @@ class HonorService:
                 await session.flush()
             return user_honor
         except IntegrityError:
-            # A concurrent evaluation granted first; the row exists, so
-            # this call grants nothing new.
+            # Only the grant-duplicate violation means "a concurrent
+            # evaluation granted first"; anything else must surface as
+            # itself (same discipline as _ensure_definition_row).
+            raced = await session.scalar(
+                select(UserHonor.id)
+                .where(
+                    UserHonor.user_id == user_id, UserHonor.honor_id == honor.id
+                )
+                .limit(1)
+            )
+            if raced is None:
+                raise
             return None
 
     async def _require_user(self, session: AsyncSession, user_id: UUID) -> None:

@@ -409,9 +409,9 @@ class UserSummary:      # NO contact fields: phone/email stay inside identity
     status: UserStatus
 
 @dataclass(frozen=True)
-class DisplayProfile:  # ranking-safe display facts (Plan 05 Task 6)
+class DisplayProfile:  # ranking-safe display facts (Plan 05 Tasks 6-7)
     nickname: str
-    display_honor_title: str | None   # None until honors land (Plan 05 Task 7)
+    display_honor_title: str | None   # the chosen display honor's name; None while unset
 
 class UserDirectory(Protocol):
     async def find_by_username(self, session, username: str) -> UserSummary | None: ...
@@ -427,9 +427,15 @@ commit), same shape as the other cross-module ports.
 `get_display_profile` is the ranking module's enrichment read (spec §17:
 leaderboards show nickname + display honor only). It deliberately reuses
 the frozen directory rather than letting rankings import identity models.
-`display_honor_title` is `None` until the honors tables exist (Plan 05
-Task 7); the Plan 05 Task 6 adapter reads `users.nickname` only, so the
-column is a placeholder that never blocks a leaderboard read.
+Nickname and user existence delegate to the repository (`find_by_id`);
+`display_honor_title` is the name of the ONE honor the user chose to
+display (`users.display_honor_id`, Plan 05 Task 7), resolved through a
+constructor-injectable honor-title read whose production default is one
+fresh Core SELECT over the rankings-owned `honors` table (never a
+rankings ORM import). The read is fresh on purpose: the pointer is
+written by rankings' cross-module Core UPDATE
+(`honor_service.set_display_honor`), which an identity-mapped ORM read
+would mask until expiry. `None` while the choice is unset.
 
 Locking-read seam: `UserDirectory` will gain a documented locking read
 (e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a new module
