@@ -1,0 +1,177 @@
+# CampusQuest CI (PR1 review item 5).
+#
+# Backend: lint (ruff), types (mypy strict on app), unit+worker tests,
+# PostgreSQL/Redis/MinIO integration tests, and a clean-database Alembic
+# upgrade + `alembic check` proving migrations match the models.
+# Frontend: install, typecheck, lint, production build. Playwright is
+# intentionally absent; it lands with the E2E plan (Plan 10).
+
+name: CI
+
+on:
+  push:
+    branches: [main, worktree-campusquest-v1]
+  pull_request:
+    branches: [main, worktree-campusquest-v1]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Python 3.12)
+    runs-on: ubuntu-latest
+
+    # Mirrors the integration-suite defaults in
+    # backend/tests/integration/db_guard.py. The service port mappings below
+    # publish PostgreSQL on localhost:15432 and Redis on localhost:6379, so
+    # these values are what both the tests and `alembic` (through
+    # app.core.config.get_settings) resolve. MinIO is published on
+    # localhost:9000 and initialized in a later step.
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:15432/campusquest_test
+      REDIS_URL: redis://localhost:6379/0
+      S3_ENDPOINT_URL: http://localhost:9000
+      S3_BUCKET: campusquest-test
+      S3_ACCESS_KEY: campusquest
+      S3_SECRET_KEY: campusquest-dev
+      BUSINESS_TIMEZONE: Asia/Shanghai
+
+    services:
+      postgres:
+        # CI needs only the disposable test database, so the test role and
+        # database that infra/postgres/init/10-test-databases.sh carves out
+        # of the shared dev instance are created here directly through the
+        # POSTGRES_* environment instead of the init script.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: campusquest_test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U test -d campusquest_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv (Python 3.12)
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Sync locked backend environment
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: ruff format
+        working-directory: backend
+        run: uv run ruff format --check app tests alembic
+
+      - name: ruff check
+        working-directory: backend
+        run: uv run ruff check app tests alembic
+
+      - name: mypy (strict app)
+        working-directory: backend
+        run: uv run mypy
+
+      # MinIO cannot be a job `services` entry: service containers cannot
+      # override the image CMD, and this image's default CMD does not start
+      # the server (infra/docker-compose.yml passes `server /data` too).
+      # Same pinned image, credentials, and `mc ready local` healthcheck as
+      # compose; started as a step container on localhost:9000 instead.
+      - name: Start MinIO and wait until healthy
+        run: |
+          docker run -d --name minio-ci \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=campusquest \
+            -e MINIO_ROOT_PASSWORD=campusquest-dev \
+            --health-cmd 'mc ready local' \
+            --health-interval 5s \
+            --health-timeout 3s \
+            --health-retries 12 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' minio-ci)
+            if [ "$status" = "healthy" ]; then
+              echo "MinIO is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MinIO failed to become healthy:"
+          docker logs minio-ci
+          exit 1
+
+      # Mirrors infra/docker-compose.yml's minio-init job: same pinned mc
+      # image, alias setup, and idempotent bucket creation.
+      - name: Create MinIO buckets
+        run: |
+          docker run --rm --network host --entrypoint sh \
+            quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
+            'mc alias set campusquest http://127.0.0.1:9000 campusquest campusquest-dev &&
+             mc mb --ignore-existing campusquest/campusquest &&
+             mc mb --ignore-existing campusquest/campusquest-test'
+
+      # Runs against the still-empty service database: proves a clean
+      # database migrates from zero to head and that the committed
+      # migrations match current models (no ungenerated migration).
+      - name: Alembic upgrade from empty database + check
+        working-directory: backend
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Unit and worker tests
+        working-directory: backend
+        run: uv run pytest tests/unit tests/workers
+
+      - name: Integration tests
+        working-directory: backend
+        run: uv run pytest tests/integration -m integration
+
+  frontend:
+    name: Frontend (Node 22)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build

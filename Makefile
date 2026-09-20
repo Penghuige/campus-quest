@@ -17,4 +17,4 @@ lint-backend:
 
 verify: lint-backend
 	cd backend && uv run pytest -v
-	cd frontend && npm run typecheck && npm run lint
+	cd frontend && npm run typecheck && npm run lint && npm run build
