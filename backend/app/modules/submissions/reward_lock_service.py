@@ -58,9 +58,14 @@ Lock semantics (spec §11.2, mirrored onto the frozen RewardLockStatus):
   columns are simply not written.)
 - ``INVALIDATED`` -> the next valid submission establishes a NEW
   PROVISIONAL lock at ITS own submitted_at fraction, appending another
-  history row (INVALIDATED -> PROVISIONAL). The invalidate action
-  itself is the review flow's (task 9); the audit rows it wrote are
-  never overwritten (interfaces.md: RewardLockHistory is immutable).
+  history row (INVALIDATED -> PROVISIONAL). A revision-window
+  submission whose submitted_at is at/after grace CLAMPS to the lowest
+  defined tier 20% instead of rejecting (the §11.3 amendment /
+  interfaces.md re-lock clamp note: the window keeps the claim alive
+  past grace, so the re-lock must still reward — at the bottom tier).
+  The invalidate action itself is the review flow's (task 9); the
+  audit rows it wrote are never overwritten (interfaces.md:
+  RewardLockHistory is immutable).
 
 Claim transition: CLAIMED/VALIDATING/REVISION_REQUIRED -> UNDER_REVIEW
 (VALIDATING is the worker-path intermediate the validation service's
@@ -70,15 +75,21 @@ processed submission only when its version is >= the current latest's —
 a retried OLD job finishing after a newer version must not regress the
 pointer.
 
-WindowClosedError mapping: ``submitted_at`` was persisted at finalize
-inside the open window (the upload finalize gate) and validation does
-not change it, so ``reward_fraction`` cannot raise here. If it somehow
-does, the data is corrupted (e.g. deadlines edited behind the service
-layer's back); the call maps it to ``RewardWindowInconsistentError``
-(SUBMISSION_WINDOW_CLOSED, the frozen registry member for a closed
-window; status 500 because no client input can produce this shape) and
-DOES NOT transition — the rollback releases the claim lock with every
-column untouched.
+WindowClosedError mapping, by lock path: on the FIRST lock (NONE ->
+PROVISIONAL) the error is truly unreachable corruption —
+``submitted_at`` was persisted at finalize inside the open window (the
+upload finalize gate) and validation does not change it, so
+``reward_fraction`` cannot raise there; if it somehow does, the data
+is corrupted (e.g. deadlines edited behind the service layer's back)
+and the call maps it to ``RewardWindowInconsistentError``
+(SUBMISSION_WINDOW_CLOSED, the frozen registry member; status 500
+because no client input can produce this shape) and DOES NOT
+transition. On the RE-LOCK path (INVALIDATED -> PROVISIONAL) the same
+error is a LEGAL shape — the §11.4 revision window keeps a
+REVISION_REQUIRED claim submittable past grace, so an in-window
+resubmission can carry submitted_at >= grace_deadline_at — and the
+call clamps to the lowest defined tier 20% (spec §11.3 amendment /
+interfaces.md re-lock clamp note) instead of failing.
 
 Idempotency (spec §32): replaying a processed submission returns the
 current claim state — no duplicate history row, no duplicate event, no
@@ -167,17 +178,21 @@ _TIER_PERCENT_BY_FRACTION: dict[Decimal, int] = {
 
 _FIRST_LOCK_REASON = "首次机器校验通过，锁定奖励档位。"
 _RELOCK_REASON = "前一奖励锁被判无效，新有效提交按新的提交时间重新锁档。"
+_RELOCK_CLAMPED_REASON = (
+    "前一奖励锁被判无效，修订窗口内晚于宽限期的提交重锁，取阶梯最低档 20%。"
+)
 _WINDOW_INCONSISTENT_MESSAGE = "机器校验通过的提交落在提交窗口之外（数据异常）"
 _NOT_VALIDATED_MESSAGE = "提交尚未通过机器校验"
 
 
 class RewardWindowInconsistentError(BusinessError):
-    """A VALIDATED submission whose submitted_at is at/after grace —
-    data corruption (finalize and validation both passed a window that
-    is now closed). The claim is left untouched; the code stays the
-    frozen SUBMISSION_WINDOW_CLOSED registry member, the transport
-    status escalates to 500 because no client input can reach this
-    shape."""
+    """A FIRST lock (NONE -> PROVISIONAL) whose submission's submitted_at
+    is at/after grace — truly unreachable data corruption (finalize and
+    validation both passed a window that is now closed; the §11.4
+    revision-window path clamps instead, see the module docstring). The
+    claim is left untouched; the code stays the frozen
+    SUBMISSION_WINDOW_CLOSED registry member, the transport status
+    escalates to 500 because no client input can reach this shape."""
 
     def __init__(
         self,
@@ -278,6 +293,7 @@ class RewardLockService:
         lock_status = RewardLockStatus(claim.reward_lock_status)
         established: tuple[str, int, int] | None = None
         if lock_status in (RewardLockStatus.NONE, RewardLockStatus.INVALIDATED):
+            clamped = False
             try:
                 fraction = reward_fraction(
                     submission.submitted_at,
@@ -285,16 +301,25 @@ class RewardLockService:
                     claim.grace_deadline_at,
                 )
             except WindowClosedError as exc:
-                # Data corruption (see module docstring): DO NOT
-                # transition; release the lock with nothing written.
-                # The instants are captured before the rollback for the
-                # same expiry reason as above.
-                observed_submitted_at = submission.submitted_at
-                observed_grace_at = claim.grace_deadline_at
-                await db.rollback()
-                raise RewardWindowInconsistentError(
-                    submission_id, observed_submitted_at, observed_grace_at
-                ) from exc
+                if lock_status is not RewardLockStatus.INVALIDATED:
+                    # FIRST lock past grace: truly unreachable corruption
+                    # (see module docstring). DO NOT transition; release
+                    # the lock with nothing written. The instants are
+                    # captured before the rollback for the same expiry
+                    # reason as above.
+                    observed_submitted_at = submission.submitted_at
+                    observed_grace_at = claim.grace_deadline_at
+                    await db.rollback()
+                    raise RewardWindowInconsistentError(
+                        submission_id, observed_submitted_at, observed_grace_at
+                    ) from exc
+                # RE-LOCK past grace: a LEGAL §11.4 revision-window shape —
+                # clamp to the lowest defined tier instead of rejecting
+                # (spec §11.3 amendment / interfaces.md re-lock clamp
+                # note). The claim lock is held; the clamp continues the
+                # transaction.
+                fraction = FRACTION_LATE
+                clamped = True
             tier = _TIER_PERCENT_BY_FRACTION.get(fraction)
             if tier is None:
                 # deadlines.py grew a tier without updating the ladder.
@@ -317,9 +342,13 @@ class RewardLockService:
                     reward_tier_locked=tier,
                     locked_reward_points=points,
                     reason=(
-                        _FIRST_LOCK_REASON
-                        if lock_status is RewardLockStatus.NONE
-                        else _RELOCK_REASON
+                        _RELOCK_CLAMPED_REASON
+                        if clamped
+                        else (
+                            _FIRST_LOCK_REASON
+                            if lock_status is RewardLockStatus.NONE
+                            else _RELOCK_REASON
+                        )
                     ),
                 )
             )

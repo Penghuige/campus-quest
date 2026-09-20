@@ -742,6 +742,7 @@ INVALIDATE_REWARD_LOCK：
 - 写 AuditLog。
 - 取消当前 provisional lock。
 - 后续新的有效 Submission 按新的 submitted_at 重新锁档。
+- 修订窗口内晚于 grace_deadline_at 的新有效提交重锁时，档位取阶梯最低档 20%（窗口内提交仍应获得奖励，取最低档）。
 - 不应自动扣用户历史积分；若已经错误发放则通过反向 PointsLedger 冲销。
 
 ### 11.4 Revision window

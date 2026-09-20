@@ -89,9 +89,9 @@ class ReviewStatus(StrEnum):
 class ReviewAction(StrEnum):
     """Immutable review decision recorded per review (spec §11.3).
 
-    Module-internal vocabulary (not frozen by interfaces.md):
-    `INVALIDATE_LOCK` is the database-stable spelling of the spec's
-    INVALIDATE_REWARD_LOCK review outcome.
+    Frozen by interfaces.md ("ReviewAction"): `INVALIDATE_LOCK` is the
+    database-stable spelling of the spec's INVALIDATE_REWARD_LOCK review
+    outcome, and `SubmissionReview.action` persists the exact string.
     """
 
     APPROVE = "APPROVE"

@@ -140,6 +140,17 @@ class ReviewStatus(StrEnum):
 
 `PENDING_REVIEW` is the initial value before human review starts. The spec names the human-stage transitions (`VALIDATED -> UNDER_REVIEW -> APPROVED | REVISION_REQUIRED`) but not the pre-review initial value; this document fixes `PENDING_REVIEW` as the canonical initial member. `APPROVED` implies Claim `COMPLETED` (spec §11.1, §14).
 
+### ReviewAction (spec §11.3, one row per SubmissionReview)
+
+```python
+class ReviewAction(StrEnum):
+    APPROVE = "APPROVE"
+    REQUIRE_REVISION = "REQUIRE_REVISION"
+    INVALIDATE_LOCK = "INVALIDATE_LOCK"
+```
+
+`INVALIDATE_LOCK` is the database-stable spelling of the spec's INVALIDATE_REWARD_LOCK review outcome; `SubmissionReview.action` persists the exact string. (Frozen here per the Plan 04 T1 memo before the review service's first cross-module use.)
+
 ### RewardLockStatus (spec §11.2)
 
 ```python
@@ -149,6 +160,8 @@ class RewardLockStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     INVALIDATED = "INVALIDATED"
 ```
+
+Re-lock clamp (spec §11.3, controller ruling on the §11.3 x §11.4 collision): a revision-window submission whose `submitted_at` is at/after `grace_deadline_at` re-locks at the lowest defined tier, 20% — the §9.3 ladder's `>= grace` arm rejects only FIRST locks (NONE -> PROVISIONAL); the INVALIDATED -> PROVISIONAL re-lock path clamps instead of rejecting.
 
 ### RedemptionStatus (spec §16.1)
 
@@ -373,7 +386,7 @@ Rankings are a derived, rebuildable projection (spec §17.3; Plan 05). PostgreSQ
 Later modules are reached through ports so earlier plans ship with fakes:
 
 - `NotificationPort.record_event(session, event_key, event_type, user_id, payload, task_policy=None) -> None` — persists notification intent inside the domain transaction (Plan 07).
-- `PointsRewardPort.grant_assignment_reward(...)` — Plan 04 calls it with a fake; Plan 05 provides the concrete points implementation.
+- `PointsRewardPort.grant_assignment_reward(*, user_id: UUID, claim_id: UUID, base_points: int, locked_points: int, idempotency_key: str) -> GrantResult` — frozen signature (Plan 04 review-approve is the first caller; Plan 05 provides the concrete points implementation). `GrantResult` is the frozen dataclass `(user_id, claim_id, points_granted)`; `locked_points` is the reward lock's `locked_reward_points` (the fraction-adjusted amount — the "fraction or locked points" grant basis, already floored per §31.1); `idempotency_key` is stable per claim (`assignment_reward:<claim_id>`; UNIQUE(claim) ledger semantics are enforced by Plan 05's concrete adapter).
 - `RatingSummaryPort.summary(task_id) -> RatingSummary | None` — Plan 03 ships a null/fake; Plan 06 supplies the concrete adapter backed by `TaskRating`.
 - Audit writes go through an audit port until Plan 08 replaces it with `AuditService`.
 
