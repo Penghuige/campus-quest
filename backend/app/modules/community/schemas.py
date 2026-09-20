@@ -109,3 +109,20 @@ class ModerationComment:
     deleted: bool
     moderation_key: str | None = None
     hard_hidden: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class VoteResult:
+    """Outcome of one vote toggle (spec §22; plan 06 task 4).
+
+    ``current_value`` is the caller's stance AFTER the transition — 1
+    like, -1 dislike, 0 none — and ``likes``/``dislikes`` are the
+    comment's totals as of the same transaction, so the surface can echo
+    the toggle without a second read. ``current_value`` is a plain int
+    (not ``VoteValue``): 0 — the "no row" stance — is not a ``VoteValue``
+    member, and the shape must represent all three post-states.
+    """
+
+    current_value: int
+    likes: int
+    dislikes: int
