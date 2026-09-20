@@ -78,9 +78,11 @@ Composition root
   environment has a default binding — deployments and tests inject an
   implementation through this provider (tests bind the in-memory fake).
   Failing loudly beats silently talking to nothing.
-- **The points port** (spec §14 step 8) follows the same posture: the
-  points-module ledger adapter arrives with the points module; until
-  then the provider raises instead of inventing a grant.
+- **The points port** (spec §14 step 8) is the points-module ledger
+  adapter, constructed per request over the request's session: the
+  grant joins the approve transaction and the caller's commit decides
+  it (the adapter never commits — backend-engineering §5). Service-level
+  tests bind the in-memory fake through the provider override.
 - Services are assembled per request from injected dependencies; the
   rate limiter reuses the shared ``RateLimiter`` port with the
   ``submissions:upload-intent`` rule, normalized to the authenticated
@@ -134,6 +136,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     LoggingEventPublisher,
 )
+from app.modules.points.ledger_service import LedgerService, PointsRewardPortAdapter
 from app.modules.submissions.query_service import (
     ReviewQueueItem,
     SubmissionQueryService,
@@ -256,15 +259,16 @@ def get_event_publisher() -> DomainEventPublisher:
     return LoggingEventPublisher()
 
 
-def get_points_port() -> PointsRewardPort:
-    """The §14 step-8 grant port. The points-module ledger adapter is
-    the concrete binding; until it exists there is no default — the
-    review approve route raises instead of inventing a grant. Tests
-    bind the in-memory fake through this provider."""
-    raise NotImplementedError(
-        "no points adapter is bound (points-module ledger adapter not "
-        "implemented); inject one through this provider"
-    )
+def get_points_port(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PointsRewardPort:
+    """The §14 step-8 grant port: the points-module ledger adapter over
+    THIS request's session, constructed per request. The adapter uses
+    the caller's session and never commits, so the grant joins the
+    approve transaction and the route's commit/rollback decides its
+    fate (the task-2 verified contract). Service-level tests keep the
+    in-memory fake through this provider override."""
+    return PointsRewardPortAdapter(ledger=LedgerService(), db=db)
 
 
 def get_upload_service(
