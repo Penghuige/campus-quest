@@ -220,6 +220,64 @@ def test_fake_object_storage_recovers_after_programmed_outage() -> None:
     assert storage.head_object(object_key=url.object_key) is not None
 
 
+def test_download_to_file_writes_stored_content_and_records_the_key(
+    tmp_path,
+) -> None:
+    # The worker-side read path (plan 04 task 7): content PUT through
+    # the test helper comes back byte-identical through the port.
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    payload = b"url,title\nhttps://a.com,t\n"
+    storage.put_object(object_key=url.object_key, content=payload)
+    destination = tmp_path / "downloaded.bin"
+    storage.download_to_file(object_key=url.object_key, destination=destination)
+    assert destination.read_bytes() == payload
+    assert storage.downloads == [url.object_key]
+
+
+def test_download_to_file_size_defaults_to_content_length() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    payload = b"12345"
+    storage.put_object(object_key=url.object_key, content=payload)
+    assert storage.head_object(object_key=url.object_key) == ObjectHead(
+        object_key=url.object_key, size=len(payload), content_type="text/csv"
+    )
+
+
+def test_download_to_file_missing_object_raises_file_not_found(
+    tmp_path,
+) -> None:
+    # Port contract: a missing key downloads as FileNotFoundError (an
+    # OSError) — S3's NoSuchKey class — so the retry taxonomy treats it
+    # like other storage OSErrors (bounded retry, then a stale run the
+    # next attempt can resume).
+    storage = FakeObjectStorage()
+    destination = tmp_path / "never-written.bin"
+    with pytest.raises(FileNotFoundError):
+        storage.download_to_file(
+            object_key=f"submissions/{CLAIM_ID}/gone", destination=destination
+        )
+    assert storage.downloads == []
+
+
+def test_download_to_file_programmed_failure_raises_and_records_nothing(
+    tmp_path,
+) -> None:
+    storage = FakeObjectStorage()
+    storage.fail_with(OSError("connection reset by peer"))
+    destination = tmp_path / "downloaded.bin"
+    with pytest.raises(OSError):
+        storage.download_to_file(
+            object_key=f"submissions/{CLAIM_ID}/abc", destination=destination
+        )
+    assert storage.downloads == []
+
+
 def test_fake_rate_limiter_records_exact_checks() -> None:
     limiter = FakeRateLimiter()
 

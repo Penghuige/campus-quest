@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Any
 
 from app.modules.submissions.enums import FileType
 from app.modules.submissions.schema import ColumnRule, ColumnType, SubmissionSchema
@@ -49,6 +50,7 @@ __all__ = [
     "MAX_ERROR_FINDINGS",
     "MAX_WARNING_FINDINGS",
     "UNIQUE_TRACKING_CAP",
+    "PreviewSpec",
     "ScanAggregates",
     "ValidationCode",
     "ValidationFinding",
@@ -60,6 +62,8 @@ __all__ = [
     "check_row",
     "finalize_scan",
     "is_valid_datetime",
+    "report_from_json",
+    "report_to_json",
     "truncate_for_report",
 ]
 
@@ -130,6 +134,15 @@ class ValidationCode(StrEnum):
     UNIQUE_TRACKING_DEGRADED = "UNIQUE_TRACKING_DEGRADED"
     ROW_COUNT_TRUNCATED = "ROW_COUNT_TRUNCATED"
     FINDINGS_TRUNCATED = "FINDINGS_TRUNCATED"
+    # Plan 04 task 7: the validation ORCHESTRATION codes. Detection and
+    # sandbox failures are file-level outcomes assembled by the service
+    # layer (never by the format validators, which only judge what they
+    # parsed) using the same registry so the report vocabulary stays
+    # single-sourced.
+    FILE_TYPE_NOT_ALLOWED = "FILE_TYPE_NOT_ALLOWED"
+    VALIDATION_TIMED_OUT = "VALIDATION_TIMED_OUT"
+    VALIDATION_WORKER_CRASHED = "VALIDATION_WORKER_CRASHED"
+    SCHEMA_INVALID = "SCHEMA_INVALID"
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +185,34 @@ class ValidationLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class PreviewSpec:
+    """Bounds of the §12.4 safe preview (前 N 行安全预览).
+
+    ``max_rows`` caps how many DATA rows (header excluded) are kept;
+    ``max_value_length`` truncates every previewed cell. Defaults are
+    the deployment choices the settings layer wires (10 rows, 200
+    characters). A ``PreviewSpec`` travels into the sandboxed child
+    with the request; the report builder enforces it, so every format
+    validator gets identical preview behavior.
+    """
+
+    max_rows: int = 10
+    max_value_length: int = 200
+
+    def __post_init__(self) -> None:
+        if isinstance(self.max_rows, bool) or not isinstance(self.max_rows, int):
+            raise TypeError("max_rows 必须是整数")
+        if self.max_rows < 0:
+            raise ValueError("max_rows 必须是非负整数")
+        if isinstance(self.max_value_length, bool) or not isinstance(
+            self.max_value_length, int
+        ):
+            raise TypeError("max_value_length 必须是整数")
+        if self.max_value_length < 1:
+            raise ValueError("max_value_length 必须是正整数")
+
+
+@dataclass(frozen=True, slots=True)
 class ValidationFinding:
     """One bounded sample of a validation outcome.
 
@@ -209,6 +250,10 @@ class ValidationReport:
     warnings: tuple[ValidationFinding, ...]
     errors: tuple[ValidationFinding, ...]
     duration_ms: float
+    # §12.4 前 N 行安全预览: plain string cells of the first data rows
+    # (header excluded), truncated per cell by the builder's
+    # PreviewSpec. Empty when no preview was requested.
+    preview_rows: tuple[tuple[str, ...], ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -235,13 +280,21 @@ class ValidationReportBuilder:
     bound; each validator keeps them exact and passes them in.
     """
 
-    def __init__(self, *, parser_version: str, file_type: FileType) -> None:
+    def __init__(
+        self,
+        *,
+        parser_version: str,
+        file_type: FileType,
+        preview: PreviewSpec | None = None,
+    ) -> None:
         self._parser_version = parser_version
         self._file_type = file_type
         self._errors: list[ValidationFinding] = []
         self._warnings: list[ValidationFinding] = []
         self._errors_truncated = False
         self._warnings_truncated = False
+        self._preview = preview
+        self._preview_rows: list[tuple[str, ...]] = []
 
     def add_error(
         self,
@@ -278,6 +331,21 @@ class ValidationReportBuilder:
                 code, message, row=row, column=column, value=truncate_for_report(value)
             )
         )
+
+    def add_preview_row(self, cells: Sequence[str]) -> None:
+        """Keep one DATA row for the §12.4 preview, truncating cells.
+
+        A no-op once the configured row cap is reached (bounded memory)
+        and when no ``PreviewSpec`` was supplied. The header row is the
+        caller's to skip — every validator already distinguishes it.
+        """
+        if self._preview is None or len(self._preview_rows) >= self._preview.max_rows:
+            return
+        limit = self._preview.max_value_length
+        row = tuple(
+            cell if len(cell) <= limit else cell[:limit] + "…" for cell in cells
+        )
+        self._preview_rows.append(row)
 
     def build(
         self,
@@ -319,7 +387,77 @@ class ValidationReportBuilder:
             warnings=tuple(warnings),
             errors=tuple(self._errors),
             duration_ms=duration_ms,
+            preview_rows=tuple(self._preview_rows),
         )
+
+
+# --- the JSON wire format (sandbox child -> parent, and DB persistence) ------------
+#
+# One serializer for both hops: the sandboxed child prints exactly this
+# shape, the parent reconstructs the frozen report from it, and the
+# validation service persists the same dict into
+# submissions.validation_report / submission_validations.report (JSONB).
+# The field list is §12.4 plus preview_rows and NOTHING else — no
+# object keys, no storage paths, no parser internals reach students or
+# reviewers through this shape.
+
+
+def _finding_to_json(finding: ValidationFinding) -> dict[str, Any]:
+    return {
+        "code": finding.code.value,
+        "message": finding.message,
+        "row": finding.row,
+        "column": finding.column,
+        "value": finding.value,
+    }
+
+
+def _finding_from_json(data: Mapping[str, Any]) -> ValidationFinding:
+    return ValidationFinding(
+        ValidationCode(data["code"]),
+        data["message"],
+        row=data.get("row"),
+        column=data.get("column"),
+        value=data.get("value"),
+    )
+
+
+def report_to_json(report: ValidationReport) -> dict[str, Any]:
+    """Serialize a report into the persistable/wireable §12.4 shape."""
+    return {
+        "parser_version": report.parser_version,
+        "file_type": report.file_type.value,
+        "row_count": report.row_count,
+        "detected_columns": list(report.detected_columns),
+        "missing_required_columns": list(report.missing_required_columns),
+        "extra_columns": list(report.extra_columns),
+        "type_error_counts": dict(report.type_error_counts),
+        "null_ratios": dict(report.null_ratios),
+        "duplicate_counts": dict(report.duplicate_counts),
+        "warnings": [_finding_to_json(finding) for finding in report.warnings],
+        "errors": [_finding_to_json(finding) for finding in report.errors],
+        "duration_ms": report.duration_ms,
+        "preview_rows": [list(row) for row in report.preview_rows],
+    }
+
+
+def report_from_json(data: Mapping[str, Any]) -> ValidationReport:
+    """Reconstruct the frozen report from the JSON shape (lossless)."""
+    return ValidationReport(
+        parser_version=data["parser_version"],
+        file_type=FileType(data["file_type"]),
+        row_count=data["row_count"],
+        detected_columns=tuple(data["detected_columns"]),
+        missing_required_columns=tuple(data["missing_required_columns"]),
+        extra_columns=tuple(data["extra_columns"]),
+        type_error_counts=MappingProxyType(dict(data["type_error_counts"])),
+        null_ratios=MappingProxyType(dict(data["null_ratios"])),
+        duplicate_counts=MappingProxyType(dict(data["duplicate_counts"])),
+        warnings=tuple(_finding_from_json(item) for item in data["warnings"]),
+        errors=tuple(_finding_from_json(item) for item in data["errors"]),
+        duration_ms=data["duration_ms"],
+        preview_rows=tuple(tuple(row) for row in data.get("preview_rows", ())),
+    )
 
 
 # --- per-cell type checks (the contract in the module docstring) ------------

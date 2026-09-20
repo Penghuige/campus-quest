@@ -88,6 +88,7 @@ from app.modules.submissions.enums import FileType
 from app.modules.submissions.schema import ColumnRule, SubmissionSchema
 
 from .common import (
+    PreviewSpec,
     ScanAggregates,
     ValidationCode,
     ValidationLimits,
@@ -159,17 +160,20 @@ def validate_csv(
     limits: ValidationLimits | None = None,
     *,
     clock: Callable[[], float] = time.monotonic,
+    preview: PreviewSpec | None = None,
 ) -> ValidationReport:
     """Validate a CSV byte stream against a parsed submission schema.
 
     The stream is read to (at most) the configured row budget and is
     never closed; every parse-level failure comes back inside the
-    report (backend-engineering §14).
+    report (backend-engineering §14). ``preview`` collects the first N
+    data rows into the report (§12.4 安全预览) — plain truncated cells,
+    never evaluated anything.
     """
     effective_limits = ValidationLimits() if limits is None else limits
     started = clock()
     builder = ValidationReportBuilder(
-        parser_version=PARSER_VERSION, file_type=FileType.CSV
+        parser_version=PARSER_VERSION, file_type=FileType.CSV, preview=preview
     )
     aggregates = _scan(stream, schema, effective_limits, builder, clock, started)
     duration_ms = round((clock() - started) * 1000.0, 3)
@@ -333,6 +337,7 @@ def _consume(
                 unique_seen,
                 degraded_columns,
             )
+            builder.add_preview_row(raw)
     except csv.Error:
         builder.add_error(ValidationCode.MALFORMED_CSV, _STRUCTURE_MESSAGE)
         scan_incomplete = True

@@ -149,6 +149,7 @@ from app.modules.submissions.enums import FileType
 from app.modules.submissions.schema import ColumnRule, SubmissionSchema
 
 from .common import (
+    PreviewSpec,
     ScanAggregates,
     ValidationCode,
     ValidationLimits,
@@ -262,18 +263,21 @@ def validate_xlsx(
     limits: ValidationLimits | None = None,
     *,
     clock: Callable[[], float] = time.monotonic,
+    preview: PreviewSpec | None = None,
 ) -> ValidationReport:
     """Validate an XLSX file (path or seekable binary stream) against
     a parsed submission schema.
 
     The file is read to (at most) the configured row budget; a caller
     stream is rewound and never closed; every parse-level failure
-    comes back inside the report (backend-engineering §14).
+    comes back inside the report (backend-engineering §14). ``preview``
+    collects the first N data rows into the report (§12.4 安全预览) —
+    cached cell values only, formulas are never evaluated.
     """
     effective_limits = ValidationLimits() if limits is None else limits
     started = clock()
     builder = ValidationReportBuilder(
-        parser_version=PARSER_VERSION, file_type=FileType.XLSX
+        parser_version=PARSER_VERSION, file_type=FileType.XLSX, preview=preview
     )
     aggregates = _run(path_or_stream, schema, effective_limits, builder, clock, started)
     duration_ms = round((clock() - started) * 1000.0, 3)
@@ -660,6 +664,9 @@ def _scan_sheet(
             unique_seen,
             degraded_columns,
         )
+        # §12.4 安全预览: cached cell values only (data_only read mode);
+        # a formula without a cached value previewed as an empty cell.
+        builder.add_preview_row(texts)
 
     if header_cells is None:
         # No non-empty row at all: the selected sheet carries no

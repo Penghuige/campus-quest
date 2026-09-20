@@ -158,7 +158,10 @@ def test_worker_cli_style_load_registers_health_job(
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip().splitlines()[-1] == "TASKS=workers.health_job"
+    assert (
+        completed.stdout.strip().splitlines()[-1]
+        == "TASKS=workers.health_job,workers.validate_submission"
+    )
 
 
 def test_eager_execution_needs_no_live_broker(
@@ -186,6 +189,7 @@ def test_worker_imports_stay_lazy_and_database_free() -> None:
 
         import app.workers.celery_app  # noqa: F401  (module attribute stays lazy)
         import app.workers.jobs.health  # noqa: F401
+        import app.workers.jobs.validate_submission  # noqa: F401
 
         leaks = sorted(
             module

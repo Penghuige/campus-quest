@@ -105,6 +105,19 @@ class Settings(BaseSettings):
     # explicitly configurable). Consumed by `AbandonService`, which receives
     # the scalar at the composition root.
     daily_abandon_limit: int = 2
+    # Validation worker sandbox bounds (spec §33.3 CPU/内存/时间限制; the
+    # plan-04 task-7 parked rulings): every validator executes in a
+    # subprocess under these hard limits. Defaults are sized so legitimate
+    # work under the 200 MB upload cap and the validators' own preflight
+    # bounds always fits, while the parked ~5x total-cap decompression
+    # amplification hits the memory wall first.
+    validation_wall_timeout_seconds: int = 120
+    validation_memory_limit_mb: int = 1024
+    validation_cpu_seconds: int = 60
+    # §12.4 safe preview (前 N 行安全预览): how many data rows and how
+    # much of each cell value the persisted validation report carries.
+    validation_preview_rows: int = 10
+    validation_preview_value_chars: int = 200
 
     @field_validator("business_timezone")
     @classmethod

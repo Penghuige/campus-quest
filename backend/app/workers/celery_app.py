@@ -38,7 +38,10 @@ from app.core.config import Settings, get_settings
 # modules must be named here explicitly (deterministic and reviewable;
 # no autodiscovery). Each new job module appends itself to this list in
 # its own task.
-JOB_MODULES = ("app.workers.jobs.health",)
+JOB_MODULES = (
+    "app.workers.jobs.health",
+    "app.workers.jobs.validate_submission",
+)
 
 
 def create_celery_app(settings: Settings) -> Celery:

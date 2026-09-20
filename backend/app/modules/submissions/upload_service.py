@@ -37,19 +37,25 @@ path; both flows):
 1. User-row lock + account gate (same as create).
 2. Locator: one lock-free SELECT of the intent's ``claim_id`` (immutable
    column) — see LOCK ORDER below for why the claim is locked first.
-3. Claim row FOR UPDATE: ownership, submittable status, recomputed
-   window (time may have passed since the intent was issued).
+3. Claim row FOR UPDATE: ownership is judged on the locked row.
 4. Intent row FOR UPDATE: the single-use state machine. FINALIZED
    (``finalized_submission_id`` set) -> return THAT Submission
-   (idempotent replay, spec §32: never version N+1). BURNED (consumed
-   with no submission) or past ``expires_at`` -> intent-not-found; the
-   remedy is a fresh intent. OPEN -> proceed.
-5. ``head_object`` verification (spec §10 step 6): a missing object is a
+   (idempotent replay, spec §32: never version N+1) — checked BEFORE
+   the claim-submittability gate, so a delayed replay still answers
+   the same Submission after the validation worker moved the claim to
+   VALIDATING/UNDER_REVIEW (plan 04 task 7 fix of the T2 carry).
+   BURNED (consumed with no submission) or past ``expires_at`` ->
+   intent-not-found; the remedy is a fresh intent. OPEN -> proceed.
+5. Claim-submittability gate on the locked claim row (spec §10 step 2:
+   VALIDATING/UNDER_REVIEW mean a submission is in flight; the
+   terminal states ended the claim), then the recomputed window (time
+   may have passed since the intent was issued).
+6. ``head_object`` verification (spec §10 step 6): a missing object is a
    retryable client race (typed NOT_FOUND, intent stays consumable); a
    size or content-type mismatch means the stored object contradicts the
    cleared declaration — the intent is BURNED (conditional UPDATE
    ``consumed_at IS NULL`` + commit) and the typed error answers.
-6. Retention snapshot (spec §13) from the Task's CURRENT policy at
+7. Retention snapshot (spec §13) from the Task's CURRENT policy at
    finalize time; version allocation ``max(version)+1`` under the claim
    lock (§31.11 — UNIQUE(claim_id, version) is the database backstop);
    Submission INSERT; the conditional single-use consume
@@ -702,8 +708,15 @@ class UploadService:
         if claim_id is None:
             raise UploadIntentNotFoundError(intent_id)
 
-        # (3) Claim row under FOR UPDATE: ownership, submittable status,
-        # and the recomputed window are all judged on the locked row.
+        # (3) Claim row under FOR UPDATE: ownership is judged on the
+        # locked row. NOTE (T2 carry, fixed in plan 04 task 7): the
+        # claim-SUBMITTABILITY gate runs AFTER the intent state machine
+        # below — a delayed replay of an already-finalized intent must
+        # return the SAME Submission even when the claim has since
+        # moved to VALIDATING/UNDER_REVIEW (the validation worker's
+        # transition), instead of degrading the no-duplicate invariant
+        # into a confusing CLAIM_NOT_SUBMITTABLE 409. The gate still
+        # runs under the claim lock before any new Submission exists.
         claim = await db.scalar(
             select(AssignmentClaim)
             .where(AssignmentClaim.id == claim_id)
@@ -716,8 +729,6 @@ class UploadService:
         if claim.user_id != actor.user_id:
             raise ClaimNotOwnedError(claim_id, actor.user_id)
         status = ClaimStatus(claim.status)
-        if status not in SUBMITTABLE_STATUSES:
-            raise ClaimNotSubmittableError(status)
 
         # (4) Intent row under FOR UPDATE: the authoritative single-use
         # state machine.
@@ -728,7 +739,8 @@ class UploadService:
             raise UploadIntentNotFoundError(intent_id)
         if intent.finalized_submission_id is not None:
             # Idempotent replay (spec §32): the SAME Submission, never a
-            # version N+1.
+            # version N+1 — judged BEFORE the submittability gate (see
+            # step 3's note).
             submission = await db.get(Submission, intent.finalized_submission_id)
             if submission is None:
                 # Unreachable while the FK holds; fail safe, never
@@ -739,6 +751,11 @@ class UploadService:
             # Burned by a failed verification: the only remedy is a fresh
             # intent.
             raise UploadIntentNotFoundError(intent_id)
+
+        # (5) Claim-submittability gate (moved after the replay; still
+        # on the locked row, still before any write).
+        if status not in SUBMITTABLE_STATUSES:
+            raise ClaimNotSubmittableError(status)
 
         # CLOCK SAMPLING CONTRACT: after every lock (user, claim, intent)
         # and before the expiry comparison, the window recheck, and the

@@ -14,6 +14,12 @@ Scenarios:
 - **Duplicate finalize (spec §32 upload-complete idempotency):** the
   second call returns the SAME Submission (id and version), and no
   version 2 ever exists — the intent is single-use.
+- **Replay after the claim moved on (T2 carry, plan 04 task 7):** a
+  delayed finalize replay of an already-finalized intent returns the
+  SAME Submission even when the claim has since transitioned to
+  VALIDATING (the validation worker's claim state) — the replay check
+  runs BEFORE the claim-submittability gate, so the no-duplicate
+  invariant does not degrade into a confusing CLAIM_NOT_SUBMITTABLE.
 - **Size mismatch:** ``head_object`` reports a size different from the
   declaration -> typed FILE_TOO_LARGE error, no Submission row, and the
   intent is burned (replays answer intent-not-found; the remedy is a new
@@ -53,7 +59,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.clock import FrozenClock
@@ -880,5 +886,72 @@ async def test_concurrent_finalize_of_same_intent_yields_one_submission(
             assert intent is not None
             assert intent.consumed_at == _NOW
             assert intent.finalized_submission_id == rows[0].id
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+@pytest.mark.integration
+async def test_finalize_replay_after_claim_moved_to_validating_returns_same_submission(
+    db_engine: AsyncEngine,
+) -> None:
+    """T2 carry regression (fixed in plan 04 task 7): the intent-replay
+    check precedes the claim-submittability gate, so a delayed replay
+    against a claim the validation worker already moved to VALIDATING
+    returns the SAME Submission — never CLAIM_NOT_SUBMITTABLE, never a
+    version 2."""
+    factory = _factory(db_engine)
+    clock = FrozenClock(_NOW)
+    storage = FakeObjectStorage(clock=clock)
+    service = _service(clock, storage)
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = await _seed(factory, run)
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+
+        async with factory() as session:
+            receipt = await service.create_upload_intent(
+                session,
+                _actor(seed.student),
+                seed.claim.id,
+                "数据.csv",
+                "CSV",
+                _DECLARED_SIZE,
+            )
+        storage.put_object(object_key=receipt.object_key, size=_DECLARED_SIZE)
+        async with factory() as session:
+            first = await service.finalize_upload(
+                session, _actor(seed.student), receipt.intent_id
+            )
+
+        # The validation worker's claim transition (task 8 owns the real
+        # write; here it is simulated directly): CLAIMED -> VALIDATING.
+        async with factory() as session:
+            await session.execute(
+                update(AssignmentClaim)
+                .where(AssignmentClaim.id == seed.claim.id)
+                .values(status=ClaimStatus.VALIDATING.value)
+            )
+            await session.commit()
+
+        async with factory() as session:
+            replay = await service.finalize_upload(
+                session, _actor(seed.student), receipt.intent_id
+            )
+
+        assert replay.id == first.id
+        assert replay.version == 1
+
+        async with factory() as session:
+            rows = (
+                await session.scalars(
+                    select(Submission).where(Submission.claim_id == seed.claim.id)
+                )
+            ).all()
+            assert len(rows) == 1
+            assert rows[0].version == 1
     finally:
         await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)

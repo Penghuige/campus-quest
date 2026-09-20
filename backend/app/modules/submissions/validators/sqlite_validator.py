@@ -146,6 +146,7 @@ from app.modules.submissions.schema import ColumnRule, ColumnType, SubmissionSch
 
 from .common import (
     UNIQUE_TRACKING_CAP,
+    PreviewSpec,
     ScanAggregates,
     ValidationCode,
     ValidationLimits,
@@ -221,18 +222,21 @@ def validate_sqlite(
     limits: ValidationLimits | None = None,
     *,
     clock: Callable[[], float] = time.monotonic,
+    preview: PreviewSpec | None = None,
 ) -> ValidationReport:
     """Validate a SQLite file against a parsed submission schema.
 
     The file is opened read-only/immutable and scanned to (at most)
     the configured row budget; every SQLite-level failure comes back
-    inside the report (backend-engineering §14). ``OSError`` from
-    storage propagates deliberately.
+    inside the report (backend-engineering §14). ``preview`` collects
+    the first N data rows rendered to plain text (§12.4 安全预览 —
+    BLOBs preview as empty cells: binary content is not plain data).
+    ``OSError`` from storage propagates deliberately.
     """
     effective_limits = ValidationLimits() if limits is None else limits
     started = clock()
     builder = ValidationReportBuilder(
-        parser_version=PARSER_VERSION, file_type=FileType.SQLITE
+        parser_version=PARSER_VERSION, file_type=FileType.SQLITE, preview=preview
     )
     aggregates = _run(path, schema, effective_limits, builder, clock, started)
     duration_ms = round((clock() - started) * 1000.0, 3)
@@ -499,6 +503,7 @@ def _scan_table(
                 unique_seen,
                 degraded_columns,
             )
+            builder.add_preview_row(_preview_row(values))
     except sqlite3.Error as exc:
         if budget.timed_out:
             builder.add_error(
@@ -526,6 +531,22 @@ def _scan_table(
         builder=builder,
         no_data_message=_NO_DATA_MESSAGE,
     )
+
+
+def _preview_row(values: tuple[object, ...]) -> list[str]:
+    """Render one row's storage-classed values to plain preview text.
+
+    NULL -> empty string; TEXT passes through; INTEGER/REAL render via
+    ``str``; BLOB previews as an empty cell — binary content is not
+    plain data and must not reach a Student/Teacher-facing preview.
+    """
+    rendered: list[str] = []
+    for value in values:
+        if value is None or isinstance(value, bytes):
+            rendered.append("")
+        else:
+            rendered.append(value if isinstance(value, str) else str(value))
+    return rendered
 
 
 def _check_row_values(

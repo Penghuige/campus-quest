@@ -11,6 +11,7 @@ outages with the same taxonomy real adapters raise
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -124,7 +125,9 @@ class FakeObjectStorage(_FailureProgrammable):
 
     `create_upload_url` issues server-generated keys and pins the declared
     content type; `put_object` simulates the client completing the
-    presigned PUT; `head_object` then reports the pinned metadata.
+    presigned PUT; `head_object` then reports the pinned metadata; and
+    `download_to_file` replays the PUT content for worker-side reads
+    (a missing key is `FileNotFoundError`, matching the port contract).
     """
 
     def __init__(self, *, clock: Clock | None = None) -> None:
@@ -133,7 +136,9 @@ class FakeObjectStorage(_FailureProgrammable):
         self.upload_urls: list[UploadUrl] = []
         self.download_urls: list[DownloadUrl] = []
         self.objects: dict[str, ObjectHead] = {}
+        self.downloads: list[str] = []
         self._pinned_content_types: dict[str, str] = {}
+        self._contents: dict[str, bytes] = {}
 
     def create_upload_url(
         self, *, claim_id: UUID, content_type: str, expires_in: timedelta
@@ -166,16 +171,36 @@ class FakeObjectStorage(_FailureProgrammable):
         self.download_urls.append(url)
         return url
 
-    def put_object(self, *, object_key: str, size: int) -> None:
+    def put_object(
+        self,
+        *,
+        object_key: str,
+        size: int | None = None,
+        content: bytes = b"",
+    ) -> None:
         """Simulate the client completing the presigned PUT for `object_key`.
 
         Test-side helper, not part of the port: the upload itself does not
-        flow through the adapter. `size` is the stored byte size; content
-        type comes from the pinned value on the issued upload URL.
+        flow through the adapter. `content` is the stored byte payload
+        (what `download_to_file` later replays); `size` defaults to
+        `len(content)` and remains independently overridable for the
+        finalize size-mismatch paths. Content type comes from the pinned
+        value on the issued upload URL.
         """
         pinned = self._pinned_content_types.get(object_key)
         if pinned is None:
             raise ValueError(f"no upload URL was issued for {object_key!r}")
         self.objects[object_key] = ObjectHead(
-            object_key=object_key, size=size, content_type=pinned
+            object_key=object_key,
+            size=len(content) if size is None else size,
+            content_type=pinned,
         )
+        self._contents[object_key] = content
+
+    def download_to_file(self, *, object_key: str, destination: Path) -> None:
+        # Worker-side read path: replay the PUT content byte-identically.
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(f"no object under key {object_key!r}")
+        self.downloads.append(object_key)
+        destination.write_bytes(self._contents.get(object_key, b""))

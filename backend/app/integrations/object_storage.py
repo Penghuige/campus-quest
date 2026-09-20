@@ -7,10 +7,20 @@ docs/quality/backend-engineering.md §16): the canonical V1 shape is
 `submissions/{claim_id}/{uuid}` and the original filename is display
 metadata only. No provider SDK is imported here; a real S3 adapter is a
 separate later task.
+
+Worker-side reads (plan 04 task 7) go through `download_to_file`, not
+through `create_download_url`: presigned HTTP URLs are for BROWSERS
+(a student/teacher download link); a worker pulling the object for
+validation streams it server-side through the adapter instead. A
+missing key raises `FileNotFoundError` (S3's NoSuchKey class, an
+`OSError`) and transient provider failures raise the adapter taxonomy
+(`integrations.errors`) or `OSError` — both are retry classes for the
+validation job's bounded retry policy.
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
@@ -43,7 +53,8 @@ class DownloadUrl:
 
 
 class ObjectStorage(Protocol):
-    """Port for presigned uploads, metadata checks, and signed downloads."""
+    """Port for presigned uploads, metadata checks, signed downloads,
+    and worker-side object reads."""
 
     def create_upload_url(
         self, *, claim_id: UUID, content_type: str, expires_in: timedelta
@@ -85,5 +96,25 @@ class ObjectStorage(Protocol):
                 existence, and so does every implementation of this port.
             expires_in: Time-to-live of the URL; keep it short (minutes) —
                 the returned `expires_at` is the instant it stops working.
+        """
+        ...
+
+    def download_to_file(self, *, object_key: str, destination: Path) -> None:
+        """Stream the stored object to a local file (worker-side reads).
+
+        Server-side reads (the validation worker pulling an upload for
+        parsing) must NOT go through presigned HTTP — that path is for
+        browser downloads. The adapter streams the object into
+        `destination` (an existing directory, adapter-created file).
+
+        Args:
+            object_key: Key previously returned by `create_upload_url`.
+            destination: Local path the content is written to.
+        Raises:
+            FileNotFoundError: No object under `object_key` (S3's
+                NoSuchKey class; an `OSError`, so the retry taxonomy
+                treats it with the storage-transient policy).
+            OSError / the adapter failure taxonomy: transient provider
+                failures — retryable by the caller's bounded policy.
         """
         ...
