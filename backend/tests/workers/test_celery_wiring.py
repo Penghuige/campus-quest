@@ -160,7 +160,8 @@ def test_worker_cli_style_load_registers_health_job(
     assert completed.returncode == 0, completed.stderr
     assert (
         completed.stdout.strip().splitlines()[-1]
-        == "TASKS=workers.health_job,workers.validate_submission"
+        == "TASKS=workers.health_job,workers.project_ranking_update,"
+        "workers.rebuild_all_rankings,workers.validate_submission"
     )
 
 

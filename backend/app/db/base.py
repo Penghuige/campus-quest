@@ -48,5 +48,8 @@ class AppMetadata(Base):
 # class definition: model modules import Base from this module.
 from app.modules.identity import models as identity_models  # noqa: E402, F401
 from app.modules.points import models as point_models  # noqa: E402, F401
+from app.modules.rankings import (  # noqa: E402, F401
+    honor_models as ranking_honor_models,
+)
 from app.modules.submissions import models as submission_models  # noqa: E402, F401
 from app.modules.tasks import models as task_models  # noqa: E402, F401
