@@ -10,6 +10,15 @@ why they are not PostgreSQL native enums).
 submission-side services import the whole lock vocabulary from one place
 without redefining the frozen member set (same precedent as identity
 re-exports).
+
+`FileType` and `RetentionPolicy` are the submission module's own closed
+universes: the CSV/XLSX/SQLITE file types (spec §10/§12 — the same
+member set the tasks module's `allowed_file_types` CHECK guards) and the
+retention policies (spec §13 — the same values the Task column's CHECK
+guards). They live here, not in the tasks module, because the submission
+side computes against them (declared-type MIME pinning, retention
+snapshots) while the tasks side persists raw strings; the member sets
+must stay in lockstep with those CHECK constraints.
 """
 
 from __future__ import annotations
@@ -18,7 +27,41 @@ from enum import StrEnum
 
 from app.modules.tasks.enums import RewardLockStatus
 
-__all__ = ["RewardLockStatus", "ReviewAction", "ReviewStatus", "ValidationStatus"]
+__all__ = [
+    "FileType",
+    "RetentionPolicy",
+    "RewardLockStatus",
+    "ReviewAction",
+    "ReviewStatus",
+    "ValidationStatus",
+]
+
+
+class FileType(StrEnum):
+    """The closed upload file-type universe (spec §10/§12).
+
+    Mirrors the `tasks.allowed_file_types` CHECK member set; a Task may
+    restrict to a subset but never beyond it.
+    """
+
+    CSV = "CSV"
+    XLSX = "XLSX"
+    SQLITE = "SQLITE"
+
+
+class RetentionPolicy(StrEnum):
+    """Raw-upload retention policies (spec §13): 30/90/180 days or an
+    explicit permanent flag.
+
+    Mirrors the `tasks.retention_policy` CHECK member set; the upload
+    finalize service snapshots the Task's current policy into every
+    Submission at finalize time.
+    """
+
+    DAYS_30 = "DAYS_30"
+    DAYS_90 = "DAYS_90"
+    DAYS_180 = "DAYS_180"
+    PERMANENT = "PERMANENT"
 
 
 class ValidationStatus(StrEnum):

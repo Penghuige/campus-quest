@@ -51,6 +51,19 @@ Design decisions:
   insertable before/at submission time without ordering deadlocks).
   Consistency is kept by the service writing both rows in one transaction;
   the UNIQUE(claim_id, version) constraint is the database-side anchor.
+- `UploadIntent` (spec §10 steps 1-5, §32) is the single-use bridge
+  between the presigned URL and the Submission: it stores exactly what
+  finalize must re-verify (object_key, declared_type, declared_size) plus
+  the sanitized display filename, an `expires_at` TTL, `consumed_at`
+  (single-use marker, set by finalize whether it succeeds or burns the
+  intent on a corrupt upload), and `finalized_submission_id` (the
+  idempotent-replay pointer: replays return THAT submission, never a
+  version N+1). The coherence CHECK makes "finalized but never consumed"
+  unrepresentable; "consumed without a submission" (a burned intent) is
+  representable by design — that is the size/type-mismatch terminal
+  state whose only remedy is a fresh intent. `object_key` is UNIQUE so
+  one stored object can back at most one intent, mirroring the
+  submissions rule.
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -175,6 +188,59 @@ class Submission(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
+    )
+
+
+class UploadIntent(Base):
+    """One single-use presigned-upload grant (spec §10 steps 1-5, §32).
+
+    Lifecycle: OPEN (``consumed_at`` NULL, before ``expires_at``) ->
+    FINALIZED (consumed with ``finalized_submission_id`` set; replays
+    return that Submission) or BURNED (consumed with no submission — the
+    stored object failed finalize verification; a fresh intent is the
+    only remedy). A missing object does NOT consume: that finalize
+    failure is retryable.
+    """
+
+    __tablename__ = "upload_intents"
+    __table_args__ = (
+        CheckConstraint(
+            "declared_type IN ('CSV', 'XLSX', 'SQLITE')",
+            name="declared_type",
+        ),
+        CheckConstraint("declared_size >= 0", name="declared_size"),
+        CheckConstraint(
+            "finalized_submission_id IS NULL OR consumed_at IS NOT NULL",
+            name="finalized_implies_consumed",
+        ),
+        UniqueConstraint("object_key", name="uq_upload_intents_object_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        server_default=text("gen_random_uuid()"), primary_key=True
+    )
+    claim_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assignment_claims.id"), index=True
+    )
+    # Server-generated key (spec §10) issued by the storage port with the
+    # presigned URL; never derived from the client filename.
+    object_key: Mapped[str] = mapped_column(Text)
+    # Display-only metadata (spec §10): sanitized and capped by the
+    # upload service before storage.
+    filename: Mapped[str] = mapped_column(String(255))
+    declared_type: Mapped[str] = mapped_column(String(16))
+    declared_size: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    # Grant TTL: finalize refuses at/after this instant.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Single-use marker (spec §32): set exactly once, on success AND on
+    # the corrupt-upload burn path.
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Idempotent-replay pointer: the Submission this intent produced.
+    finalized_submission_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("submissions.id")
     )
 
 
