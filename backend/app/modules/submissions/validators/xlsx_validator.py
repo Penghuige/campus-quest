@@ -19,6 +19,18 @@ Design decisions (each pinned by a test):
   - sharedStrings part > 128 MB -> ``ARCHIVE_TOO_LARGE`` (openpyxl
     materializes that table as Python strings — measured ~4x the XML
     size — so it gets a dedicated, tighter cap);
+  - any whole-read part (content types, workbook, styles, theme,
+    rels, doc props, pivot caches — the parts openpyxl reads whole
+    and parses into objects) > 16 MB -> ``PART_TOO_LARGE``:
+    whole-read parsing amplifies ~12x (review F1 measured a
+    legitimate-looking 100 MB manifest at 1.23 GB peak / 35.8 s /
+    passed=True under every other cap), and legitimate whole-read
+    parts stay under ~1 MB even at the entry cap, so 16 MB bounds a
+    parsed part's peak at ~200 MB with an order of magnitude of
+    headroom. Peak-memory bound after this cap: the SUM of the parsed
+    whole parts (~a handful × 16 MB × ~12x) plus sharedStrings
+    (128 MB × ~4x) plus streaming row work — no single uncapped
+    materialization remains;
   - per-entry OR aggregate compression ratio > 100:1 ->
     ``SUSPICIOUS_COMPRESSION_RATIO`` (deflate's theoretical ceiling is
     ~1032:1, zeros hit ~1027:1; measured legitimate workbook XML sits
@@ -37,13 +49,16 @@ Design decisions (each pinned by a test):
   formula, never the formula). ``keep_links=False`` so external links
   are not even loaded; their mere PRESENCE (a
   ``xl/externalLinks/...`` entry) is an ``EXTERNAL_LINK`` warning —
-  nothing is ever fetched. A formula cell whose cached value is
-  missing (openpyxl's own writer, LibreOffice recalc-off, ...) reads
-  as ``None`` and is distinguishable from an absent cell: it is
+  nothing is ever fetched. A cell that is present in the sheet XML
+  but reads as ``None`` — a formula without a cached result
+  (openpyxl's own writer, LibreOffice recalc-off, ...) or a
+  styled-but-valueless cell, indistinguishable through the read-only
+  ``data_only`` API — is
   classified as NULL (null counts, NULL_VIOLATION for non-nullable
   columns) plus one ``FORMULA_WITHOUT_CACHED_VALUE`` warning per
-  affected column — the honest answer for a value we cannot know
-  without executing untrusted code.
+  affected column whose wording names both causes — the honest
+  answer for a value we cannot know without executing untrusted
+  code.
 - **Sheet selection (spec §12.2):** ``source_selector.sheet_name``
   picks that sheet (exact, case-SENSITIVE match — the schema.py
   convention); a missing sheet fails ``SHEET_NOT_FOUND`` listing the
@@ -137,6 +152,18 @@ PARSER_VERSION = "xlsx-1"
 _MAX_ARCHIVE_ENTRIES = 4096
 _MAX_TOTAL_UNCOMPRESSED = 512 * 1024 * 1024
 _MAX_SHARED_STRINGS_XML = 128 * 1024 * 1024
+#: Per-part cap for the parts openpyxl reads WHOLE and parses into
+#: objects (content types, workbook, styles, theme, rels, doc props,
+#: pivot caches — verified against openpyxl 3.1.5's reader). The
+#: largest legitimate value stays under ~1 MB even at the 4096-entry
+#: cap (a workbook.xml/styles.xml for 4096 sheets), so 16 MB leaves
+#: an order of magnitude of headroom while bounding a parsed part's
+#: materialized peak (~12x amplification measured in review F1) at
+#: ~200 MB instead of the ~6 GB the 512 MB total cap alone admitted.
+#: Worksheets stream row-by-row, sharedStrings carries its own cap,
+#: and media/drawings are never parsed in this path — those stay
+#: exempt (fix-round-1 F1).
+_MAX_WHOLE_READ_PART = 16 * 1024 * 1024
 _MAX_COMPRESSION_RATIO = 100.0
 
 #: Scan bounds.
@@ -154,6 +181,13 @@ _NO_DATA_MESSAGE = "XLSX 工作表只有表头，没有数据行"
 _EMPTY_SHEET_MESSAGE = "XLSX 工作表为空（没有任何内容）"
 _NOT_XLSX_MESSAGE = "文件不是有效的 XLSX（ZIP）归档"
 _UNPARSEABLE_MESSAGE = "工作簿无法解析（结构损坏或不是有效的 XLSX）"
+
+#: Whole-read part shapes: exact names, directory prefixes, and the
+#: rels suffix (relationship parts are looked up wherever they sit).
+_WHOLE_READ_PART_NAMES = frozenset(
+    {"[Content_Types].xml", "xl/workbook.xml", "xl/styles.xml"}
+)
+_WHOLE_READ_PART_PREFIXES = ("xl/theme/", "xl/pivotCache/", "docProps/")
 
 Source = str | os.PathLike[str] | BinaryIO
 
@@ -272,8 +306,8 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
 
     ``False`` means a fatal violation was recorded; warnings (external
     links) do not abort. First fatal violation wins, deterministic
-    order: entry count, then per-entry (name, sharedStrings size,
-    ratio), then totals (size, aggregate ratio).
+    order: entry count, then per-entry (name, whole-read part size,
+    sharedStrings size, ratio), then totals (size, aggregate ratio).
     """
     try:
         archive = zipfile.ZipFile(reader)
@@ -304,6 +338,13 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
             builder.add_error(
                 ValidationCode.SUSPICIOUS_ARCHIVE_ENTRY,
                 f"归档内条目路径可疑: {name!r}",
+            )
+            return False
+        if _is_whole_read_part(name) and info.file_size > _MAX_WHOLE_READ_PART:
+            builder.add_error(
+                ValidationCode.PART_TOO_LARGE,
+                f"归档部件 {name} 声明解压后 {info.file_size} 字节超过单部件上限"
+                f" {_MAX_WHOLE_READ_PART}（该部件会被整体读入内存）",
             )
             return False
         if name.startswith("xl/externalLinks/"):
@@ -359,6 +400,20 @@ def _is_suspicious_name(name: str) -> bool:
     if len(name) > 1 and name[1] == ":":  # Windows drive letter
         return True
     return ".." in name.replace("\\", "/").split("/")
+
+
+def _is_whole_read_part(name: str) -> bool:
+    """Is this a part openpyxl reads whole and parses into objects?
+
+    The list mirrors openpyxl 3.1.5's reader: the content-types
+    manifest, the workbook part, styles, theme, every relationship
+    part, doc properties, and pivot caches. Worksheets stream
+    row-by-row and sharedStrings has its own dedicated cap, so they
+    are deliberately absent (fix-round-1 F1).
+    """
+    if name.endswith(".rels"):
+        return True
+    return name in _WHOLE_READ_PART_NAMES or name.startswith(_WHOLE_READ_PART_PREFIXES)
 
 
 def _parse(
@@ -522,8 +577,8 @@ def _scan_sheet(
         if count:
             builder.add_warning(
                 ValidationCode.FORMULA_WITHOUT_CACHED_VALUE,
-                f"列 {name} 有 {count} 个单元格读不到值（通常是无缓存结果的"
-                "公式；系统不执行公式），已按空值处理",
+                f"列 {name} 有 {count} 个存在但读不到值的单元格（无缓存结果的"
+                "公式，或仅设置了格式的空单元格；系统不执行公式），已按空值处理",
                 column=name,
             )
     return finalize_scan(
@@ -565,11 +620,13 @@ def _count_formula_nulls(
     schema: SubmissionSchema,
     formula_nulls: dict[str, int],
 ) -> None:
-    """Per-column tally of value-bearing cells that read as None.
+    """Per-column tally of cells that are present but read as None.
 
-    A cell PRESENT in the XML whose ``data_only`` value is None is a
-    formula without a cached result (openpyxl cannot expose the
-    formula itself under ``data_only=True``); absent cells are
+    A cell PRESENT in the XML whose ``data_only`` value is None is
+    either a formula without a cached result or a cell carrying only
+    formatting — openpyxl cannot expose the formula itself under
+    ``data_only=True``, and the two are indistinguishable, which the
+    warning wording states (fix-round-1 F5). Absent cells are
     ``EmptyCell`` and stay silent nulls.
     """
     for index, cell in enumerate(cells):

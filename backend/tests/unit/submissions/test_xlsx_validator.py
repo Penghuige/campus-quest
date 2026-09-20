@@ -568,6 +568,87 @@ def test_external_links_warn_but_never_block() -> None:
     assert report.row_count == 1
 
 
+def test_whole_read_part_capped_reviewer_probe() -> None:
+    # Fix-round-1 F1 regression: the reviewer's probe — a
+    # legitimate-looking 100 MB [Content_Types].xml (4 MB compressed,
+    # 25:1 ratio, 101 MB total, every earlier cap satisfied) used to
+    # reach openpyxl, which reads the manifest whole (measured 12x
+    # amplification: 1.23 GB peak, 35.8 s, passed=True). The per-part
+    # cap rejects it in the preflight before a single part is opened.
+    import tracemalloc
+
+    data = lying_zip(
+        "[Content_Types].xml",
+        declared_size=100 * 1024 * 1024,
+        declared_compressed=4 * 1024 * 1024,
+    )
+    tracemalloc.start()
+    started = time.monotonic()
+    report = run(data)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    elapsed = time.monotonic() - started
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+    assert report.row_count == 0
+    assert peak < 32 * 1024 * 1024  # nothing was ever materialized
+    assert elapsed < 2.0
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "xl/styles.xml",
+        "xl/theme/theme1.xml",
+        "docProps/core.xml",
+        "docProps/custom.xml",
+        "xl/pivotCache/pivotCacheDefinition1.xml",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+    ],
+)
+def test_whole_read_part_family_capped(name: str) -> None:
+    # Every part openpyxl reads whole and parses into objects, one
+    # past the 16 MB per-part cap (compressed claim kept under the
+    # ratio cap so the part cap is what fires).
+    data = lying_zip(
+        name,
+        declared_size=17 * 1024 * 1024,
+        declared_compressed=1 * 1024 * 1024,
+    )
+    report = run(data)
+
+    assert error_codes(report) == {ValidationCode.PART_TOO_LARGE}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "xl/worksheets/sheet1.xml",  # streamed row-by-row, never whole
+        "xl/sharedStrings.xml",  # own dedicated 128 MB cap
+        "xl/media/image1.png",  # binary, never parsed in this path
+        "xl/drawings/drawing1.xml",  # not parsed by the read-only data path
+    ],
+)
+def test_streamed_or_untouched_families_not_part_capped(name: str) -> None:
+    # 100 MB declared from 4 MB: every cap satisfied for these
+    # families — they must NOT hit the whole-read part cap (no false
+    # positives on big streamed sheets or embedded media); the lying
+    # archive then simply fails to parse as a workbook.
+    data = lying_zip(
+        name,
+        declared_size=100 * 1024 * 1024,
+        declared_compressed=4 * 1024 * 1024,
+    )
+    report = run(data)
+
+    assert ValidationCode.PART_TOO_LARGE not in error_codes(report)
+    assert error_codes(report) == {ValidationCode.MALFORMED_XLSX}
+
+
 # --- resource bounds ---------------------------------------------------------
 
 
@@ -763,6 +844,12 @@ def test_formula_without_cached_value_is_null_plus_warning() -> None:
     assert finding.column == "title"
     warning = first_finding(report, ValidationCode.FORMULA_WITHOUT_CACHED_VALUE)
     assert warning.column == "title"
+    # F5: the wording names BOTH causes precisely — a formula without
+    # a cached result or a styled-but-valueless cell (both present as
+    # a valueless cell in the XML); neither is claimed with certainty.
+    assert "无缓存结果的公式" in warning.message
+    assert "仅设置了格式" in warning.message
+    assert "不执行公式" in warning.message
     assert report.null_ratios == {
         "url": 0.0,
         "title": 1.0,
