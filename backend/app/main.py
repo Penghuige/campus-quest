@@ -10,7 +10,16 @@ from app.core import rbac
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
-from app.modules.identity import router as identity_router
+from app.modules.identity import (
+    auth_router as identity_auth_router,
+)
+from app.modules.identity import (
+    profile_router as identity_profile_router,
+)
+from app.modules.identity import routing_common as identity_routing_common
+from app.modules.identity import (
+    staff_router as identity_staff_router,
+)
 from app.modules.identity.dependencies import get_actor
 from app.modules.tasks import router as tasks_router
 from app.workers.celery_app import get_celery_app
@@ -34,10 +43,13 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIDMiddleware)
     register_exception_handlers(app)
 
-    # Identity API: typed-exception envelope handlers first, then
-    # the router under the spec §28 prefix.
-    identity_router.register_identity_exception_handlers(app)
-    app.include_router(identity_router.router, prefix="/api/v1")
+    # Identity API: typed-exception envelope handlers first, then the
+    # auth/profile/staff routers under the spec §28 prefix (the split of
+    # the former single identity router; URL surface unchanged).
+    identity_routing_common.register_identity_exception_handlers(app)
+    app.include_router(identity_auth_router.router, prefix="/api/v1")
+    app.include_router(identity_profile_router.router, prefix="/api/v1")
+    app.include_router(identity_staff_router.router, prefix="/api/v1")
 
     # Tasks/claims API: its typed exceptions subclass BusinessError
     # (rendered by the core handler), so only the endpoint-limiter mapping

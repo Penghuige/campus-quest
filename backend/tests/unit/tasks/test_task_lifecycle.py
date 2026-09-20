@@ -30,6 +30,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
+from app.modules.tasks.commands import CreateTask, UpdateTask
 from app.modules.tasks.enums import ClaimStatus, DeadlineMode, TaskStatus
 from app.modules.tasks.models import (
     _ALLOWED_FILE_TYPES,
@@ -37,12 +38,7 @@ from app.modules.tasks.models import (
     AssignmentClaim,
     Task,
 )
-from app.modules.tasks.schemas import (
-    CreateTask,
-    PublishResult,
-    TaskPublic,
-    UpdateTask,
-)
+from app.modules.tasks.schemas import PublishResult, TaskPublic
 from app.modules.tasks.service import (
     ALLOWED_TASK_TRANSITIONS,
     SUPPORTED_FILE_TYPES,

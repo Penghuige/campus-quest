@@ -67,9 +67,10 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin, is_staff
 from app.modules.identity.events import Actor
+from app.modules.tasks.commands import CreateTask, UpdateTask
 from app.modules.tasks.enums import DeadlineMode, TaskRarity, TaskStatus, TaskType
 from app.modules.tasks.models import Task
-from app.modules.tasks.schemas import CreateTask, PublishResult, UpdateTask
+from app.modules.tasks.schemas import PublishResult
 
 # --- frozen value sets -------------------------------------------------------
 

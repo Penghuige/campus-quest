@@ -52,14 +52,16 @@ from app.modules.identity.dependencies import (
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor, InMemoryEventCollector
 from app.modules.identity.models import StudentWhitelist, User
-from app.modules.identity.router import (
-    CSRF_COOKIE_NAME,
-    CSRF_HEADER_NAME,
-    REFRESH_COOKIE_NAME,
+from app.modules.identity.providers import (
     get_email_sender,
     get_identity_redis,
     get_rate_limiter,
     get_sms_sender,
+)
+from app.modules.identity.routing_common import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    REFRESH_COOKIE_NAME,
 )
 from app.modules.identity.session_service import SessionService
 from app.modules.identity.staff_service import StaffService

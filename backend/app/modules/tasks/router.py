@@ -108,8 +108,9 @@ Other transport decisions
   anti-hammering — the business ceilings (§8.2 quota, §8.5 daily cap)
   live in the services.
 - **No CSRF obligation here.** The refresh cookie is scoped to
-  ``/api/v1/auth`` (identity router); these routes authorize purely by
-  Bearer header, so no ambient cookie authority exists to forge with.
+  ``/api/v1/auth`` (identity module's auth routes); these routes
+  authorize purely by Bearer header, so no ambient cookie authority
+  exists to forge with.
 - **Providers are the module composition root.** The Redis client is
   process-cached; services are assembled per request from injected
   clock/settings/publisher dependencies, so tests override a dependency,
@@ -159,6 +160,7 @@ from app.modules.identity.events import (
 from app.modules.tasks.abandon_service import AbandonService
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
+from app.modules.tasks.commands import CreateTask, UpdateTask
 from app.modules.tasks.importer import AssignmentImportService
 from app.modules.tasks.models import Task
 from app.modules.tasks.query_service import (
@@ -166,18 +168,18 @@ from app.modules.tasks.query_service import (
     RatingSummaryPort,
     TaskQueryService,
 )
-from app.modules.tasks.schemas import (
+from app.modules.tasks.schemas import PublishedTaskDetail
+from app.modules.tasks.service import TaskService
+from app.modules.tasks.transport_schemas import (
     ClaimRequest,
     ClaimResponse,
     CollaboratorAddRequest,
     CollaboratorResponse,
-    CreateTask,
     ImportConfirmRequest,
     ImportConfirmResponse,
     ImportPreviewResponse,
     MyClaimResponse,
     MyClaimsResponse,
-    PublishedTaskDetail,
     TaskCardResponse,
     TaskCreateRequest,
     TaskDetailResponse,
@@ -188,9 +190,7 @@ from app.modules.tasks.schemas import (
     TeacherTaskListItemResponse,
     TeacherTaskListResponse,
     TeacherTaskResponse,
-    UpdateTask,
 )
-from app.modules.tasks.service import TaskService
 
 # --- pagination bounds (the documented offset choice) ----------------------------
 
