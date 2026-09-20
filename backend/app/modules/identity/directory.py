@@ -30,7 +30,12 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.identity.repository import UserRepository
 
-__all__ = ["SqlAlchemyUserDirectory", "UserDirectory", "UserSummary"]
+__all__ = [
+    "DisplayProfile",
+    "SqlAlchemyUserDirectory",
+    "UserDirectory",
+    "UserSummary",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +46,20 @@ class UserSummary:
     username: str
     role: Role
     status: UserStatus
+
+
+@dataclass(frozen=True, slots=True)
+class DisplayProfile:
+    """The ranking-safe display facts of one account (spec §17/§40).
+
+    Exactly nickname plus the optional display-honor title: no username
+    (student number), no ids, no contact fields. The honor title stays a
+    ``None``-safe placeholder until the honors tables land (Plan 05 Task 7
+    joins ``UserHonor`` here); rankings reads never block on it.
+    """
+
+    nickname: str
+    display_honor_title: str | None = None
 
 
 @runtime_checkable
@@ -56,6 +75,10 @@ class UserDirectory(Protocol):
     ) -> UserSummary | None: ...
 
     async def get_role(self, session: AsyncSession, user_id: UUID) -> Role | None: ...
+
+    async def get_display_profile(
+        self, session: AsyncSession, user_id: UUID
+    ) -> DisplayProfile | None: ...
 
 
 def _summary(user: User) -> UserSummary:
@@ -97,3 +120,18 @@ class SqlAlchemyUserDirectory:
         """The account's role, or ``None`` when the id is unknown."""
         user = await self._users.find_by_id(session, user_id)
         return None if user is None else Role(user.role)
+
+    async def get_display_profile(
+        self, session: AsyncSession, user_id: UUID
+    ) -> DisplayProfile | None:
+        """The account's ranking display facts (spec §17: nickname + honor).
+
+        The Plan 05 Task 6 shape reads ``users.nickname`` only; the display
+        honor title arrives with the honors module (Task 7) as a join over
+        ``UserHonor`` and is ``None`` until then, so a leaderboard read
+        never blocks on a table that does not exist yet.
+        """
+        user = await self._users.find_by_id(session, user_id)
+        if user is None:
+            return None
+        return DisplayProfile(nickname=user.nickname, display_honor_title=None)

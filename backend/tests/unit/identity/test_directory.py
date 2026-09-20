@@ -21,6 +21,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.modules.identity.directory import (
+    DisplayProfile,
     SqlAlchemyUserDirectory,
     UserDirectory,
     UserSummary,
@@ -152,3 +153,39 @@ def test_unknown_lookups_return_none():
 
     assert _run(directory.find_by_username(None, "20990099999")) is None
     assert _run(directory.find_by_email(None, "nobody@school.edu")) is None
+
+
+# --- the ranking display-profile read (Plan 05 Task 6) -------------------------------
+
+
+def test_display_profile_carries_exactly_nickname_and_honor():
+    directory, _ = _make_directory([_make_user(nickname="排行榜同学")])
+
+    profile = _run(directory.get_display_profile(None, _STUDENT_ID))
+
+    assert isinstance(profile, DisplayProfile)
+    # The ranking privacy pin (spec §17/§40): display facts only — no
+    # username/student number, no contact fields, no ids.
+    assert {f.name for f in dataclasses.fields(profile)} == {
+        "nickname",
+        "display_honor_title",
+    }
+    assert profile.nickname == "排行榜同学"
+    # The honors join arrives with Plan 05 Task 7; until then the title is
+    # a None-safe placeholder so leaderboard reads never block on it.
+    assert profile.display_honor_title is None
+
+
+def test_display_profile_reads_through_find_by_id():
+    directory, stub = _make_directory([_make_user()])
+
+    profile = _run(directory.get_display_profile(None, _STUDENT_ID))
+
+    assert profile is not None
+    assert stub.calls == [_Lookup("find_by_id", _STUDENT_ID)]
+
+
+def test_display_profile_unknown_user_is_none():
+    directory, _ = _make_directory([_make_user()])
+
+    assert _run(directory.get_display_profile(None, uuid4())) is None

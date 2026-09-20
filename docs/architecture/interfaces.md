@@ -380,6 +380,10 @@ Rankings are a derived, rebuildable projection (spec §17.3; Plan 05). PostgreSQ
 - Keys: `ranking:daily:<YYYY-MM-DD>`, `ranking:monthly:<YYYY-MM>`, `ranking:all` (business timezone periods).
 - Contract: on a changed ranking-affecting ledger entry, enqueue the affected user/period and recompute that user's authoritative period score from PostgreSQL, then `ZADD` the absolute score. Never `ZINCRBY` from a retryable event; repeated projection jobs must converge, and a full Redis loss is recoverable via `rebuild_all_rankings()`.
 - Read interface: `RankingService.top(period, limit)`, `RankingService.around_me(user_id, period, radius)`.
+- Public entry shape (spec §17/§40 privacy pin): a ranking entry exposes EXACTLY `nickname`, `display_honor`, `score`, `rank`. `user_id` is internal machinery — the ZSET member and `around_me`'s lookup key — and never appears in a public DTO (no student number, phone, or email can leak through a field the shape does not have). Nickname/honor enrichment goes through `UserDirectory.get_display_profile`, never identity ORM models.
+- Period semantics (backend-engineering §11): a "day"/"month" is a BUSINESS_TIMEZONE natural day/month. Period boundaries are computed Python-side with `zoneinfo` from `settings.business_timezone` (no hardcoded hour offsets, no SQL-side tz math — the aggregation only filters UTC instant ranges), so DST and any IANA zone stay correct.
+- Trigger surface (outbox direction, Core Primitives): the ledger-writing service calls `RankingUpdateDispatcher.enqueue_ranking_update(user_id, ranking_effective_at)` AFTER its transaction commits; the projection itself is a Celery job over that port. A failed or missed enqueue is healed by `rebuild_all_rankings()`, never by compensating business writes.
+- Rebuild semantics: `rebuild_all_rankings()` recomputes every business day/month present in the ledger plus all-time from PostgreSQL and rewrites each key wholesale (`DELETE` + batched `ZADD` in one pipeline), which also evicts stale members a converged incremental update could not remove.
 
 ### Cross-module ports (module boundaries as interfaces)
 
@@ -404,15 +408,28 @@ class UserSummary:      # NO contact fields: phone/email stay inside identity
     role: Role
     status: UserStatus
 
+@dataclass(frozen=True)
+class DisplayProfile:  # ranking-safe display facts (Plan 05 Task 6)
+    nickname: str
+    display_honor_title: str | None   # None until honors land (Plan 05 Task 7)
+
 class UserDirectory(Protocol):
     async def find_by_username(self, session, username: str) -> UserSummary | None: ...
     async def find_by_email(self, session, email: str) -> UserSummary | None: ...
     async def get_role(self, session, user_id: UUID) -> Role | None: ...
+    async def get_display_profile(self, session, user_id: UUID) -> DisplayProfile | None: ...
 ```
 
 `find_by_email` normalizes its argument (strip + lowercase) exactly once;
 lookups join the caller's transaction (`session` in, answer out, no inner
 commit), same shape as the other cross-module ports.
+
+`get_display_profile` is the ranking module's enrichment read (spec §17:
+leaderboards show nickname + display honor only). It deliberately reuses
+the frozen directory rather than letting rankings import identity models.
+`display_honor_title` is `None` until the honors tables exist (Plan 05
+Task 7); the Plan 05 Task 6 adapter reads `users.nickname` only, so the
+column is a placeholder that never blocks a leaderboard read.
 
 Locking-read seam: `UserDirectory` will gain a documented locking read
 (e.g. `lock_user_status(session, user_id) FOR UPDATE`) when a new module

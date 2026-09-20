@@ -41,6 +41,8 @@ from app.core.config import Settings, get_settings
 JOB_MODULES = (
     "app.workers.jobs.health",
     "app.workers.jobs.validate_submission",
+    "app.workers.jobs.rebuild_rankings",
+    "app.workers.jobs.project_ranking_update",
 )
 
 
