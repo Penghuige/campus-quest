@@ -1,0 +1,88 @@
+# Local development dependency stack for CampusQuest.
+#
+#   Up:     docker compose -f infra/docker-compose.yml up -d
+#   Status: docker compose -f infra/docker-compose.yml ps
+#   Down:   docker compose -f infra/docker-compose.yml down
+#
+# Published host ports: PostgreSQL 15432, Redis 6379, MinIO API 9000,
+# MinIO console 9001. Application-level settings that point at this stack are
+# documented in infra/env.example.
+#
+# MinIO images come from the MinIO organization on quay.io: Docker Hub now
+# restricts anonymous pulls of third-party namespaces (minio/*), while the
+# quay.io registry stays anonymously pullable.
+#
+# Dev-only credential defaults are inlined below; real environment variables
+# (POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD) win over them.
+
+name: campusquest
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: campusquest
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-campusquest-dev}
+      POSTGRES_DB: campusquest
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 fails during the initdb phase, whose temporary server
+      # listens on the unix socket only, so healthy means the final server.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    # Persistence disabled: local cache and queue data is disposable.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mc alias set campusquest http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing campusquest/campusquest
+        mc mb --ignore-existing campusquest/campusquest-test
+
+volumes:
+  postgres-data:
+  minio-data:

@@ -269,6 +269,7 @@ git commit -m "feat: administer account status and management network policy"
 
 **Interfaces:**
 - Produces paginated admin/teacher endpoints for whitelist, users, reward catalog, redemption queue, audit search, failed notifications, system settings, identity reveal, and named repair commands.
+- Includes `POST /api/v1/staff/invitations` (Admin-guarded, rate-limited), backed by the existing `create_staff_invitation` service from Plan 02 — do not re-implement staff invitation logic.
 
 - [ ] **Step 1: Write direct-URL privilege tests**
 
