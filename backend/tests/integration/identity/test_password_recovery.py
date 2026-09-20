@@ -52,10 +52,7 @@ from app.modules.identity.otp import (
     UnknownChallengeError,
     WrongCodeError,
 )
-from app.modules.identity.profile_service import (
-    PasswordResetNotAllowedError,
-    ProfileService,
-)
+from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.session_service import SessionService
 from tests.fakes.integrations import FakeSmsSender
 
@@ -296,22 +293,83 @@ async def test_decoy_challenge_ttl_derives_from_otp_policy(
 
 
 @pytest.mark.integration
-async def test_reset_request_rejects_staff_accounts(
+@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
+async def test_reset_request_staff_accounts_get_the_identical_decoy(
+    db_session: AsyncSession,
+    recovery_redis: aioredis.Redis,
+    clock: FrozenClock,
+    sms: FakeSmsSender,
+    role: Role,
+) -> None:
+    # PR review fix (staff enumeration oracle): a STAFF identifier must draw
+    # the identical decoy ChallengePublic an unknown username draws — same
+    # shape, same OtpPolicy-derived TTL, no SMS. A distinct branch (typed
+    # error, different status) would enumerate staff usernames. Staff
+    # recovery is a future admin workflow (Plan 08), never this endpoint.
+    student = await _seed_student(db_session)
+    # Distinct bound phone: even a phone-BINDABLE staff identifier draws the
+    # decoy (the branch is the role check, not phone availability).
+    await _seed_student(
+        db_session, username=_STAFF_USERNAME, role=role, phone="+8613700136001"
+    )
+    service, _ = _make_services(recovery_redis, clock, sms)
+
+    known = await service.request_password_reset(
+        db_session, _USERNAME, client_ip=_CLIENT_IP
+    )
+    staff = await service.request_password_reset(
+        db_session, _STAFF_USERNAME, client_ip=_CLIENT_IP
+    )
+    unknown = await service.request_password_reset(
+        db_session, "20990099999", client_ip=_CLIENT_IP
+    )
+
+    assert isinstance(known, ChallengePublic)
+    for decoy in (staff, unknown):
+        assert isinstance(decoy, ChallengePublic)
+        assert decoy.challenge_id != known.challenge_id  # fresh random id
+        # Byte-for-byte the real response's expiry shape (same policy TTL).
+        assert decoy.expires_at == known.expires_at == _T0 + _CHALLENGE_TTL
+    # Only the student's bound phone received a code.
+    assert len(sms.messages) == 1
+    assert sms.messages[0].to == student.phone_e164
+
+
+@pytest.mark.integration
+async def test_staff_identifier_cannot_complete_reset_even_with_a_real_challenge(
     db_session: AsyncSession,
     recovery_redis: aioredis.Redis,
     clock: FrozenClock,
     sms: FakeSmsSender,
 ) -> None:
-    # Staff do not use the student phone-reset path: a typed error the
-    # router maps (staff recovery is an admin flow, out of V1 scope).
-    await _seed_student(db_session, username=_STAFF_USERNAME, role=Role.TEACHER)
+    # The confirm path is the real fence: even a genuinely verified
+    # PASSWORD_RESET OTP for the staff member's OWN bound phone (minted
+    # directly through the OTP service, i.e. stronger than anything the
+    # public flow hands out for a staff identifier) cannot complete a reset
+    # — the phone resolves to a non-STUDENT account and the answer is the
+    # uniform InvalidTokenError. The decoy challenge id from the reset
+    # request fails as any unknown challenge.
+    staff = await _seed_student(db_session, username=_STAFF_USERNAME, role=Role.TEACHER)
     service, _ = _make_services(recovery_redis, clock, sms)
 
-    with pytest.raises(PasswordResetNotAllowedError):
-        await service.request_password_reset(
-            db_session, _STAFF_USERNAME, client_ip=_CLIENT_IP
+    decoy = await service.request_password_reset(
+        db_session, _STAFF_USERNAME, client_ip=_CLIENT_IP
+    )
+    with pytest.raises(UnknownChallengeError):
+        await service.confirm_password_reset(
+            db_session, decoy.challenge_id, "123456", _NEW_PASSWORD
         )
-    assert sms.messages == []
+
+    forged = await _otp_service(recovery_redis, clock, sms).request_phone_challenge(
+        _PHONE, OtpPurpose.PASSWORD_RESET, client_ip=_CLIENT_IP
+    )
+    with pytest.raises(InvalidTokenError):
+        await service.confirm_password_reset(
+            db_session, forged.challenge_id, _sms_code(sms), _NEW_PASSWORD
+        )
+
+    persisted = await _reload_user(db_session, staff.id)
+    assert verify_password(_PASSWORD, persisted.password_hash)
 
 
 @pytest.mark.integration

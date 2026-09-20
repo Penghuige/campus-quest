@@ -38,7 +38,7 @@ from typing import Protocol
 import redis.asyncio as aioredis
 
 from app.core.clock import Clock
-from app.integrations.masking import mask_email, mask_phone
+from app.integrations.masking import mask_email, mask_phone, mask_student_number
 
 logger = logging.getLogger(__name__)
 
@@ -141,15 +141,21 @@ class RedisFixedWindowLimiter:
 
 
 def _masked_identifier(identifier: str) -> str:
-    """Mask an identifier when it is contact data (spec §5.4/§40).
+    """Mask an identifier when it is contact data or a student number.
 
     OTP-send/phone-change identifiers are E.164 phones, email-verify and
-    staff-login identifiers are emails — both are masked in logs with the
-    shared adapter forms. Usernames/student numbers are not contact data
-    and stay exact (they are also the support lookup key).
+    staff-login identifiers are emails — both masked with the shared
+    adapter forms. Digit-only identifiers (login usernames, registration
+    and password-reset student numbers) take the student-number mask:
+    student numbers ARE the students' login usernames (spec §5.2), so they
+    are log-sensitive even though they are not contact data. Other
+    identifiers (non-digit usernames, staff emails are already covered
+    above) stay exact.
     """
     if identifier.startswith("+"):
         return mask_phone(identifier)
     if "@" in identifier:
         return mask_email(identifier)
+    if identifier.isdigit():
+        return mask_student_number(identifier)
     return identifier

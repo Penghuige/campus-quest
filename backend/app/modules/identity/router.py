@@ -10,23 +10,26 @@ the public DTO — and owns no persistence logic (§3). The heavier design
 decisions live here:
 
 - **Typed-exception mapping, registered once.** The services raise typed
-  module exceptions (``otp``'s taxonomy, ``TotpSetupRequiredError``,
-  ``PasswordResetNotAllowedError``, the email errors) because the §29
-  registry had no codes when they landed. This module registers one
-  FastAPI exception handler per type, rendering the frozen envelope with
-  the doc-first codes registered in docs/architecture/interfaces.md
+  module exceptions (``otp``'s taxonomy, ``TotpSetupRequiredError``, the
+  email errors) because the §29 registry had no codes when they landed.
+  This module registers one FastAPI exception handler per type, rendering
+  the frozen envelope with the doc-first codes registered in
+  docs/architecture/interfaces.md
   ("Identity typed-exception mapping"). Routes never translate errors.
 - **Refresh token cookie + CSRF double-submit.** Login/rotation set the
   refresh token as an HttpOnly + Secure + SameSite=Lax cookie scoped to
   the auth paths (spec §5.6 推荐), together with a NON-HttpOnly CSRF
   cookie carrying an independent secure random token. Cookie-authenticated
   mutations (refresh, logout) must echo that token in ``X-CSRF-Token``;
-  the comparison is constant-time. Non-browser clients send the refresh
-  token in the body instead and never receive the CSRF obligation — the
-  dependency only engages when the refresh cookie is present, so a
-  body-token request carries no ambient cookie authority to forge.
-  ``TokenPairResponse.csrf_token`` mirrors the cookie so scripted clients
-  need not parse ``Set-Cookie``.
+  the comparison is constant-time. A non-browser client that captured the
+  cookie value may send the refresh token in the body instead and never
+  receives the CSRF obligation — the dependency only engages when the
+  refresh cookie is present, so a body-token request carries no ambient
+  cookie authority to forge. DELIVERY is cookie-only (PR review fix):
+  ``TokenPairResponse`` carries the short-lived access token plus the
+  ``csrf_token`` mirror of the readable cookie — never the refresh token.
+  The V1 client is the cookie-using Next.js PWA; a deliberate token-client
+  contract can be added later if one is ever needed.
 - **Endpoint rate limiting (spec §33.1).** login / staff-login / register
   / OTP-send / email-verify / phone-change / password-reset check the
   ``RateLimiter`` port with NORMALIZED identifiers (stripped+lowercased
@@ -118,10 +121,7 @@ from app.modules.identity.otp import (
     WrongCodeError,
     normalize_phone,
 )
-from app.modules.identity.profile_service import (
-    PasswordResetNotAllowedError,
-    ProfileService,
-)
+from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.schemas import (
     ChallengeResponse,
     EmailBindRequest,
@@ -239,9 +239,13 @@ def _token_pair_response(
     response: Response, tokens: SessionTokens, settings: Settings
 ) -> TokenPairResponse:
     csrf_token = _issue_session_cookies(response, tokens, settings)
+    # Cookie-only refresh delivery (PR review fix): the long-lived refresh
+    # token travels exclusively in the HttpOnly Set-Cookie header, never in
+    # the JSON body. The body's access token is short-lived and bears no
+    # refresh capability, so it is not the credential an XSS-leaked body
+    # would prize.
     return TokenPairResponse(
         access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
         csrf_token=csrf_token,
     )
 
@@ -268,7 +272,6 @@ def _client_ip(request: Request) -> str:
 
 _TYPED_EXCEPTION_CODES: tuple[tuple[type[Exception], int, ErrorCode], ...] = (
     (TotpSetupRequiredError, 403, ErrorCode.TOTP_SETUP_REQUIRED),
-    (PasswordResetNotAllowedError, 403, ErrorCode.PASSWORD_RESET_NOT_ALLOWED),
     (EmailAlreadyBoundError, 409, ErrorCode.EMAIL_ALREADY_BOUND),
     (InvalidEmailTokenError, 400, ErrorCode.INVALID_EMAIL_TOKEN),
     (InvalidPhoneError, 400, ErrorCode.VALIDATION_ERROR),
@@ -614,7 +617,12 @@ async def request_password_reset(
     limiter: LimiterDep,
     db: DbSession,
 ) -> ChallengeResponse:
-    """Send a reset OTP to the bound phone — uniformly, known user or not."""
+    """Reset OTP to the bound phone — uniformly for EVERY identifier class.
+
+    Known student, unknown username, staff account, phoneless student: the
+    response is the identical challenge shape either way (no enumeration
+    oracle; see ProfileService.request_password_reset).
+    """
     await _enforce_rate_limit(
         limiter, "auth:password-reset", body.username.strip().lower()
     )

@@ -31,15 +31,17 @@ Design decisions:
   user received for registration can never authorize a phone swap or a
   password reset (the token carries the purpose since this task).
 - **Password reset is phone-factor only and enumeration-free.** Only
-  STUDENT accounts use it — staff get `PasswordResetNotAllowedError`
-  (their recovery is an admin flow, out of V1 scope). An UNKNOWN username
-  — or a student row without a bound phone — returns a decoy
-  `ChallengePublic` (fresh uuid, the same TTL window) instead of an error:
+  STUDENT accounts can complete it — the confirm step resolves the OTP to a
+  phone and requires a STUDENT account still bound to it, so a staff
+  identifier never resets anything even with a genuinely verified OTP for
+  its own phone. The REQUEST side answers every identifier class — unknown
+  username, STAFF account, student row without a bound phone — with a decoy
+  `ChallengePublic` (fresh uuid, the same `OtpPolicy`-derived TTL window):
   the response shape is byte-for-byte what a real request returns, no SMS
   goes out, and confirming against the decoy fails exactly like any other
-  unknown challenge (`UnknownChallengeError`). Response CONTENT is
-  uniform; wall-clock timing of the SMS send is inherently observable and
-  is not claimed.
+  unknown challenge (`UnknownChallengeError`). Staff recovery is a future
+  admin workflow (Plan 08). Response CONTENT is uniform; wall-clock timing
+  of the SMS send is inherently observable and is not claimed.
 - **Band validation never burns a single-use proof** (the registration
   ordering principle): `confirm_password_reset` checks the 10-128 band
   BEFORE touching the OTP, so a rejected new password leaves the challenge
@@ -58,9 +60,11 @@ Design decisions:
 
 Error taxonomy: `BusinessError` with frozen-registry codes
 (`VALIDATION_ERROR`, `AUTHENTICATION_REQUIRED`, `PHONE_ALREADY_BOUND`);
-OTP lifecycle errors propagate as `otp`'s typed module exceptions;
-`PasswordResetNotAllowedError` is a module-level typed exception (no
-registry code exists — T9 maps it doc-first, like `TotpSetupRequiredError`).
+OTP lifecycle errors propagate as `otp`'s typed module exceptions. The
+former `PasswordResetNotAllowedError` is gone (PR review fix): the staff
+reset-request branch now answers with the same decoy as every other
+non-usable identifier, so no distinct typed error — and no registry code —
+exists for it.
 """
 
 from __future__ import annotations
@@ -103,15 +107,6 @@ _PHONE_UNIQUE_CONSTRAINT = "uq_users_phone_e164"
 _VALIDATION_MESSAGE = "资料修改校验失败"
 _AUTHENTICATION_MESSAGE = "密码错误或登录状态已失效"
 _PHONE_ALREADY_BOUND_MESSAGE = "该手机号已绑定其他账号"
-
-
-class PasswordResetNotAllowedError(Exception):
-    """Phone-factor password reset attempted by a non-student account.
-
-    Staff (TEACHER/ADMIN) do not use the student phone-reset path; T9 maps
-    this typed exception to its doc-first envelope response, the same way
-    `TotpSetupRequiredError` is handled.
-    """
 
 
 class ProfileService:
@@ -246,11 +241,16 @@ class ProfileService:
     ) -> ChallengePublic:
         """Issue a PASSWORD_RESET OTP to the account's BOUND phone (§5.6).
 
-        Students only; staff raise `PasswordResetNotAllowedError`. Unknown
-        usernames — and student rows without a bound phone — return a decoy
-        challenge with the same expiry window and no SMS, so the response
-        cannot enumerate accounts (see the module docstring for the timing
-        caveat). Status is deliberately NOT checked: a SUSPENDED student
+        Enumeration-free on EVERY branch (PR review fix): an unknown
+        username, a STAFF account, and a student without a usable bound
+        phone all return the identical decoy challenge — same shape, same
+        `OtpPolicy`-derived TTL, no SMS — exactly what a real request
+        returns, so no response distinction can reveal that a username
+        belongs to staff (or to anyone at all). Staff accounts can never
+        complete the student reset flow: `confirm_password_reset` resolves
+        the OTP to a phone and requires a STUDENT account still bound to it.
+        Staff recovery is a future admin workflow (Plan 08), never this
+        endpoint. Status is deliberately NOT checked: a SUSPENDED student
         may rotate the password, and login still refuses the account — the
         reset neither leaks status nor bypasses it.
         """
@@ -258,10 +258,12 @@ class ProfileService:
         if user is None:
             return self._decoy_challenge()
         if user.role != Role.STUDENT:
+            # Uniform decoy, not a typed rejection: a distinct branch here
+            # was a staff-username enumeration oracle.
             logger.info(
-                "password reset rejected user_id=%s reason=not_student", user.id
+                "password reset decoy served user_id=%s reason=not_student", user.id
             )
-            raise PasswordResetNotAllowedError("员工账号不支持手机号找回密码")
+            return self._decoy_challenge()
         if user.phone_e164 is None:
             # Unreachable through registration (accounts are born with a
             # verified phone); fail uniform rather than revealing state.

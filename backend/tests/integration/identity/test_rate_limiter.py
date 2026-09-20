@@ -22,7 +22,7 @@ import redis.asyncio as aioredis
 
 from app.core.clock import FrozenClock
 from app.core.config import get_settings
-from app.integrations.masking import mask_email, mask_phone
+from app.integrations.masking import mask_email, mask_phone, mask_student_number
 from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
@@ -140,28 +140,31 @@ async def test_exceeded_log_masks_contact_identifiers(
 ) -> None:
     # Spec §5.4/§40: contact info in logs is masked. The 429 branch logs the
     # rate-limit identifier, which for otp-send/phone-change is a full E.164
-    # phone and for email-verify a full email — the log must carry the same
-    # masked forms the interim SMS/Email adapters established.
+    # phone, for email-verify a full email, and for login/register/forgot a
+    # full STUDENT NUMBER (PR review fix: student numbers are log-sensitive —
+    # they are the students' login usernames, spec §5.2) — the log must carry
+    # only the shared masked forms.
     limiter = RedisFixedWindowLimiter(redis=limiter_redis, clock=clock)
+    student_number = "20250010001"
 
     with caplog.at_level(logging.INFO, logger="app.integrations.rate_limit"):
-        await limiter.check(
-            bucket="auth:otp-send", identifier=_PHONE, limit=1, window_seconds=300
-        )
-        with contextlib.suppress(RateLimitExceededError):
+        for bucket, identifier in (
+            ("auth:otp-send", _PHONE),
+            ("me:email-verify", _EMAIL),
+            ("auth:login", student_number),
+        ):
             await limiter.check(
-                bucket="auth:otp-send", identifier=_PHONE, limit=1, window_seconds=300
+                bucket=bucket, identifier=identifier, limit=1, window_seconds=300
             )
-        await limiter.check(
-            bucket="me:email-verify", identifier=_EMAIL, limit=1, window_seconds=300
-        )
-        with contextlib.suppress(RateLimitExceededError):
-            await limiter.check(
-                bucket="me:email-verify", identifier=_EMAIL, limit=1, window_seconds=300
-            )
+            with contextlib.suppress(RateLimitExceededError):
+                await limiter.check(
+                    bucket=bucket, identifier=identifier, limit=1, window_seconds=300
+                )
 
     messages = [record.getMessage() for record in caplog.records]
     assert any(mask_phone(_PHONE) in message for message in messages)
     assert any(mask_email(_EMAIL) in message for message in messages)
+    assert any(mask_student_number(student_number) in message for message in messages)
     assert not any(_PHONE in message for message in messages)
     assert not any(_EMAIL in message for message in messages)
+    assert not any(student_number in message for message in messages)

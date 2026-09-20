@@ -257,7 +257,6 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `REDEMPTION_LIMIT_REACHED` | §29 |
 | `RATING_NOT_ELIGIBLE` | §29 |
 | `TOTP_SETUP_REQUIRED` | §5.8, §33.4 |
-| `PASSWORD_RESET_NOT_ALLOWED` | §5.6 |
 | `EMAIL_ALREADY_BOUND` | §5.5 |
 | `INVALID_EMAIL_TOKEN` | §5.5 |
 | `OTP_CODE_INVALID` | §33.2 |
@@ -281,7 +280,6 @@ never shared, never reinterpreted):
 | Typed exception (module) | Envelope code | HTTP |
 | --- | --- | --- |
 | `staff_service.TotpSetupRequiredError` | `TOTP_SETUP_REQUIRED` | 403 |
-| `profile_service.PasswordResetNotAllowedError` | `PASSWORD_RESET_NOT_ALLOWED` | 403 |
 | `email_verification.EmailAlreadyBoundError` | `EMAIL_ALREADY_BOUND` | 409 |
 | `email_verification.InvalidEmailTokenError` | `INVALID_EMAIL_TOKEN` | 400 |
 | `otp.InvalidPhoneError` | `VALIDATION_ERROR` | 400 |

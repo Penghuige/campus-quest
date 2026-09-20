@@ -276,10 +276,14 @@ async def test_student_flow_whitelist_otp_register_login_me(
     )
     assert logged_in.status_code == 200, logged_in.text
     session = logged_in.json()
-    assert set(session) == {"access_token", "refresh_token", "csrf_token", "token_type"}
+    # PR review fix: the long-lived refresh token is cookie-only V1 — the
+    # body carries the short-lived access token, the CSRF echo material,
+    # and the token type, nothing else.
+    assert set(session) == {"access_token", "csrf_token", "token_type"}
 
     # Cookie flags (spec §5.6/§33.1): HttpOnly refresh, readable CSRF, both
     # Secure + SameSite=Lax; the refresh cookie is scoped to the auth paths.
+    refresh_token = _cookie_value(logged_in, REFRESH_COOKIE_NAME)
     refresh_cookie = _cookie_header(logged_in, REFRESH_COOKIE_NAME).lower()
     assert "httponly" in refresh_cookie
     assert "secure" in refresh_cookie
@@ -298,13 +302,18 @@ async def test_student_flow_whitelist_otp_register_login_me(
     assert me.json()["nickname"] == _NICKNAME
 
     # No response anywhere in the flow carries secret material: the Argon2id
-    # verifier, the OTP code, the refresh-token digest, or a TOTP secret.
+    # verifier, the OTP code, the refresh-token digest, or a TOTP secret —
+    # and no response BODY ever carries the refresh token itself or any
+    # refresh-shaped token (cookie-only V1; it travels exclusively in the
+    # HttpOnly Set-Cookie header).
     forbidden = (
         "password_hash",
         "$argon2",
-        hash_refresh_token(session["refresh_token"]),
+        refresh_token,
+        hash_refresh_token(refresh_token),
         f'"{code}"',
         "secret_encrypted",
+        "refresh_token",
     )
     for response in (challenged, verified, registered, logged_in, me):
         for material in forbidden:
@@ -411,14 +420,23 @@ async def test_body_refresh_token_needs_no_csrf(
 ) -> None:
     # Non-cookie clients carry no ambient browser credential, so the CSRF
     # dependency must stay disengaged (no cookies on the request at all).
+    # Cookie-only V1: the client reads its refresh token from the Set-Cookie
+    # header value (the body no longer carries one) and presents it in the
+    # request body.
     await _seed_student(db_session)
-    session = await _login(client)
+    login_response = await client.post(
+        "/api/v1/auth/login", json={"username": _STUDENT, "password": _PASSWORD}
+    )
+    assert login_response.status_code == 200, login_response.text
+    refresh_token = _cookie_value(login_response, REFRESH_COOKIE_NAME)
 
     refreshed = await client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": session["refresh_token"]}
+        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
     )
     assert refreshed.status_code == 200, refreshed.text
-    assert refreshed.json()["access_token"] != session["access_token"]
+    assert refreshed.json()["access_token"] != login_response.json()["access_token"]
+    # Rotation responses are cookie-only too.
+    assert set(refreshed.json()) == {"access_token", "csrf_token", "token_type"}
 
 
 @pytest.mark.integration
@@ -746,10 +764,14 @@ async def test_unauthenticated_me_is_rejected(
 
 
 @pytest.mark.integration
-async def test_password_forgot_is_uniform_and_rejects_staff(
+async def test_password_forgot_is_uniform_for_every_identifier_class(
     db_session: AsyncSession,
     client: httpx.AsyncClient,
 ) -> None:
+    # PR review fix (staff enumeration oracle): a known student, an unknown
+    # username, and a STAFF account all draw the identical decoy-shaped 200 —
+    # no branch, code, or timing-visible status difference may reveal that a
+    # username belongs to staff. Staff recovery is a future admin workflow.
     await _seed_student(db_session)
     teacher = User(
         username="t-teacher@pku.edu.cn",
@@ -767,19 +789,21 @@ async def test_password_forgot_is_uniform_and_rejects_staff(
     unknown = await client.post(
         "/api/v1/auth/password/forgot", json={"username": "20990099999"}
     )
-    assert known.status_code == unknown.status_code == 200
+    staff_reset = await client.post(
+        "/api/v1/auth/password/forgot", json={"username": teacher.username}
+    )
+    assert known.status_code == unknown.status_code == staff_reset.status_code == 200
     assert (
         set(known.json())
         == set(unknown.json())
+        == set(staff_reset.json())
         == {
             "challenge_id",
             "expires_at",
         }
     )
-    assert known.json()["expires_at"] == unknown.json()["expires_at"]
-
-    staff_reset = await client.post(
-        "/api/v1/auth/password/forgot", json={"username": teacher.username}
+    assert (
+        known.json()["expires_at"]
+        == unknown.json()["expires_at"]
+        == staff_reset.json()["expires_at"]
     )
-    assert staff_reset.status_code == 403
-    assert _envelope(staff_reset)["code"] == "PASSWORD_RESET_NOT_ALLOWED"

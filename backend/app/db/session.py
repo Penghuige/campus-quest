@@ -61,19 +61,18 @@ def __getattr__(name: str) -> AsyncEngine | async_sessionmaker[AsyncSession]:
 
 
 async def get_db_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency yielding one session per request.
+    """FastAPI dependency yielding one session per request — never commits.
 
-    Commit on success, rollback on error, close in every case. Transaction
-    ownership stays with services and use cases (§5): they may commit inside
-    the request, and the final commit of an already-completed or empty
-    transaction is a no-op.
+    Transaction ownership stays with services and use cases exclusively
+    (backend-engineering §5): every state-changing service commits its own
+    transaction. This dependency only cleans up: the rollback discards any
+    transaction still open on the session (a no-op after a service commit
+    or on an untouched session, and the safety net for a forgotten one),
+    and the close returns the connection in every case, error or not.
     """
     session = get_async_session_maker()()
     try:
         yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
     finally:
+        await session.rollback()
         await session.close()

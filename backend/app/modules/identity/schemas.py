@@ -244,16 +244,20 @@ class PhoneTokenResponse(BaseModel):
 
 
 class TokenPairResponse(BaseModel):
-    """One issued session (spec §5.6).
+    """One issued session (spec §5.6) — cookie-only refresh delivery.
 
-    ``refresh_token`` is present for non-cookie clients (mobile); web
-    clients are expected to ignore it in favor of the HttpOnly refresh
-    cookie set on the same response. ``csrf_token`` mirrors the non-HttpOnly
-    CSRF cookie so scripted clients can echo it without parsing cookies.
+    The long-lived refresh token NEVER rides in the body (PR review fix):
+    it travels exclusively in the HttpOnly refresh cookie the response
+    sets, so a JSON body (loggers, proxies, XSS-readable storage) can
+    never leak a live refresh credential. The body's ``access_token`` is
+    the short-lived JWT — including the ``must_setup_totp`` pending staff
+    session's, which is deliberate: it is not the long-lived credential
+    and confined-by-construction to the TOTP setup endpoints.
+    ``csrf_token`` mirrors the non-HttpOnly CSRF cookie so scripted
+    clients can echo it without parsing ``Set-Cookie``.
     """
 
     access_token: str
-    refresh_token: str
     csrf_token: str
     token_type: str = "bearer"
 

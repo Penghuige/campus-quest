@@ -51,7 +51,6 @@ FROZEN_BUSINESS_CODES = (
     # identity typed-exception codes (spec §5.5, §5.6, §5.8; §33.1, §33.2,
     # §33.4) surfaced by the identity API routes.
     "TOTP_SETUP_REQUIRED",
-    "PASSWORD_RESET_NOT_ALLOWED",
     "EMAIL_ALREADY_BOUND",
     "INVALID_EMAIL_TOKEN",
     "OTP_CODE_INVALID",

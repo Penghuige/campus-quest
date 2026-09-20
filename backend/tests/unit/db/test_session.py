@@ -79,9 +79,13 @@ async def test_get_async_session_maker_binds_cached_engine_without_expiry(
         _reset_caches()
 
 
-async def test_get_db_session_commits_and_closes_on_success(
+async def test_get_db_session_never_commits_on_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Single transaction owner (backend-engineering §5): the dependency must
+    # not commit — services and use cases own commits exclusively. Teardown
+    # rolls back any open transaction (a no-op on a clean or committed
+    # session) and closes; an uncommitted mutation is discarded here.
     stub = _RecordingSession()
     monkeypatch.setattr(
         db_session_module, "get_async_session_maker", lambda: lambda: stub
@@ -93,7 +97,7 @@ async def test_get_db_session_commits_and_closes_on_success(
     with pytest.raises(StopAsyncIteration):
         await generator.__anext__()
 
-    assert stub.calls == ["commit", "close"]
+    assert stub.calls == ["rollback", "close"]
 
 
 async def test_get_db_session_rolls_back_and_closes_on_error(

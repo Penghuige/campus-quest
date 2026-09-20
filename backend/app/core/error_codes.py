@@ -59,7 +59,6 @@ class ErrorCode(StrEnum):
     # "Identity typed-exception mapping" table; spec §5.5, §5.6, §5.8, §33.1,
     # §33.2, §33.4). Each maps one typed identity exception to one code.
     TOTP_SETUP_REQUIRED = "TOTP_SETUP_REQUIRED"
-    PASSWORD_RESET_NOT_ALLOWED = "PASSWORD_RESET_NOT_ALLOWED"
     EMAIL_ALREADY_BOUND = "EMAIL_ALREADY_BOUND"
     INVALID_EMAIL_TOKEN = "INVALID_EMAIL_TOKEN"
     OTP_CODE_INVALID = "OTP_CODE_INVALID"
