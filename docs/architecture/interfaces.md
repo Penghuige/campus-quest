@@ -346,19 +346,35 @@ Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original fil
 
 ```python
 class SmsSender(Protocol):
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None: ...
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None: ...
 ```
 
-Fake: `FakeSmsSender` records `SentSms(to, template, variables)` for exact-delivery assertions.
+`idempotency_key` (optional) lets a provider collapse repeated sends onto one message: notification delivery always passes `"{event_key}:{channel}:{user_id}"` (spec §25.3) so an `UnknownOutcomeError` retry — whose first attempt may have succeeded — cannot double-send; single-shot callers (identity OTP) omit it.
+
+Fake: `FakeSmsSender` records `SentSms(to, template, variables, idempotency_key=None)` for exact-delivery assertions.
 
 ### Email
 
 ```python
 class EmailSender(Protocol):
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None: ...
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None: ...
 ```
 
-Fake: `FakeEmailSender`, same recording contract as SMS.
+Fake: `FakeEmailSender`, same recording contract as SMS (including `idempotency_key`).
 
 ### Ranking projection
 

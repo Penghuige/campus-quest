@@ -158,7 +158,13 @@ def test_worker_cli_style_load_registers_health_job(
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip().splitlines()[-1] == "TASKS=workers.health_job"
+    # Every JOB_MODULES entry must appear: a job module that only
+    # registers via in-process import would be invisible to a real
+    # worker startup.
+    assert (
+        completed.stdout.strip().splitlines()[-1]
+        == "TASKS=workers.health_job,workers.send_notification_delivery"
+    )
 
 
 def test_eager_execution_needs_no_live_broker(

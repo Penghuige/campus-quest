@@ -97,11 +97,23 @@ class FakeSmsSender(_FailureProgrammable):
         self.messages: list[SentSms] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         # Snapshot so later caller-side mutation cannot rewrite history.
         self.messages.append(
-            SentSms(to=to, template=template, variables=dict(variables))
+            SentSms(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 
@@ -112,10 +124,22 @@ class FakeEmailSender(_FailureProgrammable):
         self.messages: list[SentEmail] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         self.messages.append(
-            SentEmail(to=to, template=template, variables=dict(variables))
+            SentEmail(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 

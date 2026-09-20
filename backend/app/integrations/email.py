@@ -29,17 +29,30 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SentEmail:
-    """One accepted email send, exactly as the fake records it."""
+    """One accepted email send, exactly as the fake records it.
+
+    `idempotency_key` is None for callers that send single-shot (the
+    identity verification flow); notification delivery always passes
+    one.
+    """
 
     to: str
     template: str
     variables: Mapping[str, Any]
+    idempotency_key: str | None = None
 
 
 class EmailSender(Protocol):
     """Port for sending templated emails."""
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         """Send one templated email.
 
         Args:
@@ -50,6 +63,11 @@ class EmailSender(Protocol):
                 centrally managed templates, never passed inline.
             variables: Render inputs for the template; values must be
                 JSON-serializable.
+            idempotency_key: Optional dedupe key the provider can collapse
+                repeated sends onto (notification delivery passes
+                `"{event_key}:{channel}:{user_id}"` so an
+                UnknownOutcomeError retry cannot double-send, spec
+                §25.3). Single-shot callers omit it.
 
         Raises:
             TemporaryProviderError: transient failure; bounded retry safe.
@@ -66,9 +84,17 @@ class LoggingEmailSender:
     it ships real provider adapters. Deliberately never raises.
     """
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         logger.info(
-            "email send (interim logging adapter) to=%s template=%s",
+            "email send (interim logging adapter) to=%s template=%s idempotency_key=%s",
             mask_email(to),
             template,
+            idempotency_key,
         )
