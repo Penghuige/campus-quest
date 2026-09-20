@@ -108,7 +108,12 @@ def _default_session_source() -> Any:
 
     A fresh event loop per ``asyncio.run`` cannot safely reuse a
     process-wide engine's pooled connections, so the default source
-    builds a private engine and tears it down in a finally.
+    builds a private engine and tears it down in a finally. Returns the
+    session-source CALLABLE (the same shape an injected factory has —
+    see ``_session_ctx`` in the integration tests): the job invokes
+    ``session_source()`` inside its ``asyncio.run``, so returning the
+    context-manager instance itself would crash that production-only
+    call path while injected-fake tests never notice.
     """
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -126,7 +131,7 @@ def _default_session_source() -> Any:
         finally:
             await engine.dispose()
 
-    return _session()
+    return _session
 
 
 def _sandbox_from_settings(settings: Settings) -> ValidatorSandbox:

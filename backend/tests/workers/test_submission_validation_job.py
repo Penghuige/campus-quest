@@ -4,7 +4,8 @@
 §33.3, §37.3; backend-engineering §12 worker rules, §14 file
 processing; plan 04 task 7).
 
-Two layers live here, both database-free:
+Two layers live here, database-free except for the one default-path
+regression test noted at the bottom:
 
 - **The sandboxed validator runner** (spec §33.3 解析器隔离): validator
   execution happens in a SUBPROCESS under hard wall-clock, memory
@@ -25,12 +26,18 @@ Two layers live here, both database-free:
 The database-backed behavior (state machine, idempotency, report
 persistence, storage retry classification end-to-end) is covered by
 ``tests/integration/submissions/test_validation_worker.py`` against
-real PostgreSQL (§37.2/§37.3).
+real PostgreSQL (§37.2/§37.3). The one exception here is the default
+session source regression test: the production default cannot be
+exercised through an injected fake (that is the blind spot that hid
+the bug), so it opens a single connection to the same disposable test
+database the integration suite uses.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -356,3 +363,47 @@ def test_validate_submission_job_registered_through_job_modules(
     from app.workers.celery_app import JOB_MODULES
 
     assert "app.workers.jobs.validate_submission" in JOB_MODULES
+
+
+def test_default_session_source_is_callable_and_yields_usable_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression (parallel-stream review): the job consumes the default
+    # exactly like an injected factory — ``session_source =
+    # _default_session_source()`` then ``async with session_source() as
+    # session`` inside ``asyncio.run``. The default used to return the
+    # context-manager INSTANCE, so that production-only call path
+    # crashed with a TypeError while every test injected a fake factory
+    # and never noticed. Only exercising the REAL default (against the
+    # disposable integration test database) can pin the contract; the
+    # fake's shape is ``_session_ctx`` in test_validation_worker.py.
+    from sqlalchemy import text
+
+    from app.core.config import get_settings
+    from app.workers.jobs import validate_submission as job_module
+    from tests.integration import db_guard
+
+    # Capture BEFORE _set_required_env clobbers it: importing db_guard
+    # installs the integration-stack defaults (setdefault), a real
+    # DATABASE_URL always wins, and require_test_database keeps the
+    # test off any non-test database (same guard as the integration
+    # suite).
+    database_url = db_guard.require_test_database(
+        os.environ.get(
+            "DATABASE_URL", db_guard.INTEGRATION_ENV_DEFAULTS["DATABASE_URL"]
+        )
+    )
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    try:
+        source = job_module._default_session_source()
+        assert callable(source)
+
+        async def _use_default_the_way_the_job_does() -> int:
+            async with source() as session:
+                return (await session.execute(text("select 1"))).scalar_one()
+
+        assert asyncio.run(_use_default_the_way_the_job_does()) == 1
+    finally:
+        get_settings.cache_clear()
