@@ -22,7 +22,7 @@ below pass "admin_reason_required" and address the live constraint
 metadata's CheckConstraint in models.py composes.
 
 Revision ID: 0011
-Revises: 0007
+Revises: 0008
 Create Date: 2026-09-21
 """
 
@@ -33,7 +33,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0011"
-down_revision: str | None = "0007"
+down_revision: str | None = "0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
