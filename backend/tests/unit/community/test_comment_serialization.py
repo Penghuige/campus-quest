@@ -1,6 +1,6 @@
 # backend/tests/unit/community/test_comment_serialization.py
 """Comment serialization safety and content normalization (spec §21.1,
-§21.4, §40; plan 06 task 2).
+§21.4, §40; plan 06 tasks 2-3).
 
 Unit-level, no database: the serializers and the pure content normalizer
 are exercised directly so the privacy and XSS posture does not depend on
@@ -12,7 +12,12 @@ PostgreSQL being reachable.
   username, phone, email, raw user id) — spec §40 公开页面不得暴露.
 - Non-anonymous comments show the nickname and nothing else identity-wise.
 - The moderation DTO (Task 8 placeholder) carries no author identity
-  either; ``moderation_key`` stays a None seam until that task lands.
+  either; ``moderation_key`` stays a None seam until that task lands, and
+  ``hard_hidden`` (task 3) exposes the Admin hard-hide flag for
+  moderation review without resurrecting public visibility.
+- Tombstones (task 3, spec §21.3 该评论已删除): a soft-deleted parent kept
+  for thread anchoring serializes with null content and the uniform
+  deleted display — for anonymous AND named authors alike.
 - Content normalization (spec §21.1): dangerous control characters are
   stripped (newlines and tabs survive), whitespace-only content is
   rejected, and the configurable length cap rejects over-limit content.
@@ -39,8 +44,10 @@ from app.modules.community.models import Comment
 from app.modules.community.schemas import CommentPublic, ModerationComment
 from app.modules.community.serializers import (
     ANONYMOUS_AUTHOR_DISPLAY,
+    DELETED_COMMENT_DISPLAY,
     serialize_moderation_comment,
     serialize_public_comment,
+    serialize_tombstone_comment,
 )
 
 _T0 = datetime(2026, 9, 19, 12, 0, tzinfo=UTC)
@@ -64,7 +71,10 @@ _PUBLIC_FIELDS = {
     "deleted",
 }
 
-_MODERATION_FIELDS = (_PUBLIC_FIELDS - {"author_display"}) | {"moderation_key"}
+_MODERATION_FIELDS = (_PUBLIC_FIELDS - {"author_display"}) | {
+    "moderation_key",
+    "hard_hidden",
+}
 
 
 def _comment(*, is_anonymous: bool, content: str = "这条任务说明很清楚。") -> Comment:
@@ -79,6 +89,14 @@ def _comment(*, is_anonymous: bool, content: str = "这条任务说明很清楚�
         created_at=_T0,
         updated_at=_T0,
     )
+
+
+def _deleted_comment(*, is_anonymous: bool) -> Comment:
+    comment = _comment(is_anonymous=is_anonymous, content="被删除的内容")
+    comment.deleted_at = _T0
+    comment.deleted_by = uuid4()
+    comment.delete_reason = "owner"
+    return comment
 
 
 def _identity_facts(user_id: object) -> list[str]:
@@ -130,13 +148,14 @@ def test_public_dto_carries_thread_and_state_shape() -> None:
 
     assert public.parent_id == parent
     assert public.edited is True
-    assert public.deleted is False  # soft delete arrives with task 3
+    assert public.deleted is False
 
 
 def test_moderation_dto_has_no_author_identity() -> None:
     # The Task 8 placeholder shape: everything public except the author
-    # display, plus a None moderation_key seam. No nickname, no user_id —
-    # the pseudonymous key is Task 8's to derive.
+    # display, plus a None moderation_key seam and the task-3 hard_hidden
+    # flag. No nickname, no user_id — the pseudonymous key is Task 8's to
+    # derive.
     comment = _comment(is_anonymous=True)
     moderation = serialize_moderation_comment(comment)
 
@@ -144,9 +163,42 @@ def test_moderation_dto_has_no_author_identity() -> None:
         _MODERATION_FIELDS
     )
     assert moderation.moderation_key is None
+    assert moderation.hard_hidden is False  # live comments: flag unset
     payload = json.dumps(dataclasses.asdict(moderation), default=str)
     for fact in _identity_facts(comment.user_id):
         assert fact not in payload
+
+
+# --- tombstones (task 3, spec §21.3 该评论已删除) ------------------------------------
+
+
+@pytest.mark.parametrize("is_anonymous", [True, False])
+def test_tombstone_serializes_null_content_and_uniform_display(
+    is_anonymous: bool,
+) -> None:
+    """A deleted parent kept for thread anchoring carries NO content and
+    the uniform deleted display — the deleted author's identity (named or
+    anonymous) is subsumed by the marker."""
+    comment = _deleted_comment(is_anonymous=is_anonymous)
+    tombstone = serialize_tombstone_comment(comment)
+
+    assert tombstone.deleted is True
+    assert tombstone.content is None
+    assert tombstone.author_display == DELETED_COMMENT_DISPLAY == "该评论已删除"
+    assert tombstone.edited is False  # edit history is moot once content is gone
+    assert tombstone.id == comment.id
+    assert tombstone.parent_id == comment.parent_id
+
+
+@pytest.mark.parametrize("is_anonymous", [True, False])
+def test_tombstone_json_leaks_no_identity_facts(is_anonymous: bool) -> None:
+    comment = _deleted_comment(is_anonymous=is_anonymous)
+    tombstone = serialize_tombstone_comment(comment)
+
+    payload = json.dumps(dataclasses.asdict(tombstone), default=str)
+    for fact in _identity_facts(comment.user_id):
+        assert fact not in payload
+    assert comment.content not in payload  # the deleted content itself is gone
 
 
 # --- content normalization (spec §21.1) ----------------------------------------------

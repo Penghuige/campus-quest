@@ -15,20 +15,32 @@ Design decisions:
 - Soft delete is the three-column trio `deleted_at` / `deleted_by` /
   `delete_reason` (spec §21.3: 默认软删除). Child comments survive a
   deleted parent, so nothing cascades. The service writes all three
-  together; there is deliberately no coherence CHECK here so a future
-  content-hard-hide flow (Admin 隐私/违法场景) can record a reason with a
-  different actor set without a migration. `deleted_by` is the acting
-  moderator (or the author for self-deletion).
+  together; there is deliberately no coherence CHECK here so the Admin
+  hard-hide flow (隐私/违法场景) can record its own reason code and actor
+  set without a migration. `deleted_by` is the acting moderator (or the
+  author for self-deletion).
+- `is_hard_hidden` is the Admin hard-hide flag (spec §21.3 彻底隐藏): a
+  visibility-removal marker that is deliberately SEPARATE from the
+  soft-delete trio even though the hard-hide command writes the trio too
+  (with its distinct reason code). The separation lets one surface render
+  tombstones for owner/moderator soft deletes while rendering NOTHING for
+  hard-hidden comments, and lets the moderation surface (task 8) flag
+  which removals were privacy/legal escalations. Rows, content, ids, and
+  relations always survive — hard hide is never a database cascade.
 - `parent_id` carries a self-FK so the database itself rejects replies to
   nonexistent comments (spec §21.2: 回复不存在). The other two §21.2
   guards — parent belongs to the same Task, and no reference cycles —
   need cross-row reads and stay in the service layer; arbitrary depth is
-  representable (前端两层视觉结构 is presentation-only).
+  representable (前端两层视觉结构 is presentation-only). `parent_id` is
+  immutable after create: the edit command takes no parent argument at
+  all, which is what keeps the create-only cycle guard sound.
 - `CommentRevision` is the §21.3 修改历史: each edit appends one row with
-  the FULL revised content (not a diff) plus `edited_at`, so the latest
-  revision is self-contained and 普通用户只看到最新版 stays a plain
-  latest-wins read. Append-only is a service-layer rule (no UPDATE path);
-  the table has no `updated_at` by design.
+  the FULL SUPERSEDED content (the PREVIOUS version, not a diff) plus
+  `edited_at`. The comment row itself is always the latest version
+  (普通用户只看到最新版 stays a plain row read); the revision table walks
+  history backwards from the edit that replaced each snapshot. Append-only
+  is a service-layer rule (no UPDATE path); the table has no `updated_at`
+  by design.
 - `CommentVote.value` is an INTEGER CHECK-constrained to (1, -1) (spec
   §22), mirrored by the `VoteValue` IntEnum. Toggle transitions
   (none→like, like→none, like→dislike, ...) MUST be atomic — that is the
@@ -114,11 +126,19 @@ class Comment(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     delete_reason: Mapped[str | None] = mapped_column(Text)
+    # Admin hard-hide flag (spec §21.3 彻底隐藏): visibility removal for
+    # privacy/legal escalations. Python-side default False so freshly
+    # constructed (unflushed) rows serialize with the flag unset; the
+    # server_default keeps the database the authority on inserts.
+    is_hard_hidden: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false")
+    )
 
 
 class CommentRevision(Base):
-    """Append-only edit history entry: the full revised content of one
-    edit plus when it was made (spec §21.3 后台保存修改历史)."""
+    """Append-only edit history entry: the full content being REPLACED by
+    one edit (the previous version), plus when the edit happened (spec
+    §21.3 后台保存修改历史). The comment row holds the current version."""
 
     __tablename__ = "comment_revisions"
 

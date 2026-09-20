@@ -13,16 +13,23 @@ identity (spec §21.4/§40).
   nickname rides ``author_display``; student number, phone, email, and
   the raw user id are unrepresentable in the shape, so they cannot leak
   through serialization, nesting, or an accidental ORM dump).
+  ``content`` is ``str | None`` (task 3): None exactly on tombstones —
+  a deleted parent kept for thread anchoring carries NO content and the
+  uniform 该评论已删除 display, so the deleted text is unrepresentable
+  on the public surface the same way identity is.
 - ``ModerationComment`` is the task-8 placeholder: the same base shape
   minus any author display, plus a ``moderation_key`` seam that stays
-  ``None`` until the moderation task derives a pseudonymous key. It
+  ``None`` until the moderation task derives a pseudonymous key, and the
+  task-3 ``hard_hidden`` flag so moderation review can distinguish
+  Admin privacy/legal escalations from ordinary soft deletes. It
   deliberately carries no nickname either — Teacher moderation views may
   not show directly identifying material (spec §21.4), and the Admin
   reveal is a separate audited operation, never a field here.
-- ``deleted`` exists on both shapes now so task 3's tombstone decision
-  (exclude vs render 该评论已删除) does not change the DTO contract; the
-  V1 rulings — the public list excludes soft-deleted comments, and
-  replies to a tombstone are rejected — live in comment_service.py.
+- ``deleted`` exists on both shapes so the tombstone decision (task 3)
+  does not change the DTO contract; the rulings live in
+  comment_service.py — deleted PARENTS with surviving children render as
+  tombstones, deleted leaves vanish, and replies to a tombstone are
+  rejected.
 """
 
 from __future__ import annotations
@@ -57,17 +64,18 @@ class CommentPublic:
     """Privacy-safe comment read DTO (spec §21, §21.4, §40).
 
     ``author_display`` is the ONLY identity material: the nickname for a
-    named comment, ``匿名用户`` for an anonymous one. There is no
+    named comment, ``匿名用户`` for an anonymous one, and 该评论已删除 for
+    a tombstone (in which case ``content`` is None). There is no
     ``user_id`` field, no username, no contact fields — by construction,
     not by filtering. ``edited`` reflects CommentRevision existence (spec
-    §21.3 显示“已编辑”); ``deleted`` is the tombstone marker task 3's
-    thread rendering decides on.
+    §21.3 显示“已编辑”); ``deleted`` is the tombstone marker the thread
+    rendering decides on.
     """
 
     id: UUID
     task_id: UUID
     parent_id: UUID | None
-    content: str
+    content: str | None
     is_anonymous: bool
     author_display: str
     created_at: datetime
@@ -81,20 +89,23 @@ class ModerationComment:
     """Moderation-queue read DTO, base shape (spec §21.4; task 8 extends).
 
     Everything ``CommentPublic`` carries except the author display, plus
-    the ``moderation_key`` seam: None until task 8 derives the stable
-    pseudonymous key for governance correlation. The key must never equal
-    a student number and must never appear on student surfaces — those
-    rules are task 8's to implement; the shape refuses author identity
-    from the start.
+    the ``moderation_key`` seam (None until task 8 derives the stable
+    pseudonymous key for governance correlation) and ``hard_hidden``
+    (task 3): True on Admin hard-hidden comments, which the public
+    surface renders nothing of but moderation still reviews with content
+    intact. The key must never equal a student number and must never
+    appear on student surfaces — those rules are task 8's to implement;
+    the shape refuses author identity from the start.
     """
 
     id: UUID
     task_id: UUID
     parent_id: UUID | None
-    content: str
+    content: str | None
     is_anonymous: bool
     created_at: datetime
     updated_at: datetime
     edited: bool
     deleted: bool
     moderation_key: str | None = None
+    hard_hidden: bool = False

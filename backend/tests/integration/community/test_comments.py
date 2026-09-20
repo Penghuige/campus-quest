@@ -460,9 +460,7 @@ async def test_reply_to_same_task_comment_lists_with_parent(
     reply = await service.create_comment(
         db_session,
         _actor(other),
-        CreateComment(
-            task_id=task.id, content="同任务下的回复", parent_id=root.id
-        ),
+        CreateComment(task_id=task.id, content="同任务下的回复", parent_id=root.id),
     )
 
     assert reply.parent_id == root.id
@@ -512,9 +510,7 @@ async def test_reply_to_missing_comment_rejected(db_session: AsyncSession) -> No
         await service.create_comment(
             db_session,
             _actor(student),
-            CreateComment(
-                task_id=task.id, content="回复空气", parent_id=uuid4()
-            ),
+            CreateComment(task_id=task.id, content="回复空气", parent_id=uuid4()),
         )
     assert await _comment_count(db_session, task) == 0
 
@@ -534,9 +530,7 @@ async def test_reply_to_deleted_parent_rejected(db_session: AsyncSession) -> Non
         await service.create_comment(
             db_session,
             _actor(student),
-            CreateComment(
-                task_id=task.id, content="回复墓碑", parent_id=tombstone.id
-            ),
+            CreateComment(task_id=task.id, content="回复墓碑", parent_id=tombstone.id),
         )
     assert raised.value.code == ErrorCode.VALIDATION_ERROR
     assert raised.value.status_code == 400
@@ -710,9 +704,7 @@ async def test_anonymous_comment_leaks_no_identity_facts(
         await service.create_comment(
             db_session,
             _actor(student),
-            CreateComment(
-                task_id=other_task.id, content="跨任务", parent_id=row.id
-            ),
+            CreateComment(task_id=other_task.id, content="跨任务", parent_id=row.id),
         )
     errors.append(
         _json({"message": cross.value.message, "details": cross.value.details})

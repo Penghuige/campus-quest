@@ -18,8 +18,13 @@ Design decisions (see app/modules/community/models.py for the full list):
   rejected by the database; same-Task and acyclicity stay in the service;
 - the comment soft-delete trio (deleted_at/deleted_by/delete_reason)
   stores but does not CHECK-enforce coherence (service writes all three);
-- `comment_revisions` snapshots the FULL revised content plus edited_at
-  and is append-only by service rule (spec §21.3);
+- `comments.is_hard_hidden` is the Admin hard-hide flag (spec §21.3
+  彻底隐藏): added to this migration in place by task-3 controller ruling
+  (this stream owns 0009 and the branch is unshared) so the privacy/legal
+  subtree hide has a persistent marker distinct from plain soft delete;
+- `comment_revisions` snapshots the FULL SUPERSEDED content (the previous
+  version) plus edited_at and is append-only by service rule (spec §21.3
+  修改历史; the comment row itself stays the latest version);
 - `comment_votes.value` is INTEGER CHECK IN (1, -1) (spec §22);
 - `comment_reactions.emoji` has NO database whitelist — the emoji set is
   Admin-configured at runtime (spec §22) and service-enforced;
@@ -84,6 +89,12 @@ def upgrade() -> None:
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_by", sa.Uuid(), nullable=True),
         sa.Column("delete_reason", sa.Text(), nullable=True),
+        sa.Column(
+            "is_hard_hidden",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_comments"),
         sa.ForeignKeyConstraint(
             ["task_id"], ["tasks.id"], name="fk_comments_tasks_task_id"
