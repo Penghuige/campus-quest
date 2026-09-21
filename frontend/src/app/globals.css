@@ -39,6 +39,7 @@
   --success: oklch(52% 0.13 152);
   --success-muted: oklch(96.5% 0.03 152);
   --warning: oklch(62% 0.13 70);
+  --warning-strong: oklch(46% 0.12 70);
   --danger: oklch(51% 0.19 27);
   --danger-muted: oklch(96.5% 0.025 27);
   --info: oklch(52% 0.12 240);
@@ -60,6 +61,23 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
+
+  /* font-size scale (typography hierarchy without bare rem literals;
+     body text = --text-base, metadata steps down from it; §5) */
+  --text-2xs: 0.75rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-md: 0.9375rem;
+  --text-base: 1rem;
+  --text-lg: 1.375rem;
+
+  /* rarity accents (§4: restrained, recognizable; accent ONLY — never a
+     page-wide background, and the text label always renders alongside).
+     Lightness kept <= 52% so badge TEXT in the accent passes AA contrast. */
+  --rarity-normal: oklch(50% 0.015 260);
+  --rarity-rare: oklch(50% 0.13 250);
+  --rarity-epic: oklch(46% 0.15 300);
+  --rarity-legendary: oklch(50% 0.11 80);
 
   /* control sizing: 44px minimum comfortable target (§12) */
   --control-height: 2.75rem;
@@ -87,7 +105,7 @@ html {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: var(--text-base);
   line-height: 1.6;
   color: var(--foreground);
   background: var(--background);
@@ -137,14 +155,14 @@ body {
 
 .auth-title {
   margin: 0;
-  font-size: 1.375rem;
+  font-size: var(--text-lg);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
 .auth-subtitle {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   color: var(--muted-foreground);
 }
 
@@ -153,7 +171,7 @@ body {
   display: flex;
   justify-content: center;
   gap: var(--space-1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
@@ -177,20 +195,20 @@ body {
 }
 
 .field-label {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   font-weight: 550;
 }
 
 .field-hint {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--muted-foreground);
 }
 
 /* Tabular numerals for counters (§5). */
 .field-counter {
-  font-size: 0.8125rem;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
@@ -203,7 +221,7 @@ body {
 
 .field-error {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   font-weight: 500;
   color: var(--danger);
@@ -311,7 +329,7 @@ body {
   display: grid;
   gap: var(--space-1);
   padding: var(--space-3);
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   line-height: 1.5;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -341,7 +359,7 @@ body {
 /* Request IDs are shown on unexpected server failure (§10 Error). */
 .req-id {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--text-2xs);
   color: var(--subtle-foreground);
   word-break: break-all;
 }
@@ -368,4 +386,627 @@ body {
   .otp-row {
     flex-direction: column;
   }
+}
+
+/* --- student app shell (design-system §8 Student; patterns §8) -------------- */
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-topbar-inner {
+  max-width: 64rem;
+  margin-inline: auto;
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.app-brand {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.app-nav {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.app-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.app-nav a:hover {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+
+.app-nav a[aria-current="page"] {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 8%, var(--surface-1));
+  font-weight: 550;
+}
+
+.app-user {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: 64rem;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-4) var(--space-7);
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+}
+
+@media (max-width: 40rem) {
+  .app-main {
+    padding: var(--space-4) var(--space-3) var(--space-6);
+  }
+
+  /* Narrow workload class (§13): prioritize current action and summary. */
+  .app-topbar-inner {
+    padding: var(--space-2) var(--space-3);
+  }
+}
+
+.page-head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--muted-foreground);
+}
+
+/* --- sections, panels, metrics ---------------------------------------------- */
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.section-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.section-link {
+  font-size: var(--text-sm);
+}
+
+.dashboard-columns {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  align-content: start;
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+
+.metric {
+  display: grid;
+  gap: 2px;
+}
+
+.metric-label {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.metric-value {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-unit {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.progress {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.progress-track {
+  height: 0.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: inherit;
+  transition: width var(--duration-fast) ease;
+}
+
+.progress-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- badges: status, urgency, rarity (§9: text always, color supplemental) --- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.125rem var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  line-height: 1.6;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+
+.badge-info {
+  color: var(--info);
+  border-color: color-mix(in oklab, var(--info) 35%, var(--border));
+  background: color-mix(in oklab, var(--info) 7%, var(--surface-1));
+}
+
+.badge-success {
+  color: var(--success);
+  border-color: color-mix(in oklab, var(--success) 35%, var(--border));
+  background: color-mix(in oklab, var(--success) 7%, var(--surface-1));
+}
+
+.badge-warning {
+  color: var(--warning-strong);
+  border-color: color-mix(in oklab, var(--warning) 40%, var(--border));
+  background: color-mix(in oklab, var(--warning) 9%, var(--surface-1));
+}
+
+.badge-danger {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 35%, var(--border));
+  background: color-mix(in oklab, var(--danger) 7%, var(--surface-1));
+}
+
+/* Rarity is a LOCAL accent (§3/§4): badge border + text only, never a
+   page-wide background; the Chinese label always renders next to it. */
+.rarity-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  line-height: 1.6;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+
+.rarity-badge[data-rarity="NORMAL"] {
+  color: var(--rarity-normal);
+  border-color: color-mix(in oklab, var(--rarity-normal) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-normal) 6%, var(--surface-1));
+}
+
+.rarity-badge[data-rarity="RARE"] {
+  color: var(--rarity-rare);
+  border-color: color-mix(in oklab, var(--rarity-rare) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-rare) 6%, var(--surface-1));
+}
+
+.rarity-badge[data-rarity="EPIC"] {
+  color: var(--rarity-epic);
+  border-color: color-mix(in oklab, var(--rarity-epic) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-epic) 6%, var(--surface-1));
+}
+
+.rarity-badge[data-rarity="LEGENDARY"] {
+  color: var(--rarity-legendary);
+  border-color: color-mix(in oklab, var(--rarity-legendary) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-legendary) 6%, var(--surface-1));
+}
+
+/* --- task discovery grid + card (§8, §42 card fields) ------------------------ */
+
+.task-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  align-content: start;
+}
+
+/* Narrow viewport: single column, comfortable tappable cards (§13). */
+@media (max-width: 40rem) {
+  .task-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.task-card {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) ease;
+}
+
+.task-card:hover,
+.task-card:focus-within {
+  border-color: var(--border-strong);
+}
+
+.task-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.task-card-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.task-card-title a {
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.task-card-title a:hover {
+  color: var(--primary);
+}
+
+.task-card-reward {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.meta-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.list-footer {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.list-count {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- task detail + claim (patterns §8 Task detail archetype) ----------------- */
+
+.task-detail {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 42rem;
+  align-content: start;
+}
+
+.task-detail-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.task-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.task-facts {
+  display: grid;
+  margin: 0;
+}
+
+.fact-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-md);
+}
+
+.fact-row:last-child {
+  border-bottom: 0;
+}
+
+.fact-label {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.fact-value {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.task-description {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.7;
+}
+
+.deadline-line {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline-line[data-urgency="near"] {
+  color: var(--warning-strong);
+  font-weight: 550;
+}
+
+.deadline-line[data-urgency="closed"] {
+  color: var(--danger);
+  font-weight: 550;
+}
+
+/* After-allocation panel — the ONLY student surface that shows the assigned
+   platform/keyword (spec §42); success tone, structured facts inside. */
+.claim-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--success-muted);
+  border: 1px solid var(--success);
+  border-radius: var(--radius-md);
+}
+
+.claim-panel-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.assignment-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.assignment-item {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.assignment-label {
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+}
+
+.assignment-value {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+.claim-panel .req-id {
+  color: var(--muted-foreground);
+}
+
+/* --- claims summary rows (dashboard) ---------------------------------------- */
+
+.claim-rows {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.claim-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.claim-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.claim-title {
+  font-weight: 550;
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.claim-deadline {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- loading skeletons (§10: skeletons where shape is stable) ---------------- */
+
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  animation: cq-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: var(--text-sm);
+}
+
+.skeleton-line[data-width="narrow"] {
+  width: 55%;
+}
+
+.skeleton-block {
+  height: 5rem;
+}
+
+.skeleton-cards {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+@media (max-width: 40rem) {
+  .skeleton-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+@keyframes cq-shimmer {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* --- empty states (§10: what is empty, why, what to do) ---------------------- */
+
+.empty-state {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: center;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.empty-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.back-link {
+  font-size: var(--text-sm);
 }

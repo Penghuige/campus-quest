@@ -183,3 +183,43 @@ export function toApiError(
     requestId: requestIdHeader,
   });
 }
+
+/*
+ * Section-level error presentation for read surfaces (patterns §10
+ * Error, §15): human-readable line + retry affordance, request id on
+ * unexpected server failures.
+ *
+ * Tiering mirrors the auth surface's rules but stays transport-generic so
+ * any feature section (dashboard, task list, task detail) renders the
+ * same shape:
+ * - network/transport failure -> connectivity line;
+ * - system codes and UNKNOWN codes (registry drift) -> safe generic +
+ *   request id;
+ * - a known business code the section does not specifically handle -> the
+ *   backend's own Chinese message as fallback display text (never
+ *   parsed).
+ */
+
+/** Presentation view of one failed section load. */
+export interface SectionErrorView {
+  message: string;
+  requestId: string | null;
+}
+
+export const SECTION_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+const SECTION_SYSTEM_ERROR_TEXT = "服务暂时不可用，请稍后重试";
+const SECTION_GENERIC_ERROR_TEXT = "加载失败，请稍后重试";
+
+/** Derive a section error view. Pure: same failure in, same view out. */
+export function describeSectionError(error: unknown): SectionErrorView {
+  if (!isApiError(error)) {
+    return { message: SECTION_NETWORK_ERROR_TEXT, requestId: null };
+  }
+  if (isSystemErrorCode(error.code)) {
+    return { message: SECTION_SYSTEM_ERROR_TEXT, requestId: error.requestId };
+  }
+  if (isKnownErrorCode(error.code)) {
+    return { message: error.message || SECTION_GENERIC_ERROR_TEXT, requestId: null };
+  }
+  return { message: SECTION_GENERIC_ERROR_TEXT, requestId: error.requestId };
+}

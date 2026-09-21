@@ -21,6 +21,7 @@ import { loginStudent } from "./api";
 import {
   NETWORK_ERROR_TEXT,
   describeAuthError,
+  withFieldErrorSummary,
   type AuthErrorView,
   type AuthFieldName,
 } from "./errors";
@@ -61,7 +62,9 @@ export function LoginForm() {
         setSummary({ summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null });
         return;
       }
-      const view = describeAuthError(error);
+      // Field-only views still get a summary line so the failure is
+      // announced (patterns §18), not just painted next to the inputs.
+      const view = withFieldErrorSummary(describeAuthError(error));
       setSummary(view);
       setFieldErrors(view.fieldErrors as Partial<Record<LoginFields, string>>);
     } finally {

@@ -4,6 +4,66 @@
  */
 
 export interface paths {
+    "/api/v1/auth/phone/challenges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Phone Challenge
+         * @description Issue a REGISTER-purpose OTP challenge (spec §5.4, §33.2).
+         *
+         *     The purpose is fixed server-side: a public endpoint must never mint
+         *     proofs for password reset or phone change.
+         */
+        post: operations["request_phone_challenge_api_v1_auth_phone_challenges_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/phone/challenges/{challenge_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Phone Challenge
+         * @description Consume the challenge with its SMS code; mint the single-use proof.
+         */
+        post: operations["verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register Student */
+        post: operations["register_student_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -15,6 +75,30 @@ export interface paths {
         put?: never;
         /** Login */
         post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh
+         * @description Rotate one refresh session (cookie or body token; spec §5.6).
+         *
+         *     The body is optional: a cookie-authenticated browser sends no body at
+         *     all (the CSRF header carries the mutation proof), so requiring one
+         *     would 422 the exact client this endpoint serves.
+         */
+        post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -85,137 +169,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/phone/challenges": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Request Phone Challenge
-         * @description Issue a REGISTER-purpose OTP challenge (spec §5.4, §33.2).
-         *
-         *     The purpose is fixed server-side: a public endpoint must never mint
-         *     proofs for password reset or phone change.
-         */
-        post: operations["request_phone_challenge_api_v1_auth_phone_challenges_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/phone/challenges/{challenge_id}/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Verify Phone Challenge
-         * @description Consume the challenge with its SMS code; mint the single-use proof.
-         */
-        post: operations["verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Refresh
-         * @description Rotate one refresh session (cookie or body token; spec §5.6).
-         *
-         *     The body is optional: a cookie-authenticated browser sends no body at
-         *     all (the CSRF header carries the mutation proof), so requiring one
-         *     would 422 the exact client this endpoint serves.
-         */
-        post: operations["refresh_api_v1_auth_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Register Student */
-        post: operations["register_student_api_v1_auth_register_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/staff/invitations/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept Staff Invitation
-         * @description Trade the single-use invitation token for a pending staff session.
-         *
-         *     The returned tokens are a real session confined to finishing TOTP
-         *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
-         */
-        post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/staff/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Staff Login
-         * @description Staff login: verified email + password + TOTP-or-recovery (§5.8).
-         *
-         *     A correct password without a confirmed TOTP raises the typed setup
-         *     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
-         *     finish ``/staff/totp/*`` first.
-         */
-        post: operations["staff_login_api_v1_auth_staff_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -237,80 +190,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/claims": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List My Claims
-         * @description The actor's own claim history, newest first; assignment
-         *     platform/keyword are visible here because every row is the owner's.
-         *     A Student surface by policy (spec §4.1): staff never own claims, and
-         *     the 403 pins that boundary instead of serving an empty list.
-         */
-        get: operations["list_my_claims_api_v1_me_claims_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/me/email": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Request Email Verification */
-        post: operations["request_email_verification_api_v1_me_email_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/me/email/unbind": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Unbind Email */
-        post: operations["unbind_email_api_v1_me_email_unbind_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/me/email/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Confirm Email Verification */
-        post: operations["confirm_email_verification_api_v1_me_email_verify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/me/nickname": {
         parameters: {
             query?: never;
@@ -326,26 +205,6 @@ export interface paths {
         head?: never;
         /** Change Nickname */
         patch: operations["change_nickname_api_v1_me_nickname_patch"];
-        trace?: never;
-    };
-    "/api/v1/me/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Change Password
-         * @description Rotate the password; every other session dies, this one survives.
-         */
-        post: operations["change_password_api_v1_me_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/me/phone/change": {
@@ -385,10 +244,1033 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Email Verification */
+        post: operations["request_email_verification_api_v1_me_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/email/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Email Verification */
+        post: operations["confirm_email_verification_api_v1_me_email_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/email/unbind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unbind Email */
+        post: operations["unbind_email_api_v1_me_email_unbind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Rotate the password; every other session dies, this one survives.
+         */
+        post: operations["change_password_api_v1_me_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Staff Login
+         * @description Staff login: verified email + password + TOTP-or-recovery (§5.8).
+         *
+         *     A correct password without a confirmed TOTP raises the typed setup
+         *     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
+         *     finish ``/staff/totp/*`` first.
+         */
+        post: operations["staff_login_api_v1_auth_staff_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Staff Invitation
+         * @description Trade the single-use invitation token for a pending staff session.
+         *
+         *     The returned tokens are a real session confined to finishing TOTP
+         *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
+         */
+        post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/totp/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin Totp Setup
+         * @description Generate (or rotate) the pending TOTP secret; displayed once (§5.8).
+         */
+        post: operations["begin_totp_setup_api_v1_staff_totp_begin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/totp/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Totp Setup
+         * @description Confirm with one valid code; recovery codes shown exactly once.
+         */
+        post: operations["confirm_totp_setup_api_v1_staff_totp_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tasks
+         * @description One offset page of PUBLISHED task cards (spec §42): counts and card
+         *     facts only — the Assignment list never rides along.
+         */
+        get: operations["list_tasks_api_v1_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Task
+         * @description Published detail + the viewer's own non-terminal claim, if any.
+         */
+        get: operations["get_task_api_v1_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Task
+         * @description Claim one random AVAILABLE assignment (spec §8.3) — a Student
+         *     capability (spec §4.1); staff roles are refused at the guard.
+         *
+         *     ``ClaimRequest`` is fieldless and forbids extras: the caller cannot
+         *     name an assignment — the server picks randomly under lock. The
+         *     response is owner-scoped and names the assigned unit's
+         *     platform/keyword (the only student surface that ever does).
+         */
+        post: operations["claim_task_api_v1_tasks__task_id__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Claims
+         * @description The actor's own claim history, newest first; assignment
+         *     platform/keyword are visible here because every row is the owner's.
+         *     A Student surface by policy (spec §4.1): staff never own claims, and
+         *     the 403 pins that boundary instead of serving an empty list.
+         */
+        get: operations["list_my_claims_api_v1_me_claims_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/{claim_id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abandon Claim
+         * @description Abandon the actor's own claim and release its assignment (spec
+         *     §8.5) — a Student capability (spec §4.1); replaying a successful
+         *     abandon returns the same terminal row.
+         */
+        post: operations["abandon_claim_api_v1_claims__claim_id__abandon_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Teacher Tasks
+         * @description The workbench Task list (spec §41): the actor's own tasks plus the
+         *     ones they collaborate on, every status including DRAFT, offset-
+         *     paginated. Card-level facts only — contract fields ride the detail.
+         */
+        get: operations["list_teacher_tasks_api_v1_teacher_tasks_get"];
+        put?: never;
+        /**
+         * Create Task
+         * @description Create a DRAFT task owned by the actor (spec §6).
+         */
+        post: operations["create_task_api_v1_teacher_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Teacher Task
+         * @description The full workbench detail of one task (spec §41): everything the
+         *     owner configured, contract fields included, DRAFT readable (unlike
+         *     the student surface). Owner, any collaborator, or Admin.
+         */
+        get: operations["get_teacher_task_api_v1_teacher_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Task
+         * @description Partial edit under the V1 edit rule (spec §6.2); ownership and the
+         *     field-split are service concerns.
+         */
+        patch: operations["update_task_api_v1_teacher_tasks__task_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Task */
+        post: operations["publish_task_api_v1_teacher_tasks__task_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Task */
+        post: operations["pause_task_api_v1_teacher_tasks__task_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Task */
+        post: operations["resume_task_api_v1_teacher_tasks__task_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Task */
+        post: operations["close_task_api_v1_teacher_tasks__task_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Task */
+        post: operations["archive_task_api_v1_teacher_tasks__task_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/assignments/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Assignment Import
+         * @description Parse and pre-check a CSV upload (spec §7.1 steps 1-4).
+         *
+         *     The file is the raw request body (``text/csv``); the importer's byte
+         *     cap rejects oversize payloads before any parsing work.
+         */
+        post: operations["preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/assignments/import/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Assignment Import
+         * @description Insert exactly the previewed rows in one transaction (spec §7.1
+         *     steps 5-6), consuming the single-use preview token.
+         */
+        post: operations["confirm_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/collaborators/{teacher_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add Collaborator
+         * @description Grant a capability set on the task to a Teacher (spec §4.2); the
+         *     standing / grant-within-own-set / target-role rules are the service's.
+         */
+        put: operations["add_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__put"];
+        post?: never;
+        /** Remove Collaborator */
+        delete: operations["remove_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Task Statistics
+         * @description The workbench aggregate (spec §41): counts only, by construction.
+         */
+        get: operations["get_task_statistics_api_v1_teacher_tasks__task_id__statistics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/upload-intent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Upload Intent
+         * @description Issue the single-use presigned upload grant (spec §10 step 1-5).
+         *
+         *     The browser PUTs the file straight to storage — the 200 MB payload
+         *     never streams through this API. The response carries the intent id,
+         *     the short-lived URL, and the URL's expiry; the server-generated
+         *     object key stays server-side (spec §40).
+         */
+        post: operations["create_upload_intent_api_v1_submissions_upload_intent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/upload-complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Upload
+         * @description Verify the uploaded object and create the Submission version
+         *     (spec §10 steps 5-7), then hand it to the async validation pipeline
+         *     through the dispatcher (step 8). Replaying a completed intent
+         *     returns the SAME Submission (spec §32).
+         *
+         *     The object-key-free public DTO rides the response; ``created_at``
+         *     is a server default the INSERT did not return, so the row is
+         *     refreshed before serialization (the tasks-router create precedent).
+         */
+        post: operations["complete_upload_api_v1_submissions_upload_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{submission_id}/validation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Submission Validation
+         * @description The owner's machine-validation report (spec §11.1, §12.4) — the
+         *     persisted §12.4 shape plus the status projections; ``report`` is
+         *     null until the async run finishes.
+         */
+        get: operations["get_submission_validation_api_v1_submissions__submission_id__validation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{submission_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Submission
+         * @description Mint a short-lived presigned GET (spec §33.3).
+         *
+         *     The guard is the broad ACTIVE one because BOTH authorized parties
+         *     reach this route — the owning Student and the reviewing teacher
+         *     (task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual
+         *     ownership/role judgment runs inside the query service BEFORE the
+         *     port signs. The response carries the URL, never the key.
+         */
+        get: operations["download_submission_api_v1_submissions__submission_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/submissions/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Review Queue
+         * @description One offset page of the review queue: the VALIDATED submissions
+         *     still awaiting a decision on the actor's own/collaborated tasks,
+         *     oldest first, with the reviewer's judging context.
+         */
+        get: operations["list_review_queue_api_v1_teacher_submissions_review_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/submissions/{submission_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Submission
+         * @description Run the §14 ten-step approve transaction (claim COMPLETED, lock
+         *     CONFIRMED, one grant, assignment COMPLETED); a replay on a COMPLETED
+         *     claim answers ``already_reviewed`` with nothing written.
+         */
+        post: operations["approve_submission_api_v1_teacher_submissions__submission_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/submissions/{submission_id}/revision-required": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Require Revision
+         * @description Return the submission for fixes (spec §11.3): the claim moves to
+         *     REVISION_REQUIRED with the §11.4 window; the existing lock survives.
+         *     The note is mandatory at the transport (the teacher's guidance).
+         */
+        post: operations["require_revision_api_v1_teacher_submissions__submission_id__revision_required_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/submissions/{submission_id}/invalidate-reward-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invalidate Reward Lock
+         * @description Cancel the PROVISIONAL lock and demand a resubmission (spec
+         *     §11.3): the projection clears, the cancelled values survive on the
+         *     append-only audit rows, and the reason is mandatory.
+         */
+        post: operations["invalidate_reward_lock_api_v1_teacher_submissions__submission_id__invalidate_reward_lock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/points/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Wallet
+         * @description The caller's wallet strip: available (spendable-balance
+         *     projection), earned (cumulative task contribution — spending never
+         *     touches it, spec §17.1), and spendable (available minus ACTIVE
+         *     freezes, spec §16.2).
+         */
+        get: operations["my_wallet_api_v1_points_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rewards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rewards
+         * @description The enabled reward catalogue with the server-side window verdict
+         *     (spec §16.1): ``window_open`` is computed HERE at the business
+         *     clock, the same half-open rule the redeem gate enforces, so the
+         *     shelf can never advertise an item the gate would refuse.
+         */
+        get: operations["list_rewards_api_v1_rewards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rewards/{reward_id}/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redeem Reward
+         * @description Request one redemption: the service freezes the points and
+         *     pre-occupies the stock unit atomically (spec §16.1) and answers the
+         *     typed conflict envelopes on any gate failure.
+         *
+         *     ``Idempotency-Key`` is ADVISORY in V1 (spec §32; see the module
+         *     docstring): accepted, never deduped on — the database constraints
+         *     are the duplicate-side-effect protection.
+         */
+        post: operations["redeem_reward_api_v1_rewards__reward_id__redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/rewards/redemptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Redemption Queue
+         * @description The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
+         *     oldest first, with the requester's display nickname through the
+         *     identity directory port and the item name.
+         */
+        get: operations["list_redemption_queue_api_v1_teacher_rewards_redemptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Redemption
+         * @description Approve: the freeze becomes one negative REWARD_REDEMPTION entry
+         *     and the status flips to APPROVED (spec §16.2); a replay on an
+         *     already-approved row is the idempotent no-op that returns it.
+         */
+        post: operations["approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Redemption
+         * @description Reject with a mandatory reason: the freeze is released and NO
+         *     consumption entry is written (spec §16.2).
+         */
+        post: operations["reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/fulfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fulfill Redemption
+         * @description Record the physical delivery of an APPROVED redemption (spec
+         *     §16.2: approval and delivery are separate transitions).
+         */
+        post: operations["fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rankings/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily Board
+         * @description Today's board in BUSINESS_TIMEZONE: top N plus the caller's own
+         *     rank and score.
+         */
+        get: operations["daily_board_api_v1_rankings_daily_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rankings/monthly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monthly Board
+         * @description The current business month's board: top N plus the caller's own
+         *     rank and score.
+         */
+        get: operations["monthly_board_api_v1_rankings_monthly_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rankings/all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * All Time Board
+         * @description The all-time board: top N plus the caller's own rank and score.
+         */
+        get: operations["all_time_board_api_v1_rankings_all_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rankings/around-me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Around Me
+         * @description The caller's neighborhood on one named board (``daily`` /
+         *     ``monthly`` / ``all``), numbered with GLOBAL ranks. A caller with no
+         *     score on the board gets an empty window.
+         */
+        get: operations["around_me_api_v1_rankings_around_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/growth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Growth
+         * @description The §19 personal growth profile: month points/rank, total earned,
+         *     completed count, on-time ratio (final valid lock judgment), current
+         *     streak, best historical monthly rank, and owned honors.
+         */
+        get: operations["my_growth_api_v1_growth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live */
+        get: operations["live_health_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ready */
+        get: operations["ready_health_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ApproveResponse
+         * @description The §14 approve outcome: the claim's landing state and the single
+         *     grant. ``already_reviewed`` is True only on the idempotent replay
+         *     (nothing written, no second grant).
+         */
+        ApproveResponse: {
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /** Claim Status */
+            claim_status: string;
+            /** Reward Lock Status */
+            reward_lock_status: string;
+            /** Points Granted */
+            points_granted: number | null;
+            /** Already Reviewed */
+            already_reviewed: boolean;
+        };
+        /**
+         * AroundMeResponse
+         * @description The caller's neighborhood, numbered with GLOBAL board ranks — a
+         *     slice of the board, never a re-ranked mini-board.
+         */
+        AroundMeResponse: {
+            /** Entries */
+            entries: components["schemas"]["RankingEntryResponse"][];
+        };
+        /**
+         * BoardResponse
+         * @description One board read: the top-N entries plus the caller's own standing
+         *     (numbers only; ``null`` while the caller holds no score).
+         */
+        BoardResponse: {
+            /** Entries */
+            entries: components["schemas"]["RankingEntryResponse"][];
+            /** My Rank */
+            my_rank?: number | null;
+            /** My Score */
+            my_score?: number | null;
+        };
         /**
          * ChallengeResponse
          * @description Request-side view of an OTP challenge (never the code, §33.2).
@@ -399,6 +1281,96 @@ export interface components {
              * Format: uuid
              */
             challenge_id: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
+         * ClaimRequest
+         * @description Claim one random assignment of a task (spec §8.3).
+         *
+         *     Deliberately fieldless AND ``extra="forbid"``: assignment choice is
+         *     the server's (random, under lock) — a request that smuggles an
+         *     ``assignment_id`` is a 422 before any service call, proven by test.
+         */
+        ClaimRequest: Record<string, never>;
+        /**
+         * ClaimResponse
+         * @description A claim on the owner's own surface (spec §8, §42): the assigned
+         *     unit's platform/keyword appear here and nowhere else student-facing.
+         */
+        ClaimResponse: {
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Status */
+            status: string;
+            /** Platform */
+            platform: string;
+            /** Keyword */
+            keyword: string;
+            /**
+             * Claimed At
+             * Format: date-time
+             */
+            claimed_at: string;
+            /**
+             * Deadline At
+             * Format: date-time
+             */
+            deadline_at: string;
+            /**
+             * Grace Deadline At
+             * Format: date-time
+             */
+            grace_deadline_at: string;
+            /** Base Reward Points Snapshot */
+            base_reward_points_snapshot: number;
+        };
+        /**
+         * CollaboratorAddRequest
+         * @description Grant a capability set to a Teacher on a task (spec §4.2).
+         */
+        CollaboratorAddRequest: {
+            /** Permissions */
+            permissions: string[];
+        };
+        /**
+         * CollaboratorResponse
+         * @description A granted capability set, in canonical storage order.
+         */
+        CollaboratorResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /**
+             * Teacher Id
+             * Format: uuid
+             */
+            teacher_id: string;
+            /** Permissions */
+            permissions: string[];
+        };
+        /**
+         * DownloadUrlResponse
+         * @description A short-lived presigned download grant (spec §33.3), minted per
+         *     request after the authorization check. The response carries the URL
+         *     and its expiry — never the object key.
+         */
+        DownloadUrlResponse: {
+            /** Url */
+            url: string;
             /**
              * Expires At
              * Format: date-time
@@ -440,20 +1412,128 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * FileType
+         * @description The closed upload file-type universe (spec §10/§12).
+         *
+         *     Mirrors the `tasks.allowed_file_types` CHECK member set; a Task may
+         *     restrict to a subset but never beyond it.
+         * @enum {string}
+         */
+        FileType: "CSV" | "XLSX" | "SQLITE";
+        /**
+         * GrowthResponse
+         * @description The §19 growth page answer; every figure is the caller's own.
+         */
+        GrowthResponse: {
+            /** Month Points */
+            month_points: number;
+            /** Month Rank */
+            month_rank: number | null;
+            /** Total Earned Points */
+            total_earned_points: number;
+            /** Completed Count */
+            completed_count: number;
+            /** On Time Count */
+            on_time_count: number;
+            /** On Time Ratio */
+            on_time_ratio: number;
+            /** Current Streak */
+            current_streak: number;
+            /** Best Month Rank */
+            best_month_rank: number | null;
+            /** Honors */
+            honors: components["schemas"]["OwnedHonorResponse"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * ImportConfirmRequest
+         * @description Confirm one preview by its single-use server-side token (spec §7.1).
+         */
+        ImportConfirmRequest: {
+            /** Preview Token */
+            preview_token: string;
+        };
+        /**
+         * ImportConfirmResponse
+         * @description All-or-nothing confirm outcome (spec §7.1 steps 5-6).
+         */
+        ImportConfirmResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Inserted */
+            inserted: number;
+        };
+        /**
+         * ImportPreviewErrorResponse
+         * @description One preview error; ``row_number is None`` marks a file-level error.
+         */
+        ImportPreviewErrorResponse: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Row Number */
+            row_number?: number | null;
+            /** Platform */
+            platform?: string | null;
+            /** Keyword */
+            keyword?: string | null;
+            /** Details */
+            details?: {
+                [key: string]: number;
+            } | null;
+        };
+        /**
+         * ImportPreviewResponse
+         * @description Preview outcome (spec §7.1 step 4): counts + per-row errors. The
+         *     valid rows themselves are NOT echoed — the count is the contract; the
+         *     token names the exact server-stored rows confirm will insert.
+         */
+        ImportPreviewResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Total Rows */
+            total_rows: number;
+            /** Valid Count */
+            valid_count: number;
+            /** Error Count */
+            error_count: number;
+            /** Errors */
+            errors: components["schemas"]["ImportPreviewErrorResponse"][];
+            /** Preview Token */
+            preview_token: string | null;
+            /** Expires At */
+            expires_at: string | null;
+        };
+        /**
+         * InvalidateRewardLockRequest
+         * @description Cancel the provisional reward lock (spec §11.3). The reviewer
+         *     reason is mandatory — it lands on the append-only audit rows.
+         */
+        InvalidateRewardLockRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
          * LoginRequest
          * @description Student login: student number + password (spec §5.6).
          */
         LoginRequest: {
-            /** Password */
-            password: string;
             /** Username */
             username: string;
+            /** Password */
+            password: string;
         };
         /**
          * LogoutRequest
@@ -472,23 +1552,23 @@ export interface components {
          *     other internal column stay unrepresentable.
          */
         MePublic: {
-            /** Email Normalized */
-            email_normalized: string | null;
-            /** Email Verified At */
-            email_verified_at: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Nickname */
-            nickname: string;
-            /** Phone E164 */
-            phone_e164: string | null;
-            role: components["schemas"]["Role"];
-            status: components["schemas"]["UserStatus"];
             /** Username */
             username: string;
+            /** Nickname */
+            nickname: string;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+            /** Phone E164 */
+            phone_e164: string | null;
+            /** Email Normalized */
+            email_normalized: string | null;
+            /** Email Verified At */
+            email_verified_at: string | null;
         };
         /**
          * MyClaimResponse
@@ -496,13 +1576,22 @@ export interface components {
          *     cross-task, so the card context travels with the claim).
          */
         MyClaimResponse: {
-            /** Base Reward Points Snapshot */
-            base_reward_points_snapshot: number;
             /**
              * Claim Id
              * Format: uuid
              */
             claim_id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Status */
+            status: string;
+            /** Platform */
+            platform: string;
+            /** Keyword */
+            keyword: string;
             /**
              * Claimed At
              * Format: date-time
@@ -518,17 +1607,8 @@ export interface components {
              * Format: date-time
              */
             grace_deadline_at: string;
-            /** Keyword */
-            keyword: string;
-            /** Platform */
-            platform: string;
-            /** Status */
-            status: string;
-            /**
-             * Task Id
-             * Format: uuid
-             */
-            task_id: string;
+            /** Base Reward Points Snapshot */
+            base_reward_points_snapshot: number;
             /** Task Title */
             task_title: string;
         };
@@ -539,12 +1619,12 @@ export interface components {
         MyClaimsResponse: {
             /** Items */
             items: components["schemas"]["MyClaimResponse"][];
+            /** Total */
+            total: number;
             /** Limit */
             limit: number;
             /** Offset */
             offset: number;
-            /** Total */
-            total: number;
         };
         /**
          * NicknameUpdateRequest
@@ -553,6 +1633,28 @@ export interface components {
         NicknameUpdateRequest: {
             /** Nickname */
             nickname: string;
+        };
+        /**
+         * OwnedHonorResponse
+         * @description One honor the caller owns (the §19 已获得荣誉 row).
+         */
+        OwnedHonorResponse: {
+            /**
+             * Honor Id
+             * Format: uuid
+             */
+            honor_id: string;
+            /** Name */
+            name: string;
+            /** Honor Type */
+            honor_type: string;
+            /** Period */
+            period: string | null;
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
         };
         /**
          * PasswordChangeRequest
@@ -621,23 +1723,134 @@ export interface components {
          * @description Start a phone change: re-auth plus the NEW phone (spec §5.4).
          */
         PhoneChangeRequest: {
-            /** New Phone */
-            new_phone: string;
             /** Password */
             password: string;
+            /** New Phone */
+            new_phone: string;
         };
         /**
          * PhoneTokenResponse
          * @description The single-use proof minted by a verified challenge (spec §5.4).
          */
         PhoneTokenResponse: {
+            /** Phone Token */
+            phone_token: string;
             /**
              * Expires At
              * Format: date-time
              */
             expires_at: string;
-            /** Phone Token */
-            phone_token: string;
+        };
+        /**
+         * RankingEntryResponse
+         * @description One public leaderboard row — EXACTLY the spec §17/§40 shape; any
+         *     additional field (student number, contact, user id) is unrepresentable
+         *     because the model has no field for it.
+         */
+        RankingEntryResponse: {
+            /** Nickname */
+            nickname: string;
+            /** Display Honor */
+            display_honor: string | null;
+            /** Score */
+            score: number;
+            /** Rank */
+            rank: number;
+        };
+        /**
+         * RatingSummaryResponse
+         * @description Average + count only (spec §20/§40: no rater identity).
+         */
+        RatingSummaryResponse: {
+            /** Average */
+            average: number;
+            /** Count */
+            count: number;
+        };
+        /**
+         * RedemptionFulfillRequest
+         * @description The optional delivery note (spec §16.2: approval and delivery are
+         *     separate transitions).
+         */
+        RedemptionFulfillRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * RedemptionRejectRequest
+         * @description A rejection's mandatory context (spec §16.2): blank is not a
+         *     reason — the service re-validates after the strip.
+         */
+        RedemptionRejectRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * RedemptionResponse
+         * @description The student's view of one redemption (spec §16.1): request-time
+         *     snapshots plus lifecycle state.
+         */
+        RedemptionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Reward Item Id
+             * Format: uuid
+             */
+            reward_item_id: string;
+            /** Status */
+            status: string;
+            /** Points */
+            points: number;
+            /** Term Key */
+            term_key: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * RedemptionReviewResponse
+         * @description The staff view: the student fields plus the review/fulfillment
+         *     trail and the display-name enrichment (nickname only — the directory
+         *     port's shape, no contact fields to leak).
+         */
+        RedemptionReviewResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Reward Item Id
+             * Format: uuid
+             */
+            reward_item_id: string;
+            /** Status */
+            status: string;
+            /** Points */
+            points: number;
+            /** Term Key */
+            term_key: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Requester Nickname */
+            requester_nickname: string | null;
+            /** Item Name */
+            item_name: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Fulfilled At */
+            fulfilled_at?: string | null;
+            /** Fulfillment Note */
+            fulfillment_note?: string | null;
         };
         /**
          * RefreshRequest
@@ -655,14 +1868,138 @@ export interface components {
          * @description Register one whitelisted student (spec §5.1-5.4).
          */
         RegisterRequest: {
-            /** Nickname */
-            nickname: string;
-            /** Password */
-            password: string;
-            /** Phone Token */
-            phone_token: string;
             /** Student Number */
             student_number: string;
+            /** Nickname */
+            nickname: string;
+            /** Phone Token */
+            phone_token: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * ReviewQueueItemResponse
+         * @description One review-queue row (spec §41/§28): the VALIDATED submission
+         *     with the claim/task context the reviewer needs to judge it. The
+         *     ``download_url`` is the API path that mints the short-lived
+         *     presigned link on demand (authorized per request), not a presigned
+         *     URL that would expire inside a listed page.
+         */
+        ReviewQueueItemResponse: {
+            /**
+             * Submission Id
+             * Format: uuid
+             */
+            submission_id: string;
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Task Title */
+            task_title: string;
+            /** Platform */
+            platform: string;
+            /** Keyword */
+            keyword: string;
+            /** Version */
+            version: number;
+            /** Original Filename */
+            original_filename: string;
+            /** Declared Type */
+            declared_type: string;
+            /** Detected Type */
+            detected_type: string | null;
+            /** File Size */
+            file_size: number;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Review Status */
+            review_status: string;
+            /** Claim Status */
+            claim_status: string;
+            /** Reward Tier Locked */
+            reward_tier_locked: number | null;
+            /** Locked Reward Points */
+            locked_reward_points: number | null;
+            validation: components["schemas"]["ValidationReportPayload"] | null;
+            /** Download Url */
+            download_url: string;
+        };
+        /**
+         * RevisionRequiredRequest
+         * @description Return the submission for fixes (spec §11.3). The note — the
+         *     teacher's guidance — is mandatory at the transport.
+         */
+        RevisionRequiredRequest: {
+            /** Note */
+            note: string;
+        };
+        /**
+         * RevisionRequiredResponse
+         * @description The claim state after 退回/判无效: REVISION_REQUIRED with the §11.4
+         *     revision deadline. ``reward_lock_status`` distinguishes the two —
+         *     preserved PROVISIONAL versus cancelled INVALIDATED.
+         */
+        RevisionRequiredResponse: {
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /** Claim Status */
+            claim_status: string;
+            /** Reward Lock Status */
+            reward_lock_status: string;
+            /**
+             * Revision Deadline At
+             * Format: date-time
+             */
+            revision_deadline_at: string;
+        };
+        /**
+         * RewardItemResponse
+         * @description One catalogue row for the student listing (spec §16/§42). The
+         *     admin-only ``fulfillment_instructions`` and the enabled flag (always
+         *     true in this listing) stay server-side.
+         */
+        RewardItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Point Cost */
+            point_cost: number;
+            /** Stock */
+            stock: number | null;
+            /** Per User Term Limit */
+            per_user_term_limit: number | null;
+            /** Available From */
+            available_from: string | null;
+            /** Available Until */
+            available_until: string | null;
+            /** Requires Manual Review */
+            requires_manual_review: boolean;
+            /** Window Open */
+            window_open: boolean;
+        };
+        /** RewardsListResponse */
+        RewardsListResponse: {
+            /** Items */
+            items: components["schemas"]["RewardItemResponse"][];
         };
         /**
          * Role
@@ -674,10 +2011,10 @@ export interface components {
          * @description Trade the single-use invitation token for a staff account (§5.8).
          */
         StaffInvitationAcceptRequest: {
-            /** Password */
-            password: string;
             /** Token */
             token: string;
+            /** Password */
+            password: string;
         };
         /**
          * StaffLoginRequest
@@ -690,6 +2027,417 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /**
+         * SubmissionPublic
+         * @description Privacy-safe Submission read DTO (spec §11, §40).
+         *
+         *     Deliberately minimal: no ``object_key`` (downloads go through
+         *     short-lived signed URLs issued by an authorized route), no reviewer
+         *     identity, no retention/legal-hold internals. The validation and
+         *     review status values are the frozen enum strings.
+         */
+        SubmissionPublic: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /** Version */
+            version: number;
+            /** Original Filename */
+            original_filename: string;
+            /** Declared Type */
+            declared_type: string;
+            /** File Size */
+            file_size: number;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Validation Status */
+            validation_status: string;
+            /** Review Status */
+            review_status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SubmissionValidationResponse
+         * @description The owner's view of one submission's machine-validation outcome
+         *     (spec §11.1, §12.4): status projections plus the persisted report —
+         *     ``None`` while the run has not reached a terminal state.
+         */
+        SubmissionValidationResponse: {
+            /**
+             * Submission Id
+             * Format: uuid
+             */
+            submission_id: string;
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /** Version */
+            version: number;
+            /** Validation Status */
+            validation_status: string;
+            /** Review Status */
+            review_status: string;
+            /** Detected Type */
+            detected_type: string | null;
+            report: components["schemas"]["ValidationReportPayload"] | null;
+        };
+        /**
+         * TaskCardResponse
+         * @description The §42 Task Card wire shape.
+         */
+        TaskCardResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Rarity */
+            rarity: string;
+            /** Base Reward Points */
+            base_reward_points: number;
+            /** Deadline Mode */
+            deadline_mode: string;
+            /** Fixed Deadline At */
+            fixed_deadline_at: string | null;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Assignments Available */
+            assignments_available: number;
+            rating: components["schemas"]["RatingSummaryResponse"] | null;
+        };
+        /**
+         * TaskCreateRequest
+         * @description Create one DRAFT task (spec §6). Enum-ish fields stay raw strings:
+         *     the service is the single validation/normalization authority.
+         */
+        TaskCreateRequest: {
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Base Reward Points */
+            base_reward_points: number;
+            /** Deadline Mode */
+            deadline_mode: string;
+            /** Allowed File Types */
+            allowed_file_types: string[];
+            /** Max File Size Bytes */
+            max_file_size_bytes: number;
+            /**
+             * Task Type
+             * @default DATA_CRAWL
+             */
+            task_type: string;
+            /**
+             * Rarity
+             * @default NORMAL
+             */
+            rarity: string;
+            /** Fixed Deadline At */
+            fixed_deadline_at?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /**
+             * Claim Cutoff Minutes
+             * @default 240
+             */
+            claim_cutoff_minutes: number;
+            /** Submission Schema */
+            submission_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Submission Schema Version */
+            submission_schema_version?: number | null;
+            /**
+             * Notify 24H
+             * @default true
+             */
+            notify_24h: boolean;
+            /**
+             * Notify 4H
+             * @default true
+             */
+            notify_4h: boolean;
+            /**
+             * Notification Channels
+             * @default [
+             *       "SMS",
+             *       "EMAIL",
+             *       "IN_APP"
+             *     ]
+             */
+            notification_channels: string[];
+        };
+        /**
+         * TaskDetailResponse
+         * @description Public detail of one PUBLISHED task plus the viewer's own claim.
+         */
+        TaskDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Task Type */
+            task_type: string;
+            /** Rarity */
+            rarity: string;
+            /** Base Reward Points */
+            base_reward_points: number;
+            /** Status */
+            status: string;
+            /** Deadline Mode */
+            deadline_mode: string;
+            /** Fixed Deadline At */
+            fixed_deadline_at: string | null;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Published At */
+            published_at: string | null;
+            /** Assignments Available */
+            assignments_available: number;
+            rating: components["schemas"]["RatingSummaryResponse"] | null;
+            my_claim: components["schemas"]["ClaimResponse"] | null;
+        };
+        /**
+         * TaskListResponse
+         * @description Offset-paginated card page (the documented V1 choice).
+         */
+        TaskListResponse: {
+            /** Items */
+            items: components["schemas"]["TaskCardResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * TaskStatisticsResponse
+         * @description The Teacher workbench statistics aggregate (spec §41): counts only,
+         *     by construction — no Assignment row material ever rides along.
+         */
+        TaskStatisticsResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Assignments Available */
+            assignments_available: number;
+            /** Assignments Occupied */
+            assignments_occupied: number;
+            /** Assignments Completed */
+            assignments_completed: number;
+            /** Assignments Retired */
+            assignments_retired: number;
+            /** Active Claims */
+            active_claims: number;
+            /** Completion Rate */
+            completion_rate: number;
+            rating: components["schemas"]["RatingSummaryResponse"] | null;
+            /** Submission Counts */
+            submission_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * TaskTransitionResponse
+         * @description One lifecycle verb's outcome, normalized across verbs:
+         *     where the task landed, whether it is claimable there
+         *     (``TaskService.is_claimable``, the same verdict the claim side
+         *     enforces), and the lifecycle timestamps.
+         */
+        TaskTransitionResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Status */
+            status: string;
+            /** Claimable */
+            claimable: boolean;
+            /** Published At */
+            published_at: string | null;
+            /** Closed At */
+            closed_at: string | null;
+        };
+        /**
+         * TaskUpdateRequest
+         * @description Partial edit under the V1 edit rule; absent/None means unchanged.
+         *
+         *     The field split is ``UpdateTask``'s (presentation vs contract); the
+         *     service decides what the task's current status permits.
+         */
+        TaskUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Notify 24H */
+            notify_24h?: boolean | null;
+            /** Notify 4H */
+            notify_4h?: boolean | null;
+            /** Notification Channels */
+            notification_channels?: string[] | null;
+            /** Base Reward Points */
+            base_reward_points?: number | null;
+            /** Deadline Mode */
+            deadline_mode?: string | null;
+            /** Fixed Deadline At */
+            fixed_deadline_at?: string | null;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Claim Cutoff Minutes */
+            claim_cutoff_minutes?: number | null;
+            /** Submission Schema */
+            submission_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Submission Schema Version */
+            submission_schema_version?: number | null;
+            /** Allowed File Types */
+            allowed_file_types?: string[] | null;
+            /** Max File Size Bytes */
+            max_file_size_bytes?: number | null;
+        };
+        /**
+         * TeacherTaskListItemResponse
+         * @description One workbench list row (spec §41 Task list): card-level facts plus
+         *     lifecycle timestamps, every status including DRAFT. Contract fields
+         *     ride only ``TeacherTaskResponse`` (the detail).
+         */
+        TeacherTaskListItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Task Type */
+            task_type: string;
+            /** Rarity */
+            rarity: string;
+            /** Base Reward Points */
+            base_reward_points: number;
+            /** Deadline Mode */
+            deadline_mode: string;
+            /** Fixed Deadline At */
+            fixed_deadline_at: string | null;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Published At */
+            published_at: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * TeacherTaskListResponse
+         * @description Offset-paginated workbench page (the documented V1 choice).
+         */
+        TeacherTaskListResponse: {
+            /** Items */
+            items: components["schemas"]["TeacherTaskListItemResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * TeacherTaskResponse
+         * @description The staff workbench's full view of a task (spec §41): everything the
+         *     owner configured, including contract fields frozen at first publish.
+         *     ``owner_teacher_id`` stays out — staff know whose surface they called,
+         *     and the id is not needed to operate the workbench (spec §40).
+         */
+        TeacherTaskResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Task Type */
+            task_type: string;
+            /** Rarity */
+            rarity: string;
+            /** Base Reward Points */
+            base_reward_points: number;
+            /** Status */
+            status: string;
+            /** Deadline Mode */
+            deadline_mode: string;
+            /** Fixed Deadline At */
+            fixed_deadline_at: string | null;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Claim Cutoff Minutes */
+            claim_cutoff_minutes: number;
+            /** Grace Period Minutes */
+            grace_period_minutes: number;
+            /** Submission Schema */
+            submission_schema: {
+                [key: string]: unknown;
+            } | null;
+            /** Submission Schema Version */
+            submission_schema_version: number | null;
+            /** Allowed File Types */
+            allowed_file_types: string[];
+            /** Max File Size Bytes */
+            max_file_size_bytes: number;
+            /** Notify 24H */
+            notify_24h: boolean;
+            /** Notify 4H */
+            notify_4h: boolean;
+            /** Notification Channels */
+            notification_channels: string[];
+            /** Published At */
+            published_at: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * TokenPairResponse
@@ -717,6 +2465,86 @@ export interface components {
             token_type: string;
         };
         /**
+         * TotpConfirmRequest
+         * @description Confirm the pending TOTP credential with one valid code (§5.8).
+         */
+        TotpConfirmRequest: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * TotpConfirmResponse
+         * @description Recovery codes from enabling 2FA, shown exactly once (spec §5.8).
+         */
+        TotpConfirmResponse: {
+            /** Recovery Codes */
+            recovery_codes: string[];
+        };
+        /**
+         * TotpSetupResponse
+         * @description A freshly generated TOTP credential, displayed exactly once (§5.8).
+         */
+        TotpSetupResponse: {
+            /** Secret */
+            secret: string;
+            /** Otpauth Uri */
+            otpauth_uri: string;
+        };
+        /**
+         * UploadCompleteRequest
+         * @description Notify the backend that the presigned PUT landed (spec §10 step 5).
+         *
+         *     The intent id travels in the BODY: the URL shape stays the spec §28
+         *     ``POST /submissions/upload-complete`` (the resource being completed
+         *     is the single-use grant, not a Submission yet — there is no
+         *     submission id to put in the path).
+         */
+        UploadCompleteRequest: {
+            /**
+             * Intent Id
+             * Format: uuid
+             */
+            intent_id: string;
+        };
+        /**
+         * UploadIntentRequest
+         * @description Request an upload intent (spec §10 step 1): the claim being
+         *     submitted against, the display filename, the declared file type, and
+         *     the declared byte size the backend checks against the Task's file
+         *     policy before issuing a presigned URL.
+         */
+        UploadIntentRequest: {
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /** Filename */
+            filename: string;
+            declared_type: components["schemas"]["FileType"];
+            /** Size */
+            size: number;
+        };
+        /**
+         * UploadIntentResponse
+         * @description The issued grant: the intent id for the later finalize call, the
+         *     short-lived presigned upload URL, and its expiry instant.
+         */
+        UploadIntentResponse: {
+            /**
+             * Intent Id
+             * Format: uuid
+             */
+            intent_id: string;
+            /** Upload Url */
+            upload_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
          * UserPublic
          * @description Public account view returned to the account owner (spec §40).
          *
@@ -730,12 +2558,12 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Username */
+            username: string;
             /** Nickname */
             nickname: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
-            /** Username */
-            username: string;
         };
         /**
          * UserStatus
@@ -744,16 +2572,113 @@ export interface components {
         UserStatus: "PENDING_PHONE" | "ACTIVE" | "SUSPENDED" | "BANNED";
         /** ValidationError */
         ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
+        /**
+         * ValidationFindingPayload
+         * @description One bounded §12.4 finding sample (error or warning).
+         */
+        ValidationFindingPayload: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Row */
+            row?: number | null;
+            /** Column */
+            column?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * ValidationReportPayload
+         * @description The student/reviewer-safe §12.4 report, exactly as persisted.
+         *
+         *     Field-by-field over the stored JSONB (the ``report_to_json`` shape):
+         *     counts stay exact, finding/preview lists are already bounded by the
+         *     report builder, and no object key or parser internal exists in the
+         *     source shape to leak.
+         */
+        ValidationReportPayload: {
+            /** Parser Version */
+            parser_version: string;
+            /** File Type */
+            file_type: string;
+            /** Row Count */
+            row_count: number;
+            /** Detected Columns */
+            detected_columns: string[];
+            /** Missing Required Columns */
+            missing_required_columns: string[];
+            /** Extra Columns */
+            extra_columns: string[];
+            /** Type Error Counts */
+            type_error_counts: {
+                [key: string]: number;
+            };
+            /** Null Ratios */
+            null_ratios: {
+                [key: string]: number;
+            };
+            /** Duplicate Counts */
+            duplicate_counts: {
+                [key: string]: number;
+            };
+            /** Warnings */
+            warnings: components["schemas"]["ValidationFindingPayload"][];
+            /** Errors */
+            errors: components["schemas"]["ValidationFindingPayload"][];
+            /** Duration Ms */
+            duration_ms: number;
+            /** Preview Rows */
+            preview_rows: string[][];
+        };
+        /**
+         * WalletResponse
+         * @description The wallet strip (spec §15.1/§16.2): the projection's figures
+         *     plus the spendable derivation.
+         */
+        WalletResponse: {
+            /** Available Points */
+            available_points: number;
+            /** Earned Points */
+            earned_points: number;
+            /** Spendable Points */
+            spendable_points: number;
+        };
+        /** ReviewQueueResponse */
+        app__modules__points__router__ReviewQueueResponse: {
+            /** Items */
+            items: components["schemas"]["RedemptionReviewResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * ReviewQueueResponse
+         * @description One offset page of the teacher review queue.
+         */
+        app__modules__submissions__schemas__ReviewQueueResponse: {
+            /** Items */
+            items: components["schemas"]["ReviewQueueItemResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
     };
     responses: never;
@@ -764,6 +2689,107 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    request_phone_challenge_api_v1_auth_phone_challenges_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneChallengeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneChallengeVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_student_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -774,6 +2800,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"] | null;
             };
         };
         responses: {
@@ -892,206 +2951,6 @@ export interface operations {
             };
         };
     };
-    request_phone_challenge_api_v1_auth_phone_challenges_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PhoneChallengeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChallengeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PhoneChallengeVerifyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PhoneTokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    refresh_api_v1_auth_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["RefreshRequest"] | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    register_student_api_v1_auth_register_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    accept_staff_invitation_api_v1_auth_staff_invitations_accept_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StaffInvitationAcceptRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    staff_login_api_v1_auth_staff_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StaffLoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     read_me_api_v1_me_get: {
         parameters: {
             query?: never;
@@ -1108,135 +2967,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MePublic"];
-                };
-            };
-        };
-    };
-    list_my_claims_api_v1_me_claims_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MyClaimsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    request_email_verification_api_v1_me_email_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmailBindRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmailChallengeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unbind_email_api_v1_me_email_unbind_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmailUnbindRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    confirm_email_verification_api_v1_me_email_verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmailVerifyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MePublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1262,37 +2992,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MePublic"];
                 };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    change_password_api_v1_me_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasswordChangeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1367,6 +3066,1517 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_email_verification_api_v1_me_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailChallengeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_email_verification_api_v1_me_email_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unbind_email_api_v1_me_email_unbind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_me_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    staff_login_api_v1_auth_staff_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_staff_invitation_api_v1_auth_staff_invitations_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffInvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    begin_totp_setup_api_v1_staff_totp_begin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpSetupResponse"];
+                };
+            };
+        };
+    };
+    confirm_totp_setup_api_v1_staff_totp_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tasks_api_v1_tasks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_api_v1_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_task_api_v1_tasks__task_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_claims_api_v1_me_claims_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyClaimsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    abandon_claim_api_v1_claims__claim_id__abandon_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_teacher_tasks_api_v1_teacher_tasks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherTaskListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_api_v1_teacher_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherTaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_teacher_task_api_v1_teacher_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherTaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_task_api_v1_teacher_tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherTaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_task_api_v1_teacher_tasks__task_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_task_api_v1_teacher_tasks__task_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_task_api_v1_teacher_tasks__task_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_task_api_v1_teacher_tasks__task_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_task_api_v1_teacher_tasks__task_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                teacher_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollaboratorAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaboratorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                teacher_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_statistics_api_v1_teacher_tasks__task_id__statistics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatisticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_upload_intent_api_v1_submissions_upload_intent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadIntentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadIntentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_upload_api_v1_submissions_upload_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_submission_validation_api_v1_submissions__submission_id__validation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionValidationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_submission_api_v1_submissions__submission_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_review_queue_api_v1_teacher_submissions_review_queue_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__modules__submissions__schemas__ReviewQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_submission_api_v1_teacher_submissions__submission_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApproveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    require_revision_api_v1_teacher_submissions__submission_id__revision_required_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionRequiredRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionRequiredResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invalidate_reward_lock_api_v1_teacher_submissions__submission_id__invalidate_reward_lock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvalidateRewardLockRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionRequiredResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_wallet_api_v1_points_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletResponse"];
+                };
+            };
+        };
+    };
+    list_rewards_api_v1_rewards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardsListResponse"];
+                };
+            };
+        };
+    };
+    redeem_reward_api_v1_rewards__reward_id__redeem_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                reward_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_redemption_queue_api_v1_teacher_rewards_redemptions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__modules__points__router__ReviewQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedemptionRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedemptionFulfillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    daily_board_api_v1_rankings_daily_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    monthly_board_api_v1_rankings_monthly_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    all_time_board_api_v1_rankings_all_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    around_me_api_v1_rankings_around_me_get: {
+        parameters: {
+            query?: {
+                period?: string;
+                radius?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AroundMeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_growth_api_v1_growth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthResponse"];
+                };
+            };
+        };
+    };
+    live_health_live_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    ready_health_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

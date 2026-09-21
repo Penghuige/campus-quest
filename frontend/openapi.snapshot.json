@@ -5,8 +5,137 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/auth/phone/challenges": {
+      "post": {
+        "summary": "Request Phone Challenge",
+        "description": "Issue a REGISTER-purpose OTP challenge (spec \u00a75.4, \u00a733.2).\n\nThe purpose is fixed server-side: a public endpoint must never mint\nproofs for password reset or phone change.",
+        "operationId": "request_phone_challenge_api_v1_auth_phone_challenges_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/phone/challenges/{challenge_id}/verify": {
+      "post": {
+        "summary": "Verify Phone Challenge",
+        "description": "Consume the challenge with its SMS code; mint the single-use proof.",
+        "operationId": "verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChallengeVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "summary": "Register Student",
+        "operationId": "register_student_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
+        "summary": "Login",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -20,31 +149,77 @@
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenPairResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "summary": "Refresh",
+        "description": "Rotate one refresh session (cookie or body token; spec \u00a75.6).\n\nThe body is optional: a cookie-authenticated browser sends no body at\nall (the CSRF header carries the mutation proof), so requiring one\nwould 422 the exact client this endpoint serves.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
           }
         },
-        "summary": "Login"
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/auth/logout": {
       "post": {
+        "summary": "Logout",
         "description": "Revoke exactly the presented session; clear the auth cookies.\n\nBody optional for the same reason as refresh: cookie clients may send\nnone.",
         "operationId": "logout_api_v1_auth_logout_post",
         "requestBody": {
@@ -69,22 +244,22 @@
             "description": "Successful Response"
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
-        },
-        "summary": "Logout"
+        }
       }
     },
     "/api/v1/auth/password/forgot": {
       "post": {
-        "description": "Reset OTP to the bound phone — uniformly for EVERY identifier class.\n\nKnown student, unknown username, staff account, phoneless student: the\nresponse is the identical challenge shape either way (no enumeration\noracle; see ProfileService.request_password_reset).",
+        "summary": "Request Password Reset",
+        "description": "Reset OTP to the bound phone \u2014 uniformly for EVERY identifier class.\n\nKnown student, unknown username, staff account, phoneless student: the\nresponse is the identical challenge shape either way (no enumeration\noracle; see ProfileService.request_password_reset).",
         "operationId": "request_password_reset_api_v1_auth_password_forgot_post",
         "requestBody": {
           "content": {
@@ -98,31 +273,31 @@
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChallengeResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
-        },
-        "summary": "Request Password Reset"
+        }
       }
     },
     "/api/v1/auth/password/reset": {
       "post": {
+        "summary": "Confirm Password Reset",
         "operationId": "confirm_password_reset_api_v1_auth_password_reset_post",
         "requestBody": {
           "content": {
@@ -139,356 +314,175 @@
             "description": "Successful Response"
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Confirm Password Reset"
-      }
-    },
-    "/api/v1/auth/phone/challenges": {
-      "post": {
-        "description": "Issue a REGISTER-purpose OTP challenge (spec §5.4, §33.2).\n\nThe purpose is fixed server-side: a public endpoint must never mint\nproofs for password reset or phone change.",
-        "operationId": "request_phone_challenge_api_v1_auth_phone_challenges_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PhoneChallengeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChallengeResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Request Phone Challenge"
-      }
-    },
-    "/api/v1/auth/phone/challenges/{challenge_id}/verify": {
-      "post": {
-        "description": "Consume the challenge with its SMS code; mint the single-use proof.",
-        "operationId": "verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Challenge Id",
-              "type": "string"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PhoneChallengeVerifyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhoneTokenResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Verify Phone Challenge"
-      }
-    },
-    "/api/v1/auth/refresh": {
-      "post": {
-        "description": "Rotate one refresh session (cookie or body token; spec §5.6).\n\nThe body is optional: a cookie-authenticated browser sends no body at\nall (the CSRF header carries the mutation proof), so requiring one\nwould 422 the exact client this endpoint serves.",
-        "operationId": "refresh_api_v1_auth_refresh_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/RefreshRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Refresh"
-      }
-    },
-    "/api/v1/auth/register": {
-      "post": {
-        "operationId": "register_student_api_v1_auth_register_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserPublic"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Register Student"
-      }
-    },
-    "/api/v1/auth/staff/invitations/accept": {
-      "post": {
-        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.",
-        "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StaffInvitationAcceptRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Accept Staff Invitation"
-      }
-    },
-    "/api/v1/auth/staff/login": {
-      "post": {
-        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first.",
-        "operationId": "staff_login_api_v1_auth_staff_login_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StaffLoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Staff Login"
+        }
       }
     },
     "/api/v1/me": {
       "get": {
-        "description": "The owner's own account view (spec §40). Read-only: any live session\nmay read its own profile, including a suspended account's.",
+        "summary": "Read Me",
+        "description": "The owner's own account view (spec \u00a740). Read-only: any live session\nmay read its own profile, including a suspended account's.",
         "operationId": "read_me_api_v1_me_get",
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MePublic"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
-        ],
-        "summary": "Read Me"
+        ]
       }
     },
-    "/api/v1/me/claims": {
-      "get": {
-        "description": "The actor's own claim history, newest first; assignment\nplatform/keyword are visible here because every row is the owner's.\nA Student surface by policy (spec §4.1): staff never own claims, and\nthe 403 pins that boundary instead of serving an empty list.",
-        "operationId": "list_my_claims_api_v1_me_claims_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 50,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+    "/api/v1/me/nickname": {
+      "patch": {
+        "summary": "Change Nickname",
+        "operationId": "change_nickname_api_v1_me_nickname_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicknameUpdateRequest"
+              }
             }
           },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MyClaimsResponse"
+                  "$ref": "#/components/schemas/MePublic"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
-        ],
-        "summary": "List My Claims"
+        ]
+      }
+    },
+    "/api/v1/me/phone/change": {
+      "post": {
+        "summary": "Request Phone Change",
+        "description": "Re-authenticate, then OTP-challenge the NEW phone (spec \u00a75.4).",
+        "operationId": "request_phone_change_api_v1_me_phone_change_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/phone/change/confirm": {
+      "post": {
+        "summary": "Confirm Phone Change",
+        "operationId": "confirm_phone_change_api_v1_me_phone_change_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChangeConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/me/email": {
       "post": {
+        "summary": "Request Email Verification",
         "operationId": "request_email_verification_api_v1_me_email_post",
         "requestBody": {
           "content": {
@@ -502,36 +496,79 @@
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EmailChallengeResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
-        ],
-        "summary": "Request Email Verification"
+        ]
+      }
+    },
+    "/api/v1/me/email/verify": {
+      "post": {
+        "summary": "Confirm Email Verification",
+        "operationId": "confirm_email_verification_api_v1_me_email_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/me/email/unbind": {
       "post": {
+        "summary": "Unbind Email",
         "operationId": "unbind_email_api_v1_me_email_unbind_post",
         "requestBody": {
           "content": {
@@ -548,112 +585,26 @@
             "description": "Successful Response"
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Unbind Email"
-      }
-    },
-    "/api/v1/me/email/verify": {
-      "post": {
-        "operationId": "confirm_email_verification_api_v1_me_email_verify_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EmailVerifyRequest"
               }
             }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MePublic"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
-        ],
-        "summary": "Confirm Email Verification"
-      }
-    },
-    "/api/v1/me/nickname": {
-      "patch": {
-        "operationId": "change_nickname_api_v1_me_nickname_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NicknameUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MePublic"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Change Nickname"
+        ]
       }
     },
     "/api/v1/me/password": {
       "post": {
+        "summary": "Change Password",
         "description": "Rotate the password; every other session dies, this one survives.",
         "operationId": "change_password_api_v1_me_password_post",
         "requestBody": {
@@ -671,33 +622,33 @@
             "description": "Successful Response"
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
-        ],
-        "summary": "Change Password"
+        ]
       }
     },
-    "/api/v1/me/phone/change": {
+    "/api/v1/auth/staff/login": {
       "post": {
-        "description": "Re-authenticate, then OTP-challenge the NEW phone (spec §5.4).",
-        "operationId": "request_phone_change_api_v1_me_phone_change_post",
+        "summary": "Staff Login",
+        "description": "Staff login: verified email + password + TOTP-or-recovery (\u00a75.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` \u2014 the client's signal to\nfinish ``/staff/totp/*`` first.",
+        "operationId": "staff_login_api_v1_auth_staff_login_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PhoneChangeRequest"
+                "$ref": "#/components/schemas/StaffLoginRequest"
               }
             }
           },
@@ -705,42 +656,38 @@
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChallengeResponse"
+                  "$ref": "#/components/schemas/TokenPairResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Request Phone Change"
+        }
       }
     },
-    "/api/v1/me/phone/change/confirm": {
+    "/api/v1/auth/staff/invitations/accept": {
       "post": {
-        "operationId": "confirm_phone_change_api_v1_me_phone_change_confirm_post",
+        "summary": "Accept Staff Invitation",
+        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (\u00a75.8); management endpoints stay closed until 2FA is confirmed.",
+        "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PhoneChangeConfirmRequest"
+                "$ref": "#/components/schemas/StaffInvitationAcceptRequest"
               }
             }
           },
@@ -748,114 +695,2438 @@
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MePublic"
+                  "$ref": "#/components/schemas/TokenPairResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/totp/begin": {
+      "post": {
+        "summary": "Begin Totp Setup",
+        "description": "Generate (or rotate) the pending TOTP secret; displayed once (\u00a75.8).",
+        "operationId": "begin_totp_setup_api_v1_staff_totp_begin_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpSetupResponse"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
+        ]
+      }
+    },
+    "/api/v1/staff/totp/confirm": {
+      "post": {
+        "summary": "Confirm Totp Setup",
+        "description": "Confirm with one valid code; recovery codes shown exactly once.",
+        "operationId": "confirm_totp_setup_api_v1_staff_totp_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "summary": "List Tasks",
+        "description": "One offset page of PUBLISHED task cards (spec \u00a742): counts and card\nfacts only \u2014 the Assignment list never rides along.",
+        "operationId": "list_tasks_api_v1_tasks_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
         ],
-        "summary": "Confirm Phone Change"
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "summary": "Get Task",
+        "description": "Published detail + the viewer's own non-terminal claim, if any.",
+        "operationId": "get_task_api_v1_tasks__task_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/claim": {
+      "post": {
+        "summary": "Claim Task",
+        "description": "Claim one random AVAILABLE assignment (spec \u00a78.3) \u2014 a Student\ncapability (spec \u00a74.1); staff roles are refused at the guard.\n\n``ClaimRequest`` is fieldless and forbids extras: the caller cannot\nname an assignment \u2014 the server picks randomly under lock. The\nresponse is owner-scoped and names the assigned unit's\nplatform/keyword (the only student surface that ever does).",
+        "operationId": "claim_task_api_v1_tasks__task_id__claim_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ClaimRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/claims": {
+      "get": {
+        "summary": "List My Claims",
+        "description": "The actor's own claim history, newest first; assignment\nplatform/keyword are visible here because every row is the owner's.\nA Student surface by policy (spec \u00a74.1): staff never own claims, and\nthe 403 pins that boundary instead of serving an empty list.",
+        "operationId": "list_my_claims_api_v1_me_claims_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyClaimsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{claim_id}/abandon": {
+      "post": {
+        "summary": "Abandon Claim",
+        "description": "Abandon the actor's own claim and release its assignment (spec\n\u00a78.5) \u2014 a Student capability (spec \u00a74.1); replaying a successful\nabandon returns the same terminal row.",
+        "operationId": "abandon_claim_api_v1_claims__claim_id__abandon_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "claim_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Claim Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks": {
+      "get": {
+        "summary": "List Teacher Tasks",
+        "description": "The workbench Task list (spec \u00a741): the actor's own tasks plus the\nones they collaborate on, every status including DRAFT, offset-\npaginated. Card-level facts only \u2014 contract fields ride the detail.",
+        "operationId": "list_teacher_tasks_api_v1_teacher_tasks_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherTaskListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Task",
+        "description": "Create a DRAFT task owned by the actor (spec \u00a76).",
+        "operationId": "create_task_api_v1_teacher_tasks_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}": {
+      "get": {
+        "summary": "Get Teacher Task",
+        "description": "The full workbench detail of one task (spec \u00a741): everything the\nowner configured, contract fields included, DRAFT readable (unlike\nthe student surface). Owner, any collaborator, or Admin.",
+        "operationId": "get_teacher_task_api_v1_teacher_tasks__task_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update Task",
+        "description": "Partial edit under the V1 edit rule (spec \u00a76.2); ownership and the\nfield-split are service concerns.",
+        "operationId": "update_task_api_v1_teacher_tasks__task_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/publish": {
+      "post": {
+        "summary": "Publish Task",
+        "operationId": "publish_task_api_v1_teacher_tasks__task_id__publish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/pause": {
+      "post": {
+        "summary": "Pause Task",
+        "operationId": "pause_task_api_v1_teacher_tasks__task_id__pause_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/resume": {
+      "post": {
+        "summary": "Resume Task",
+        "operationId": "resume_task_api_v1_teacher_tasks__task_id__resume_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/close": {
+      "post": {
+        "summary": "Close Task",
+        "operationId": "close_task_api_v1_teacher_tasks__task_id__close_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/archive": {
+      "post": {
+        "summary": "Archive Task",
+        "operationId": "archive_task_api_v1_teacher_tasks__task_id__archive_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTransitionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/assignments/import/preview": {
+      "post": {
+        "summary": "Preview Assignment Import",
+        "description": "Parse and pre-check a CSV upload (spec \u00a77.1 steps 1-4).\n\nThe file is the raw request body (``text/csv``); the importer's byte\ncap rejects oversize payloads before any parsing work.",
+        "operationId": "preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/assignments/import/confirm": {
+      "post": {
+        "summary": "Confirm Assignment Import",
+        "description": "Insert exactly the previewed rows in one transaction (spec \u00a77.1\nsteps 5-6), consuming the single-use preview token.",
+        "operationId": "confirm_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_confirm_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/collaborators/{teacher_id}": {
+      "put": {
+        "summary": "Add Collaborator",
+        "description": "Grant a capability set on the task to a Teacher (spec \u00a74.2); the\nstanding / grant-within-own-set / target-role rules are the service's.",
+        "operationId": "add_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "teacher_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Teacher Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollaboratorAddRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaboratorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove Collaborator",
+        "operationId": "remove_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "teacher_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Teacher Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/statistics": {
+      "get": {
+        "summary": "Get Task Statistics",
+        "description": "The workbench aggregate (spec \u00a741): counts only, by construction.",
+        "operationId": "get_task_statistics_api_v1_teacher_tasks__task_id__statistics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatisticsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/upload-intent": {
+      "post": {
+        "summary": "Create Upload Intent",
+        "description": "Issue the single-use presigned upload grant (spec \u00a710 step 1-5).\n\nThe browser PUTs the file straight to storage \u2014 the 200 MB payload\nnever streams through this API. The response carries the intent id,\nthe short-lived URL, and the URL's expiry; the server-generated\nobject key stays server-side (spec \u00a740).",
+        "operationId": "create_upload_intent_api_v1_submissions_upload_intent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadIntentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/submissions/upload-complete": {
+      "post": {
+        "summary": "Complete Upload",
+        "description": "Verify the uploaded object and create the Submission version\n(spec \u00a710 steps 5-7), then hand it to the async validation pipeline\nthrough the dispatcher (step 8). Replaying a completed intent\nreturns the SAME Submission (spec \u00a732).\n\nThe object-key-free public DTO rides the response; ``created_at``\nis a server default the INSERT did not return, so the row is\nrefreshed before serialization (the tasks-router create precedent).",
+        "operationId": "complete_upload_api_v1_submissions_upload_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/validation": {
+      "get": {
+        "summary": "Get Submission Validation",
+        "description": "The owner's machine-validation report (spec \u00a711.1, \u00a712.4) \u2014 the\npersisted \u00a712.4 shape plus the status projections; ``report`` is\nnull until the async run finishes.",
+        "operationId": "get_submission_validation_api_v1_submissions__submission_id__validation_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionValidationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/{submission_id}/download": {
+      "get": {
+        "summary": "Download Submission",
+        "description": "Mint a short-lived presigned GET (spec \u00a733.3).\n\nThe guard is the broad ACTIVE one because BOTH authorized parties\nreach this route \u2014 the owning Student and the reviewing teacher\n(task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual\nownership/role judgment runs inside the query service BEFORE the\nport signs. The response carries the URL, never the key.",
+        "operationId": "download_submission_api_v1_submissions__submission_id__download_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadUrlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/submissions/review-queue": {
+      "get": {
+        "summary": "List Review Queue",
+        "description": "One offset page of the review queue: the VALIDATED submissions\nstill awaiting a decision on the actor's own/collaborated tasks,\noldest first, with the reviewer's judging context.",
+        "operationId": "list_review_queue_api_v1_teacher_submissions_review_queue_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__modules__submissions__schemas__ReviewQueueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/submissions/{submission_id}/approve": {
+      "post": {
+        "summary": "Approve Submission",
+        "description": "Run the \u00a714 ten-step approve transaction (claim COMPLETED, lock\nCONFIRMED, one grant, assignment COMPLETED); a replay on a COMPLETED\nclaim answers ``already_reviewed`` with nothing written.",
+        "operationId": "approve_submission_api_v1_teacher_submissions__submission_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/submissions/{submission_id}/revision-required": {
+      "post": {
+        "summary": "Require Revision",
+        "description": "Return the submission for fixes (spec \u00a711.3): the claim moves to\nREVISION_REQUIRED with the \u00a711.4 window; the existing lock survives.\nThe note is mandatory at the transport (the teacher's guidance).",
+        "operationId": "require_revision_api_v1_teacher_submissions__submission_id__revision_required_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionRequiredRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionRequiredResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/submissions/{submission_id}/invalidate-reward-lock": {
+      "post": {
+        "summary": "Invalidate Reward Lock",
+        "description": "Cancel the PROVISIONAL lock and demand a resubmission (spec\n\u00a711.3): the projection clears, the cancelled values survive on the\nappend-only audit rows, and the reason is mandatory.",
+        "operationId": "invalidate_reward_lock_api_v1_teacher_submissions__submission_id__invalidate_reward_lock_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvalidateRewardLockRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionRequiredResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/points/me": {
+      "get": {
+        "summary": "My Wallet",
+        "description": "The caller's wallet strip: available (spendable-balance\nprojection), earned (cumulative task contribution \u2014 spending never\ntouches it, spec \u00a717.1), and spendable (available minus ACTIVE\nfreezes, spec \u00a716.2).",
+        "operationId": "my_wallet_api_v1_points_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rewards": {
+      "get": {
+        "summary": "List Rewards",
+        "description": "The enabled reward catalogue with the server-side window verdict\n(spec \u00a716.1): ``window_open`` is computed HERE at the business\nclock, the same half-open rule the redeem gate enforces, so the\nshelf can never advertise an item the gate would refuse.",
+        "operationId": "list_rewards_api_v1_rewards_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardsListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rewards/{reward_id}/redeem": {
+      "post": {
+        "summary": "Redeem Reward",
+        "description": "Request one redemption: the service freezes the points and\npre-occupies the stock unit atomically (spec \u00a716.1) and answers the\ntyped conflict envelopes on any gate failure.\n\n``Idempotency-Key`` is ADVISORY in V1 (spec \u00a732; see the module\ndocstring): accepted, never deduped on \u2014 the database constraints\nare the duplicate-side-effect protection.",
+        "operationId": "redeem_reward_api_v1_rewards__reward_id__redeem_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reward_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Reward Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/rewards/redemptions": {
+      "get": {
+        "summary": "List Redemption Queue",
+        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name.",
+        "operationId": "list_redemption_queue_api_v1_teacher_rewards_redemptions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__modules__points__router__ReviewQueueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/approve": {
+      "post": {
+        "summary": "Approve Redemption",
+        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec \u00a716.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.",
+        "operationId": "approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "redemption_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Redemption Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/reject": {
+      "post": {
+        "summary": "Reject Redemption",
+        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec \u00a716.2).",
+        "operationId": "reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "redemption_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Redemption Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedemptionRejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/rewards/redemptions/{redemption_id}/fulfill": {
+      "post": {
+        "summary": "Fulfill Redemption",
+        "description": "Record the physical delivery of an APPROVED redemption (spec\n\u00a716.2: approval and delivery are separate transitions).",
+        "operationId": "fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "redemption_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Redemption Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedemptionFulfillRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rankings/daily": {
+      "get": {
+        "summary": "Daily Board",
+        "description": "Today's board in BUSINESS_TIMEZONE: top N plus the caller's own\nrank and score.",
+        "operationId": "daily_board_api_v1_rankings_daily_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rankings/monthly": {
+      "get": {
+        "summary": "Monthly Board",
+        "description": "The current business month's board: top N plus the caller's own\nrank and score.",
+        "operationId": "monthly_board_api_v1_rankings_monthly_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rankings/all": {
+      "get": {
+        "summary": "All Time Board",
+        "description": "The all-time board: top N plus the caller's own rank and score.",
+        "operationId": "all_time_board_api_v1_rankings_all_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rankings/around-me": {
+      "get": {
+        "summary": "Around Me",
+        "description": "The caller's neighborhood on one named board (``daily`` /\n``monthly`` / ``all``), numbered with GLOBAL ranks. A caller with no\nscore on the board gets an empty window.",
+        "operationId": "around_me_api_v1_rankings_around_me_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(daily|monthly|all)$",
+              "default": "all",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 0,
+              "default": 5,
+              "title": "Radius"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AroundMeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/growth/me": {
+      "get": {
+        "summary": "My Growth",
+        "description": "The \u00a719 personal growth profile: month points/rank, total earned,\ncompleted count, on-time ratio (final valid lock judgment), current\nstreak, best historical monthly rank, and owned honors.",
+        "operationId": "my_growth_api_v1_growth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Live Health Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
       }
     }
   },
   "components": {
     "schemas": {
-      "ChallengeResponse": {
-        "description": "Request-side view of an OTP challenge (never the code, §33.2).",
+      "ApproveResponse": {
         "properties": {
-          "challenge_id": {
+          "claim_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Challenge Id",
-            "type": "string"
+            "title": "Claim Id"
           },
-          "expires_at": {
-            "format": "date-time",
-            "title": "Expires At",
-            "type": "string"
+          "claim_status": {
+            "type": "string",
+            "title": "Claim Status"
+          },
+          "reward_lock_status": {
+            "type": "string",
+            "title": "Reward Lock Status"
+          },
+          "points_granted": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points Granted"
+          },
+          "already_reviewed": {
+            "type": "boolean",
+            "title": "Already Reviewed"
           }
         },
+        "type": "object",
+        "required": [
+          "claim_id",
+          "claim_status",
+          "reward_lock_status",
+          "points_granted",
+          "already_reviewed"
+        ],
+        "title": "ApproveResponse",
+        "description": "The \u00a714 approve outcome: the claim's landing state and the single\ngrant. ``already_reviewed`` is True only on the idempotent replay\n(nothing written, no second grant)."
+      },
+      "AroundMeResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RankingEntryResponse"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "title": "AroundMeResponse",
+        "description": "The caller's neighborhood, numbered with GLOBAL board ranks \u2014 a\nslice of the board, never a re-ranked mini-board."
+      },
+      "BoardResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RankingEntryResponse"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "my_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Rank"
+          },
+          "my_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "title": "BoardResponse",
+        "description": "One board read: the top-N entries plus the caller's own standing\n(numbers only; ``null`` while the caller holds no score)."
+      },
+      "ChallengeResponse": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Challenge Id"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
         "required": [
           "challenge_id",
           "expires_at"
         ],
         "title": "ChallengeResponse",
-        "type": "object"
+        "description": "Request-side view of an OTP challenge (never the code, \u00a733.2)."
       },
-      "EmailBindRequest": {
-        "description": "Bind (or re-bind) an email and send its verification token (§5.5).",
+      "ClaimRequest": {
+        "properties": {},
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ClaimRequest",
+        "description": "Claim one random assignment of a task (spec \u00a78.3).\n\nDeliberately fieldless AND ``extra=\"forbid\"``: assignment choice is\nthe server's (random, under lock) \u2014 a request that smuggles an\n``assignment_id`` is a 422 before any service call, proven by test."
+      },
+      "ClaimResponse": {
         "properties": {
-          "email": {
-            "title": "Email",
-            "type": "string"
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Claimed At"
+          },
+          "deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline At"
+          },
+          "grace_deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Grace Deadline At"
+          },
+          "base_reward_points_snapshot": {
+            "type": "integer",
+            "title": "Base Reward Points Snapshot"
           }
         },
+        "type": "object",
+        "required": [
+          "claim_id",
+          "task_id",
+          "status",
+          "platform",
+          "keyword",
+          "claimed_at",
+          "deadline_at",
+          "grace_deadline_at",
+          "base_reward_points_snapshot"
+        ],
+        "title": "ClaimResponse",
+        "description": "A claim on the owner's own surface (spec \u00a78, \u00a742): the assigned\nunit's platform/keyword appear here and nowhere else student-facing."
+      },
+      "CollaboratorAddRequest": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "permissions"
+        ],
+        "title": "CollaboratorAddRequest",
+        "description": "Grant a capability set to a Teacher on a task (spec \u00a74.2)."
+      },
+      "CollaboratorResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "teacher_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Teacher Id"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "teacher_id",
+          "permissions"
+        ],
+        "title": "CollaboratorResponse",
+        "description": "A granted capability set, in canonical storage order."
+      },
+      "DownloadUrlResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "DownloadUrlResponse",
+        "description": "A short-lived presigned download grant (spec \u00a733.3), minted per\nrequest after the authorization check. The response carries the URL\nand its expiry \u2014 never the object key."
+      },
+      "EmailBindRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
         "required": [
           "email"
         ],
         "title": "EmailBindRequest",
-        "type": "object"
+        "description": "Bind (or re-bind) an email and send its verification token (\u00a75.5)."
       },
       "EmailChallengeResponse": {
-        "description": "Request-side view of one email-verification cycle (token-less).",
         "properties": {
           "expires_at": {
+            "type": "string",
             "format": "date-time",
-            "title": "Expires At",
-            "type": "string"
+            "title": "Expires At"
           }
         },
+        "type": "object",
         "required": [
           "expires_at"
         ],
         "title": "EmailChallengeResponse",
-        "type": "object"
+        "description": "Request-side view of one email-verification cycle (token-less)."
       },
       "EmailUnbindRequest": {
-        "description": "Unbind the email after re-authentication (spec §5.5).",
         "properties": {
           "password": {
-            "title": "Password",
-            "type": "string"
+            "type": "string",
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "password"
         ],
         "title": "EmailUnbindRequest",
-        "type": "object"
+        "description": "Unbind the email after re-authentication (spec \u00a75.5)."
       },
       "EmailVerifyRequest": {
-        "description": "Confirm an email binding with the token from the message (§5.5).",
         "properties": {
           "token": {
-            "title": "Token",
-            "type": "string"
+            "type": "string",
+            "title": "Token"
           }
         },
+        "type": "object",
         "required": [
           "token"
         ],
         "title": "EmailVerifyRequest",
-        "type": "object"
+        "description": "Confirm an email binding with the token from the message (\u00a75.5)."
+      },
+      "FileType": {
+        "type": "string",
+        "enum": [
+          "CSV",
+          "XLSX",
+          "SQLITE"
+        ],
+        "title": "FileType",
+        "description": "The closed upload file-type universe (spec \u00a710/\u00a712).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it."
+      },
+      "GrowthResponse": {
+        "properties": {
+          "month_points": {
+            "type": "integer",
+            "title": "Month Points"
+          },
+          "month_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month Rank"
+          },
+          "total_earned_points": {
+            "type": "integer",
+            "title": "Total Earned Points"
+          },
+          "completed_count": {
+            "type": "integer",
+            "title": "Completed Count"
+          },
+          "on_time_count": {
+            "type": "integer",
+            "title": "On Time Count"
+          },
+          "on_time_ratio": {
+            "type": "number",
+            "title": "On Time Ratio"
+          },
+          "current_streak": {
+            "type": "integer",
+            "title": "Current Streak"
+          },
+          "best_month_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Month Rank"
+          },
+          "honors": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedHonorResponse"
+            },
+            "type": "array",
+            "title": "Honors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month_points",
+          "month_rank",
+          "total_earned_points",
+          "completed_count",
+          "on_time_count",
+          "on_time_ratio",
+          "current_streak",
+          "best_month_rank",
+          "honors"
+        ],
+        "title": "GrowthResponse",
+        "description": "The \u00a719 growth page answer; every figure is the caller's own."
       },
       "HTTPValidationError": {
         "properties": {
@@ -863,34 +3134,213 @@
             "items": {
               "$ref": "#/components/schemas/ValidationError"
             },
-            "title": "Detail",
-            "type": "array"
+            "type": "array",
+            "title": "Detail"
           }
         },
-        "title": "HTTPValidationError",
-        "type": "object"
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImportConfirmRequest": {
+        "properties": {
+          "preview_token": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Preview Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview_token"
+        ],
+        "title": "ImportConfirmRequest",
+        "description": "Confirm one preview by its single-use server-side token (spec \u00a77.1)."
+      },
+      "ImportConfirmResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "inserted": {
+            "type": "integer",
+            "title": "Inserted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "inserted"
+        ],
+        "title": "ImportConfirmResponse",
+        "description": "All-or-nothing confirm outcome (spec \u00a77.1 steps 5-6)."
+      },
+      "ImportPreviewErrorResponse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "row_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Number"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "keyword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyword"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ImportPreviewErrorResponse",
+        "description": "One preview error; ``row_number is None`` marks a file-level error."
+      },
+      "ImportPreviewResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "valid_count": {
+            "type": "integer",
+            "title": "Valid Count"
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportPreviewErrorResponse"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "total_rows",
+          "valid_count",
+          "error_count",
+          "errors",
+          "preview_token",
+          "expires_at"
+        ],
+        "title": "ImportPreviewResponse",
+        "description": "Preview outcome (spec \u00a77.1 step 4): counts + per-row errors. The\nvalid rows themselves are NOT echoed \u2014 the count is the contract; the\ntoken names the exact server-stored rows confirm will insert."
+      },
+      "InvalidateRewardLockRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "InvalidateRewardLockRequest",
+        "description": "Cancel the provisional reward lock (spec \u00a711.3). The reviewer\nreason is mandatory \u2014 it lands on the append-only audit rows."
       },
       "LoginRequest": {
-        "description": "Student login: student number + password (spec §5.6).",
         "properties": {
-          "password": {
-            "title": "Password",
-            "type": "string"
-          },
           "username": {
-            "title": "Username",
-            "type": "string"
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "username",
           "password"
         ],
         "title": "LoginRequest",
-        "type": "object"
+        "description": "Student login: student number + password (spec \u00a75.6)."
       },
       "LogoutRequest": {
-        "description": "Logout one session; cookie-carried tokens need no body.",
         "properties": {
           "refresh_token": {
             "anyOf": [
@@ -904,12 +3354,42 @@
             "title": "Refresh Token"
           }
         },
+        "type": "object",
         "title": "LogoutRequest",
-        "type": "object"
+        "description": "Logout one session; cookie-carried tokens need no body."
       },
       "MePublic": {
-        "description": "The owner's own account page (spec §40): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable.",
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "phone_e164": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone E164"
+          },
           "email_normalized": {
             "anyOf": [
               {
@@ -924,46 +3404,17 @@
           "email_verified_at": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Email Verified At"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "nickname": {
-            "title": "Nickname",
-            "type": "string"
-          },
-          "phone_e164": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone E164"
-          },
-          "role": {
-            "$ref": "#/components/schemas/Role"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "username",
@@ -975,57 +3426,57 @@
           "email_verified_at"
         ],
         "title": "MePublic",
-        "type": "object"
+        "description": "The owner's own account page (spec \u00a740): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
       },
       "MyClaimResponse": {
-        "description": "A /me/claims item: the claim view plus the task's title (the list is\ncross-task, so the card context travels with the claim).",
         "properties": {
-          "base_reward_points_snapshot": {
-            "title": "Base Reward Points Snapshot",
-            "type": "integer"
-          },
           "claim_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Claim Id",
-            "type": "string"
-          },
-          "claimed_at": {
-            "format": "date-time",
-            "title": "Claimed At",
-            "type": "string"
-          },
-          "deadline_at": {
-            "format": "date-time",
-            "title": "Deadline At",
-            "type": "string"
-          },
-          "grace_deadline_at": {
-            "format": "date-time",
-            "title": "Grace Deadline At",
-            "type": "string"
-          },
-          "keyword": {
-            "title": "Keyword",
-            "type": "string"
-          },
-          "platform": {
-            "title": "Platform",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
+            "title": "Claim Id"
           },
           "task_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Task Id",
-            "type": "string"
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Claimed At"
+          },
+          "deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline At"
+          },
+          "grace_deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Grace Deadline At"
+          },
+          "base_reward_points_snapshot": {
+            "type": "integer",
+            "title": "Base Reward Points Snapshot"
           },
           "task_title": {
-            "title": "Task Title",
-            "type": "string"
+            "type": "string",
+            "title": "Task Title"
           }
         },
+        "type": "object",
         "required": [
           "claim_id",
           "task_id",
@@ -1039,31 +3490,31 @@
           "task_title"
         ],
         "title": "MyClaimResponse",
-        "type": "object"
+        "description": "A /me/claims item: the claim view plus the task's title (the list is\ncross-task, so the card context travels with the claim)."
       },
       "MyClaimsResponse": {
-        "description": "Offset-paginated own-claim history (current first).",
         "properties": {
           "items": {
             "items": {
               "$ref": "#/components/schemas/MyClaimResponse"
             },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
+            "type": "array",
+            "title": "Items"
           },
           "total": {
-            "title": "Total",
-            "type": "integer"
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
           }
         },
+        "type": "object",
         "required": [
           "items",
           "total",
@@ -1071,169 +3522,443 @@
           "offset"
         ],
         "title": "MyClaimsResponse",
-        "type": "object"
+        "description": "Offset-paginated own-claim history (current first)."
       },
       "NicknameUpdateRequest": {
-        "description": "Change the account nickname (spec §5.3).",
         "properties": {
           "nickname": {
-            "title": "Nickname",
-            "type": "string"
+            "type": "string",
+            "title": "Nickname"
           }
         },
+        "type": "object",
         "required": [
           "nickname"
         ],
         "title": "NicknameUpdateRequest",
-        "type": "object"
+        "description": "Change the account nickname (spec \u00a75.3)."
       },
-      "PasswordChangeRequest": {
-        "description": "Rotate the password after re-authentication (spec §5.6).",
+      "OwnedHonorResponse": {
         "properties": {
-          "current_password": {
-            "title": "Current Password",
-            "type": "string"
+          "honor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Honor Id"
           },
-          "new_password": {
-            "title": "New Password",
-            "type": "string"
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "honor_type": {
+            "type": "string",
+            "title": "Honor Type"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "honor_id",
+          "name",
+          "honor_type",
+          "period",
+          "granted_at"
+        ],
+        "title": "OwnedHonorResponse",
+        "description": "One honor the caller owns (the \u00a719 \u5df2\u83b7\u5f97\u8363\u8a89 row)."
+      },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password"
+          }
+        },
+        "type": "object",
         "required": [
           "current_password",
           "new_password"
         ],
         "title": "PasswordChangeRequest",
-        "type": "object"
+        "description": "Rotate the password after re-authentication (spec \u00a75.6)."
       },
       "PasswordForgotRequest": {
-        "description": "Request a password-reset OTP on the bound phone (spec §5.6).",
         "properties": {
           "username": {
-            "title": "Username",
-            "type": "string"
+            "type": "string",
+            "title": "Username"
           }
         },
+        "type": "object",
         "required": [
           "username"
         ],
         "title": "PasswordForgotRequest",
-        "type": "object"
+        "description": "Request a password-reset OTP on the bound phone (spec \u00a75.6)."
       },
       "PasswordResetRequest": {
-        "description": "Confirm a password reset with the OTP code and a new password.",
         "properties": {
           "challenge_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Challenge Id",
-            "type": "string"
+            "title": "Challenge Id"
           },
           "code": {
-            "title": "Code",
-            "type": "string"
+            "type": "string",
+            "title": "Code"
           },
           "new_password": {
-            "title": "New Password",
-            "type": "string"
+            "type": "string",
+            "title": "New Password"
           }
         },
+        "type": "object",
         "required": [
           "challenge_id",
           "code",
           "new_password"
         ],
         "title": "PasswordResetRequest",
-        "type": "object"
+        "description": "Confirm a password reset with the OTP code and a new password."
       },
       "PhoneChallengeRequest": {
-        "description": "Request one registration OTP for ``phone`` (spec §5.4, §33.2).",
         "properties": {
           "phone": {
-            "title": "Phone",
-            "type": "string"
+            "type": "string",
+            "title": "Phone"
           }
         },
+        "type": "object",
         "required": [
           "phone"
         ],
         "title": "PhoneChallengeRequest",
-        "type": "object"
+        "description": "Request one registration OTP for ``phone`` (spec \u00a75.4, \u00a733.2)."
       },
       "PhoneChallengeVerifyRequest": {
-        "description": "Submit the SMS code for one challenge (spec §5.4).",
         "properties": {
           "code": {
-            "title": "Code",
-            "type": "string"
+            "type": "string",
+            "title": "Code"
           }
         },
+        "type": "object",
         "required": [
           "code"
         ],
         "title": "PhoneChallengeVerifyRequest",
-        "type": "object"
+        "description": "Submit the SMS code for one challenge (spec \u00a75.4)."
       },
       "PhoneChangeConfirmRequest": {
-        "description": "Confirm a phone change with the NEW phone's OTP code (spec §5.4).",
         "properties": {
           "challenge_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Challenge Id",
-            "type": "string"
+            "title": "Challenge Id"
           },
           "code": {
-            "title": "Code",
-            "type": "string"
+            "type": "string",
+            "title": "Code"
           }
         },
+        "type": "object",
         "required": [
           "challenge_id",
           "code"
         ],
         "title": "PhoneChangeConfirmRequest",
-        "type": "object"
+        "description": "Confirm a phone change with the NEW phone's OTP code (spec \u00a75.4)."
       },
       "PhoneChangeRequest": {
-        "description": "Start a phone change: re-auth plus the NEW phone (spec §5.4).",
         "properties": {
-          "new_phone": {
-            "title": "New Phone",
-            "type": "string"
-          },
           "password": {
-            "title": "Password",
-            "type": "string"
+            "type": "string",
+            "title": "Password"
+          },
+          "new_phone": {
+            "type": "string",
+            "title": "New Phone"
           }
         },
+        "type": "object",
         "required": [
           "password",
           "new_phone"
         ],
         "title": "PhoneChangeRequest",
-        "type": "object"
+        "description": "Start a phone change: re-auth plus the NEW phone (spec \u00a75.4)."
       },
       "PhoneTokenResponse": {
-        "description": "The single-use proof minted by a verified challenge (spec §5.4).",
         "properties": {
-          "expires_at": {
-            "format": "date-time",
-            "title": "Expires At",
-            "type": "string"
-          },
           "phone_token": {
-            "title": "Phone Token",
-            "type": "string"
+            "type": "string",
+            "title": "Phone Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
           }
         },
+        "type": "object",
         "required": [
           "phone_token",
           "expires_at"
         ],
         "title": "PhoneTokenResponse",
-        "type": "object"
+        "description": "The single-use proof minted by a verified challenge (spec \u00a75.4)."
+      },
+      "RankingEntryResponse": {
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "display_honor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Honor"
+          },
+          "score": {
+            "type": "integer",
+            "title": "Score"
+          },
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nickname",
+          "display_honor",
+          "score",
+          "rank"
+        ],
+        "title": "RankingEntryResponse",
+        "description": "One public leaderboard row \u2014 EXACTLY the spec \u00a717/\u00a740 shape; any\nadditional field (student number, contact, user id) is unrepresentable\nbecause the model has no field for it."
+      },
+      "RatingSummaryResponse": {
+        "properties": {
+          "average": {
+            "type": "number",
+            "title": "Average"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "average",
+          "count"
+        ],
+        "title": "RatingSummaryResponse",
+        "description": "Average + count only (spec \u00a720/\u00a740: no rater identity)."
+      },
+      "RedemptionFulfillRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RedemptionFulfillRequest",
+        "description": "The optional delivery note (spec \u00a716.2: approval and delivery are\nseparate transitions)."
+      },
+      "RedemptionRejectRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RedemptionRejectRequest",
+        "description": "A rejection's mandatory context (spec \u00a716.2): blank is not a\nreason \u2014 the service re-validates after the strip."
+      },
+      "RedemptionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reward_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reward Item Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "term_key": {
+            "type": "string",
+            "title": "Term Key"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "reward_item_id",
+          "status",
+          "points",
+          "term_key",
+          "created_at"
+        ],
+        "title": "RedemptionResponse",
+        "description": "The student's view of one redemption (spec \u00a716.1): request-time\nsnapshots plus lifecycle state."
+      },
+      "RedemptionReviewResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reward_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reward Item Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "term_key": {
+            "type": "string",
+            "title": "Term Key"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "requester_nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requester Nickname"
+          },
+          "item_name": {
+            "type": "string",
+            "title": "Item Name"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "fulfilled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fulfilled At"
+          },
+          "fulfillment_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fulfillment Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "reward_item_id",
+          "status",
+          "points",
+          "term_key",
+          "created_at",
+          "requester_nickname",
+          "item_name"
+        ],
+        "title": "RedemptionReviewResponse",
+        "description": "The staff view: the student fields plus the review/fulfillment\ntrail and the display-name enrichment (nickname only \u2014 the directory\nport's shape, no contact fields to leak)."
       },
       "RefreshRequest": {
-        "description": "Rotate one refresh session; the token may also arrive by cookie.\n\n``refresh_token`` is omitted by cookie-authenticated clients (the\nHttpOnly refresh cookie carries it); non-browser clients pass it here.",
         "properties": {
           "refresh_token": {
             "anyOf": [
@@ -1247,29 +3972,30 @@
             "title": "Refresh Token"
           }
         },
+        "type": "object",
         "title": "RefreshRequest",
-        "type": "object"
+        "description": "Rotate one refresh session; the token may also arrive by cookie.\n\n``refresh_token`` is omitted by cookie-authenticated clients (the\nHttpOnly refresh cookie carries it); non-browser clients pass it here."
       },
       "RegisterRequest": {
-        "description": "Register one whitelisted student (spec §5.1-5.4).",
         "properties": {
-          "nickname": {
-            "title": "Nickname",
-            "type": "string"
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
           },
-          "password": {
-            "title": "Password",
-            "type": "string"
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
           },
           "phone_token": {
-            "title": "Phone Token",
-            "type": "string"
+            "type": "string",
+            "title": "Phone Token"
           },
-          "student_number": {
-            "title": "Student Number",
-            "type": "string"
+          "password": {
+            "type": "string",
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "student_number",
           "nickname",
@@ -1277,107 +4003,1584 @@
           "password"
         ],
         "title": "RegisterRequest",
-        "type": "object"
+        "description": "Register one whitelisted student (spec \u00a75.1-5.4)."
+      },
+      "ReviewQueueItemResponse": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Submission Id"
+          },
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "task_title": {
+            "type": "string",
+            "title": "Task Title"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename"
+          },
+          "declared_type": {
+            "type": "string",
+            "title": "Declared Type"
+          },
+          "detected_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Type"
+          },
+          "file_size": {
+            "type": "integer",
+            "title": "File Size"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "claim_status": {
+            "type": "string",
+            "title": "Claim Status"
+          },
+          "reward_tier_locked": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reward Tier Locked"
+          },
+          "locked_reward_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Reward Points"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationReportPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submission_id",
+          "claim_id",
+          "task_id",
+          "task_title",
+          "platform",
+          "keyword",
+          "version",
+          "original_filename",
+          "declared_type",
+          "detected_type",
+          "file_size",
+          "submitted_at",
+          "review_status",
+          "claim_status",
+          "reward_tier_locked",
+          "locked_reward_points",
+          "validation",
+          "download_url"
+        ],
+        "title": "ReviewQueueItemResponse",
+        "description": "One review-queue row (spec \u00a741/\u00a728): the VALIDATED submission\nwith the claim/task context the reviewer needs to judge it. The\n``download_url`` is the API path that mints the short-lived\npresigned link on demand (authorized per request), not a presigned\nURL that would expire inside a listed page."
+      },
+      "RevisionRequiredRequest": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "RevisionRequiredRequest",
+        "description": "Return the submission for fixes (spec \u00a711.3). The note \u2014 the\nteacher's guidance \u2014 is mandatory at the transport."
+      },
+      "RevisionRequiredResponse": {
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
+          },
+          "claim_status": {
+            "type": "string",
+            "title": "Claim Status"
+          },
+          "reward_lock_status": {
+            "type": "string",
+            "title": "Reward Lock Status"
+          },
+          "revision_deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Revision Deadline At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_id",
+          "claim_status",
+          "reward_lock_status",
+          "revision_deadline_at"
+        ],
+        "title": "RevisionRequiredResponse",
+        "description": "The claim state after \u9000\u56de/\u5224\u65e0\u6548: REVISION_REQUIRED with the \u00a711.4\nrevision deadline. ``reward_lock_status`` distinguishes the two \u2014\npreserved PROVISIONAL versus cancelled INVALIDATED."
+      },
+      "RewardItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "point_cost": {
+            "type": "integer",
+            "title": "Point Cost"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
+          },
+          "per_user_term_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per User Term Limit"
+          },
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "available_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Until"
+          },
+          "requires_manual_review": {
+            "type": "boolean",
+            "title": "Requires Manual Review"
+          },
+          "window_open": {
+            "type": "boolean",
+            "title": "Window Open"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "point_cost",
+          "stock",
+          "per_user_term_limit",
+          "available_from",
+          "available_until",
+          "requires_manual_review",
+          "window_open"
+        ],
+        "title": "RewardItemResponse",
+        "description": "One catalogue row for the student listing (spec \u00a716/\u00a742). The\nadmin-only ``fulfillment_instructions`` and the enabled flag (always\ntrue in this listing) stay server-side."
+      },
+      "RewardsListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RewardItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "RewardsListResponse"
       },
       "Role": {
+        "type": "string",
         "enum": [
           "STUDENT",
           "TEACHER",
           "ADMIN"
         ],
-        "title": "Role",
-        "type": "string"
+        "title": "Role"
       },
       "StaffInvitationAcceptRequest": {
-        "description": "Trade the single-use invitation token for a staff account (§5.8).",
         "properties": {
-          "password": {
-            "title": "Password",
-            "type": "string"
-          },
           "token": {
-            "title": "Token",
-            "type": "string"
+            "type": "string",
+            "title": "Token"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "token",
           "password"
         ],
         "title": "StaffInvitationAcceptRequest",
-        "type": "object"
+        "description": "Trade the single-use invitation token for a staff account (\u00a75.8)."
       },
       "StaffLoginRequest": {
-        "description": "Staff login: verified email + password + TOTP/recovery code (§5.8).",
         "properties": {
           "email": {
-            "title": "Email",
-            "type": "string"
+            "type": "string",
+            "title": "Email"
           },
           "password": {
-            "title": "Password",
-            "type": "string"
+            "type": "string",
+            "title": "Password"
           },
           "totp_code": {
-            "title": "Totp Code",
-            "type": "string"
+            "type": "string",
+            "title": "Totp Code"
           }
         },
+        "type": "object",
         "required": [
           "email",
           "password",
           "totp_code"
         ],
         "title": "StaffLoginRequest",
-        "type": "object"
+        "description": "Staff login: verified email + password + TOTP/recovery code (\u00a75.8)."
       },
-      "TokenPairResponse": {
-        "description": "One issued session (spec §5.6) — cookie-only refresh delivery.\n\nThe long-lived refresh token NEVER rides in the body:\nit travels exclusively in the HttpOnly refresh cookie the response\nsets, so a JSON body (loggers, proxies, XSS-readable storage) can\nnever leak a live refresh credential. The body's ``access_token`` is\nthe short-lived JWT — including the ``must_setup_totp`` pending staff\nsession's, which is deliberate: it is not the long-lived credential\nand confined-by-construction to the TOTP setup endpoints.\n``csrf_token`` mirrors the non-HttpOnly CSRF cookie so scripted\nclients can echo it without parsing ``Set-Cookie``.",
+      "SubmissionPublic": {
         "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
           },
-          "csrf_token": {
-            "title": "Csrf Token",
-            "type": "string"
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
           },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename"
+          },
+          "declared_type": {
+            "type": "string",
+            "title": "Declared Type"
+          },
+          "file_size": {
+            "type": "integer",
+            "title": "File Size"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status"
+          },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
+        "type": "object",
+        "required": [
+          "id",
+          "claim_id",
+          "version",
+          "original_filename",
+          "declared_type",
+          "file_size",
+          "submitted_at",
+          "validation_status",
+          "review_status",
+          "created_at"
+        ],
+        "title": "SubmissionPublic",
+        "description": "Privacy-safe Submission read DTO (spec \u00a711, \u00a740).\n\nDeliberately minimal: no ``object_key`` (downloads go through\nshort-lived signed URLs issued by an authorized route), no reviewer\nidentity, no retention/legal-hold internals. The validation and\nreview status values are the frozen enum strings."
+      },
+      "SubmissionValidationResponse": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Submission Id"
+          },
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status"
+          },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "detected_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Type"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationReportPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "submission_id",
+          "claim_id",
+          "version",
+          "validation_status",
+          "review_status",
+          "detected_type",
+          "report"
+        ],
+        "title": "SubmissionValidationResponse",
+        "description": "The owner's view of one submission's machine-validation outcome\n(spec \u00a711.1, \u00a712.4): status projections plus the persisted report \u2014\n``None`` while the run has not reached a terminal state."
+      },
+      "TaskCardResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rarity": {
+            "type": "string",
+            "title": "Rarity"
+          },
+          "base_reward_points": {
+            "type": "integer",
+            "title": "Base Reward Points"
+          },
+          "deadline_mode": {
+            "type": "string",
+            "title": "Deadline Mode"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "assignments_available": {
+            "type": "integer",
+            "title": "Assignments Available"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatingSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "rarity",
+          "base_reward_points",
+          "deadline_mode",
+          "fixed_deadline_at",
+          "duration_minutes",
+          "assignments_available",
+          "rating"
+        ],
+        "title": "TaskCardResponse",
+        "description": "The \u00a742 Task Card wire shape."
+      },
+      "TaskCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "base_reward_points": {
+            "type": "integer",
+            "title": "Base Reward Points"
+          },
+          "deadline_mode": {
+            "type": "string",
+            "title": "Deadline Mode"
+          },
+          "allowed_file_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed File Types"
+          },
+          "max_file_size_bytes": {
+            "type": "integer",
+            "title": "Max File Size Bytes"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type",
+            "default": "DATA_CRAWL"
+          },
+          "rarity": {
+            "type": "string",
+            "title": "Rarity",
+            "default": "NORMAL"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "claim_cutoff_minutes": {
+            "type": "integer",
+            "title": "Claim Cutoff Minutes",
+            "default": 240
+          },
+          "submission_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema"
+          },
+          "submission_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema Version"
+          },
+          "notify_24h": {
+            "type": "boolean",
+            "title": "Notify 24H",
+            "default": true
+          },
+          "notify_4h": {
+            "type": "boolean",
+            "title": "Notify 4H",
+            "default": true
+          },
+          "notification_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notification Channels",
+            "default": [
+              "SMS",
+              "EMAIL",
+              "IN_APP"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "base_reward_points",
+          "deadline_mode",
+          "allowed_file_types",
+          "max_file_size_bytes"
+        ],
+        "title": "TaskCreateRequest",
+        "description": "Create one DRAFT task (spec \u00a76). Enum-ish fields stay raw strings:\nthe service is the single validation/normalization authority."
+      },
+      "TaskDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "rarity": {
+            "type": "string",
+            "title": "Rarity"
+          },
+          "base_reward_points": {
+            "type": "integer",
+            "title": "Base Reward Points"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deadline_mode": {
+            "type": "string",
+            "title": "Deadline Mode"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "assignments_available": {
+            "type": "integer",
+            "title": "Assignments Available"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatingSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "my_claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "task_type",
+          "rarity",
+          "base_reward_points",
+          "status",
+          "deadline_mode",
+          "fixed_deadline_at",
+          "duration_minutes",
+          "published_at",
+          "assignments_available",
+          "rating",
+          "my_claim"
+        ],
+        "title": "TaskDetailResponse",
+        "description": "Public detail of one PUBLISHED task plus the viewer's own claim."
+      },
+      "TaskListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskCardResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "TaskListResponse",
+        "description": "Offset-paginated card page (the documented V1 choice)."
+      },
+      "TaskStatisticsResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "assignments_available": {
+            "type": "integer",
+            "title": "Assignments Available"
+          },
+          "assignments_occupied": {
+            "type": "integer",
+            "title": "Assignments Occupied"
+          },
+          "assignments_completed": {
+            "type": "integer",
+            "title": "Assignments Completed"
+          },
+          "assignments_retired": {
+            "type": "integer",
+            "title": "Assignments Retired"
+          },
+          "active_claims": {
+            "type": "integer",
+            "title": "Active Claims"
+          },
+          "completion_rate": {
+            "type": "number",
+            "title": "Completion Rate"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatingSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submission_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Submission Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "assignments_available",
+          "assignments_occupied",
+          "assignments_completed",
+          "assignments_retired",
+          "active_claims",
+          "completion_rate",
+          "rating",
+          "submission_counts"
+        ],
+        "title": "TaskStatisticsResponse",
+        "description": "The Teacher workbench statistics aggregate (spec \u00a741): counts only,\nby construction \u2014 no Assignment row material ever rides along."
+      },
+      "TaskTransitionResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "claimable": {
+            "type": "boolean",
+            "title": "Claimable"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "claimable",
+          "published_at",
+          "closed_at"
+        ],
+        "title": "TaskTransitionResponse",
+        "description": "One lifecycle verb's outcome, normalized across verbs:\nwhere the task landed, whether it is claimable there\n(``TaskService.is_claimable``, the same verdict the claim side\nenforces), and the lifecycle timestamps."
+      },
+      "TaskUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "notify_24h": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify 24H"
+          },
+          "notify_4h": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify 4H"
+          },
+          "notification_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Channels"
+          },
+          "base_reward_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Reward Points"
+          },
+          "deadline_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline Mode"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "claim_cutoff_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claim Cutoff Minutes"
+          },
+          "submission_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema"
+          },
+          "submission_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema Version"
+          },
+          "allowed_file_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed File Types"
+          },
+          "max_file_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max File Size Bytes"
+          }
+        },
+        "type": "object",
+        "title": "TaskUpdateRequest",
+        "description": "Partial edit under the V1 edit rule; absent/None means unchanged.\n\nThe field split is ``UpdateTask``'s (presentation vs contract); the\nservice decides what the task's current status permits."
+      },
+      "TeacherTaskListItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "rarity": {
+            "type": "string",
+            "title": "Rarity"
+          },
+          "base_reward_points": {
+            "type": "integer",
+            "title": "Base Reward Points"
+          },
+          "deadline_mode": {
+            "type": "string",
+            "title": "Deadline Mode"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "task_type",
+          "rarity",
+          "base_reward_points",
+          "deadline_mode",
+          "fixed_deadline_at",
+          "duration_minutes",
+          "published_at",
+          "closed_at",
+          "created_at"
+        ],
+        "title": "TeacherTaskListItemResponse",
+        "description": "One workbench list row (spec \u00a741 Task list): card-level facts plus\nlifecycle timestamps, every status including DRAFT. Contract fields\nride only ``TeacherTaskResponse`` (the detail)."
+      },
+      "TeacherTaskListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherTaskListItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "TeacherTaskListResponse",
+        "description": "Offset-paginated workbench page (the documented V1 choice)."
+      },
+      "TeacherTaskResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "rarity": {
+            "type": "string",
+            "title": "Rarity"
+          },
+          "base_reward_points": {
+            "type": "integer",
+            "title": "Base Reward Points"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deadline_mode": {
+            "type": "string",
+            "title": "Deadline Mode"
+          },
+          "fixed_deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Deadline At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "claim_cutoff_minutes": {
+            "type": "integer",
+            "title": "Claim Cutoff Minutes"
+          },
+          "grace_period_minutes": {
+            "type": "integer",
+            "title": "Grace Period Minutes"
+          },
+          "submission_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema"
+          },
+          "submission_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Schema Version"
+          },
+          "allowed_file_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed File Types"
+          },
+          "max_file_size_bytes": {
+            "type": "integer",
+            "title": "Max File Size Bytes"
+          },
+          "notify_24h": {
+            "type": "boolean",
+            "title": "Notify 24H"
+          },
+          "notify_4h": {
+            "type": "boolean",
+            "title": "Notify 4H"
+          },
+          "notification_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notification Channels"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "task_type",
+          "rarity",
+          "base_reward_points",
+          "status",
+          "deadline_mode",
+          "fixed_deadline_at",
+          "duration_minutes",
+          "claim_cutoff_minutes",
+          "grace_period_minutes",
+          "submission_schema",
+          "submission_schema_version",
+          "allowed_file_types",
+          "max_file_size_bytes",
+          "notify_24h",
+          "notify_4h",
+          "notification_channels",
+          "published_at",
+          "closed_at",
+          "created_at"
+        ],
+        "title": "TeacherTaskResponse",
+        "description": "The staff workbench's full view of a task (spec \u00a741): everything the\nowner configured, including contract fields frozen at first publish.\n``owner_teacher_id`` stays out \u2014 staff know whose surface they called,\nand the id is not needed to operate the workbench (spec \u00a740)."
+      },
+      "TokenPairResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
         "required": [
           "access_token",
           "csrf_token"
         ],
         "title": "TokenPairResponse",
-        "type": "object"
+        "description": "One issued session (spec \u00a75.6) \u2014 cookie-only refresh delivery.\n\nThe long-lived refresh token NEVER rides in the body:\nit travels exclusively in the HttpOnly refresh cookie the response\nsets, so a JSON body (loggers, proxies, XSS-readable storage) can\nnever leak a live refresh credential. The body's ``access_token`` is\nthe short-lived JWT \u2014 including the ``must_setup_totp`` pending staff\nsession's, which is deliberate: it is not the long-lived credential\nand confined-by-construction to the TOTP setup endpoints.\n``csrf_token`` mirrors the non-HttpOnly CSRF cookie so scripted\nclients can echo it without parsing ``Set-Cookie``."
+      },
+      "TotpConfirmRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "TotpConfirmRequest",
+        "description": "Confirm the pending TOTP credential with one valid code (\u00a75.8)."
+      },
+      "TotpConfirmResponse": {
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Recovery Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "TotpConfirmResponse",
+        "description": "Recovery codes from enabling 2FA, shown exactly once (spec \u00a75.8)."
+      },
+      "TotpSetupResponse": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "title": "Otpauth Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "otpauth_uri"
+        ],
+        "title": "TotpSetupResponse",
+        "description": "A freshly generated TOTP credential, displayed exactly once (\u00a75.8)."
+      },
+      "UploadCompleteRequest": {
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Intent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent_id"
+        ],
+        "title": "UploadCompleteRequest",
+        "description": "Notify the backend that the presigned PUT landed (spec \u00a710 step 5).\n\nThe intent id travels in the BODY: the URL shape stays the spec \u00a728\n``POST /submissions/upload-complete`` (the resource being completed\nis the single-use grant, not a Submission yet \u2014 there is no\nsubmission id to put in the path)."
+      },
+      "UploadIntentRequest": {
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Claim Id"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename"
+          },
+          "declared_type": {
+            "$ref": "#/components/schemas/FileType"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_id",
+          "filename",
+          "declared_type",
+          "size"
+        ],
+        "title": "UploadIntentRequest",
+        "description": "Request an upload intent (spec \u00a710 step 1): the claim being\nsubmitted against, the display filename, the declared file type, and\nthe declared byte size the backend checks against the Task's file\npolicy before issuing a presigned URL."
+      },
+      "UploadIntentResponse": {
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Intent Id"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent_id",
+          "upload_url",
+          "expires_at"
+        ],
+        "title": "UploadIntentResponse",
+        "description": "The issued grant: the intent id for the later finalize call, the\nshort-lived presigned upload URL, and its expiry instant."
       },
       "UserPublic": {
-        "description": "Public account view returned to the account owner (spec §40).\n\nThe owner sees their own username/student number; no other surface\nexposes it. Status is included because ACTIVE (vs PENDING_PHONE)\nis the registration outcome clients branch on.",
         "properties": {
           "id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Id",
-            "type": "string"
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
           },
           "nickname": {
-            "title": "Nickname",
-            "type": "string"
+            "type": "string",
+            "title": "Nickname"
           },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
           "status": {
             "$ref": "#/components/schemas/UserStatus"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "username",
@@ -1386,27 +5589,20 @@
           "status"
         ],
         "title": "UserPublic",
-        "type": "object"
+        "description": "Public account view returned to the account owner (spec \u00a740).\n\nThe owner sees their own username/student number; no other surface\nexposes it. Status is included because ACTIVE (vs PENDING_PHONE)\nis the registration outcome clients branch on."
       },
       "UserStatus": {
+        "type": "string",
         "enum": [
           "PENDING_PHONE",
           "ACTIVE",
           "SUSPENDED",
           "BANNED"
         ],
-        "title": "UserStatus",
-        "type": "string"
+        "title": "UserStatus"
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -1418,25 +5614,283 @@
                 }
               ]
             },
-            "title": "Location",
-            "type": "array"
+            "type": "array",
+            "title": "Location"
           },
           "msg": {
-            "title": "Message",
-            "type": "string"
+            "type": "string",
+            "title": "Message"
           },
           "type": {
-            "title": "Error Type",
-            "type": "string"
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
+        "type": "object",
         "required": [
           "loc",
           "msg",
           "type"
         ],
-        "title": "ValidationError",
-        "type": "object"
+        "title": "ValidationError"
+      },
+      "ValidationFindingPayload": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ValidationFindingPayload",
+        "description": "One bounded \u00a712.4 finding sample (error or warning)."
+      },
+      "ValidationReportPayload": {
+        "properties": {
+          "parser_version": {
+            "type": "string",
+            "title": "Parser Version"
+          },
+          "file_type": {
+            "type": "string",
+            "title": "File Type"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "detected_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Detected Columns"
+          },
+          "missing_required_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Required Columns"
+          },
+          "extra_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extra Columns"
+          },
+          "type_error_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Type Error Counts"
+          },
+          "null_ratios": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Null Ratios"
+          },
+          "duplicate_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Duplicate Counts"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationFindingPayload"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationFindingPayload"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "duration_ms": {
+            "type": "number",
+            "title": "Duration Ms"
+          },
+          "preview_rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Preview Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parser_version",
+          "file_type",
+          "row_count",
+          "detected_columns",
+          "missing_required_columns",
+          "extra_columns",
+          "type_error_counts",
+          "null_ratios",
+          "duplicate_counts",
+          "warnings",
+          "errors",
+          "duration_ms",
+          "preview_rows"
+        ],
+        "title": "ValidationReportPayload",
+        "description": "The student/reviewer-safe \u00a712.4 report, exactly as persisted.\n\nField-by-field over the stored JSONB (the ``report_to_json`` shape):\ncounts stay exact, finding/preview lists are already bounded by the\nreport builder, and no object key or parser internal exists in the\nsource shape to leak."
+      },
+      "WalletResponse": {
+        "properties": {
+          "available_points": {
+            "type": "integer",
+            "title": "Available Points"
+          },
+          "earned_points": {
+            "type": "integer",
+            "title": "Earned Points"
+          },
+          "spendable_points": {
+            "type": "integer",
+            "title": "Spendable Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available_points",
+          "earned_points",
+          "spendable_points"
+        ],
+        "title": "WalletResponse",
+        "description": "The wallet strip (spec \u00a715.1/\u00a716.2): the projection's figures\nplus the spendable derivation."
+      },
+      "app__modules__points__router__ReviewQueueResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RedemptionReviewResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ReviewQueueResponse"
+      },
+      "app__modules__submissions__schemas__ReviewQueueResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ReviewQueueResponse",
+        "description": "One offset page of the teacher review queue."
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }
