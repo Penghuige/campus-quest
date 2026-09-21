@@ -37,7 +37,7 @@ Design decisions (see app/modules/community/models.py for the full list):
   to 1-5 (spec §20); the completer gate is a service predicate.
 
 Revision ID: 0009
-Revises: 0006
+Revises: 0012
 Create Date: 2026-09-21
 """
 
@@ -50,7 +50,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0009"
-down_revision: str | None = "0006"
+down_revision: str | None = "0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
