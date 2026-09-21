@@ -48,11 +48,16 @@ Design decisions:
   PERMISSION_DENIED for the staff guard, VALIDATION_ERROR for the
   shape/state gates (disabled item, closed window, blank reject
   reason, non-reviewable states). No new code was needed.
-- **The V1 review guard is the staff family** (TEACHER/ADMIN): spec
-  §16.1 routes review through Admin-授权-Teacher, but RewardItem
-  carries no owner and the授权 model belongs to Plan 08's admin
-  operations — the staff-role stand-in is documented here and narrows
-  later without touching the redemption state machine.
+- **The review guard is Admin-only until scoped delegation** (PR #2
+  hardening ruling on the P0-4 global-staff finding): spec §16.1 routes
+  review through Admin-授权-Teacher, but RewardItem carries no owner and
+  the授权 model belongs to Plan 08's admin operations — until that
+  scoped delegation lands, every ACTIVE+TOTP TEACHER being able to
+  decide ANY redemption was judged too broad, so the review decisions
+  (approve/reject/fulfill) admit ADMIN only, enforced at BOTH the
+  transport guard and this service gate (the community hard-hide
+  precedent: a wiring slip cannot widen the surface). Scoping re-widens
+  the family here without touching the redemption state machine.
 - **Transaction ownership (backend-engineering §5).** Each use case
   commits exactly once on success; typed rejections raised while
   holding locks roll back FIRST (releasing the locks promptly, writing
@@ -81,9 +86,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.core.rbac import is_staff, role_value
+from app.core.rbac import is_admin, role_value
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, RedemptionStatus, ReservationStatus
 from app.modules.points.ledger_service import LedgerService, PostLedgerEntry
@@ -108,6 +114,7 @@ __all__ = [
     "RewardItemNotFoundError",
     "RewardOutOfStockError",
     "RewardRedemptionNotFoundError",
+    "SettingsAcademicTermProvider",
     "StaticAcademicTermProvider",
     "window_open",
 ]
@@ -130,7 +137,7 @@ _REDEMPTION_SOURCE: Final[str] = "REWARD_REDEMPTION"
 # configuration failure, not a truncation candidate.
 _TERM_KEY_MAX_LENGTH: Final[int] = 64
 
-_PERMISSION_DENIED_MESSAGE = "只有教师或管理员可以审核与发放兑换"
+_PERMISSION_DENIED_MESSAGE = "只有管理员可以审核与发放兑换"
 
 
 # --- the academic-term port -----------------------------------------------------------
@@ -176,6 +183,25 @@ class StaticAcademicTermProvider:
 
     def __init__(self, term_key: str) -> None:
         self._term_key = _validated_term_key(term_key)
+
+    def current_term_key(self) -> str:
+        return self._term_key
+
+
+class SettingsAcademicTermProvider:
+    """Settings-driven ``AcademicTermProvider`` (PR #2 hardening slice
+    of plan 08's term configuration): reads ``Settings
+    .current_academic_term`` — the dev default is "2026-fall", and a
+    deployment turns the term with the CURRENT_ACADEMIC_TERM env var
+    until Plan 08 replaces the field with the audited, admin-configurable
+    system setting. An unusable key is rejected at construction (the
+    StaticAcademicTermProvider wiring-time ruling), so a misconfigured
+    deployment fails when the provider is built, not at the first
+    redemption. The snapshot semantics are unchanged: a redemption keeps
+    the term it was created under even after the setting moves on."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._term_key = _validated_term_key(settings.current_academic_term)
 
     def current_term_key(self) -> str:
         return self._term_key
@@ -292,9 +318,8 @@ class InsufficientPointsError(BusinessError):
 
 
 class RedemptionPermissionDeniedError(BusinessError):
-    """The actor is not staff (TEACHER/ADMIN) — the V1 stand-in for
-    spec §16.1's Admin-授权-Teacher review channel; see the module
-    docstring."""
+    """The actor is not ADMIN — the review guard until scoped delegation
+    lands (PR #2 hardening ruling; see the module docstring)."""
 
     def __init__(self, actor_id: UUID, role: str | Enum) -> None:
         super().__init__(
@@ -710,9 +735,11 @@ class RedemptionService:
 
     @staticmethod
     def _require_staff(actor: Actor) -> None:
-        """The V1 review guard: TEACHER or ADMIN (see the module
-        docstring for why owner-scoping waits for Plan 08)."""
-        if not is_staff(actor.role):
+        """The review guard: ADMIN only (PR #2 hardening ruling — see the
+        module docstring for why the staff family narrows before scoped
+        delegation arrives; the transport mounts the matching
+        ``require_admin_actor`` composition)."""
+        if not is_admin(actor.role):
             raise RedemptionPermissionDeniedError(actor.user_id, actor.role)
 
     @staticmethod

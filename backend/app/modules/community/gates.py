@@ -6,15 +6,25 @@ The comment, vote, and reaction services each grew a private copy of the
 same two reads; the report service (task 6) would have been the third
 and fourth. They live here now, once:
 
-- ``require_student_writer`` — the community WRITE gate: Student role
-  and ACTIVE status judged on the users ROW (role-first, then status),
-  never on Actor fields, so direct service callers cannot bypass the
-  transport guard (the claim-service precedent; a suspended staff
-  account answers PERMISSION_DENIED, capability, before
-  ACCOUNT_NOT_ACTIVE). It hands back the nickname because the comment
+- ``require_community_writer`` — the community WRITE gate: Student or
+  Teacher role and ACTIVE status judged on the users ROW (role-first,
+  then status), never on Actor fields, so direct service callers
+  cannot bypass the transport guard (the claim-service precedent; a
+  suspended account answers PERMISSION_DENIED, capability, before
+  ACCOUNT_NOT_ACTIVE). Spec §4.2 opens with "除普通社区能力外，可："
+  — Teacher holds §4.1's ordinary community capabilities, so the
+  participant family is Student + Teacher (the PR #2 hardening
+  ruling); Admin is deliberately NOT a participant (Admin's community
+  powers are the governance surfaces: moderation queue, hard hide,
+  identity reveal). It hands back the nickname because the comment
   create path needs it for the author display; vote/react/report call
   it for the gate alone. Unlocked read — no per-user write invariant
   exists to protect (the row the write inserts IS the invariant).
+- ``require_student_writer`` — the rating gate (spec §20): Student
+  role only, same row-judged shape. Rating eligibility is the
+  completed-claim predicate and only Students can hold a claim (spec
+  §4.1), so Student-only here is §20's gate restated — the deliberate
+  exception to the participant family above.
 - ``require_visible_comment`` — the public-surface comment gate: the
   comment exists, is not a tombstone (one ``deleted_at`` guard covers
   soft delete AND the Admin hard hide, which writes the same trio), and
@@ -65,7 +75,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.core.rbac import is_admin
+from app.core.rbac import has_any_role, is_admin
 from app.modules.community.models import Comment
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
@@ -79,7 +89,9 @@ __all__ = [
     "CommentNotFoundError",
     "CommenterAccountNotActiveError",
     "CommenterNotFoundError",
+    "CommenterNotParticipantError",
     "CommenterNotStudentError",
+    "require_community_writer",
     "require_student_writer",
     "require_task_moderation_site",
     "require_visible_comment",
@@ -100,6 +112,7 @@ _USERS = table(
 
 _COMMENTER_NOT_FOUND_MESSAGE = "用户不存在"
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许执行该操作"
+_NOT_PARTICIPANT_MESSAGE = "仅学生或教师账号可参与社区互动"
 _NOT_STUDENT_MESSAGE = "仅学生账号可发表评论"
 _COMMENT_NOT_FOUND_MESSAGE = "评论不存在"
 _COMMENT_DELETED_MESSAGE = "该评论已删除"
@@ -121,9 +134,25 @@ class CommenterNotFoundError(BusinessError):
         )
 
 
+class CommenterNotParticipantError(BusinessError):
+    """The writer's role is outside the participant family (spec §4.1/
+    §4.2: ordinary community capabilities belong to Student + Teacher;
+    the PR #2 hardening ruling keeps Admin on the governance surfaces
+    only)."""
+
+    def __init__(self, user_id: UUID, role: str) -> None:
+        super().__init__(
+            ErrorCode.PERMISSION_DENIED,
+            _NOT_PARTICIPANT_MESSAGE,
+            status_code=403,
+            details={"user_id": str(user_id), "role": role},
+        )
+
+
 class CommenterNotStudentError(BusinessError):
-    """The writer's role is not STUDENT (spec §4.1: community writes are a
-    Student surface; staff govern via the moderation surfaces)."""
+    """The rater's role is not STUDENT (spec §20: rating eligibility is
+    the completed-claim predicate, and only Students hold claims — see
+    ``rating_service``)."""
 
     def __init__(self, user_id: UUID, role: str) -> None:
         super().__init__(
@@ -176,11 +205,42 @@ class CommentDeletedError(BusinessError):
 # --- the gates ------------------------------------------------------------------------
 
 
+async def require_community_writer(db: AsyncSession, user_id: UUID) -> str:
+    """The community write gate (see module docstring): the participant
+    family is Student + Teacher (spec §4.2's "普通社区能力"), role-first,
+    then status, both on the users row. Admin is refused — Admin's
+    community powers are the governance surfaces. Returns the writer's
+    nickname for the comment author display (the column's NOT NULL
+    contract makes it a real nickname); vote/react/report callers
+    ignore it. A Teacher participant goes through EXACTLY the same
+    anonymous/named display semantics as a Student (the author display
+    is role-blind by construction)."""
+    row = (
+        await db.execute(
+            select(
+                _USERS.c.role,
+                _USERS.c.status,
+                _USERS.c.nickname,
+            ).where(_USERS.c.id == user_id)
+        )
+    ).first()
+    if row is None:
+        raise CommenterNotFoundError(user_id)
+    role, status, nickname = row
+    if not has_any_role(str(role), Role.STUDENT, Role.TEACHER):
+        raise CommenterNotParticipantError(user_id, str(role))
+    if status != UserStatus.ACTIVE.value:
+        raise CommenterAccountNotActiveError(user_id)
+    # Row unpacks arrive as Any; the column is NOT NULL VARCHAR.
+    return str(nickname)
+
+
 async def require_student_writer(db: AsyncSession, user_id: UUID) -> str:
-    """The community write gate (see module docstring): role-first, then
-    status, both on the users row. Returns the writer's nickname for the
-    comment author display (the column's NOT NULL contract makes it a
-    real nickname); vote/react/report callers ignore it."""
+    """The rating gate (spec §20; see module docstring): Student-only,
+    same row-judged shape as the community gate above. Kept as its own
+    predicate — rating eligibility is the completed-claim predicate,
+    which only Students can satisfy (spec §4.1), so admitting Teachers
+    here would change nothing while blurring the §20 gate."""
     row = (
         await db.execute(
             select(

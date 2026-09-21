@@ -10,8 +10,9 @@ Design decisions:
   domain and the table stay exactly the spec's shape.
 - **Writer gate / comment visibility: the shared community gates
   (gates.py, task 6).** Voting is a community write:
-  ``gates.require_student_writer`` (Student role and ACTIVE status,
-  judged on the users ROW, role-first then status) and
+  ``gates.require_community_writer`` (Student or Teacher role — the
+  spec §4.2 participant family — and ACTIVE status, judged on the
+  users ROW, role-first then status) and
   ``gates.require_visible_comment`` (exists -> not a tombstone -> task
   PUBLISHED) — the same typed errors and rulings as comments, votes,
   reactions, and reports, extracted when the report service would have
@@ -58,7 +59,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.gates import require_student_writer, require_visible_comment
+from app.modules.community.gates import (
+    require_community_writer,
+    require_visible_comment,
+)
 from app.modules.community.models import CommentVote
 from app.modules.community.schemas import VoteResult
 
@@ -134,7 +138,7 @@ class VoteService:
         """One full locked attempt: gates -> FOR UPDATE -> apply ->
         counts -> commit. Re-entered exactly once by ``set_vote`` after a
         both-create-from-none UNIQUE violation."""
-        await require_student_writer(db, user_id)
+        await require_community_writer(db, user_id)
         await require_visible_comment(db, comment_id)
 
         vote = await db.scalar(

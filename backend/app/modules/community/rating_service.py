@@ -12,12 +12,15 @@ Design decisions:
   paranoia: the column is INTEGER, so a float or a bool (an int subclass
   Python-wise) that slipped past the range check would die in asyncpg's
   parameter binding as a 500, never a typed envelope.
-- **Writer gate: the shared community gate (gates.py).** Rating is a
-  student-surface community write (spec §4.1 不得/得 lists): Student
-  role and ACTIVE status judged on the users ROW through
-  ``require_student_writer`` — the same typed errors as comments,
-  votes, reactions, and reports. Staff reach tasks through their own
-  surfaces; a completer's teacher/admin counterpart does not exist.
+- **Writer gate: the rating gate (gates.py).** Rating stays
+  Student-only (spec §20: eligibility is the completed-claim
+  predicate, and only Students hold claims, spec §4.1): Student role
+  and ACTIVE status judged on the users ROW through
+  ``require_student_writer`` — deliberately NOT the participant gate
+  comments/votes/reactions/reports moved to (PR #2 hardening: Teacher
+  joined the ordinary community surface; rating eligibility did not
+  change). Staff reach tasks through their own surfaces; a completer's
+  teacher/admin counterpart does not exist.
 - **Existence before eligibility.** An unknown task id is the shared
   ``TaskNotFoundError`` (the moderate-delete ordering: existence answers
   before standing). Deliberately NOT gated on PUBLISHED: the comment

@@ -12,20 +12,23 @@ Design decisions:
   so this service stays pure (no Redis) and reusable by tests and future
   surfaces.
 - **Writer gate: the shared community gate (gates.py, task 6).**
-  Community writes are a Student surface (spec §4.1 — Teacher/Admin read
-  and govern through the moderation surfaces of tasks 3 and 8), and an
-  ACTIVE account is required (§5.7). Role and status are judged on the
-  users ROW, not on the Actor fields, so direct service callers cannot
-  bypass the transport guard, exactly like the claim service. Order is
-  role-first, then status: a suspended staff account answers
+  Community writes are a participant surface: Student + Teacher (spec
+  §4.2 "除普通社区能力外，可：" grants Teacher §4.1's ordinary community
+  capabilities; the PR #2 hardening ruling keeps Admin on the
+  governance surfaces of tasks 3 and 8 only), and an ACTIVE account is
+  required (§5.7). Role and status are judged on the users ROW, not on
+  the Actor fields, so direct service callers cannot bypass the
+  transport guard, exactly like the claim service. Order is
+  role-first, then status: a suspended account answers
   PERMISSION_DENIED (capability), not ACCOUNT_NOT_ACTIVE — the claim
   service's precedent. Unlike claiming there is no count-then-insert race
   to protect, so the read carries no FOR UPDATE; a comment committed
   while the writer's role changes concurrently simply exists (no per-user
   write invariant in V1). The gate and its typed errors live in
-  ``gates.require_student_writer`` since task 6 (vote, reaction, and
-  report share them); this module re-exports the errors so existing
-  importers see one set of codes either way.
+  ``gates.require_community_writer`` (vote, reaction, and report share
+  them; rating keeps the Student-only ``require_student_writer``, spec
+  §20); this module re-exports the errors so existing importers see
+  one set of codes either way.
 - **Task gate: PUBLISHED-only, and invisibility reads as NOT_FOUND.**
   DRAFT is invisible (spec §6.2) and PAUSED/CLOSED/ARCHIVED are off the
   public task surface, so all of them — and unknown ids — raise the
@@ -132,7 +135,7 @@ Design decisions:
   ``users`` table, the claim service's precedent: interfaces.md's
   ``UserDirectory`` port carries no nickname read, and identity ORM
   models stay behind the module seam. Role/status moved to
-  ``gates.require_student_writer`` with the task-6 extraction; this
+  ``gates.require_community_writer`` with the task-6 extraction; this
   module keeps the nickname read for the author display. If the port
   grows those reads, these queries move behind it.
 
@@ -160,9 +163,10 @@ from app.modules.community.gates import (
     CommentDeletedError,
     CommenterAccountNotActiveError,
     CommenterNotFoundError,
+    CommenterNotParticipantError,
     CommenterNotStudentError,
     CommentNotFoundError,
-    require_student_writer,
+    require_community_writer,
     require_task_moderation_site,
 )
 from app.modules.community.models import Comment, CommentRevision
@@ -193,6 +197,7 @@ __all__ = [
     "CommentOwnerRequiredError",
     "CommenterAccountNotActiveError",
     "CommenterNotFoundError",
+    "CommenterNotParticipantError",
     "CommenterNotStudentError",
     "HARD_HIDDEN_REASON_CODE",
     "ModerationReasonRequiredError",
@@ -228,7 +233,7 @@ COMMENT_HARD_HIDDEN = "COMMENT_HARD_HIDDEN"
 
 # Identity seam (see module docstring): a typed Core-level light table,
 # NOT the identity ORM model — nickname for the public author display
-# (role/status moved to gates.require_student_writer in task 6).
+# (role/status moved to gates.require_community_writer in task 6).
 _USERS = table(
     "users",
     column("id", Uuid),
@@ -425,7 +430,7 @@ class CommentService:
         """Publish one comment immediately (spec §21.1) and return its
         public DTO — the write path hands back the privacy-safe shape, so
         the stored identity is unreachable without going to the row."""
-        commenter = await require_student_writer(db, actor.user_id)
+        commenter = await require_community_writer(db, actor.user_id)
         content = normalize_comment_content(command.content, self._comment_max_length)
         await self._require_visible_task(db, command.task_id)
         if command.parent_id is not None:
