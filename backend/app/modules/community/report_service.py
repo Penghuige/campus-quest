@@ -1,6 +1,7 @@
 # backend/app/modules/community/report_service.py
 """Comment reports and the staff moderation queue (spec §23; plan 06
-task 6).
+task 6; the OPEN -> HANDLED/DISMISSED closure is PR #2 hardening step
+10).
 
 Design decisions:
 
@@ -60,6 +61,44 @@ Design decisions:
   order): an unknown task is the shared ``TaskNotFoundError`` (404) for
   anyone. Deliberately NOT gated on PUBLISHED — governance reaches
   paused/closed history exactly like every moderation path.
+- **Closure: the audited moderation endpoints (PR #2 hardening step
+  10; spec §23's queue is the ruling's anchor, the interfaces.md
+  report-closure ruling is its ownership).** ``dismiss_report`` takes
+  an OPEN report to DISMISSED with a MANDATORY reason — a governance
+  decision needs its context; blank-after-trim is the typed rejection
+  and there is NO length cap (the ``_require_moderation_reason``
+  precedent: moderator input is audit material, not public thread
+  content). ``handle_report`` takes it to HANDLED with an OPTIONAL
+  note (the filing-note normalization and cap). "Handled" registers
+  the CONCLUSION only: the moderator acts on the reported comment
+  through the existing separately-audited paths (comment_service's
+  moderate-delete, the Admin hard hide) or otherwise, and a closure
+  never touches the Comment row — §23 不自动删除评论 reaches closure
+  too, and no new report rule is invented (G13: no auto-punishment,
+  no notification, no reporter feedback). Standing is the queue
+  listing's exactly — ``require_task_moderation_site`` with
+  ``admit_admin=True`` (owner / MODERATE_COMMUNITY / Admin) — with
+  its order: task existence answers first (unknown task -> the
+  shared 404), then standing, then the report read joined to the
+  task's comments, so an unknown report id AND a report on ANOTHER
+  task's comment are the same typed 404. ``handled_by`` is the
+  acting moderator; ``handled_at`` is the database ``now()`` — the
+  same transaction clock PostgreSQL stamps on the audit row's
+  ``created_at`` (no injected Clock needed). A replay onto the SAME
+  terminal state is the idempotent return of the existing row:
+  nothing is rewritten and NO second audit row lands (the
+  redemption-replay ruling — audit records decisions, not requests);
+  a replay onto the OTHER terminal state is the typed 409
+  (VALIDATION_ERROR, the ``RedemptionNotReviewableError``
+  precedent). Both closures append exactly one durable
+  ``REPORT_DISMISSED`` / ``REPORT_HANDLED`` row into ``audit_logs``
+  in the SAME transaction through the flush-only ``AuditLogWriter``
+  (G12): actor, the ``comment_report`` target, the dismissal reason
+  (the writer's ``reason`` field, the redemption-reject/reveal
+  precedent) or the handling note (``details["note"]``, the
+  redemption-approve precedent), with the task/comment/reporter
+  context riding ``details``. No DomainEvent stream of their own:
+  §25 wires no notification to report closure and G13 invents none.
 - **Reporter identity: moderator-only (spec §23 被举报用户不可看到举报者
   身份).** The queue view (``CommentReportView``) carries
   ``reporter_user_id`` + ``reporter_nickname`` — moderators act on
@@ -83,10 +122,14 @@ Design decisions:
   STAY listed with the removal flagged in the comment context: the
   queue reviews history, and a moderator must still dismiss or act on
   a report whose target was removed meanwhile.
-- **No clock and no event seam.** ``created_at`` is a database ``now()``
-  server default and the spec wires no audit stream to FILING a report
-  (the vote/reaction ruling); task 8's handling flow owns the
-  moderation transitions and their audit events.
+- **No clock and no event seam on FILING.** ``created_at`` is a
+  database ``now()`` server default and the spec wires no audit
+  stream to FILING a report (the vote/reaction ruling). The closure
+  methods above own the moderation transitions and their audit rows
+  — written directly in the closing transaction through the shared
+  ``AuditLogWriter`` (see the closure decision above); the timestamp
+  both share is the database's, so no Clock is injected anywhere in
+  this service.
 
 Transaction shape per backend-engineering §5: the gate reads, the
 duplicate read, the insert, and exactly one commit per file;
@@ -104,7 +147,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.enums import ReportCategory
+from app.modules.audit.service import AuditLogWriter
+from app.modules.community.enums import ReportCategory, ReportStatus
 from app.modules.community.gates import (
     require_community_writer,
     require_task_moderation_site,
@@ -118,11 +162,30 @@ from app.modules.identity.events import Actor
 __all__ = [
     "DEFAULT_REPORT_NOTE_MAX_LENGTH",
     "InvalidReportCategoryError",
+    "REPORT_DISMISSED",
+    "REPORT_HANDLED",
+    "ReportAlreadyClosedError",
+    "ReportClosureDeniedError",
+    "ReportDismissReasonRequiredError",
+    "ReportNotFoundError",
     "ReportNoteTooLongError",
     "ReportService",
     "ReportViewDeniedError",
+    "normalize_dismiss_reason",
     "normalize_report_note",
 ]
+
+# Audit action names (the REDEMPTION_APPROVE / COMMUNITY_IDENTITY_REVEAL
+# family): the durable audit_logs rows' actions for the two report
+# closures (G12; PR #2 hardening step 10). These are AUDIT identifiers —
+# no DomainEvent stream exists for report closure (see the module
+# docstring).
+REPORT_DISMISSED = "REPORT_DISMISSED"
+REPORT_HANDLED = "REPORT_HANDLED"
+
+# The audit target vocabulary for the closures: the report row the
+# moderator decided on (target_id = the report's UUID as text).
+_AUDIT_TARGET_TYPE = "comment_report"
 
 # The moderation-annotation cap (see module docstring): not a spec
 # number, constructor-injectable, defaulting to a bounded note size.
@@ -143,6 +206,10 @@ _INVALID_CATEGORY_MESSAGE = "举报类别无效"
 _NOTE_INVALID_MESSAGE = "举报备注必须是文本"
 _NOTE_TOO_LONG_MESSAGE = "举报备注超过长度上限"
 _VIEW_DENIED_MESSAGE = "只有任务所有者、拥有社区治理权限的协作者或管理员可以查看举报"
+_CLOSURE_DENIED_MESSAGE = "只有任务所有者、拥有社区治理权限的协作者或管理员可以处理举报"
+_DISMISS_REASON_REQUIRED_MESSAGE = "必须填写驳回举报的理由"
+_REPORT_NOT_FOUND_MESSAGE = "举报不存在"
+_REPORT_ALREADY_CLOSED_MESSAGE = "举报已按另一结论处理，不能再次变更"
 
 
 # --- typed exceptions (router-mapped) ------------------------------------------------
@@ -189,6 +256,69 @@ class ReportViewDeniedError(BusinessError):
         )
 
 
+class ReportClosureDeniedError(BusinessError):
+    """The actor is not the task's owner Teacher, not a collaborator
+    holding MODERATE_COMMUNITY, and not Admin on a CLOSURE path — the
+    same standing as ``ReportViewDeniedError`` (the queue listing),
+    its write-side twin: review and decision are one governance
+    surface (spec §4.2/§23; the interfaces.md closure ruling)."""
+
+    def __init__(self, task_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.PERMISSION_DENIED,
+            _CLOSURE_DENIED_MESSAGE,
+            status_code=403,
+            details={"task_id": str(task_id)},
+        )
+
+
+class ReportDismissReasonRequiredError(BusinessError):
+    """``dismiss_report`` arrived without a usable reason — None, a
+    non-string, or blank after trimming. A dismissal is a governance
+    decision and carries its context (the
+    ``ModerationReasonRequiredError`` / reveal-reason precedent)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            ErrorCode.VALIDATION_ERROR,
+            _DISMISS_REASON_REQUIRED_MESSAGE,
+            status_code=400,
+        )
+
+
+class ReportNotFoundError(BusinessError):
+    """``report_id`` matches no report on the requested task's comments
+    — an unknown report id and a report belonging to ANOTHER task are
+    the same answer (the task-scoped 404; existence rules of the
+    moderation listing hold on the write side too)."""
+
+    def __init__(self, task_id: UUID, report_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.NOT_FOUND,
+            _REPORT_NOT_FOUND_MESSAGE,
+            status_code=404,
+            details={"task_id": str(task_id), "report_id": str(report_id)},
+        )
+
+
+class ReportAlreadyClosedError(BusinessError):
+    """The report already holds the OTHER terminal status — the queue
+    leaves each report exactly once (enums.py's status-set decision),
+    so a HANDLED report cannot be dismissed nor a DISMISSED one
+    handled. The same-state replay never reaches here (idempotent
+    return). VALIDATION_ERROR with HTTP 409, the
+    ``RedemptionNotReviewableError`` precedent for a terminal-state
+    conflict."""
+
+    def __init__(self, report_id: UUID, status: str) -> None:
+        super().__init__(
+            ErrorCode.VALIDATION_ERROR,
+            _REPORT_ALREADY_CLOSED_MESSAGE,
+            status_code=409,
+            details={"report_id": str(report_id), "status": status},
+        )
+
+
 # --- input normalization --------------------------------------------------------------
 
 
@@ -223,21 +353,40 @@ def normalize_report_note(note: str | None, max_length: int) -> str | None:
     return normalized
 
 
+def normalize_dismiss_reason(reason: str) -> str:
+    """Trim the dismissal reason; missing, non-string, or
+    blank-after-trim is the typed rejection. No length cap (the
+    ``_require_moderation_reason`` precedent: moderator input is audit
+    material, not public thread content). Pure on purpose: the check
+    runs before any database touch (the category-first precedent), so
+    a reasonless dismissal never reveals whether the task, the report,
+    or the actor's standing exists."""
+    if not isinstance(reason, str) or not reason.strip():
+        raise ReportDismissReasonRequiredError()
+    return reason.strip()
+
+
 # --- the service ----------------------------------------------------------------------
 
 
 class ReportService:
     """Comment reporting and the per-task moderation queue (spec §23):
-    ``report_comment`` files, ``list_task_reports`` reviews.
+    ``report_comment`` files, ``list_task_reports`` reviews, and
+    ``dismiss_report``/``handle_report`` close (PR #2 hardening step
+    10 — the audited OPEN -> DISMISSED/HANDLED transitions).
 
     ``note_max_length`` is injectable for tests and deployments; the
     default is the documented service constant.
     ``moderation_key_secret`` is the settings-derived HMAC material
     behind the queue's pseudonymous moderation keys (see
     ``serializers.derive_moderation_key``); None resolves
-    Settings.token_secret — the composition-root default. No clock, no
-    events (see the module docstring — the task-8 reveal owns its own
-    audit stream in ModerationService).
+    Settings.token_secret — the composition-root default. ``audit``
+    is the durable audit_logs seam for the closures — stateless and
+    flush-only, defaulting to a fresh ``AuditLogWriter`` so no wiring
+    slip can silently drop the G12 trace (the ModerationService
+    pattern). Filing stays clock- and event-free (see the module
+    docstring); the closures need no Clock either — the database
+    ``now()`` is the closure timestamp.
     """
 
     def __init__(
@@ -245,6 +394,7 @@ class ReportService:
         *,
         note_max_length: int = DEFAULT_REPORT_NOTE_MAX_LENGTH,
         moderation_key_secret: str | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._note_max_length = note_max_length
         self._moderation_key_secret = (
@@ -252,6 +402,7 @@ class ReportService:
             if moderation_key_secret is not None
             else get_settings().token_secret
         )
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     async def report_comment(
         self,
@@ -391,6 +542,66 @@ class ReportService:
             for report, comment, nickname, author_nickname, edited in rows
         ], total
 
+    async def dismiss_report(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        task_id: UUID,
+        report_id: UUID,
+        reason: str,
+    ) -> CommentReport:
+        """Take one OPEN report of this task's comments to DISMISSED
+        (PR #2 hardening step 10): the moderator judged that no action
+        is warranted, and the mandatory reason records why. Returns the
+        closed row (or the existing row unchanged on a same-state
+        replay). Never touches the comment — dismissal removes the
+        QUEUE entry, not the comment."""
+        normalized_reason = normalize_dismiss_reason(reason)
+        report = await self._require_closable(db, actor, task_id, report_id)
+        if report.status == ReportStatus.DISMISSED.value:
+            return report  # same-state replay: nothing to do, nothing to audit
+        await self._close(
+            db,
+            actor,
+            task_id,
+            report,
+            ReportStatus.DISMISSED,
+            audit_reason=normalized_reason,
+            audit_note=None,
+        )
+        return report
+
+    async def handle_report(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        task_id: UUID,
+        report_id: UUID,
+        note: str | None = None,
+    ) -> CommentReport:
+        """Take one OPEN report of this task's comments to HANDLED
+        (PR #2 hardening step 10): the moderator has acted on the
+        reported comment — through the existing audited paths
+        (moderate-delete, hard hide) or otherwise — and this call
+        registers the conclusion on the QUEUE row; the comment itself
+        is never touched here. The note is optional governor context
+        (the filing-note normalization and cap). Returns the closed
+        row (or the existing row unchanged on a same-state replay)."""
+        stored_note = normalize_report_note(note, self._note_max_length)
+        report = await self._require_closable(db, actor, task_id, report_id)
+        if report.status == ReportStatus.HANDLED.value:
+            return report  # same-state replay: nothing to do, nothing to audit
+        await self._close(
+            db,
+            actor,
+            task_id,
+            report,
+            ReportStatus.HANDLED,
+            audit_reason=None,
+            audit_note=stored_note,
+        )
+        return report
+
     # -- internals ----------------------------------------------------------------
 
     @staticmethod
@@ -428,3 +639,82 @@ class ReportService:
             admit_admin=True,
             error_factory=ReportViewDeniedError,
         )
+
+    @staticmethod
+    async def _require_closable(
+        db: AsyncSession, actor: Actor, task_id: UUID, report_id: UUID
+    ) -> CommentReport:
+        """The closure gate (see the module docstring): the queue
+        listing's standing and check order — task existence answers
+        first (the shared 404), then the owner/MODERATE_COMMUNITY/Admin
+        standing (the write twin of ``ReportViewDeniedError``), then
+        the report read JOINED to this task's comments so an unknown
+        id and another task's report are the same typed 404. NOT
+        gated on PUBLISHED or on the comment's liveness — the queue
+        reviews history, and a report on a since-deleted comment must
+        still be dismissable (the listing ruling). Returns the row for
+        the state machine; terminal-state arbitration is the caller's."""
+        await require_task_moderation_site(
+            db,
+            actor,
+            task_id,
+            admit_admin=True,
+            error_factory=ReportClosureDeniedError,
+        )
+        found = await db.scalar(
+            select(CommentReport)
+            .join(Comment, Comment.id == CommentReport.comment_id)
+            .where(CommentReport.id == report_id, Comment.task_id == task_id)
+        )
+        if found is None or not isinstance(found, CommentReport):
+            raise ReportNotFoundError(task_id, report_id)
+        return found
+
+    async def _close(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        task_id: UUID,
+        report: CommentReport,
+        target: ReportStatus,
+        *,
+        audit_reason: str | None,
+        audit_note: str | None,
+    ) -> None:
+        """One OPEN -> terminal transition and its audit row, one
+        transaction (backend-engineering §5): stamp the trio, append
+        the flush-only audit row, commit, refresh. ``handled_at`` is
+        the database ``now()`` expression — the same transaction clock
+        PostgreSQL stamps on the audit row's ``created_at`` (``now()``
+        is the transaction timestamp, so the two are identical). The
+        same-state replay never reaches here (the idempotent returns
+        in the public methods), so exactly one audit row exists per
+        DECISION, none per request (the redemption ruling)."""
+        if report.status != ReportStatus.OPEN.value:
+            raise ReportAlreadyClosedError(report.id, report.status)
+
+        report.status = target.value
+        report.handled_by = actor.user_id
+        report.handled_at = func.now()  # the database's transaction clock
+        await db.flush()
+
+        details: dict[str, str] = {
+            "task_id": str(task_id),
+            "comment_id": str(report.comment_id),
+            "reporter_user_id": str(report.reporter_user_id),
+        }
+        if audit_note is not None:
+            details["note"] = audit_note
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=(
+                REPORT_DISMISSED if target is ReportStatus.DISMISSED else REPORT_HANDLED
+            ),
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(report.id),
+            reason=audit_reason,
+            details=details,
+        )
+        await db.commit()
+        await db.refresh(report)  # load the now() stamp and updated_at

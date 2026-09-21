@@ -39,6 +39,22 @@ surface:
   identity moderators act on, keeps reports on since-deleted comments
   (the queue reviews history), orders newest first, and pages by
   limit/offset with the rendered total.
+- **Closure (PR #2 hardening step 10, spec §23 queue + the
+  interfaces.md closure ruling):** ``dismiss_report``/``handle_report``
+  take OPEN to DISMISSED (reason mandatory, blank is the typed
+  rejection before any database touch) or HANDLED (note optional, the
+  filing-note rules), stamp ``handled_by``/``handled_at`` (the
+  database ``now()``), and write exactly one durable
+  ``REPORT_DISMISSED``/``REPORT_HANDLED`` audit row in the same
+  transaction. The moderation standing is the listing's (owner /
+  MODERATE_COMMUNITY / Admin; students and outsiders are the typed
+  403); unknown task, unknown report, and another task's report are
+  the shared 404s. A same-state replay is idempotent — nothing
+  rewritten, no second audit row; the other terminal state is the
+  typed VALIDATION_ERROR 409. Closure never touches the comment (even
+  a report on a since-deleted comment stays closable — governance
+  reaches history), and the queue listing renders the closed status
+  with its stamps.
 
 Harness: the ordinary rollback suite — no concurrency tests here (the
 UNIQUE triple's both-create race is arbitrated by the database exactly
@@ -60,13 +76,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
+from app.modules.audit.models import AuditLog
 from app.modules.community.comment_service import CommentService
 from app.modules.community.enums import ReportCategory
 from app.modules.community.models import Comment, CommentReport, CommentRevision
 from app.modules.community.report_service import (
     DEFAULT_REPORT_NOTE_MAX_LENGTH,
+    REPORT_DISMISSED,
+    REPORT_HANDLED,
     InvalidReportCategoryError,
+    ReportAlreadyClosedError,
+    ReportClosureDeniedError,
+    ReportDismissReasonRequiredError,
     ReportNoteTooLongError,
+    ReportNotFoundError,
     ReportService,
     ReportViewDeniedError,
 )
@@ -817,3 +840,373 @@ async def test_listing_orders_newest_first_and_pages_by_limit_offset(
     )
     assert total == 5
     assert page == []
+
+
+# --- report closure (PR #2 hardening step 10) -----------------------------------------
+
+
+async def _file_report(
+    db: AsyncSession, task: Task, reporter: User, *, category: str = "SPAM"
+) -> CommentReport:
+    """One freshly-filed OPEN report on its own comment of the task —
+    the closure fixtures' anchor (a fresh comment per call keeps the
+    UNIQUE triple free)."""
+    author = _user(username=f"2025{uuid4().hex[:10]}", nickname="闭环帖作者")
+    await _persist(db, author)
+    comment = await _root_comment(db, task, author)
+    return await ReportService().report_comment(db, reporter.id, comment.id, category)
+
+
+async def _audit_rows(db: AsyncSession, report: CommentReport) -> list[AuditLog]:
+    return list(
+        await db.scalars(select(AuditLog).where(AuditLog.target_id == str(report.id)))
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("authority", ["owner", "collaborator", "admin"])
+@pytest.mark.parametrize(
+    ("action", "target_status"),
+    [("dismiss", "DISMISSED"), ("handle", "HANDLED")],
+)
+async def test_each_moderation_authority_closes_an_open_report(
+    db_session: AsyncSession,
+    authority: str,
+    action: str,
+    target_status: str,
+) -> None:
+    """The queue's readers are its closers: owner, MODERATE_COMMUNITY
+    collaborator, and Admin each take an OPEN report to either terminal
+    state — the stamps land on the row (actor as handled_by, the
+    database now() as handled_at) and exactly one durable audit row
+    joins the decision transaction with the actor, the comment_report
+    target, and the reason/note contract."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    closer = teacher
+    if authority == "collaborator":
+        closer = await _collaborator(
+            db_session, task, ["MODERATE_COMMUNITY"], "teacher0010@pku.edu.cn"
+        )
+    elif authority == "admin":
+        closer = _user(username="admin0010@pku.edu.cn", role=Role.ADMIN)
+        await _persist(db_session, closer)
+    report = await _file_report(db_session, task, reporter)
+    service = ReportService()
+
+    if action == "dismiss":
+        closed = await service.dismiss_report(
+            db_session, _actor(closer), task.id, report.id, "查证后不构成违规"
+        )
+    else:
+        closed = await service.handle_report(
+            db_session, _actor(closer), task.id, report.id, note="已删除被举报评论"
+        )
+
+    assert closed.id == report.id
+    assert closed.status == target_status
+    assert closed.handled_by == closer.id
+    assert closed.handled_at is not None
+
+    row = await db_session.get(CommentReport, report.id)
+    assert row is not None
+    assert row.status == target_status
+    assert row.handled_by == closer.id
+    assert row.handled_at is not None
+
+    [audit] = await _audit_rows(db_session, report)
+    assert audit.action == (REPORT_DISMISSED if action == "dismiss" else REPORT_HANDLED)
+    assert audit.target_type == "comment_report"
+    assert audit.target_id == str(report.id)
+    assert audit.actor_user_id == closer.id
+    assert audit.actor_role == Role(closer.role).value
+    assert audit.details == {
+        "task_id": str(task.id),
+        "comment_id": str(report.comment_id),
+        "reporter_user_id": str(reporter.id),
+        **({"note": "已删除被举报评论"} if action == "handle" else {}),
+    }
+    if action == "dismiss":
+        assert audit.reason == "查证后不构成违规"
+    else:
+        assert audit.reason is None
+    assert audit.created_at is not None
+    # The same transaction clock: PostgreSQL now() is the transaction
+    # timestamp, so the audit row and the closure stamp agree exactly.
+    assert audit.created_at == row.handled_at
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("permissions", "username", "role"),
+    [
+        (None, "20250010011", Role.STUDENT),  # the reporter themself
+        (None, "teacher0011@pku.edu.cn", Role.TEACHER),  # unrelated
+        (["VIEW_TASK"], "teacher0012@pku.edu.cn", Role.TEACHER),  # under-privileged
+    ],
+)
+async def test_closure_denies_students_and_outsiders(
+    db_session: AsyncSession,
+    permissions: list[str] | None,
+    username: str,
+    role: Role,
+) -> None:
+    """Same standing as the listing, write side: a student (even the
+    reporter), an unrelated teacher, and a collaborator without
+    MODERATE_COMMUNITY are the typed PERMISSION_DENIED — and no audit
+    row lands for a refused request."""
+    task, _, _, reporter = await _thread_fixture(db_session)
+    outsider = _user(username=username, role=role, nickname="闭环无关人")
+    await _persist(db_session, outsider)
+    if permissions is not None:
+        await _persist(
+            db_session,
+            TaskCollaborator(
+                task_id=task.id, teacher_id=outsider.id, permissions=permissions
+            ),
+        )
+    report = await _file_report(db_session, task, reporter)
+
+    actor = _actor(reporter if role is Role.STUDENT else outsider)
+    with pytest.raises(ReportClosureDeniedError) as raised:
+        await ReportService().dismiss_report(
+            db_session, actor, task.id, report.id, "越权尝试"
+        )
+    with pytest.raises(ReportClosureDeniedError):
+        await ReportService().handle_report(db_session, actor, task.id, report.id)
+    assert raised.value.code == ErrorCode.PERMISSION_DENIED
+    assert raised.value.status_code == 403
+    assert raised.value.details == {"task_id": str(task.id)}
+    assert await _audit_rows(db_session, report) == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("reason", [None, 7, "", "   "])
+async def test_dismiss_reason_is_mandatory_and_check_first(
+    db_session: AsyncSession, reason: Any
+) -> None:
+    """A dismissal carries its context: missing, non-string, or
+    blank-after-trim is the typed VALIDATION_ERROR raised before any
+    database touch — a reasonless dismissal learns nothing about the
+    task, the report, or the caller's standing (the category-first
+    precedent)."""
+    with pytest.raises(ReportDismissReasonRequiredError) as raised:
+        await ReportService().dismiss_report(
+            db_session,
+            _actor(_user(username="x", role=Role.TEACHER)),
+            uuid4(),
+            uuid4(),
+            reason,
+        )
+    assert raised.value.code == ErrorCode.VALIDATION_ERROR
+    assert raised.value.status_code == 400
+
+
+@pytest.mark.integration
+async def test_dismiss_reason_is_trimmed_and_uncapped(db_session: AsyncSession) -> None:
+    """The audited reason is the trimmed text with NO length cap —
+    moderator input is audit material, not public thread content (the
+    ``_require_moderation_reason`` precedent)."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    report = await _file_report(db_session, task, reporter)
+    long_reason = "长" * (DEFAULT_REPORT_NOTE_MAX_LENGTH * 4)
+
+    closed = await ReportService().dismiss_report(
+        db_session, _actor(teacher), task.id, report.id, f"  {long_reason}  "
+    )
+
+    assert closed.status == "DISMISSED"
+    [audit] = await _audit_rows(db_session, report)
+    assert audit.reason == long_reason
+
+
+@pytest.mark.integration
+async def test_handle_note_follows_the_filing_note_rules(
+    db_session: AsyncSession,
+) -> None:
+    """The handling note is optional governor context under the
+    filing-note contract: blank (or absent) stores as None and rides no
+    ``details["note"]`` key; a trimmed note rides the audit details;
+    over the cap is the typed rejection that closes nothing."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    service = ReportService()
+    blank = await _file_report(db_session, task, reporter, category="OTHER")
+    noted = await _file_report(db_session, task, reporter, category="PRIVACY")
+    over = await _file_report(db_session, task, reporter, category="HARASSMENT")
+
+    await service.handle_report(
+        db_session, _actor(teacher), task.id, blank.id, note="   "
+    )
+    [blank_audit] = await _audit_rows(db_session, blank)
+    assert "note" not in (blank_audit.details or {})
+
+    await service.handle_report(
+        db_session, _actor(teacher), task.id, noted.id, note="  已硬隐藏整个楼  "
+    )
+    [noted_audit] = await _audit_rows(db_session, noted)
+    assert noted_audit.details is not None
+    assert noted_audit.details["note"] == "已硬隐藏整个楼"
+
+    with pytest.raises(ReportNoteTooLongError):
+        await service.handle_report(
+            db_session,
+            _actor(teacher),
+            task.id,
+            over.id,
+            note="钩" * (DEFAULT_REPORT_NOTE_MAX_LENGTH + 1),
+        )
+    assert await _audit_rows(db_session, over) == []
+    assert (await db_session.get(CommentReport, over.id)).status == "OPEN"
+
+
+@pytest.mark.integration
+async def test_the_other_terminal_state_is_a_typed_409(
+    db_session: AsyncSession,
+) -> None:
+    """Each report leaves the queue exactly once: a DISMISSED report
+    cannot be handled nor a HANDLED one dismissed — the typed
+    VALIDATION_ERROR 409 (the RedemptionNotReviewableError precedent),
+    with the current status in the details and no second audit row."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    service = ReportService()
+    dismissed = await _file_report(db_session, task, reporter, category="SPAM")
+    handled = await _file_report(db_session, task, reporter, category="OTHER")
+
+    await service.dismiss_report(
+        db_session, _actor(teacher), task.id, dismissed.id, "不构成违规"
+    )
+    with pytest.raises(ReportAlreadyClosedError) as raised:
+        await service.handle_report(db_session, _actor(teacher), task.id, dismissed.id)
+    assert raised.value.code == ErrorCode.VALIDATION_ERROR
+    assert raised.value.status_code == 409
+    assert raised.value.details == {
+        "report_id": str(dismissed.id),
+        "status": "DISMISSED",
+    }
+    assert len(await _audit_rows(db_session, dismissed)) == 1
+
+    await service.handle_report(db_session, _actor(teacher), task.id, handled.id)
+    with pytest.raises(ReportAlreadyClosedError) as reverse:
+        await service.dismiss_report(
+            db_session, _actor(teacher), task.id, handled.id, "迟到的驳回"
+        )
+    assert reverse.value.status_code == 409
+    assert reverse.value.details["status"] == "HANDLED"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("action", ["dismiss", "handle"])
+async def test_same_state_replay_is_idempotent(
+    db_session: AsyncSession, action: str
+) -> None:
+    """Replaying the SAME closure returns the existing row unchanged —
+    same id, same stamps (no rewrite of handled_by/handled_at), and no
+    second audit row: audit records decisions, not requests (the
+    redemption-replay ruling)."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    service = ReportService()
+    report = await _file_report(db_session, task, reporter)
+
+    if action == "dismiss":
+        first = await service.dismiss_report(
+            db_session, _actor(teacher), task.id, report.id, "重复驳回的第一条"
+        )
+        replay = await service.dismiss_report(
+            db_session, _actor(teacher), task.id, report.id, "同状态重放的理由"
+        )
+    else:
+        first = await service.handle_report(
+            db_session, _actor(teacher), task.id, report.id, note="第一次处理"
+        )
+        replay = await service.handle_report(
+            db_session, _actor(teacher), task.id, report.id, note="同状态重放"
+        )
+
+    assert replay.id == first.id
+    assert replay.status == first.status
+    assert replay.handled_by == first.handled_by == teacher.id
+    assert replay.handled_at == first.handled_at
+    assert len(await _audit_rows(db_session, report)) == 1
+
+
+@pytest.mark.integration
+async def test_unknown_or_cross_task_targets_answer_404(
+    db_session: AsyncSession,
+) -> None:
+    """Existence answers in the listing's order: an unknown task is the
+    shared TaskNotFoundError, and an unknown report id — or a report
+    on ANOTHER task's comment — is the same typed 404 through the
+    task-scoped read."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    report = await _file_report(db_session, task, reporter)
+    service = ReportService()
+    actor = _actor(teacher)
+
+    with pytest.raises(TaskNotFoundError):
+        await service.dismiss_report(db_session, actor, uuid4(), report.id, "理由")
+    with pytest.raises(ReportNotFoundError) as raised:
+        await service.handle_report(db_session, actor, task.id, uuid4())
+    assert raised.value.code == ErrorCode.NOT_FOUND
+    assert raised.value.status_code == 404
+
+    # The report exists but sits on task B: closing it THROUGH task A
+    # answers the same 404 — the closure is task-scoped like the queue.
+    other_task = _task(teacher)
+    await _persist(db_session, other_task)
+    with pytest.raises(ReportNotFoundError):
+        await service.dismiss_report(
+            db_session, actor, other_task.id, report.id, "跨任务关闭"
+        )
+
+
+@pytest.mark.integration
+async def test_reports_on_since_deleted_comments_stay_closable(
+    db_session: AsyncSession,
+) -> None:
+    """Governance reaches history: a report whose target comment was
+    soft-deleted after filing still closes — the queue reviews history
+    (the listing ruling, holding on the write side)."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    report = await _file_report(db_session, task, reporter)
+    comment = await db_session.get(Comment, report.comment_id)
+    assert comment is not None
+    comment.deleted_at = _NOW + timedelta(minutes=5)
+    comment.deleted_by = teacher.id
+    comment.delete_reason = "owner"
+    await db_session.flush()
+
+    closed = await ReportService().dismiss_report(
+        db_session, _actor(teacher), task.id, report.id, "目标已删除，结案"
+    )
+    assert closed.status == "DISMISSED"
+
+
+@pytest.mark.integration
+async def test_queue_renders_the_closed_status_and_stamps(
+    db_session: AsyncSession,
+) -> None:
+    """The listing the moderator closes on renders the closure: the
+    terminal status string, the acting moderator, and the stamp — the
+    queue's out-feed mirrors its in-feed."""
+    task, teacher, _, reporter = await _thread_fixture(db_session)
+    service = ReportService()
+    dismissed = await _file_report(db_session, task, reporter, category="SPAM")
+    handled = await _file_report(db_session, task, reporter, category="HARASSMENT")
+
+    await service.dismiss_report(
+        db_session, _actor(teacher), task.id, dismissed.id, "无违规"
+    )
+    await service.handle_report(
+        db_session, _actor(teacher), task.id, handled.id, note="已处理"
+    )
+
+    page, total = await service.list_task_reports(
+        db_session, _actor(teacher), task.id, limit=20, offset=0
+    )
+    assert total == 2
+    by_id = {view.id: view for view in page}
+    assert by_id[dismissed.id].status == "DISMISSED"
+    assert by_id[dismissed.id].handled_by == teacher.id
+    assert by_id[dismissed.id].handled_at is not None
+    assert by_id[handled.id].status == "HANDLED"
+    assert by_id[handled.id].handled_by == teacher.id
+    assert by_id[handled.id].handled_at is not None

@@ -55,6 +55,7 @@ from app.core.clock import FrozenClock
 from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.main import create_app
+from app.modules.audit.models import AuditLog
 from app.modules.community.models import (
     Comment,
     CommentRevision,
@@ -1105,3 +1106,167 @@ async def test_hard_hide_is_admin_only_and_removes_the_subtree(
         root.json()["id"],
         child.json()["id"],
     }
+
+
+# --- report closure over HTTP (PR #2 hardening step 10) ------------------------------
+
+
+@pytest.mark.integration
+async def test_report_closure_endpoints_over_http(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """The queue's readers are its closers, end to end: the two closure
+    routes take an OPEN report to DISMISSED (reason mandatory — missing
+    is the 422 parse refusal, blank the typed 400) or HANDLED (note
+    optional), stamp the row, write one durable audit row each in the
+    same transaction, replay the same state idempotently, refuse the
+    other terminal state with the 409 VALIDATION_ERROR envelope, keep
+    students and unrelated teachers out, and leave the queue listing
+    rendering the closed status with its stamps."""
+    owner, owner_tokens = await _staff_account(
+        db_session, api_clock, username="closure-owner@pku.edu.cn", role=Role.TEACHER
+    )
+    stranger, stranger_tokens = await _staff_account(
+        db_session,
+        api_clock,
+        username="closure-stranger@pku.edu.cn",
+        role=Role.TEACHER,
+    )
+    author = _user(username="20250981001", role=Role.STUDENT, nickname="闭环被举报人")
+    reporter = _user(username="20250981002", role=Role.STUDENT, nickname="闭环举报人")
+    await _seed(db_session, author, reporter)
+    task = _published_task(owner)
+    await _seed(db_session, task)
+    author_tokens = await _tokens(db_session, api_clock, author)
+    reporter_tokens = await _tokens(db_session, api_clock, reporter)
+
+    commented = await client.post(
+        f"/api/v1/tasks/{task.id}/comments",
+        json={"content": "等待结案处理的评论"},
+        headers=_bearer(author_tokens),
+    )
+    assert commented.status_code == 201, commented.text
+    comment_id = commented.json()["id"]
+    filed = await client.post(
+        f"/api/v1/comments/{comment_id}/reports",
+        json={"category": "SPAM"},
+        headers=_bearer(reporter_tokens),
+    )
+    assert filed.status_code == 201, filed.text
+    dismiss_path = f"/api/v1/tasks/{task.id}/reports/{filed.json()['id']}/dismiss"
+    handle_path = f"/api/v1/tasks/{task.id}/reports/{filed.json()['id']}/handle"
+
+    # Students (even the reporter) never reach the staff surface.
+    student_denied = await client.post(
+        dismiss_path, json={"reason": "学生越权"}, headers=_bearer(reporter_tokens)
+    )
+    assert student_denied.status_code == 403
+    assert _envelope(student_denied)["code"] == "PERMISSION_DENIED"
+
+    # An unrelated teacher passes the staff gate and is refused by the
+    # service's standing check.
+    stranger_denied = await client.post(
+        dismiss_path, json={"reason": "无关教师"}, headers=_bearer(stranger_tokens)
+    )
+    assert stranger_denied.status_code == 403
+    assert _envelope(stranger_denied)["code"] == "PERMISSION_DENIED"
+
+    # The reason is a mandatory part of the decision: absent is the
+    # parse refusal, blank-after-trim is the typed service rejection.
+    missing = await client.post(dismiss_path, json={}, headers=_bearer(owner_tokens))
+    assert missing.status_code == 422
+    assert _envelope(missing)["code"] == "VALIDATION_ERROR"
+    blank = await client.post(
+        dismiss_path, json={"reason": "   "}, headers=_bearer(owner_tokens)
+    )
+    assert blank.status_code == 400
+    assert _envelope(blank)["code"] == "VALIDATION_ERROR"
+
+    dismissed = await client.post(
+        dismiss_path,
+        json={"reason": "  查证后不构成违规  "},
+        headers=_bearer(owner_tokens),
+    )
+    assert dismissed.status_code == 200, dismissed.text
+    closure = dismissed.json()
+    assert set(closure) == {
+        "id",
+        "task_id",
+        "comment_id",
+        "status",
+        "handled_by",
+        "handled_at",
+    }
+    assert closure["status"] == "DISMISSED"
+    assert closure["task_id"] == str(task.id)
+    assert closure["comment_id"] == comment_id
+    assert closure["handled_by"] == str(owner.id)
+    assert closure["handled_at"] is not None
+
+    # The same-state replay echoes the closed row without new stamps.
+    replay = await client.post(
+        dismiss_path, json={"reason": "同状态重放"}, headers=_bearer(owner_tokens)
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["handled_at"] == closure["handled_at"]
+
+    # The other terminal state is the typed 409 envelope.
+    conflict = await client.post(
+        handle_path, json={"note": "试图再处理"}, headers=_bearer(owner_tokens)
+    )
+    assert conflict.status_code == 409
+    error = _envelope(conflict)
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["details"]["status"] == "DISMISSED"
+
+    # A second report on the same comment closes through handle: the
+    # note is optional governor context and lands on the audit row.
+    second = await client.post(
+        f"/api/v1/comments/{comment_id}/reports",
+        json={"category": "OTHER"},
+        headers=_bearer(reporter_tokens),
+    )
+    assert second.status_code == 201, second.text
+    handled = await client.post(
+        f"/api/v1/tasks/{task.id}/reports/{second.json()['id']}/handle",
+        json={"note": "  已删除被举报评论  "},
+        headers=_bearer(owner_tokens),
+    )
+    assert handled.status_code == 200, handled.text
+    assert handled.json()["status"] == "HANDLED"
+    assert handled.json()["handled_by"] == str(owner.id)
+
+    # The queue renders both closures with their stamps.
+    queue = await client.get(
+        f"/api/v1/teacher/tasks/{task.id}/reports", headers=_bearer(owner_tokens)
+    )
+    assert queue.status_code == 200, queue.text
+    by_id = {item["id"]: item for item in queue.json()["items"]}
+    assert by_id[filed.json()["id"]]["status"] == "DISMISSED"
+    assert by_id[filed.json()["id"]]["handled_by"] == str(owner.id)
+    assert by_id[filed.json()["id"]]["handled_at"] is not None
+    assert by_id[second.json()["id"]]["status"] == "HANDLED"
+    assert by_id[second.json()["id"]]["handled_at"] is not None
+
+    # The durable audit rows: one per decision, actor/target/reason
+    # contract, the trimmed texts.
+    dismiss_rows = list(
+        await db_session.scalars(
+            select(AuditLog).where(AuditLog.target_id == filed.json()["id"])
+        )
+    )
+    assert [row.action for row in dismiss_rows] == ["REPORT_DISMISSED"]
+    assert dismiss_rows[0].actor_user_id == owner.id
+    assert dismiss_rows[0].target_type == "comment_report"
+    assert dismiss_rows[0].reason == "查证后不构成违规"
+    handle_rows = list(
+        await db_session.scalars(
+            select(AuditLog).where(AuditLog.target_id == second.json()["id"])
+        )
+    )
+    assert [row.action for row in handle_rows] == ["REPORT_HANDLED"]
+    assert handle_rows[0].reason is None
+    assert handle_rows[0].details is not None
+    assert handle_rows[0].details["note"] == "已删除被举报评论"
