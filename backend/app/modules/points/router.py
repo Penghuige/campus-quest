@@ -36,7 +36,9 @@ GET          ``/teacher/rewards/redemptions`` — the review queue:
              pending (REQUESTED/UNDER_REVIEW) oldest first,
              offset-paginated, enriched with the requester nickname
              (through the identity directory port) and the item name.
-             Staff-guarded (TEACHER/ADMIN): a read that decides nothing.
+             Admin-only with the decisions until scoped delegation
+             (PR #2 closure review: the queue exposes every
+             requester's identity).
 POST         ``/teacher/rewards/redemptions/{id}/approve`` — consume
              the freeze into one negative REWARD_REDEMPTION entry.
              Admin-only until scoped delegation (PR #2 hardening

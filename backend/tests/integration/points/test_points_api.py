@@ -25,10 +25,10 @@ Drives the real app (``create_app()`` — the points router mounted under
   the true figure), and the user-facing DTO answers that with 0/0 plus
   the explicit ``point_debt`` — driven here through the REAL ledger
   path (grant + redemption + full reversal -> raw -150);
-- the review surface: the queue stays staff-guarded (a read that
-  decides nothing), while the DECISION endpoints (approve / reject /
-  fulfill) are Admin-only until scoped delegation (PR #2 hardening
-  ruling) — an ACTIVE+TOTP Teacher is 403, an Admin passes — with the
+- the review surface: the queue AND the decision endpoints (approve /
+  reject / fulfill) are Admin-only until scoped delegation (PR #2
+  closure review) — an ACTIVE+TOTP Teacher is 403 on all four, an
+  Admin passes — with the
   approve consumption entry, reject freeze release, and fulfill note
   assertions the review flow always had;
 - the durable audit trail (G12; PR #2 hardening P0-5): every APPLIED
