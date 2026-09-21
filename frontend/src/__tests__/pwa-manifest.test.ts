@@ -1,0 +1,95 @@
+/**
+ * Task 7 (Plan 09): PWA manifest content — the token chain
+ * globals.css -> DESIGN_TOKENS -> oklchToHex -> manifest colors, the
+ * icon set installability needs (192/512 any + a maskable), and that the
+ * referenced PNGs actually exist under public/icons/.
+ */
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, test } from "node:test";
+
+import manifestFactory from "../app/manifest";
+import { DESIGN_TOKENS, oklchToHex } from "../lib/designTokens";
+
+/** The manifest document (Next serves the same shape at /manifest.webmanifest). */
+const manifest = manifestFactory();
+
+// --- the token chain -----------------------------------------------------------------
+
+describe("DESIGN_TOKENS mirrors globals.css (the drift guard)", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
+
+  test("every mirrored token string appears verbatim in the stylesheet", () => {
+    assert.ok(
+      css.includes(`--primary: ${DESIGN_TOKENS.primary};`),
+      "globals.css must declare --primary with the mirrored value",
+    );
+    assert.ok(
+      css.includes(`--background: ${DESIGN_TOKENS.background};`),
+      "globals.css must declare --background with the mirrored value",
+    );
+  });
+});
+
+describe("oklchToHex (reference OKLab -> sRGB pipeline)", () => {
+  test("anchors: pure white and pure black survive the round trip", () => {
+    assert.equal(oklchToHex("oklch(100% 0 0)"), "#ffffff");
+    assert.equal(oklchToHex("oklch(0% 0 0)"), "#000000");
+  });
+
+  test("the design tokens convert to their pinned sRGB values", () => {
+    assert.equal(oklchToHex(DESIGN_TOKENS.primary), "#2a67bd");
+    assert.equal(oklchToHex(DESIGN_TOKENS.background), "#f5f7f9");
+  });
+
+  test("anything outside the token grammar is a RangeError, not a guess", () => {
+    assert.throws(() => oklchToHex("rgb(1, 2, 3)"), RangeError);
+    assert.throws(() => oklchToHex("oklch(52% 0.15)"), RangeError);
+  });
+});
+
+// --- manifest content ------------------------------------------------------------------
+
+describe("app/manifest.ts (the PWA shell)", () => {
+  test("project identity, start URL, and standalone display", () => {
+    assert.equal(manifest.name, "CampusQuest");
+    assert.equal(manifest.short_name, "CampusQuest");
+    assert.equal(manifest.start_url, "/");
+    assert.equal(manifest.display, "standalone");
+    assert.equal(manifest.lang, "zh-CN");
+  });
+
+  test("theme + background colors come FROM the design tokens (as sRGB hex)", () => {
+    assert.equal(manifest.theme_color, oklchToHex(DESIGN_TOKENS.primary));
+    assert.equal(manifest.background_color, oklchToHex(DESIGN_TOKENS.background));
+  });
+
+  test("icons: 192 + 512 any, plus a 512 maskable — all project-owned PNGs", () => {
+    const icons = manifest.icons ?? [];
+    const has = (size: string, purpose: string) =>
+      icons.some(
+        (icon) => icon.sizes === size && icon.purpose === purpose && icon.type === "image/png",
+      );
+    assert.ok(has("192x192", "any"), "needs a 192 any icon");
+    assert.ok(has("512x512", "any"), "needs a 512 any icon");
+    assert.ok(has("512x512", "maskable"), "needs a 512 maskable icon");
+    for (const icon of icons) {
+      assert.match(icon.src ?? "", /^\/icons\/icon-[a-z0-9-]+\.png$/);
+    }
+  });
+
+  test("every referenced icon file exists under public/icons/", () => {
+    for (const icon of manifest.icons ?? []) {
+      const path = resolve(process.cwd(), "public", (icon.src ?? "").slice(1));
+      assert.ok(existsSync(path), `${icon.src} must exist on disk`);
+    }
+  });
+
+  test("no push notifications ship in V1: the manifest declares none", () => {
+    // The gcm_senders_to_site_id / "gcm_sender_id" fields are how legacy
+    // push wiring would show up; their absence is the pin.
+    const raw = JSON.stringify(manifest);
+    assert.ok(!raw.includes("gcm_"));
+  });
+});

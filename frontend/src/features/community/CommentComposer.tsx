@@ -28,6 +28,7 @@ import {
 } from "./api";
 import {
   codePointLength,
+  DEFAULT_IDENTITY_MODE,
   describeCommunityError,
   identityPreview,
   IDENTITY_MODE_OPTIONS,
@@ -60,7 +61,7 @@ export function CommentComposer({
   const contentId = useId();
   const identityId = useId();
   const session = useSession();
-  const [mode, setMode] = useState<IdentityMode>("named");
+  const [mode, setMode] = useState<IdentityMode>(DEFAULT_IDENTITY_MODE);
   const [content, setContent] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<{

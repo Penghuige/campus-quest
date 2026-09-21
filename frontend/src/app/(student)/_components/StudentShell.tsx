@@ -15,15 +15,17 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { useSession } from "@/features/auth/session";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 
 const NAV_ITEMS = [
   { href: "/", label: "首页" },
   { href: "/tasks", label: "任务" },
   { href: "/rankings", label: "排行榜" },
   { href: "/rewards", label: "奖励" },
+  { href: "/notifications", label: "通知" },
   { href: "/profile", label: "我的" },
-  // My Claims / Notifications land with their own S4 tasks — append
-  // here as the routes appear (design §8).
+  // My Claims lands with its own S4 task — append here as the route
+  // appears (design §8).
 ] as const;
 
 export function StudentShell({ children }: { children: ReactNode }) {
@@ -104,9 +106,12 @@ export function StudentShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <span className="app-user" title={state.me.nickname}>
-            {state.me.nickname}
-          </span>
+          <div className="app-topbar-actions">
+            <NotificationBell />
+            <span className="app-user" title={state.me.nickname}>
+              {state.me.nickname}
+            </span>
+          </div>
         </div>
       </header>
       <main className="app-main">{children}</main>
