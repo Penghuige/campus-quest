@@ -76,6 +76,54 @@ export function pointsProgressView(
   };
 }
 
+// --- shelf gating for the wallet panel ------------------------------------------
+
+/** The rewards shelf's load state as the wallet panel consumes it. */
+export interface RewardsShelf {
+  status: "loading" | "error" | "ready";
+  items: RewardItemDto[];
+}
+
+/**
+ * What the wallet panel may render about the rewards shelf. The empty
+ * copy ("暂无可兑换的奖励") is a SERVER-VERDICTED fact — no purchasable
+ * item exists — so it is reachable ONLY through the ready shelf:
+ * - `loading`  -> skeleton line (no verdict yet);
+ * - `unavailable` -> muted note (the section error + retry already
+ *   rendered above; the wallet numbers stay);
+ * - `verdict`  -> the ready-shelf progress view, empty or not.
+ */
+export type WalletShelfView =
+  | { shelf: "loading"; frozenPoints: number }
+  | { shelf: "unavailable"; frozenPoints: number }
+  | { shelf: "verdict"; frozenPoints: number; progress: PointsProgressView };
+
+/**
+ * Gate the shelf branch for the wallet panel; pure presentation rule.
+ * `frozenPoints` rides every branch — the freeze note belongs to the
+ * WALLET, not to the shelf's load state.
+ */
+export function walletShelfView(
+  wallet: WalletDto,
+  rewards: RewardsShelf,
+): WalletShelfView {
+  const frozenPoints = Math.max(
+    wallet.available_points - wallet.spendable_points,
+    0,
+  );
+  if (rewards.status === "loading") {
+    return { shelf: "loading", frozenPoints };
+  }
+  if (rewards.status === "error") {
+    return { shelf: "unavailable", frozenPoints };
+  }
+  return {
+    shelf: "verdict",
+    frozenPoints,
+    progress: pointsProgressView(wallet, rewards.items),
+  };
+}
+
 // --- active / revision claims --------------------------------------------------
 
 export interface ClaimsSummaryView {

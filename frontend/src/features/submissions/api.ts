@@ -196,6 +196,13 @@ export class StoragePutError extends Error {
  *   API auth material to the storage origin.
  * - The Content-Type is pinned to the declared type's MIME: the provider
  *   rejects a PUT carrying any other value.
+ * - CORS preflight (deployment contract): a non-safelisted
+ *   Content-Type makes this cross-origin PUT a NON-simple request, so
+ *   the browser sends an OPTIONS preflight BEFORE any bytes leave; the
+ *   storage provider's CORS configuration must allow the PUT method and
+ *   exactly this Content-Type (the e2e mock route mirrors the same
+ *   shape). A refused preflight surfaces as the generic `onerror`
+ *   network failure below — nothing in this transport can bypass it.
  */
 export function putFileToPresignedUrl(
   url: string,

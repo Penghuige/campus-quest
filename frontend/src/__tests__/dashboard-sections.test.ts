@@ -11,6 +11,7 @@ import {
   claimsSummaryView,
   pointsProgressView,
   rankSnapshotView,
+  walletShelfView,
 } from "../features/dashboard/sections";
 import { listRewards, myWallet, type RewardItemDto } from "../features/points/api";
 import { monthlyBoard } from "../features/rankings/api";
@@ -118,6 +119,43 @@ describe("points + nearest-reward progress", () => {
     const rewards = await listRewards();
     assert.equal(recorded?.url, "/api/v1/rewards");
     assert.equal(rewards.items.length, 1);
+  });
+});
+
+describe("wallet shelf gating (empty copy is a server verdict)", () => {
+  test("loading shelf -> skeleton branch, no verdict and no empty copy", () => {
+    const view = walletShelfView(WALLET, { status: "loading", items: [] });
+    assert.deepEqual(view, { shelf: "loading", frozenPoints: 0 });
+  });
+
+  test("failed shelf -> unavailable branch (wallet numbers stay, no empty copy)", () => {
+    const view = walletShelfView(WALLET, { status: "error", items: [] });
+    assert.deepEqual(view, { shelf: "unavailable", frozenPoints: 0 });
+  });
+
+  test("frozen note rides every branch (wallet fact, not a shelf verdict)", () => {
+    const frozen = { ...WALLET, spendable_points: 100 };
+    for (const status of ["loading", "error"] as const) {
+      const view = walletShelfView(frozen, { status, items: [] });
+      assert.equal(view.frozenPoints, 60);
+    }
+  });
+
+  test("ready shelf -> verdict with the progress view", () => {
+    const view = walletShelfView(WALLET, {
+      status: "ready",
+      items: [reward({ point_cost: 120 })],
+    });
+    assert.equal(view.shelf, "verdict");
+    assert.equal(view.progress.status, "ready");
+    assert.equal(view.progress.rewardName, "文创帆布包");
+  });
+
+  test("ready but empty shelf -> verdict empty: the empty copy renders ONLY here", () => {
+    const view = walletShelfView(WALLET, { status: "ready", items: [] });
+    assert.equal(view.shelf, "verdict");
+    assert.equal(view.progress.status, "empty");
+    assert.equal(view.progress.rewardName, null);
   });
 });
 

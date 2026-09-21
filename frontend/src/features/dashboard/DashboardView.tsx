@@ -21,12 +21,7 @@ import {
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
 import { useSection } from "@/components/ui/useSection";
-import {
-  listRewards,
-  myWallet,
-  type RewardItemDto,
-  type WalletDto,
-} from "@/features/points/api";
+import { listRewards, myWallet, type WalletDto } from "@/features/points/api";
 import { monthlyBoard, type BoardDto } from "@/features/rankings/api";
 import { formatDeadlineSummary, parseServerInstant } from "@/lib/time";
 import { listMyClaims, listTasks, type MyClaimDto } from "@/features/tasks/api";
@@ -36,8 +31,9 @@ import { useNow } from "@/features/tasks/useNow";
 
 import {
   claimsSummaryView,
-  pointsProgressView,
   rankSnapshotView,
+  walletShelfView,
+  type RewardsShelf,
 } from "./sections";
 
 /** Own-claims page size for the summary. V1 caps ACTIVE claims at 3
@@ -182,58 +178,58 @@ function WalletBody({
   rewards,
 }: {
   wallet: WalletDto;
-  rewards: { status: "loading" | "error" | "ready"; items: RewardItemDto[] };
+  rewards: RewardsShelf;
 }) {
-  const view = pointsProgressView(wallet, rewards.items);
+  const shelf = walletShelfView(wallet, rewards);
   return (
     <div className="panel">
       <div className="metric-row">
         <div className="metric">
           <span className="metric-label">可用积分</span>
-          <span className="metric-value">{view.availablePoints}</span>
+          <span className="metric-value">{wallet.available_points}</span>
         </div>
         <div className="metric">
           <span className="metric-label">累计获得</span>
-          <span className="metric-value">{view.earnedPoints}</span>
+          <span className="metric-value">{wallet.earned_points}</span>
         </div>
       </div>
-      {rewards.status === "loading" ? (
+      {shelf.shelf === "loading" ? (
         <span className="skeleton skeleton-line" data-width="narrow" aria-label="正在加载可兑换奖励" />
       ) : null}
-      {rewards.status === "error" ? (
+      {shelf.shelf === "unavailable" ? (
         <p className="progress-note">暂时无法获取可兑换奖励，请稍后重试</p>
       ) : null}
-      {rewards.status === "ready" &&
-      view.status === "ready" &&
-      view.rewardName !== null &&
-      view.rewardCost !== null ? (
+      {shelf.shelf === "verdict" &&
+      shelf.progress.status === "ready" &&
+      shelf.progress.rewardName !== null &&
+      shelf.progress.rewardCost !== null ? (
         <div className="progress">
           <div
             className="progress-track"
             role="progressbar"
             aria-valuemin={0}
-            aria-valuemax={view.rewardCost}
-            aria-valuenow={Math.min(view.availablePoints, view.rewardCost)}
-            aria-label={`距离兑换「${view.rewardName}」的进度`}
+            aria-valuemax={shelf.progress.rewardCost}
+            aria-valuenow={Math.min(shelf.progress.availablePoints, shelf.progress.rewardCost)}
+            aria-label={`距离兑换「${shelf.progress.rewardName}」的进度`}
           >
             <div
               className="progress-fill"
-              style={{ width: `${Math.round(view.ratio * 100)}%` }}
+              style={{ width: `${Math.round(shelf.progress.ratio * 100)}%` }}
             />
           </div>
           <p className="progress-note">
-            {view.remainingPoints === null
-              ? `「${view.rewardName}」（${view.rewardCost} 积分）现在就可以兑换`
-              : `距兑换「${view.rewardName}」还差 ${view.remainingPoints} 积分`}
+            {shelf.progress.remainingPoints === null
+              ? `「${shelf.progress.rewardName}」（${shelf.progress.rewardCost} 积分）现在就可以兑换`
+              : `距兑换「${shelf.progress.rewardName}」还差 ${shelf.progress.remainingPoints} 积分`}
           </p>
         </div>
       ) : null}
-      {rewards.status === "ready" && view.status === "empty" ? (
+      {shelf.shelf === "verdict" && shelf.progress.status === "empty" ? (
         <p className="progress-note">暂无可兑换的奖励，完成任务先攒积分吧</p>
       ) : null}
-      {view.frozenPoints > 0 ? (
+      {shelf.frozenPoints > 0 ? (
         <p className="progress-note">
-          有 {view.frozenPoints} 积分冻结在兑换申请中，兑换以可花费余额为准
+          有 {shelf.frozenPoints} 积分冻结在兑换申请中，兑换以可花费余额为准
         </p>
       ) : null}
     </div>

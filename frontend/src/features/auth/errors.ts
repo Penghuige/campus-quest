@@ -28,7 +28,14 @@ export type AuthFieldName =
   | "nickname"
   | "phone"
   | "code"
-  | "password";
+  | "password"
+  // Account-settings fields (T5): the same envelope shapes serve the
+  // profile forms, with their own field names from profile_service.
+  | "new_phone"
+  | "email"
+  | "token"
+  | "current_password"
+  | "new_password";
 
 /** Presentation-ready view of one failed auth mutation. */
 export interface AuthErrorView {
@@ -54,6 +61,10 @@ export const AUTH_ERROR_TEXT: Partial<Record<string, string>> = {
   OTP_CHALLENGE_INVALID: "验证码已失效，请重新获取",
   OTP_TOKEN_INVALID: "手机验证已失效，请重新获取验证码",
   OTP_RESEND_COOLDOWN: "验证码发送过于频繁，请稍后再试",
+  // Account-settings codes (T5): email binding + the re-auth failures
+  // the profile endpoints answer (spec §5.5/§5.6).
+  EMAIL_ALREADY_BOUND: "该邮箱已绑定其他账号",
+  INVALID_EMAIL_TOKEN: "邮箱验证已失效，请重新发送验证邮件",
   RATE_LIMITED: "操作过于频繁，请稍后再试",
 };
 
@@ -72,6 +83,11 @@ const VALIDATION_FIELD_TEXT: Partial<Record<AuthFieldName, string>> = {
   password: `密码长度需为 10-128 个字符`,
   phone: "请输入正确的手机号",
   code: `验证码为 6 位数字`,
+  // Account-settings fields (T5).
+  new_phone: "请输入正确的新手机号",
+  email: "请输入正确的邮箱地址",
+  token: "请输入邮件中的验证码",
+  new_password: `密码长度需为 10-128 个字符`,
 };
 
 /**

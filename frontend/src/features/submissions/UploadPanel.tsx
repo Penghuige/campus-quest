@@ -102,7 +102,9 @@ export function UploadPanel({
   /**
    * Poll the async validation until a terminal status, the bounded
    * attempt budget runs out, or the run is aborted. A failed GET counts
-   * as a spent attempt (transient tolerance) instead of failing the flow.
+   * as a spent attempt (transient tolerance) instead of failing the
+   * flow: one bad poll falls through to the next backoff round, and
+   * only a fully exhausted budget reaches the poll-exhausted state.
    */
   const pollValidation = useCallback(
     async (submissionId: string, signal: AbortSignal): Promise<void> => {
@@ -115,8 +117,8 @@ export function UploadPanel({
           if (signal.aborted) {
             throw error;
           }
-          dispatch({ type: "poll-exhausted" });
-          return;
+          // Transient tolerance: spend the attempt, keep polling.
+          continue;
         }
         dispatch({ type: "poll-sampled", validation });
         if (

@@ -19,8 +19,11 @@ import { useSession } from "@/features/auth/session";
 const NAV_ITEMS = [
   { href: "/", label: "首页" },
   { href: "/tasks", label: "任务" },
-  // My Claims / Rankings / Rewards / Notifications / Profile land with
-  // their own S4 tasks — append here as the routes appear (design §8).
+  { href: "/rankings", label: "排行榜" },
+  { href: "/rewards", label: "奖励" },
+  { href: "/profile", label: "我的" },
+  // My Claims / Notifications land with their own S4 tasks — append
+  // here as the routes appear (design §8).
 ] as const;
 
 export function StudentShell({ children }: { children: ReactNode }) {

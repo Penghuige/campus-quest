@@ -32,7 +32,14 @@ export type PasswordResetPayload = Schemas["PasswordResetRequest"];
 /** `TokenPairResponse` — short-lived access token; refresh rides the cookie. */
 export type LoginTokens = Schemas["TokenPairResponse"];
 
+/** `MePublic` — the owner's own account page (spec §40: contacts included). */
+export type MeDto = Schemas["MePublic"];
+
+/** `EmailChallengeResponse` — request-side view of one email cycle. */
+export type EmailChallengeDto = Schemas["EmailChallengeResponse"];
+
 const BASE = "/api/v1/auth";
+const ME = "/api/v1/me";
 
 /** Issue a REGISTER-purpose phone OTP challenge (§5.4, §33.2). */
 export function requestPhoneChallenge(phone: string): Promise<ChallengeView> {
@@ -91,5 +98,90 @@ export function confirmPasswordReset(
   return apiRequest<void>(`${BASE}/password/reset`, {
     method: "POST",
     body: payload,
+  });
+}
+
+// --- own-account profile endpoints (spec §5.4-§5.5, §40; profile_router) --------
+
+/**
+ * Change the account nickname (PATCH /me/nickname). No re-auth: nickname
+ * is display-only, so the session itself is the authority.
+ */
+export function updateNickname(nickname: string): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/nickname`, {
+    method: "PATCH",
+    body: { nickname },
+  });
+}
+
+/**
+ * Start a phone change (POST /me/phone/change): re-authenticate with the
+ * CURRENT password, then OTP-challenge the NEW phone. The response is
+ * the challenge for the new number (spec §5.4).
+ */
+export function requestPhoneChange(
+  password: string,
+  newPhone: string,
+): Promise<ChallengeView> {
+  return apiRequest<ChallengeView>(`${ME}/phone/change`, {
+    method: "POST",
+    body: { password, new_phone: newPhone },
+  });
+}
+
+/**
+ * Confirm a phone change with the NEW phone's OTP code
+ * (POST /me/phone/change/confirm); returns the updated account view.
+ */
+export function confirmPhoneChange(
+  challengeId: string,
+  code: string,
+): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/phone/change/confirm`, {
+    method: "POST",
+    body: { challenge_id: challengeId, code },
+  });
+}
+
+/**
+ * Bind (or re-bind) an email and send its verification token
+ * (POST /me/email); the response carries only the cycle's expiry.
+ */
+export function requestEmailVerification(email: string): Promise<EmailChallengeDto> {
+  return apiRequest<EmailChallengeDto>(`${ME}/email`, {
+    method: "POST",
+    body: { email },
+  });
+}
+
+/** Confirm an email binding with the token from the message (§5.5). */
+export function confirmEmailVerification(token: string): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/email/verify`, {
+    method: "POST",
+    body: { token },
+  });
+}
+
+/**
+ * Unbind the email after re-authentication (POST /me/email/unbind, 204).
+ */
+export function unbindEmail(password: string): Promise<void> {
+  return apiRequest<void>(`${ME}/email/unbind`, {
+    method: "POST",
+    body: { password },
+  });
+}
+
+/**
+ * Rotate the password after re-authentication (POST /me/password, 204).
+ * Backend semantics (§5.6): every OTHER session dies, this one survives.
+ */
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return apiRequest<void>(`${ME}/password`, {
+    method: "POST",
+    body: { current_password: currentPassword, new_password: newPassword },
   });
 }
