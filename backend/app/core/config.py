@@ -42,6 +42,17 @@ _INSECURE_PRODUCTION_SENTINELS: tuple[tuple[str, str], ...] = (
     ("totp_encryption_key", "TOTP_ENCRYPTION_KEY"),
 )
 
+# (field, env var) pairs the SAME production guard refuses on the logging
+# provider: "logging" records the send and delivers nothing, so running it
+# in production would mark deliveries SENT that were never sent (G4
+# external side effects must not fake success). V1 has no alternative
+# value — real SMS/EMAIL adapters are a separate later project — so until
+# they land a production deployment fails closed at startup by design.
+_LOGGING_ONLY_PROVIDER_FIELDS: tuple[tuple[str, str], ...] = (
+    ("sms_provider", "SMS_PROVIDER"),
+    ("email_provider", "EMAIL_PROVIDER"),
+)
+
 
 class Settings(BaseSettings):
     database_url: str
@@ -62,8 +73,20 @@ class Settings(BaseSettings):
 
     # Deployment profile: "production" turns insecure development defaults
     # into startup failures (the OTP HMAC, access-token, and TOTP-encryption
-    # sentinels).
+    # sentinels, plus the logging-only SMS/EMAIL providers below).
     environment: Literal["development", "production"] = "development"
+
+    # Outbound channel provider selection (PR #2 hardening P0-2,
+    # fail-closed): V1 ships exactly one implementation per channel — the
+    # logging adapter that records the send and delivers nothing. Real
+    # providers (Twilio/SMTP) are a separate later project; when they
+    # land, extend these Literals with the real values and the
+    # composition points' factories with them. Until then "logging" is
+    # the only value, and environment=production refuses it at
+    # construction (see the production guard below): a deployment must
+    # never mark deliveries SENT that were never actually sent.
+    sms_provider: Literal["logging"] = "logging"
+    email_provider: Literal["logging"] = "logging"
 
     # Phone OTP challenge lifecycle (spec §33.2 recommended defaults:
     # 5-minute TTL, 5 verification attempts, resend cooldown, per-phone and
@@ -288,10 +311,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _reject_insecure_secrets_in_production(self) -> "Settings":
-        # A known sentinel defeats the secret's purpose in production (see
-        # the constants' comments): a deployment must fail at startup, not
-        # run silently unprotected. Every listed secret is checked so the
-        # one error names everything the deployer must set.
+        # Known sentinels and the logging provider are development-only
+        # wiring (see the constants' comments): a production deployment
+        # must fail at startup, not run silently unprotected or on a
+        # provider that fakes success. Every listed field is checked so
+        # the one error names everything the deployer must set.
         offenders = [
             env_name
             for field_name, env_name in _INSECURE_PRODUCTION_SENTINELS
@@ -304,6 +328,20 @@ class Settings(BaseSettings):
                 "deployment-specific values (a committed sentinel lets "
                 "anyone brute-force stored OTP hashes offline, forge "
                 "access tokens, or decrypt stored TOTP secrets)"
+            )
+        logging_providers = [
+            env_name
+            for field_name, env_name in _LOGGING_ONLY_PROVIDER_FIELDS
+            if getattr(self, field_name) == "logging"
+        ]
+        if self.environment == "production" and logging_providers:
+            raise ValueError(
+                "environment=production refuses the logging provider: "
+                f"set {' and '.join(logging_providers)} to a real sending "
+                "provider (the logging adapter delivers nothing while "
+                "deliveries are recorded SENT; real SMS/EMAIL adapters "
+                "land with the provider project, so V1 channels cannot "
+                "run in production)"
             )
         return self
 

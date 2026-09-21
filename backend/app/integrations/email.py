@@ -8,11 +8,15 @@ centralized template rendering. Free-form subject/body composition would
 scatter rendering across callers. Tests assert exact deliveries via
 `FakeEmailSender.messages`.
 
-`LoggingEmailSender` is the interim production adapter: real provider
-delivery arrives with the notification module, so until
-then the composition root wires a sender that logs the masked recipient
-and template only — NEVER `variables` (the verification token travels
-there) — instead of silently dropping the send.
+`LoggingEmailSender` is the development-only adapter: the real provider
+project owns actual delivery, so until it lands the composition root
+(`build_email_sender`, wired from `Settings.email_provider`) resolves the
+sender that logs the masked recipient and template only — NEVER
+`variables` (the verification token travels there) — instead of silently
+dropping the send. Its receipt carries the "logging:" prefix so recorded
+deliveries distinguish simulated sends from real provider receipts;
+production never runs it (config.py's production guard refuses
+provider="logging" at Settings construction — fail closed, G4/G5).
 """
 
 from __future__ import annotations
@@ -21,10 +25,14 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import uuid4
 
 from app.integrations.masking import mask_email
 
 logger = logging.getLogger(__name__)
+
+#: Prefix marking a receipt as a simulated logging send (see sms.py).
+LOGGING_RECEIPT_PREFIX = "logging:"
 
 
 @dataclass(frozen=True)
@@ -52,7 +60,7 @@ class EmailSender(Protocol):
         template: str,
         variables: Mapping[str, Any],
         idempotency_key: str | None = None,
-    ) -> None:
+    ) -> str | None:
         """Send one templated email.
 
         Args:
@@ -69,6 +77,11 @@ class EmailSender(Protocol):
                 UnknownOutcomeError retry cannot double-send, spec
                 §25.3). Single-shot callers omit it.
 
+        Returns:
+            The provider receipt id for the accepted send, or None when
+            the adapter surfaces no receipt. The logging adapter returns
+            a "logging:"-prefixed id marking the send as simulated.
+
         Raises:
             TemporaryProviderError: transient failure; bounded retry safe.
             PermanentProviderError: provider rejected the recipient/content.
@@ -77,11 +90,33 @@ class EmailSender(Protocol):
         ...
 
 
-class LoggingEmailSender:
-    """Interim `EmailSender` adapter: log masked, deliver nothing.
+def build_email_sender(provider: str) -> EmailSender:
+    """The `EmailSender` adapter a configured provider value wires.
 
-    The notification module replaces this at the composition root when
-    it ships real provider adapters. Deliberately never raises.
+    The fail-closed chain (PR #2 hardening P0-2): config.py's production
+    guard refuses provider="logging" when environment=production, so the
+    logging branch below is development-only by construction — there is
+    no silent fallback onto a sender that fakes success. When real
+    adapters land (the provider project), extend the `email_provider`
+    Literal in app/core/config.py and this factory together.
+    """
+    if provider == "logging":
+        return LoggingEmailSender()
+    raise LookupError(
+        f"unknown email_provider {provider!r}: extend the email_provider "
+        "Literal in app/core/config.py together with this factory"
+    )
+
+
+class LoggingEmailSender:
+    """Development-only `EmailSender` adapter: log masked, deliver nothing.
+
+    Production never runs this adapter: config.py's production guard
+    refuses provider="logging" at Settings construction, so the wiring
+    cannot reach it there (fail closed). Each accepted send returns a
+    `"logging:"<uuid>` receipt so the recorded delivery carries a
+    provider_message_id clearly marked as simulated. Deliberately never
+    raises.
     """
 
     def send(
@@ -91,10 +126,14 @@ class LoggingEmailSender:
         template: str,
         variables: Mapping[str, Any],
         idempotency_key: str | None = None,
-    ) -> None:
+    ) -> str:
+        receipt = f"{LOGGING_RECEIPT_PREFIX}{uuid4()}"
         logger.info(
-            "email send (interim logging adapter) to=%s template=%s idempotency_key=%s",
+            "email send (interim logging adapter) to=%s template=%s "
+            "idempotency_key=%s receipt=%s",
             mask_email(to),
             template,
             idempotency_key,
+            receipt,
         )
+        return receipt

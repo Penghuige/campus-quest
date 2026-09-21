@@ -7,10 +7,15 @@ the module's services per request. Routes resolve everything through
 tests override a dependency, never service internals (§21).
 
 - The Redis client is process-cached; services are assembled per request
-  from injected clock, settings, codec, and sender dependencies. Real
-  SMS/Email provider adapters arrive with the notification module; until
-  then the interim logging adapters record masked deliveries (never
-  ``variables`` — the OTP code and email token travel there).
+  from injected clock, settings, codec, and sender dependencies. The
+  SMS/EMAIL senders are resolved from `Settings.sms_provider` /
+  `Settings.email_provider` (V1's only value is the logging adapter);
+  production refuses the logging provider at Settings construction
+  (config.py's production guard — fail closed), so this wiring can never
+  hand a no-send adapter to a production request. The logging adapters
+  record masked deliveries (never ``variables`` — the OTP code and email
+  token travel there) and return "logging:"-prefixed receipts so recorded
+  deliveries are distinguishable from real provider sends.
 """
 
 from __future__ import annotations
@@ -27,9 +32,9 @@ from app.core.clock import Clock
 from app.core.config import Settings, get_settings
 from app.core.security import AccessTokenCodec, hash_password
 from app.db.session import get_db_session
-from app.integrations.email import EmailSender, LoggingEmailSender
+from app.integrations.email import EmailSender, build_email_sender
 from app.integrations.rate_limit import RateLimiter, RedisFixedWindowLimiter
-from app.integrations.sms import LoggingSmsSender, SmsSender
+from app.integrations.sms import SmsSender, build_sms_sender
 from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
@@ -67,14 +72,28 @@ def get_rate_limiter(
     return RedisFixedWindowLimiter(redis=redis, clock=clock)
 
 
-def get_sms_sender() -> SmsSender:
-    """Interim adapter; the notification module wires a real provider."""
-    return LoggingSmsSender()
+def get_sms_sender(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SmsSender:
+    """Resolve the SMS adapter from `settings.sms_provider`.
+
+    The fail-closed chain (PR #2 hardening P0-2): production refuses
+    provider="logging" at Settings construction (config.py's production
+    guard), so this wiring has no silent fallback onto a sender that
+    delivers nothing. When real adapters land (the provider project),
+    the Literal in config.py and `build_sms_sender` grow together.
+    """
+    return build_sms_sender(settings.sms_provider)
 
 
-def get_email_sender() -> EmailSender:
-    """Interim adapter; the notification module wires a real provider."""
-    return LoggingEmailSender()
+def get_email_sender(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> EmailSender:
+    """Resolve the email adapter from `settings.email_provider`.
+
+    The fail-closed chain mirrors `get_sms_sender`.
+    """
+    return build_email_sender(settings.email_provider)
 
 
 def get_event_publisher() -> DomainEventPublisher:

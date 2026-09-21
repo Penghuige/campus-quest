@@ -44,7 +44,7 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -59,12 +59,14 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.core.clock import Clock, FrozenClock
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
+from app.integrations.email import LoggingEmailSender
 from app.integrations.errors import (
     PermanentProviderError,
     TemporaryProviderError,
     UnknownOutcomeError,
 )
+from app.integrations.sms import LoggingSmsSender
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.notifications.delivery_service import (
@@ -426,6 +428,92 @@ def test_duplicate_job_delivers_exactly_once(
     assert row.last_error is None
     # One row per (event_key, user, channel), duplicate job or not.
     assert count == 1
+
+
+# --- development logging semantics (PR #2 hardening P0-2, fail-closed) ------------
+
+
+async def test_logging_senders_record_prefixed_provider_message_id(
+    db_engine: AsyncEngine,
+) -> None:
+    # development runs explicitly on the logging provider (production
+    # refuses it at Settings construction, config.py's production guard).
+    # The recorded delivery must carry the "logging:"<uuid> receipt so
+    # operations can tell a simulated send from a real provider receipt
+    # at a glance — the success label stays honest about WHAT sent it.
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=LoggingSmsSender(),
+        email_sender=LoggingEmailSender(),
+        clock=StepClock(_T0),
+    )
+
+    async with _seeded(db_engine) as sms_seeded:
+        sms_delivery = sms_seeded[2]
+
+        sms_result = await service.send(sms_delivery.id, "req-logging-sms")
+        assert sms_result.outcome is SendOutcome.SENT
+        sms_row = await _row(db_engine, sms_delivery.id)
+        assert sms_row.status == DeliveryStatus.SENT.value
+        assert sms_row.provider_message_id is not None
+        assert sms_row.provider_message_id.startswith("logging:")
+        # A real UUID rides behind the prefix, unique per send like a
+        # provider receipt.
+        UUID(sms_row.provider_message_id.removeprefix("logging:"))
+
+    async with _seeded(
+        db_engine,
+        user_overrides={
+            "phone_e164": None,
+            "email_normalized": "student@campus.example.edu",
+            "email_verified_at": _T0,
+        },
+        event_type=NotificationEventType.SUBMISSION_APPROVED,
+        event_key=f"submission:{uuid4()}:approved",
+        channel=NotificationChannel.EMAIL,
+    ) as email_seeded:
+        email_delivery = email_seeded[2]
+
+        email_result = await service.send(email_delivery.id, "req-logging-email")
+        assert email_result.outcome is SendOutcome.SENT
+        email_row = await _row(db_engine, email_delivery.id)
+        assert email_row.status == DeliveryStatus.SENT.value
+        assert email_row.provider_message_id is not None
+        assert email_row.provider_message_id.startswith("logging:")
+        UUID(email_row.provider_message_id.removeprefix("logging:"))
+
+    assert sms_row.provider_message_id != email_row.provider_message_id
+
+
+def test_build_delivery_service_wires_logging_senders_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The worker composition point resolves the SMS/EMAIL adapters from
+    # settings (`build_sms_sender`/`build_email_sender`); V1/development
+    # values are "logging", so the built service carries the Logging
+    # adapters. Production never gets this far with logging providers:
+    # Settings construction fails closed first (config.py's production
+    # guard, pinned in tests/unit/core/test_config.py).
+    for name, value in {
+        "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:15433/"
+        "campusquest_test",
+        "REDIS_URL": "redis://localhost:6379/0",
+        "S3_ENDPOINT_URL": "http://localhost:9000",
+        "S3_BUCKET": "campusquest-test",
+        "S3_ACCESS_KEY": "campusquest",
+        "S3_SECRET_KEY": "campusquest-dev",
+        "BUSINESS_TIMEZONE": "Asia/Shanghai",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        service = send_notification_job.build_delivery_service(
+            session_maker=cast("Any", object())  # never used at construction
+        )
+    finally:
+        get_settings.cache_clear()
+    assert isinstance(service._sms_sender, LoggingSmsSender)
+    assert isinstance(service._email_sender, LoggingEmailSender)
 
 
 # --- bounded retry ladder (spec §25.4) ---------------------------------------------

@@ -67,17 +67,23 @@ def build_delivery_service(
     boundary the next task invocation closes. Tests substitute the
     fakes by patching this factory.
 
-    The SMS/EMAIL senders are the interim Logging* adapters until this
-    plan's later provider wiring replaces them at this exact call site
-    (real adapters translate their SDK failures into the §13 taxonomy
-    and honor `idempotency_key`; nothing else changes).
+    The SMS/EMAIL senders are resolved from settings
+    (`build_sms_sender`/`build_email_sender` over `sms_provider` /
+    `email_provider`): V1's only value is the logging adapter, whose
+    "logging:"-prefixed receipts mark recorded deliveries as simulated.
+    The chain is fail-closed — production refuses provider="logging" at
+    Settings construction (config.py's production guard), so this job
+    can never deliver through a no-send adapter there. When this plan's
+    provider wiring lands real adapters, they translate their SDK
+    failures into the §13 taxonomy and honor `idempotency_key`; nothing
+    else changes.
     """
     from datetime import timedelta
 
     from app.core.clock import SystemClock
     from app.core.config import get_settings
-    from app.integrations.email import LoggingEmailSender
-    from app.integrations.sms import LoggingSmsSender
+    from app.integrations.email import build_email_sender
+    from app.integrations.sms import build_sms_sender
     from app.modules.tasks.models import AssignmentClaim
 
     async def _claim_status(claim_id: UUID) -> str | None:
@@ -102,16 +108,17 @@ def build_delivery_service(
                 ),
             )
 
+    settings = get_settings()
     return DeliveryService(
         session_maker=session_maker,
-        sms_sender=LoggingSmsSender(),
-        email_sender=LoggingEmailSender(),
+        sms_sender=build_sms_sender(settings.sms_provider),
+        email_sender=build_email_sender(settings.email_provider),
         clock=SystemClock(),
         # The claim gate's lease threshold comes from the SAME setting
         # the T8 due scan reads, so the rows the scanner re-enqueues as
         # stuck are exactly the rows this gate will re-claim.
         stale_claim_threshold=timedelta(
-            seconds=get_settings().notification_dispatch_stale_sending_seconds
+            seconds=settings.notification_dispatch_stale_sending_seconds
         ),
         claim_status_resolver=_claim_status,
     )
