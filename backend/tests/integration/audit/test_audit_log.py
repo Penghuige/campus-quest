@@ -88,3 +88,60 @@ async def test_writer_appends_one_row_committed_by_the_caller(
     assert loaded.reason == "契约测试"
     assert loaded.details == {"key": "value"}
     assert loaded.created_at is not None
+
+
+@pytest.mark.integration
+async def test_writer_persists_the_s30_snapshot_and_request_columns(
+    db_session: AsyncSession,
+) -> None:
+    """0016 (spec §30): ``append`` carries the before/after snapshot pair
+    and the request correlation columns onto the row verbatim, and the
+    omitted-argument call keeps all four NULL (the non-HTTP caller's
+    documented default — workers, service-level tests)."""
+    admin = User(
+        username="audit-admin-0002",
+        password_hash=hash_password(_PASSWORD),
+        nickname="审计管理员",
+        role=Role.ADMIN,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(admin)
+    await db_session.flush()
+    actor = Actor(user_id=admin.id, role=Role.ADMIN)
+
+    row = await AuditLogWriter().append(
+        db_session,
+        actor=actor,
+        action="TEST_PROBE_SNAPSHOT",
+        target_type="comment",
+        target_id="00000000-0000-0000-0000-000000000002",
+        reason="快照契约测试",
+        details={"context": "kept"},
+        before_snapshot={"status": "OPEN", "points": 10},
+        after_snapshot={"status": "HANDLED", "points": 10},
+        ip_address="203.0.113.9",
+        request_id="writer-test-0001",
+    )
+    bare = await AuditLogWriter().append(
+        db_session,
+        actor=actor,
+        action="TEST_PROBE_BARE",
+        target_type="comment",
+        target_id="00000000-0000-0000-0000-000000000003",
+    )
+    await db_session.commit()
+
+    loaded = await db_session.get(AuditLog, row.id)
+    assert loaded is not None
+    assert loaded.before_snapshot == {"status": "OPEN", "points": 10}
+    assert loaded.after_snapshot == {"status": "HANDLED", "points": 10}
+    assert loaded.details == {"context": "kept"}
+    assert loaded.ip_address == "203.0.113.9"
+    assert loaded.request_id == "writer-test-0001"
+
+    bare_loaded = await db_session.get(AuditLog, bare.id)
+    assert bare_loaded is not None
+    assert bare_loaded.before_snapshot is None
+    assert bare_loaded.after_snapshot is None
+    assert bare_loaded.ip_address is None
+    assert bare_loaded.request_id is None

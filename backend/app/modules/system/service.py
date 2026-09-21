@@ -13,9 +13,10 @@ the service does own:
   ``AuditLogWriter.append`` joins the caller's transaction, and the
   service commits exactly once — value and trace commit or roll back
   together, the RedemptionService discipline. The audit row carries
-  the NEW value in ``details.value`` and the PREVIOUS value in
-  ``details.old_value`` (``None`` on the first write), so the audit
-  trail answers "what was it before?" without a time machine.
+  the value MIGRATION on the §30 snapshot pair (0016): the NEW value
+  in ``after_snapshot.value`` and the PREVIOUS value in
+  ``before_snapshot.value`` (``None`` on the first write), so the
+  audit trail answers "what was it before?" without a time machine.
 - **Keys and values are stored STRIPPED and never blank**: whitespace
   is not configuration state (the term-key semantics the
   ``AcademicTermProvider`` family applies at read time). A blank-after-
@@ -36,8 +37,8 @@ concurrent ``set`` calls for a brand-NEW key can both miss the row and
 both INSERT; the loser fails the primary key at flush (500
 INTERNAL_ERROR, that transaction writes nothing) and its retry finds
 the row. Concurrent writes to an EXISTING key — the real admin
-workflow — serialize on the row lock, so ``old_value`` in the audit
-row is exact.
+workflow — serialize on the row lock, so ``before_snapshot.value``
+in the audit row is exact.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.system.models import SystemSetting
@@ -140,15 +142,17 @@ class SystemSettingService:
         actor: Actor,
         key: str,
         value: str,
+        audit_context: AuditContext | None = None,
     ) -> str:
         """Store ``value`` as the key's current value and write the
         ``SYSTEM_SETTING_UPDATED`` audit row in the SAME transaction —
         row lock, insert-or-update, flush, audit, one commit (§5).
 
-        Returns the stored (stripped) value. The audit ``details``
-        carry ``value`` (the new value) and ``old_value`` (the previous
-        value, ``None`` on the first write).
-        """
+        Returns the stored (stripped) value. The value MIGRATION rides
+        the §30 snapshot pair (0016): ``before_snapshot={"value": ...}``
+        is the previous value (``None`` on the first write),
+        ``after_snapshot={"value": ...}`` the stored one — configuration
+        facts, no PII (G11)."""
         stored_key = _validated("key", key, _KEY_MAX_LENGTH)
         stored_value = _validated("value", value)
         # First write upsert (PR #2 closure review P2): two concurrent
@@ -203,7 +207,10 @@ class SystemSettingService:
             action=SYSTEM_SETTING_UPDATED,
             target_type=_AUDIT_TARGET_TYPE,
             target_id=stored_key,
-            details={"value": stored_value, "old_value": previous},
+            before_snapshot={"value": previous},
+            after_snapshot={"value": stored_value},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
         await db.commit()  # value + audit row: one unit (§5)
         return stored_value

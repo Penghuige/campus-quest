@@ -135,6 +135,8 @@ from sqlalchemy.orm import Session as OrmSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, ReservationStatus
@@ -146,6 +148,7 @@ from app.modules.tasks.models import AssignmentClaim
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AUDIT_ACTION_REWARD_REVERSAL",
     "InvalidLedgerEntryError",
     "LedgerEntryNotFoundError",
     "LedgerEntryNotReversibleError",
@@ -158,6 +161,14 @@ __all__ = [
     "RewardReversalReasonRequiredError",
     "WalletSummary",
 ]
+
+# §30 durable-audit action name (G12; PR #2 hardening pass 4a): the
+# ``audit_logs.action`` for an admin reward reversal. No HTTP face yet —
+# the use-case contract ships ahead of the route (controller ruling).
+AUDIT_ACTION_REWARD_REVERSAL = "REWARD_REVERSAL"
+
+# The audit target type for the reversal (the ORIGINAL ledger entry).
+_AUDIT_TARGET_TYPE = "points_ledger"
 
 # The §31.6 idempotency mechanism's name (migration 0007): only this
 # constraint's violation is translated into the idempotent grant path.
@@ -398,14 +409,19 @@ class LedgerService:
     ranking-affecting writes enqueue the recompute job on the caller's
     commit unless the call site passes its own dispatcher. ``None``
     (tests, or a caller that only posts ranking-neutral rows) simply
-    never enqueues.
+    never enqueues. ``audit`` (PR #2 hardening pass 4a) is the durable
+    audit_logs writer — stateless, flush-only, defaulting to a fresh
+    ``AuditLogWriter`` so no wiring slip can silently drop the §30
+    trace (the RedemptionService ruling).
     """
 
     def __init__(
         self,
         ranking_dispatcher: RankingProjectionDispatcher | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._ranking_dispatcher = ranking_dispatcher
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     def _resolve_dispatcher(
         self, override: RankingProjectionDispatcher | None
@@ -612,6 +628,7 @@ class LedgerService:
         *,
         ranking_dispatcher: RankingProjectionDispatcher | None = None,
         request_id: str | None = None,
+        audit_context: AuditContext | None = None,
     ) -> PointsLedger:
         """Post the admin reversal of one ASSIGNMENT_REWARD (spec §17.2).
 
@@ -630,6 +647,15 @@ class LedgerService:
         that commit carrying the ORIGINAL's attribution (the §17.2
         payload: the boards repaired are the period the reward was
         credited to, never the decision's period).
+
+        The actual reversal also lands ONE durable ``REWARD_REVERSAL``
+        audit row in the same transaction (§30 reward reversal; PR #2
+        hardening pass 4a): before/after carry the wallet-balance
+        migration plus the reversal amount and the ORIGINAL's source
+        triple — business facts only, no PII (G11). A typed rejection
+        (already reversed, either sequential or UNIQUE-race) writes NO
+        audit row: the recorded decision stands, and this request never
+        became one.
 
         Raises the typed gates in order — reason, actor, target row,
         target type, already-reversed — before anything is written; the
@@ -651,11 +677,16 @@ class LedgerService:
         # expires session state, and both the recovery read and the
         # typed error must not depend on refreshing the original to
         # answer (a lazy refresh outside the greenlet would raise
-        # MissingGreenlet — the grant path's discipline).
+        # MissingGreenlet — the grant path's discipline). The wallet's
+        # pre-reversal balance rides the same capture for the audit
+        # before-snapshot.
         source_type = original.source_type
         source_id = original.source_id
         user_id = original.user_id
         ranking_effective_at = original.ranking_effective_at
+        wallet_balance_before = await db.scalar(
+            select(PointWallet.available_points).where(PointWallet.user_id == user_id)
+        )
         # An ASSIGNMENT_REWARD is always ranking-affecting, so the
         # ledger's coherence CHECK (ranking_effective_at NOT NULL exactly
         # when affects_ranking, models.py) makes this non-None; the
@@ -709,6 +740,42 @@ class LedgerService:
                 source_id=source_id,
                 reversal_ledger_id=winner.id,
             ) from exc
+        # The §30 durable trace, armed only on the path that WROTE the
+        # reversal (flush-only; the caller commits it with the entry):
+        # before/after carry the wallet-balance migration plus the
+        # amount and the ORIGINAL's source triple — amounts and ids,
+        # no PII (G11). The in-transaction re-read sees the wallet
+        # mutation post_entry just staged.
+        wallet_balance_after = await db.scalar(
+            select(PointWallet.available_points).where(PointWallet.user_id == user_id)
+        )
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_REWARD_REVERSAL,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(ledger_id),
+            reason=reason_text,
+            before_snapshot={
+                "wallet_available_points": (
+                    int(wallet_balance_before)
+                    if wallet_balance_before is not None
+                    else 0
+                ),
+            },
+            after_snapshot={
+                "wallet_available_points": (
+                    int(wallet_balance_after) if wallet_balance_after is not None else 0
+                ),
+                "reversal_amount": reversal.amount,
+                "original_ledger_id": str(ledger_id),
+                "source_type": source_type,
+                "source_id": str(source_id),
+            },
+            details={"user_id": str(user_id)},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         # The post-commit seam, armed only on the success path: a typed
         # rejection or a caller rollback never enqueues an entry that
         # never landed. The payload carries the ORIGINAL's attribution —

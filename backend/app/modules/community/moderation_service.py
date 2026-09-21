@@ -55,6 +55,7 @@ from app.core.clock import Clock, SystemClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.community.gates import (
     CommenterNotFoundError,
@@ -183,6 +184,8 @@ class ModerationService:
         admin_actor: Actor,
         comment_id: UUID,
         reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> RevealedIdentity:
         """Reveal ``comment_id``'s author to an Admin, audited every
         call — one durable ``audit_logs`` row and one DomainEvent per
@@ -196,6 +199,10 @@ class ModerationService:
         Repeats are allowed; each call writes its own audit row and
         event, and the transaction commits here (the audit row is the
         reveal's only write; the comment row is untouched).
+
+        The reveal is an ACCESS action: it migrates no state, so the
+        §30 before/after snapshots stay NULL (0016) and the audit
+        context's ip/request_id columns carry where the look came from.
         """
         if not is_admin(admin_actor.role):
             raise RevealDeniedError(admin_actor.role)
@@ -236,6 +243,10 @@ class ModerationService:
         )
         # The durable G12 trace: flush-only append, then THIS service
         # commits it (the reveal's only write; backend-engineering §5).
+        # The disclosed identity rides ``details.revealed_user_id`` as
+        # an id — the nickname/username NEVER land on the audit row
+        # (G11: the audit trail proves WHO looked and AT WHAT, not a
+        # second copy of what they saw).
         await self._audit.append(
             db,
             actor=admin_actor,
@@ -247,6 +258,8 @@ class ModerationService:
                 "task_id": str(comment.task_id),
                 "revealed_user_id": str(comment.user_id),
             },
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
         await db.commit()
         return RevealedIdentity(

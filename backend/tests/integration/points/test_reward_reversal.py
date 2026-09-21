@@ -62,11 +62,13 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.error_codes import ErrorCode
+from app.modules.audit.models import AuditLog
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
 from app.modules.points.enums import LedgerType
 from app.modules.points.ledger_service import (
+    AUDIT_ACTION_REWARD_REVERSAL,
     LedgerEntryNotFoundError,
     LedgerEntryNotReversibleError,
     LedgerService,
@@ -443,8 +445,11 @@ async def test_reversal_target_must_be_assignment_reward(
     service = LedgerService()
     student = _user("2025s", Role.STUDENT)
     admin = _user("admr", Role.ADMIN)
-    admin_actor = _actor(admin)
     await _flush(db_session, student, admin)
+    # AFTER the flush: building the Actor earlier snapshots user_id=None
+    # (ids exist only once flushed) — latent until the §30 audit row made
+    # actor_user_id NOT NULL observable (PR #2 hardening pass 4a).
+    admin_actor = _actor(admin)
     student_id = student.id  # captured: the rollbacks below expire instances
     original = await _grant_reward(service, db_session, student_id)
     reversal = await _reverse(service, db_session, admin_actor, original.id)
@@ -687,3 +692,78 @@ async def test_reversal_survives_ranking_dispatcher_failure_after_commit(
     wallet = await db_session.get(PointWallet, student_id)
     assert wallet is not None
     assert wallet.available_points == 0  # the repair stands
+
+
+# --- the durable audit row (spec §30 reward reversal; PR #2 hardening 4a) -------------
+
+
+@pytest.mark.integration
+async def test_reversal_writes_one_durable_audit_row(db_session: AsyncSession) -> None:
+    """§30 reward reversal (use-case contract ahead of the HTTP face):
+    the ACTUAL reversal lands exactly one ``REWARD_REVERSAL`` audit row
+    in the same transaction — before/after carry the wallet-balance
+    migration plus the reversal amount and the ORIGINAL's source triple
+    (business facts only, G11) — and the rejected second reversal
+    writes NO second row (the recorded decision stands)."""
+    import json
+
+    service = LedgerService()
+    student = _user("2025s", Role.STUDENT)
+    admin = _user("admr", Role.ADMIN)
+    await _flush(db_session, student, admin)
+    original = await _grant_reward(service, db_session, student.id)
+    original_id = original.id  # captured: the rollback below expires instances
+
+    reversal = await _reverse(service, db_session, _actor(admin), original_id)
+    reversal_amount = reversal.amount  # captured: the rollback below expires
+    await db_session.commit()
+
+    rows = list(
+        (
+            await db_session.scalars(
+                select(AuditLog).where(AuditLog.target_id == str(original.id))
+            )
+        ).all()
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.action == AUDIT_ACTION_REWARD_REVERSAL
+    assert row.target_type == "points_ledger"
+    assert row.target_id == str(original.id)
+    assert row.actor_user_id == admin.id
+    assert row.actor_role == Role.ADMIN.value
+    assert row.reason == _REVERSAL_REASON
+    assert row.before_snapshot == {"wallet_available_points": 200}
+    assert row.after_snapshot == {
+        "wallet_available_points": 0,
+        "reversal_amount": -200,
+        "original_ledger_id": str(original.id),
+        "source_type": "ASSIGNMENT_CLAIM",
+        "source_id": str(original.source_id),
+    }
+    assert row.details == {"user_id": str(student.id)}
+    # No HTTP face: the correlation pair keeps its NULL default.
+    assert row.ip_address is None
+    assert row.request_id is None
+    assert row.created_at is not None
+    # G11 negative assertion: no nickname / no username(学号-like) anywhere.
+    for column in ("before_snapshot", "after_snapshot", "details"):
+        blob = json.dumps(getattr(row, column) or {}, ensure_ascii=False)
+        assert student.nickname not in blob
+        assert student.username not in blob
+
+    # The rejected replay (typed already-reversed) writes no second row.
+    with pytest.raises(RewardAlreadyReversedError):
+        await _reverse(
+            service, db_session, _actor(admin), original_id, reason="再次冲销尝试"
+        )
+    await db_session.rollback()
+    rows_after = list(
+        (
+            await db_session.scalars(
+                select(AuditLog).where(AuditLog.target_id == str(original_id))
+            )
+        ).all()
+    )
+    assert len(rows_after) == 1
+    assert reversal_amount == -200

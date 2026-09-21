@@ -147,6 +147,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.community.enums import ReportCategory, ReportStatus
 from app.modules.community.gates import (
@@ -549,6 +550,8 @@ class ReportService:
         task_id: UUID,
         report_id: UUID,
         reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> CommentReport:
         """Take one OPEN report of this task's comments to DISMISSED
         (PR #2 hardening step 10): the moderator judged that no action
@@ -568,6 +571,7 @@ class ReportService:
             ReportStatus.DISMISSED,
             audit_reason=normalized_reason,
             audit_note=None,
+            audit_context=audit_context,
         )
         return report
 
@@ -578,6 +582,8 @@ class ReportService:
         task_id: UUID,
         report_id: UUID,
         note: str | None = None,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> CommentReport:
         """Take one OPEN report of this task's comments to HANDLED
         (PR #2 hardening step 10): the moderator has acted on the
@@ -599,6 +605,7 @@ class ReportService:
             ReportStatus.HANDLED,
             audit_reason=None,
             audit_note=stored_note,
+            audit_context=audit_context,
         )
         return report
 
@@ -680,6 +687,7 @@ class ReportService:
         *,
         audit_reason: str | None,
         audit_note: str | None,
+        audit_context: AuditContext | None = None,
     ) -> None:
         """One OPEN -> terminal transition and its audit row, one
         transaction (backend-engineering §5): stamp the trio, append
@@ -689,7 +697,8 @@ class ReportService:
         is the transaction timestamp, so the two are identical). The
         same-state replay never reaches here (the idempotent returns
         in the public methods), so exactly one audit row exists per
-        DECISION, none per request (the redemption ruling)."""
+        DECISION, none per request (the redemption ruling). The §30
+        snapshot pair (0016) carries the status migration."""
         if report.status != ReportStatus.OPEN.value:
             raise ReportAlreadyClosedError(report.id, report.status)
 
@@ -714,7 +723,11 @@ class ReportService:
             target_type=_AUDIT_TARGET_TYPE,
             target_id=str(report.id),
             reason=audit_reason,
+            before_snapshot={"status": ReportStatus.OPEN.value},
+            after_snapshot={"status": target.value},
             details=details,
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
         await db.commit()
         await db.refresh(report)  # load the now() stamp and updated_at

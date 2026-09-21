@@ -154,7 +154,7 @@ from functools import lru_cache
 from typing import Annotated, Any, Literal
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, FastAPI, Query
+from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import String, Uuid, column, func, select, table
@@ -174,6 +174,7 @@ from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
 )
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.community.comment_service import (
     CommentModerationDeniedError,
@@ -340,6 +341,9 @@ def get_comment_service(
         comment_max_length=settings.comment_max_length,
         clock=clock,
         events=events,
+        # audit: the durable audit_logs writer (G12; PR #2 hardening
+        # pass 4a) — the get_report_service wiring pattern.
+        audit=AuditLogWriter(),
     )
 
 
@@ -992,6 +996,7 @@ async def dismiss_task_report(
     actor: StaffActor,
     db: DbSession,
     reports: ReportServiceDep,
+    request: Request,
 ) -> ReportClosureResponse:
     """Close one report as DISMISSED (PR #2 hardening step 10): the
     moderator judged no action warranted — the mandatory reason records
@@ -1003,7 +1008,14 @@ async def dismiss_task_report(
     reader is its closer. No rate bucket — the moderation write
     surfaces (moderate-delete, hard hide, reveal) carry none: the
     state machine makes every replay single-shot."""
-    report = await reports.dismiss_report(db, actor, task_id, report_id, body.reason)
+    report = await reports.dismiss_report(
+        db,
+        actor,
+        task_id,
+        report_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
     return _closure_response(task_id, report)
 
 
@@ -1018,6 +1030,7 @@ async def handle_task_report(
     actor: StaffActor,
     db: DbSession,
     reports: ReportServiceDep,
+    request: Request,
 ) -> ReportClosureResponse:
     """Close one report as HANDLED (PR #2 hardening step 10): registers
     that the moderator acted on the reported comment (through the
@@ -1026,7 +1039,14 @@ async def handle_task_report(
     row is never touched here. Optional note, same-state replay
     idempotent, other terminal state the typed 409, standing as the
     dismiss surface above."""
-    report = await reports.handle_report(db, actor, task_id, report_id, body.note)
+    report = await reports.handle_report(
+        db,
+        actor,
+        task_id,
+        report_id,
+        body.note,
+        audit_context=AuditContext.from_request(request),
+    )
     return _closure_response(task_id, report)
 
 
@@ -1037,12 +1057,19 @@ async def moderate_delete_comment(
     actor: StaffActor,
     db: DbSession,
     comments: CommentServiceDep,
+    request: Request,
 ) -> None:
     """Teacher moderation delete (spec §21.4): the service gates the
     actor to the task's owner or a MODERATE_COMMUNITY collaborator
     (Admin is refused here by the task 3 power-separation ruling),
     requires the reason, and publishes the audit event."""
-    await comments.moderate_delete_comment(db, actor, comment_id, body.reason)
+    await comments.moderate_delete_comment(
+        db,
+        actor,
+        comment_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
 
 
 @router.post("/teacher/comments/{comment_id}/hard-hide", status_code=204)
@@ -1052,12 +1079,19 @@ async def hide_comment_subtree(
     actor: AdminActor,
     db: DbSession,
     comments: CommentServiceDep,
+    request: Request,
 ) -> None:
     """Admin-only hard hide of a whole subtree (spec §21.3 彻底隐藏):
     visibility removal for privacy/legal escalations — rows, content, and
     relations survive, the public list renders the subtree nothing, and
     the audit event carries the verbatim reason."""
-    await comments.admin_hard_hide_subtree(db, actor, comment_id, body.reason)
+    await comments.admin_hard_hide_subtree(
+        db,
+        actor,
+        comment_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
 
 
 @router.post(
@@ -1070,13 +1104,18 @@ async def reveal_comment_identity(
     actor: AdminActor,
     db: DbSession,
     moderation: ModerationServiceDep,
+    request: Request,
 ) -> RevealIdentityResponse:
     """The explicit, audited identity reveal (spec §21.4): Admin-only,
     reason mandatory and capped, and every call publishes the
     ``COMMENT_IDENTITY_REVEALED`` audit event. Ordinary moderation
     surfaces stay pseudonymous until this is called."""
     revealed = await moderation.request_identity_reveal(
-        db, actor, comment_id, body.reason
+        db,
+        actor,
+        comment_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
     )
     return RevealIdentityResponse(
         user_id=revealed.user_id,

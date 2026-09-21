@@ -51,12 +51,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_db_session
+from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import require_admin_actor
 from app.modules.identity.events import Actor
 from app.modules.points.redemption_service import SystemAcademicTermProvider
@@ -134,11 +135,16 @@ async def put_current_academic_term(
     actor: AdminActor,
     db: DbSession,
     settings_service: SystemServiceDep,
+    request: Request,
 ) -> CurrentAcademicTermResponse:
     """Turn the term: the value row and its audit row commit as one
     unit, and every redemption created afterwards snapshots the new
     term (spec §16.1 — existing redemptions keep theirs)."""
     stored = await settings_service.set(
-        db, actor=actor, key=CURRENT_ACADEMIC_TERM, value=body.value
+        db,
+        actor=actor,
+        key=CURRENT_ACADEMIC_TERM,
+        value=body.value,
+        audit_context=AuditContext.from_request(request),
     )
     return CurrentAcademicTermResponse(value=stored)

@@ -20,13 +20,20 @@ MAX_REQUEST_ID_LENGTH = 128
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
+def is_safe_request_id(value: str) -> bool:
+    """Whether an incoming request id may be propagated verbatim: the
+    length cap and safe charset below. Shared by the middleware's
+    resolution and the audit context's capture, so a value one layer
+    accepts can never overflow or inject at the other."""
+    return (
+        len(value) <= MAX_REQUEST_ID_LENGTH
+        and _SAFE_REQUEST_ID.fullmatch(value) is not None
+    )
+
+
 def resolve_request_id(incoming: str | None) -> str:
     """Return the incoming request id if safe, else a generated UUID hex."""
-    if (
-        incoming is not None
-        and len(incoming) <= MAX_REQUEST_ID_LENGTH
-        and _SAFE_REQUEST_ID.fullmatch(incoming) is not None
-    ):
+    if incoming is not None and is_safe_request_id(incoming):
         return incoming
     return uuid4().hex
 

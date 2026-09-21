@@ -33,6 +33,18 @@ Design decisions:
   contract wants beside the free-text ``reason`` (e.g. the reveal's
   ``revealed_user_id``, the redemption's ``user_id``/``reward_item_id``);
   values must be JSON-serializable (the DomainEvent payload rule).
+- **§30's snapshot pair and request correlation (0016):**
+  ``before_snapshot``/``after_snapshot`` carry the target's STATE
+  MIGRATION as redacted structured JSON — statuses, amounts,
+  visibility facts (G11: never nickname/phone/email/student id), so a
+  reviewer answers "what changed" without joining the live row; both
+  are NULL for access-style actions that mutate nothing (the reveal).
+  ``ip_address``/``request_id`` are the request-scoped correlation
+  pair threaded from the router through ``AuditContext`` — NULL on
+  non-HTTP callers (workers, service-level tests), which is the
+  documented default, not a gap. History rows written before 0016
+  keep NULL snapshots: audit rows are append-only, so no backfill
+  ever rewrites frozen decisions (the 0014 ruling).
 """
 
 from __future__ import annotations
@@ -82,6 +94,15 @@ class AuditLog(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     # Structured context (JSON-serializable), optional.
     details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # §30: the target's state migration as redacted structured JSON
+    # (G11: business facts only — never nickname/phone/email/student
+    # id). NULL when the action mutates nothing (access-style audit).
+    before_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    after_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Request correlation (AuditContext): the trusted client address and
+    # the propagated request id. NULL on non-HTTP callers.
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    request_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

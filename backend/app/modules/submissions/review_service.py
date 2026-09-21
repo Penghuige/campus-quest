@@ -124,6 +124,8 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor, DomainEvent, DomainEventPublisher
 from app.modules.submissions.enums import (
     ReviewAction,
@@ -151,6 +153,9 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "ApprovalResult",
+    "AUDIT_ACTION_REWARD_LOCK_INVALIDATED",
+    "AUDIT_ACTION_SUBMISSION_APPROVED",
+    "AUDIT_ACTION_SUBMISSION_REVISION_REQUIRED",
     "ClaimCompletedHonorsPort",
     "ClaimNotReviewableError",
     "InvalidationReasonRequiredError",
@@ -173,6 +178,18 @@ SUBMISSION_APPROVED_EVENT = "SUBMISSION_APPROVED"
 # reward_lock_service): §30 audit material, NOT a §25 delivery event.
 REWARD_LOCK_INVALIDATED_EVENT = "REWARD_LOCK_INVALIDATED"
 
+# §30 durable-audit action names (G12; PR #2 hardening pass 4a). The
+# submission-approval and lock-invalidation strings coincide with their
+# event-stream identifiers — same vocabulary, deliberately separate
+# constants so one stream's rename can never silently move the other.
+AUDIT_ACTION_SUBMISSION_APPROVED = "SUBMISSION_APPROVED"
+AUDIT_ACTION_SUBMISSION_REVISION_REQUIRED = "SUBMISSION_REVISION_REQUIRED"
+AUDIT_ACTION_REWARD_LOCK_INVALIDATED = "REWARD_LOCK_INVALIDATED"
+
+# The audit target type for every review decision (§30 "submission
+# approval"/"revision/return"/"malicious-lock invalidation").
+_AUDIT_TARGET_TYPE = "submission"
+
 # Spec §11.4: revision_deadline_at = max(baseline, reviewed_at + 24h).
 _REVISION_WINDOW = timedelta(hours=24)
 
@@ -190,6 +207,25 @@ _REASON_REQUIRED_MESSAGE = "判无效操作必须填写原因"
 _LOCK_NOT_PROVISIONAL_MESSAGE = "奖励锁尚未处于待确认状态，无法通过验收"
 
 _CONFIRM_LOCK_REASON = "人工验收通过，确认奖励锁。"
+
+
+def _validation_report_summary(report: Mapping[str, Any] | None) -> dict[str, Any]:
+    """A REDACTED summary of the submission's latest §12.4 validation
+    report for the invalidation audit's 依据 (G11): file-shape facts
+    and counts only. Preview rows and column VALUES stay out by
+    construction — the report may quote user-submitted cell content,
+    which must never reach an audit snapshot."""
+    if not isinstance(report, Mapping):
+        return {"present": False}
+    errors = report.get("errors")
+    warnings = report.get("warnings")
+    return {
+        "present": True,
+        "file_type": report.get("file_type"),
+        "row_count": report.get("row_count"),
+        "error_count": len(errors) if isinstance(errors, list) else None,
+        "warning_count": len(warnings) if isinstance(warnings, list) else None,
+    }
 
 
 # --- the notification seam (MERGE_CARRIES item 2; the claim-service pattern) --------
@@ -405,7 +441,13 @@ class ReviewService:
     ``notification_recorder`` (optional, default None; MERGE_CARRIES
     item 2) records the §25 REVISION_REQUIRED / SUBMISSION_APPROVED
     events INSIDE the review transactions (the outbox rule); None
-    keeps the service notification-free.
+    keeps the service notification-free. ``audit`` (PR #2 hardening
+    pass 4a) is the durable audit_logs writer — stateless and
+    flush-only, defaulting to a fresh ``AuditLogWriter`` so no wiring
+    slip can silently drop the §30 trace (the RedemptionService
+    ruling); every decision that migrates state appends one row in
+    the SAME transaction, and the idempotent replay paths append
+    nothing.
     """
 
     def __init__(
@@ -416,12 +458,14 @@ class ReviewService:
         points: PointsRewardPort,
         honors: ClaimCompletedHonorsPort | None = None,
         notification_recorder: NotificationEventRecorder | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._clock = clock
         self._events = events
         self._points = points
         self._honors = honors
         self._notification_recorder = notification_recorder
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     # -- require_revision (§11.3 REVISION_REQUIRED, §11.4 window) -------------------
 
@@ -431,14 +475,22 @@ class ReviewService:
         actor: Actor,
         submission_id: UUID,
         note: str | None,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> AssignmentClaim:
         """Return the submission for fixes; the existing lock survives.
 
         The note is the teacher's guidance (stored stripped; blank
         becomes NULL — only the §11.3 invalidation reason is mandatory).
-        Commits exactly once.
+        Commits exactly once, and each decision lands one
+        ``SUBMISSION_REVISION_REQUIRED`` audit row in the same
+        transaction (§30 revision/return): before/after carry the
+        review/claim state migration and the surviving lock status —
+        business facts only, no PII (G11).
         """
         submission, claim, now = await self._locked_reviewable(db, actor, submission_id)
+        previous_review_status = submission.review_status
+        previous_claim_status = claim.status
         note_text = note.strip() if note is not None and note.strip() else None
         deadline = self._revision_deadline(claim, now)
 
@@ -472,6 +524,28 @@ class ReviewService:
                 },
             )
         )
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_SUBMISSION_REVISION_REQUIRED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(submission.id),
+            reason=note_text,
+            before_snapshot={
+                "submission_review_status": previous_review_status,
+                "claim_status": previous_claim_status,
+                "reward_lock_status": claim.reward_lock_status,
+            },
+            after_snapshot={
+                "submission_review_status": ReviewStatus.REVISION_REQUIRED.value,
+                "claim_status": ClaimStatus.REVISION_REQUIRED.value,
+                "reward_lock_status": claim.reward_lock_status,
+                "revision_deadline_at": deadline.isoformat(),
+            },
+            details=self._audit_details(claim, submission),
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         await self._record_revision_required(db, claim, review, deadline, note_text)
         await db.commit()
         return claim
@@ -484,13 +558,20 @@ class ReviewService:
         actor: Actor,
         submission_id: UUID,
         reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> AssignmentClaim:
         """Cancel the PROVISIONAL lock and demand a resubmission.
 
         The reason is mandatory (spec §11.3); the previous lock values
         survive in the append-only history row and the audit event
         payload (spec §11.2: INVALIDATED 审计历史不得被覆盖). Commits
-        exactly once.
+        exactly once, and the decision lands one
+        ``REWARD_LOCK_INVALIDATED`` audit row in the same transaction
+        (§30 malicious-lock invalidation): before/after carry the lock
+        state migration plus the REDACTED validation-report summary
+        that grounded the decision — counts and file facts only, never
+        preview rows or column values (G11).
         """
         reason_text = reason.strip() if reason is not None else ""
         if not reason_text:
@@ -502,6 +583,8 @@ class ReviewService:
             await db.rollback()  # release the claim lock, write nothing
             raise LockNotInvalidatableError(submission_id, observed_lock_status)
 
+        previous_review_status = submission.review_status
+        previous_claim_status = claim.status
         previous_tier = claim.reward_tier_locked
         previous_points = claim.locked_reward_points
         previous_locked_at = claim.reward_locked_at
@@ -563,6 +646,38 @@ class ReviewService:
                 },
             )
         )
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_REWARD_LOCK_INVALIDATED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(submission.id),
+            reason=reason_text,
+            before_snapshot={
+                "submission_review_status": previous_review_status,
+                "claim_status": previous_claim_status,
+                "reward_lock_status": RewardLockStatus.PROVISIONAL.value,
+                "reward_tier_locked": previous_tier,
+                "locked_reward_points": previous_points,
+            },
+            after_snapshot={
+                "submission_review_status": ReviewStatus.REVISION_REQUIRED.value,
+                "claim_status": ClaimStatus.REVISION_REQUIRED.value,
+                "reward_lock_status": RewardLockStatus.INVALIDATED.value,
+                "reward_tier_locked": None,
+                "locked_reward_points": None,
+                "revision_deadline_at": deadline.isoformat(),
+                # The 依据 (§30): what the machine stage saw — counts and
+                # file facts only, redacted per G11 (never preview rows
+                # or column values).
+                "validation_report_summary": _validation_report_summary(
+                    submission.validation_report
+                ),
+            },
+            details=self._audit_details(claim, submission),
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         await self._record_revision_required(
             db, claim, invalidation_review, deadline, reason_text
         )
@@ -572,13 +687,22 @@ class ReviewService:
     # -- approve_submission (§14, the ten-step transaction) -------------------------
 
     async def approve_submission(
-        self, db: AsyncSession, actor: Actor, submission_id: UUID
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        submission_id: UUID,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> ApprovalResult:
         """Approve the submission: claim COMPLETED, lock CONFIRMED,
         reward granted through the points port, assignment COMPLETED —
         all in ONE transaction. A claim that is already COMPLETED under
         the row lock returns the idempotent ALREADY_REVIEWED result
-        (nothing written, no second grant)."""
+        (nothing written, no second grant, no second audit row). The
+        approving decision lands one ``SUBMISSION_APPROVED`` audit row
+        in the same transaction (§30): before/after carry the
+        submission/claim state migration and the lock transition —
+        business facts only, no PII (G11)."""
         # Step 1: the claim row lock — the serialization point.
         anchor = await db.get(Submission, submission_id)
         if anchor is None:
@@ -633,6 +757,11 @@ class ReviewService:
         # ``now`` is sampled after every lock and before its first
         # consumer (reviewed_at / terminal_at / the event's occurred_at).
         now = self._clock.now()
+
+        # Captured BEFORE the mutations: the audit row's before-snapshot
+        # is the state the decision found, not the state it left.
+        previous_review_status = submission.review_status
+        previous_claim_status = claim.status
 
         # Step 5: Submission -> APPROVED.
         submission.review_status = ReviewStatus.APPROVED.value
@@ -722,6 +851,35 @@ class ReviewService:
                 payload=payload,
             )
         )
+        # The §30 durable trace beside the event stream: flush-only,
+        # committed with the ten-step transaction below. The replay
+        # path returned at step 2, so exactly one row exists per
+        # actual approval.
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_SUBMISSION_APPROVED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(submission.id),
+            before_snapshot={
+                "submission_review_status": previous_review_status,
+                "claim_status": previous_claim_status,
+                "reward_lock_status": RewardLockStatus.PROVISIONAL.value,
+                "reward_tier_locked": tier,
+                "locked_reward_points": points_value,
+            },
+            after_snapshot={
+                "submission_review_status": ReviewStatus.APPROVED.value,
+                "claim_status": ClaimStatus.COMPLETED.value,
+                "reward_lock_status": RewardLockStatus.CONFIRMED.value,
+                "reward_tier_locked": tier,
+                "locked_reward_points": points_value,
+                "points_granted": grant.points_granted,
+            },
+            details=self._audit_details(claim, submission),
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         await self._record_submission_approved(db, claim, points_value)
         # Captured before the commit: the honor trigger runs on the
         # other side of it, and instance expiry must not matter.
@@ -737,6 +895,20 @@ class ReviewService:
         return ApprovalResult(claim=claim, grant=grant, already_reviewed=False)
 
     # -- notification emitters (MERGE_CARRIES item 2; §25 critical events) --------
+
+    @staticmethod
+    def _audit_details(
+        claim: AssignmentClaim, submission: Submission
+    ) -> dict[str, str]:
+        """The shared redacted ``details`` context of the three review
+        audit actions: the ids a follow-up joins on — no owner/author
+        identity fields, no filenames (G11; the id trio answers every
+        follow-up without them)."""
+        return {
+            "task_id": str(claim.task_id),
+            "claim_id": str(claim.id),
+            "submission_id": str(submission.id),
+        }
 
     async def _task_title(self, db: AsyncSession, claim: AssignmentClaim) -> str:
         """The task title the notification copy renders (the FK

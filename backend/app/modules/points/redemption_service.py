@@ -101,6 +101,7 @@ from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin, role_value
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, RedemptionStatus, ReservationStatus
@@ -654,6 +655,8 @@ class RedemptionService:
         db: AsyncSession,
         actor: Actor,
         redemption_id: UUID,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> RewardRedemption:
         """Consume the freeze into ONE negative REWARD_REDEMPTION entry.
 
@@ -662,8 +665,9 @@ class RedemptionService:
         spending never ranks) with the source triple over the
         redemption id, flips the status to APPROVED, and leaves the
         stock unit occupied (FULFILLED makes it permanent later). An
-        already-APPROVED replay returns the row untouched; any other
-        terminal state is a typed rejection.
+        already-APPROVED replay returns the row untouched (no audit
+        row — the decision already stands); any other terminal state
+        is a typed rejection.
         """
         self._require_staff(actor)
         redemption = await self._locked_redemption(db, redemption_id)
@@ -677,6 +681,7 @@ class RedemptionService:
             observed = redemption.status
             await db.rollback()
             raise RedemptionNotReviewableError(redemption_id, observed)
+        previous_status = redemption.status
 
         now = self._clock.now()
         # Lock order: redemption -> wallet -> reservation. The wallet
@@ -708,7 +713,14 @@ class RedemptionService:
         redemption.decided_at = now
         redemption.decided_by = actor.user_id
         await db.flush()
-        await self._audit_decision(db, actor, redemption, REDEMPTION_APPROVE)
+        await self._audit_decision(
+            db,
+            actor,
+            redemption,
+            REDEMPTION_APPROVE,
+            previous_status=previous_status,
+            audit_context=audit_context,
+        )
         await self._record_redemption_decided(db, redemption, approved=True)
         await db.commit()
         return redemption
@@ -722,6 +734,8 @@ class RedemptionService:
         redemption: RewardRedemption,
         action: str,
         *,
+        previous_status: str,
+        audit_context: AuditContext | None = None,
         reason: str | None = None,
         note: str | None = None,
     ) -> None:
@@ -730,7 +744,10 @@ class RedemptionService:
         the timestamp is the database ``created_at``). The context pair
         (whose redemption, which item) rides ``details`` so the audit
         trail answers the first follow-up question without a join; the
-        fulfill note rides along when one was given."""
+        fulfill note rides along when one was given. The §30 snapshot
+        pair (0016) carries the status migration — statuses and points
+        only, no requester identity fields (G11; the queue's nickname
+        stays behind the directory port)."""
         details: dict[str, str] = {
             "user_id": str(redemption.user_id),
             "reward_item_id": str(redemption.reward_item_id),
@@ -744,7 +761,11 @@ class RedemptionService:
             target_type=_AUDIT_TARGET_TYPE,
             target_id=str(redemption.id),
             reason=reason,
+            before_snapshot={"status": previous_status, "points": redemption.points},
+            after_snapshot={"status": redemption.status, "points": redemption.points},
             details=details,
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
 
     # -- notification emitter (MERGE_CARRIES item 2; §25 critical events) --------
@@ -805,6 +826,8 @@ class RedemptionService:
         actor: Actor,
         redemption_id: UUID,
         reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> RewardRedemption:
         """Release the points and the stock unit without consuming
         anything: reservation RELEASED, status REJECTED (the derivation
@@ -812,7 +835,7 @@ class RedemptionService:
         entry (spec §16.2: 拒绝不产生消费负流水). The reason is
         mandatory, persisted on the row (``rejection_reason``, PR #2
         final review pts-F1), and audited. An already-REJECTED replay
-        returns the row.
+        returns the row (no audit row — the decision already stands).
         """
         reason_text = reason.strip() if isinstance(reason, str) else ""
         if not reason_text:
@@ -828,6 +851,7 @@ class RedemptionService:
             observed = redemption.status
             await db.rollback()
             raise RedemptionNotReviewableError(redemption_id, observed)
+        previous_status = redemption.status
 
         now = self._clock.now()
         await self._ledger.locked_or_created_wallet(db, redemption.user_id)
@@ -843,7 +867,13 @@ class RedemptionService:
         redemption.rejection_reason = reason_text
         await db.flush()
         await self._audit_decision(
-            db, actor, redemption, REDEMPTION_REJECT, reason=reason_text
+            db,
+            actor,
+            redemption,
+            REDEMPTION_REJECT,
+            previous_status=previous_status,
+            audit_context=audit_context,
+            reason=reason_text,
         )
         await self._record_redemption_decided(
             db, redemption, approved=False, rejection_reason=reason_text
@@ -859,13 +889,16 @@ class RedemptionService:
         actor: Actor,
         redemption_id: UUID,
         note: str | None = None,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> RewardRedemption:
         """Record the physical delivery of an APPROVED redemption
         (spec §16.2: approval and delivery are separate transitions).
         Idempotent: a replay on a FULFILLED row is a no-op that keeps
-        the original fulfilled_at/note; anything not APPROVED (or
-        already FULFILLED by a different path) is a typed rejection.
-        Touches no points — fulfillment never re-opens the wallet.
+        the original fulfilled_at/note (no audit row — the decision
+        already stands); anything not APPROVED (or already FULFILLED by
+        a different path) is a typed rejection. Touches no points —
+        fulfillment never re-opens the wallet.
         """
         self._require_staff(actor)
         redemption = await self._locked_redemption(db, redemption_id)
@@ -879,12 +912,19 @@ class RedemptionService:
             raise RedemptionNotFulfillableError(redemption_id, observed)
 
         note_text = note.strip() if note is not None and note.strip() else None
+        previous_status = redemption.status
         redemption.status = RedemptionStatus.FULFILLED.value
         redemption.fulfilled_at = self._clock.now()
         redemption.fulfillment_note = note_text
         await db.flush()
         await self._audit_decision(
-            db, actor, redemption, REDEMPTION_FULFILL, note=note_text
+            db,
+            actor,
+            redemption,
+            REDEMPTION_FULFILL,
+            previous_status=previous_status,
+            audit_context=audit_context,
+            note=note_text,
         )
         await db.commit()
         return redemption
