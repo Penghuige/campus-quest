@@ -149,6 +149,10 @@ class FakeObjectStorage(_FailureProgrammable):
     `create_upload_url` issues server-generated keys and pins the declared
     content type; `put_object` simulates the client completing the
     presigned PUT; `head_object` then reports the pinned metadata.
+    `delete_object` removes a held object and records its key in
+    `deleted_keys` for exact call-count assertions (a missing object
+    raises `FileNotFoundError`, the §27 reconcile contract; failed calls
+    record nothing, like every fake here).
     """
 
     def __init__(self, *, clock: Clock | None = None) -> None:
@@ -156,6 +160,7 @@ class FakeObjectStorage(_FailureProgrammable):
         self.failures: list[Exception] = []
         self.upload_urls: list[UploadUrl] = []
         self.download_urls: list[DownloadUrl] = []
+        self.deleted_keys: list[str] = []
         self.objects: dict[str, ObjectHead] = {}
         self._pinned_content_types: dict[str, str] = {}
 
@@ -189,6 +194,13 @@ class FakeObjectStorage(_FailureProgrammable):
         )
         self.download_urls.append(url)
         return url
+
+    def delete_object(self, *, object_key: str) -> None:
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(object_key)
+        del self.objects[object_key]
+        self.deleted_keys.append(object_key)
 
     def put_object(self, *, object_key: str, size: int) -> None:
         """Simulate the client completing the presigned PUT for `object_key`.

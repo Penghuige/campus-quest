@@ -323,7 +323,7 @@ Canonical service/use-case names (spec §36). Business rules live in these servi
 - Community: `create_comment`, `edit_comment`, `delete_comment`, `vote_comment`, `react_comment`, `report_comment`, `rate_task`
 - Notification: `schedule_due_notifications`, `dispatch_notification`
 
-Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs.
+Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs. Plan 07 T7 additionally exposes the §13/§27 retention-cleanup scan `cleanup_expired_files(now, repo, storage) -> CleanupSummary` (`app.modules.files.cleanup_service`), consumed through the `CleanupRepository` port over `FileRecord` snapshots.
 
 Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
 
@@ -338,6 +338,7 @@ class ObjectStorage(Protocol):
     def create_upload_url(...) -> ...: ...   # short-lived presigned PUT/POST
     def head_object(...) -> ...: ...         # existence + size/content metadata
     def create_download_url(...) -> ...: ... # short-lived signed download URL
+    def delete_object(...) -> None: ...      # retention cleanup (§13/§27); FileNotFoundError when absent
 ```
 
 Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original filenames are display metadata only.

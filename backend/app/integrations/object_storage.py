@@ -43,7 +43,8 @@ class DownloadUrl:
 
 
 class ObjectStorage(Protocol):
-    """Port for presigned uploads, metadata checks, and signed downloads."""
+    """Port for presigned uploads, metadata checks, signed downloads, and
+    retention deletes."""
 
     def create_upload_url(
         self, *, claim_id: UUID, content_type: str, expires_in: timedelta
@@ -85,5 +86,21 @@ class ObjectStorage(Protocol):
                 existence, and so does every implementation of this port.
             expires_in: Time-to-live of the URL; keep it short (minutes) —
                 the returned `expires_at` is the instant it stops working.
+        """
+        ...
+
+    def delete_object(self, *, object_key: str) -> None:
+        """Delete one stored object (retention cleanup; spec §13, §27).
+
+        Args:
+            object_key: Key previously returned by `create_upload_url`. A
+                missing object raises `FileNotFoundError` — a normal,
+                expected result the retention cleanup worker consumes
+                (§27: an already-marked-deleted row makes it an idempotent
+                success; a row believed present makes it a reconcile) —
+                while provider failures raise the adapter error taxonomy
+                (`TemporaryProviderError` et al.) so callers can pick a
+                retry policy. Deleting an absent object twice therefore
+                raises on the second call, matching real providers.
         """
         ...
