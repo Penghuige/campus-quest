@@ -176,6 +176,8 @@ class RedemptionStatus(StrEnum):
 
 `REQUESTED`, `UNDER_REVIEW`, `APPROVED`, and `FULFILLED` occupy reward stock and per-term quota; `REJECTED` releases them (spec §16.1).
 
+Open product decision (PR #2 follow-up ruling): the approved spec does NOT define auto-expiry for `REQUESTED`/`UNDER_REVIEW` redemptions. No agent may add an auto-cancel/timeout rule without a new owner ruling — implementing one requires first defining timeout duration, state transitions, points-reservation release, stock occupancy, and term-quota release semantics.
+
 ### NotificationChannel (spec §25)
 
 ```python
@@ -219,7 +221,7 @@ class ReportStatus(StrEnum):    # spec §23; CommentReport.status
     DISMISSED = "DISMISSED"
 ```
 
-Report-closure ownership (PR #2 hardening ruling): the OPEN -> HANDLED/DISMISSED transitions belong to Plan 08's moderation handling flow (durable-audited dismiss/act endpoints over the moderation queue); no Plan 06 surface performs them. `report_comment` only files; `list_task_reports` only reads.
+Report-closure ownership (PR #2 follow-up ruling, supersedes the initial deferral): the OPEN -> HANDLED/DISMISSED closure path lands IN PR #2's hardening (updated checklist step 10) as audited moderation endpoints over the queue (same standing as `list_task_reports`: task owner / MODERATE_COMMUNITY / Admin, reason-mandatory where the spec demands context). `report_comment` only files; closure is never automatic. Plan 08's AuditLog consumes the emitted audit events once durable audit lands.
 
 ## Domain Events
 

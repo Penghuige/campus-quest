@@ -997,7 +997,23 @@ PointsLedger 至少包含：
 - 投影必须可从 Ledger 重建。
 - Ledger 与投影更新必须在同一事务。
 
-展示层 clamp（PR #2 裁定）：奖励冲销已消费积分可使钱包 raw 余额为负（账实保留真实负数，见 §17.2）；用户侧 API/DTO 不透出负的可消费额——`available_points = max(raw, 0)`、`spendable_points = max(raw - 冻结, 0)`，负数部分以独立 `point_debt` 字段展示。clamp 只发生在展示/序列化层，Ledger 与投影永不改写。
+展示层 clamp（PR #2 owner 裁定，V2）：奖励冲销已消费积分可使钱包 raw 余额为负，账实保留真实负数（见 §17.2）。用户侧展示值的规范定义：
+
+```text
+raw_balance
+    = affects_balance ledger projection，可为负
+
+point_debt
+    = max(-raw_balance, 0)
+
+available_points
+    = max(raw_balance, 0)
+
+spendable_points
+    = max(raw_balance - active_reservations, 0)
+```
+
+只 clamp 用户 facing 可用值；**不得把 DB wallet projection clamp 为 0**，否则破坏 Ledger reconciliation。
 
 ## 16. RewardItem 与兑换
 
