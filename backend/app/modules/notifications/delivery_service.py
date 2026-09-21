@@ -112,9 +112,12 @@ re-rendered at dispatch: the T1 schema persists no event payload, so
 the per-event render variables exist only at record time (T5 renders
 the snapshot); the ports' frozen contract renders the final message
 provider-side from the template id + variables (app/integrations/
-sms.py, email.py). provider_message_id stays NULL on success because
-the V1 ports return None; the column is the seam for adapters that
-later surface provider receipts.
+sms.py, email.py). On success the row records the receipt the sender
+returned, or NULL when the adapter surfaces none: the development-only
+logging adapters return a "logging:"-prefixed id so a recorded SENT
+delivery is distinguishable from a real provider send at a glance
+(config.py's production guard keeps the logging provider out of
+production); the test fakes return no receipt.
 
 Provider sends happen with NO row lock or session held (§7: the lock
 spans only the tiny state transitions, never external I/O).
@@ -475,6 +478,7 @@ class DeliveryService:
         )
         template_id = claimed.event_type.value.lower()
         variables: dict[str, str] = {"title": claimed.title, "body": claimed.body}
+        receipt: str | None = None
         try:
             if claimed.channel is NotificationChannel.SMS:
                 if claimed.phone_e164 is None:
@@ -484,7 +488,7 @@ class DeliveryService:
                     raise LookupError(
                         f"SMS delivery {claimed.delivery_id} has no bound phone"
                     )
-                self._sms_sender.send(
+                receipt = self._sms_sender.send(
                     to=claimed.phone_e164,
                     template=template_id,
                     variables=variables,
@@ -495,7 +499,7 @@ class DeliveryService:
                     raise LookupError(
                         f"EMAIL delivery {claimed.delivery_id} has no address"
                     )
-                self._email_sender.send(
+                receipt = self._email_sender.send(
                     to=claimed.email_normalized,
                     template=template_id,
                     variables=variables,
@@ -514,15 +518,17 @@ class DeliveryService:
         except TemporaryProviderError as exc:
             return await self._retry_or_fail(claimed, now, f"temporary:{exc}")
 
-        # Ports return None in V1, so there is no provider receipt id
-        # yet; provider_message_id is the seam for adapters that add
-        # one (set explicitly to keep that contract visible here).
+        # Adapters that surface a receipt land it on the row (the
+        # logging adapters' "logging:"-prefixed id marks the send as
+        # simulated); adapters without one keep provider_message_id
+        # NULL.
         return await self._finalize(
             claimed.delivery_id,
             now,
             outcome=SendOutcome.SENT,
             status=DeliveryStatus.SENT,
             last_error=None,
+            provider_message_id=receipt,
         )
 
     async def _retry_or_fail(
@@ -559,6 +565,7 @@ class DeliveryService:
         last_error: str | None,
         retry_due_at: datetime | None = None,
         clear_notification_read_at: bool = False,
+        provider_message_id: str | None = None,
     ) -> SendResult:
         """Apply the dispatch outcome to the row (tx2, row re-locked).
 
@@ -598,7 +605,7 @@ class DeliveryService:
             delivery.status = status.value
             delivery.updated_at = now
             delivery.last_error = last_error
-            delivery.provider_message_id = None
+            delivery.provider_message_id = provider_message_id
             if status is DeliveryStatus.SENT:
                 delivery.sent_at = now
             if retry_due_at is not None:
