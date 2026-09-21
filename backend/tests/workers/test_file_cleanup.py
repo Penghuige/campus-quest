@@ -1,17 +1,20 @@
 # backend/tests/workers/test_file_cleanup.py
-"""File-retention cleanup worker tests (plan 07 T7; spec §13, §27).
+"""File-retention cleanup worker tests (plan 07 T7; spec §13, §27;
+hardening pass 4b deletion-claim ruling).
 
 Two layers:
 
-- The service logic (scan / guard / delete / reconcile / idempotency)
-  runs pure in-memory against an in-memory ``CleanupRepository``
-  (mirroring the real due predicate) and ``FakeObjectStorage`` — no
-  PostgreSQL, no broker.
+- The service logic (scan / guard / claim / delete / reconcile /
+  idempotency) runs pure in-memory against an in-memory
+  ``CleanupRepository`` (mirroring the real due predicate and the real
+  conditional claim) and ``FakeObjectStorage`` — no PostgreSQL, no
+  broker.
 - The REAL repository (``SubmissionCleanupRepository``, wired at the
   merge per MERGE_CARRIES item 3) runs against real PostgreSQL
   (integration-marked): the due predicate's exclusion set is judged on
-  actual rows, and ``mark_deleted`` is the idempotent compare-and-set
-  the racing-redelivery path relies on.
+  actual rows, ``mark_deleted`` is the idempotent compare-and-set the
+  racing-redelivery path relies on, and the pass-4b deletion claim plus
+  its races live in ``test_cleanup_deletion_claim.py``.
 
 Coverage per the brief:
 - Retention matrix: expired 30/90/180-day objects deleted; future,
@@ -22,12 +25,15 @@ Coverage per the brief:
   with a warning and keeps its metadata; a row already marked deleted is
   an idempotent success with no warning.
 - Idempotency: a second run over the same state issues zero additional
-  provider delete calls (pinned by the fake's call recording).
+  provider delete calls (pinned by the fake's call recording); pass 4b
+  adds the claim-exclusivity layer — a redelivered job holding a stale
+  snapshot cannot claim a row the first delivery already claimed, so it
+  never reaches the provider at all.
 - Failure taxonomy: temporary / permanent / unknown provider errors
-  leave the record untouched, count exactly one failure, and never
-  retry in-process — a single programmed outage staying effective
-  proves the one-attempt rule; the next run retries or self-heals via
-  the object-first ordering.
+  release the claim, leave the record otherwise untouched, count
+  exactly one failure, and never retry in-process — a single programmed
+  outage staying effective proves the one-attempt rule; the next run
+  re-claims and retries or self-heals via the object-first ordering.
 """
 
 from __future__ import annotations
@@ -72,7 +78,13 @@ TTL = timedelta(minutes=5)
 
 @dataclass
 class Row:
-    """Mutable live database row; the service only ever sees snapshots."""
+    """Mutable live database row; the service only ever sees snapshots.
+
+    ``claim_protected`` mirrors the real claim predicate's join guard
+    (the row's AssignmentClaim inside VALIDATING / UNDER_REVIEW) so the
+    in-memory claim can re-evaluate it; ``cleanup_claimed_at`` is the
+    deletion claim the real conditional UPDATE sets.
+    """
 
     submission_id: UUID
     object_key: str
@@ -81,17 +93,27 @@ class Row:
     legal_hold: bool = False
     protected: bool = False
     deleted_at: datetime | None = None
+    cleanup_claimed_at: datetime | None = None
+    claim_protected: bool = False
 
 
 class InMemoryCleanupRepository:
-    """Due-candidate discovery + idempotent ``mark_deleted`` in memory.
+    """Due-candidate discovery + the conditional deletion claim +
+    idempotent ``mark_deleted`` in memory.
 
     ``collect_due_files`` mirrors the real query's exclusion set (spec
     §13/§27): permanent rows, legal-hold rows, protected rows (claims in
-    review states), not-yet-due rows, and rows already marked deleted
-    never become candidates. With ``stale_listing=True`` it yields every
-    row untouched — the stale/buggy-listing shape the service-level
-    guards must survive on their own.
+    review states), not-yet-due rows, rows already claimed, and rows
+    already marked deleted never become candidates. With
+    ``stale_listing=True`` it yields every row untouched — the
+    stale/buggy-listing shape the service-level guards must survive on
+    their own.
+
+    ``claim_for_cleanup`` mirrors the real single conditional UPDATE:
+    EVERY guard (including the claim-status join mirror and
+    ``cleanup_claimed_at IS NULL``) is re-evaluated against the row's
+    CURRENT state at claim time, and only the winner gets
+    ``cleanup_claimed_at`` — the pass-4b TOCTOU closure.
 
     ``mark_deleted`` is the idempotent compare-and-set the racing
     redelivery path needs: an already-marked row answers ALREADY_DELETED
@@ -102,6 +124,7 @@ class InMemoryCleanupRepository:
         self.rows = rows
         self.stale_listing = stale_listing
         self.mark_calls: list[str] = []
+        self.claim_calls: list[str] = []
 
     def snapshot(self, row: Row) -> FileRecord:
         return FileRecord(
@@ -117,23 +140,39 @@ class InMemoryCleanupRepository:
     def row_for(self, object_key: str) -> Row:
         return next(row for row in self.rows if row.object_key == object_key)
 
+    def _claimable(self, row: Row, now: datetime) -> bool:
+        return (
+            not row.permanent
+            and not row.legal_hold
+            and not row.protected
+            and not row.claim_protected
+            and row.deleted_at is None
+            and row.cleanup_claimed_at is None
+            and row.retention_until is not None
+            and row.retention_until <= now
+        )
+
     async def collect_due_files(
         self, now: datetime, *, limit: int = 500
     ) -> list[FileRecord]:
         if self.stale_listing:
             due = self.rows
         else:
-            due = [
-                row
-                for row in self.rows
-                if not row.permanent
-                and not row.legal_hold
-                and not row.protected
-                and row.deleted_at is None
-                and row.retention_until is not None
-                and row.retention_until <= now
-            ]
+            due = [row for row in self.rows if self._claimable(row, now)]
         return [self.snapshot(row) for row in due[:limit]]
+
+    async def claim_for_cleanup(self, record: FileRecord, *, now: datetime) -> bool:
+        self.claim_calls.append(record.object_key)
+        row = self.row_for(record.object_key)
+        if not self._claimable(row, now):
+            return False
+        row.cleanup_claimed_at = now
+        return True
+
+    async def release_cleanup_claim(self, record: FileRecord) -> None:
+        row = self.row_for(record.object_key)
+        if row.cleanup_claimed_at is not None and row.deleted_at is None:
+            row.cleanup_claimed_at = None
 
     async def mark_deleted(
         self, record: FileRecord, *, deleted_at: datetime
@@ -349,15 +388,18 @@ async def test_missing_object_with_present_state_reconciles_with_warning(
 async def test_missing_object_already_marked_deleted_is_idempotent_success(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """§27 branch 1: a redelivered job replays a STALE snapshot (the
-    racing worker already deleted the object and marked the row). The
-    missing object is a success, not a reconcile — no warning, and the
-    earlier deleted_at instant is not overwritten."""
+    """§27 branch 1, claim-era shape: a redelivered job replays a STALE
+    snapshot (the racing worker already claimed, deleted the object, and
+    marked the row). The claim's ``cleanup_claimed_at IS NULL`` /
+    ``deleted_at IS NULL`` conjuncts refuse the replay FIRST — no
+    provider call, no warning, and the earlier deleted_at instant is
+    not overwritten."""
     storage = FakeObjectStorage()
     gone_key = _absent_object(storage)
     earlier_instant = NOW - timedelta(minutes=5)
     row = _row(object_key=gone_key, retention_until=NOW - timedelta(days=30))
     row.deleted_at = earlier_instant
+    row.cleanup_claimed_at = earlier_instant
     repo = InMemoryCleanupRepository([row])
     stale_snapshot = FileRecord(
         submission_id=row.submission_id,
@@ -370,20 +412,22 @@ async def test_missing_object_already_marked_deleted_is_idempotent_success(
             stale_snapshot, repo=repo, storage=storage, now=NOW
         )
 
-    assert outcome is FileCleanupOutcome.ALREADY_DELETED
+    assert outcome is FileCleanupOutcome.SKIPPED_CLAIM_LOST
     assert caplog.records == []
     assert row.deleted_at == earlier_instant
+    assert storage.deleted_keys == []
 
 
 async def test_deleted_object_with_already_marked_row_counts_once() -> None:
-    """A successful provider delete whose mark answers ALREADY_DELETED
-    (the racing delivery completed both steps) reports idempotent
-    success — the file is never counted as deleted twice."""
+    """A racing delivery that already completed both steps makes every
+    replay claim-lost — the file is never counted as deleted twice and
+    the provider delete is never re-issued."""
     storage = FakeObjectStorage()
     present_key = _stored_object(storage)
     earlier_instant = NOW - timedelta(minutes=5)
     row = _row(object_key=present_key, retention_until=NOW - timedelta(days=30))
     row.deleted_at = earlier_instant
+    row.cleanup_claimed_at = earlier_instant
     repo = InMemoryCleanupRepository([row])
     stale_snapshot = FileRecord(
         submission_id=row.submission_id,
@@ -395,8 +439,8 @@ async def test_deleted_object_with_already_marked_row_counts_once() -> None:
         stale_snapshot, repo=repo, storage=storage, now=NOW
     )
 
-    assert outcome is FileCleanupOutcome.ALREADY_DELETED
-    assert storage.deleted_keys == [present_key]
+    assert outcome is FileCleanupOutcome.SKIPPED_CLAIM_LOST
+    assert storage.deleted_keys == []
     assert row.deleted_at == earlier_instant
 
 
@@ -503,6 +547,105 @@ async def test_unknown_outcome_is_counted_and_self_heals_next_run() -> None:
 
     assert healed_run == CleanupSummary(scanned=1, deleted=1)
     assert repo.row_for(key).deleted_at == NOW
+
+
+# --- the deletion claim (pass 4b) -----------------------------------------------------
+
+
+async def test_claim_reevaluates_guards_against_current_state() -> None:
+    """The claim — not the scanned snapshot — is the deletion authority:
+    a protection that landed on the ROW after the scan (legal hold, a
+    claim entering the review pipeline) makes the claim fail, the
+    provider is never called, and the object survives (the TOCTOU the
+    boolean-snapshot pipeline had; the two-connection PostgreSQL proof
+    is in test_cleanup_deletion_claim.py)."""
+    storage = FakeObjectStorage()
+    legal_hold_key = _stored_object(storage)
+    review_key = _stored_object(storage)
+    rows = [
+        _row(
+            object_key=legal_hold_key,
+            retention_until=NOW - timedelta(days=30),
+        ),
+        _row(
+            object_key=review_key,
+            retention_until=NOW - timedelta(days=30),
+        ),
+    ]
+    repo = InMemoryCleanupRepository(rows)
+
+    # The SCAN — snapshots taken while both rows are still eligible.
+    stale_records = await repo.collect_due_files(NOW)
+
+    # Protections land between the scan and the claim.
+    repo.row_for(legal_hold_key).legal_hold = True
+    repo.row_for(review_key).claim_protected = True
+
+    scanned = 0
+    outcomes: list[FileCleanupOutcome] = []
+    for record in stale_records:
+        scanned += 1
+        outcomes.append(
+            await cleanup_expired_file(record, repo=repo, storage=storage, now=NOW)
+        )
+
+    assert outcomes == [
+        FileCleanupOutcome.SKIPPED_CLAIM_LOST,
+        FileCleanupOutcome.SKIPPED_CLAIM_LOST,
+    ]
+    assert scanned == 2
+    assert storage.deleted_keys == []
+    assert repo.mark_calls == []
+    for row in rows:
+        assert row.deleted_at is None
+        assert row.cleanup_claimed_at is None
+        assert storage.head_object(object_key=row.object_key) is not None
+
+
+async def test_provider_failure_releases_claim_for_the_next_scan() -> None:
+    """Every non-FileNotFoundError provider outcome RELEASES the claim:
+    the row is claimable again (the next scan re-claims and retries) and
+    a protection writer is never blocked on a dead claim."""
+    storage = FakeObjectStorage()
+    key = _stored_object(storage)
+    row = _row(object_key=key, retention_until=NOW - timedelta(days=30))
+    repo = InMemoryCleanupRepository([row])
+    storage.fail_with(TemporaryProviderError("s3 throttled"))
+
+    failed_run = await cleanup_expired_files(NOW, repo, storage)
+
+    assert failed_run == CleanupSummary(
+        scanned=1,
+        failed={FileCleanupOutcome.FAILED_STORAGE_TEMPORARY.value: 1},
+    )
+    # Released, not stranded: the claim window closed with the failure.
+    assert row.cleanup_claimed_at is None
+    assert row.deleted_at is None
+
+    retried_run = await cleanup_expired_files(NOW, repo, storage)
+
+    assert retried_run == CleanupSummary(scanned=1, deleted=1)
+    # The claim stays set after the COMPLETED deletion (deleted_at is
+    # the completion record) — the next scan excludes the row.
+    assert row.cleanup_claimed_at == NOW
+    third_run = await cleanup_expired_files(NOW, repo, storage)
+    assert third_run == CleanupSummary()
+
+
+async def test_successful_deletion_keeps_claim_as_the_held_marker() -> None:
+    """After a completed deletion the claim stays set with deleted_at
+    recording the completion — the marker pair the protection writers
+    distinguish in-flight (claimed, unmarked) from finished (marked)."""
+    storage = FakeObjectStorage()
+    key = _stored_object(storage)
+    row = _row(object_key=key, retention_until=NOW - timedelta(days=30))
+    repo = InMemoryCleanupRepository([row])
+
+    summary = await cleanup_expired_files(NOW, repo, storage)
+
+    assert summary == CleanupSummary(scanned=1, deleted=1)
+    assert row.cleanup_claimed_at == NOW
+    assert row.deleted_at == NOW
 
 
 # --- summary consistency + job-module wiring ------------------------------------------

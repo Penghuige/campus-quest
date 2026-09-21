@@ -1,25 +1,39 @@
 # backend/app/workers/jobs/cleanup_files.py
 """File-retention cleanup worker home (plan 07 T7; spec §13, §27;
-MERGE_CARRIES item 3 — completed at the merge).
+MERGE_CARRIES item 3 — completed at the merge; hardening pass 4b).
 
 - ``SubmissionCleanupRepository`` is the real ``CleanupRepository`` over
   the submissions table: due retention snapshots joined to their claims,
   excluding by construction (spec §13/§27) permanent rows, legal holds,
   rows already marked deleted, not-yet-due snapshots, and claims still
   inside the review pipeline (status VALIDATING / UNDER_REVIEW — §27
-  不得误删尚在审核中的文件). The service (``app.modules.files.
-  cleanup_service``) re-validates every guard per record anyway, so a
-  stale listing can never reach the provider delete.
+  不得误删尚在审核中的文件). The service re-validates every guard per
+  record, and — pass 4b — deletion AUTHORITY is the conditional claim:
+  ``claim_for_cleanup`` is ONE UPDATE whose WHERE re-evaluates every
+  guard against current committed state and whose RETURNING hands the
+  deletion right to exactly one caller (the TOCTOU closure: a
+  protection landing between scan and claim makes the claim fail).
+- The same repository is the real ``OrphanIntentRepository`` (pass 4b):
+  expired never-finalized upload intents — open-expired and burned
+  alike — claimed by the same conditional-UPDATE primitive over
+  ``upload_intents.cleanup_deleted_at`` and deleted; finalized intents
+  are never touched. Cleanup only ever claims intents PAST
+  ``expires_at``, safe because the presigned URL TTL deploys shorter
+  than the intent TTL (no legal PUT can land after expiry).
 - ``workers.cleanup_expired_files`` is the Celery scan shell: sample the
   SystemClock, build the repository over the shared per-job session
-  source plus the production S3 adapter, call
-  ``cleanup_expired_files``, return the JSON summary.
+  source plus the production S3 adapter, run the TWO phases (files,
+  then orphan intents — same job, same beat entry), return the JSON
+  summary.
 
 Session lifecycle: the whole scan runs through
 ``app.workers.session_source.run_with_session_maker`` — one fresh engine
 created and disposed inside this task's ``asyncio.run``, every session
 the repository opens rides that engine, and no pooled connection ever
-crosses the loop boundary the next task invocation closes.
+crosses the loop boundary the next task invocation closes. Every
+repository method is its own short transaction: the claim takes and
+releases its row lock in one statement, and NO lock is ever held across
+the S3 delete (the declarative-claim ruling).
 
 Retry policy: transient database failures (``OperationalError`` /
 ``DBAPIError``) retry with bounded backoff — the scan's per-record work
@@ -27,8 +41,8 @@ is idempotent by construction (already-deleted rows leave the candidate
 set; provider-side retryability is the cleanup service's own taxonomy),
 so a re-run after a connection blip only re-touches what is still due.
 Storage failures do NOT retry here: the service maps them into the
-summary's failure buckets and the NEXT scheduled scan retries (spec §13
-删除失败可重试).
+summary's failure buckets (releasing the claim) and the NEXT scheduled
+scan retries (spec §13 删除失败可重试).
 
 Importing this module stays environment-free (the celery_app
 lazy-construction contract): no app.db, no settings, no boto3 — the
@@ -55,7 +69,9 @@ from app.modules.files.cleanup_service import (
     CLEANUP_BATCH_LIMIT,
     CleanupSummary,
     FileRecord,
+    IntentRecord,
     MarkOutcome,
+    OrphanIntentSummary,
 )
 from app.workers.session_source import run_with_session_maker
 
@@ -81,13 +97,15 @@ _MAX_RETRIES = 5
 
 
 class SubmissionCleanupRepository:
-    """The real ``CleanupRepository`` (spec §13/§27): due submissions
-    from PostgreSQL, idempotent ``deleted_at`` compare-and-set.
+    """The real ``CleanupRepository`` and ``OrphanIntentRepository``
+    (spec §13/§27; pass 4b): due submissions and orphan intents from
+    PostgreSQL, the conditional deletion claim, idempotent
+    ``deleted_at`` compare-and-set.
 
     Every session opens through the injected maker — in production the
     per-job maker from ``run_with_session_maker``, so the repository
-    shares the task's one engine; tests may hand any maker (or the
-    class may be driven through the service with a fake, as
+    shares the task's one engine; tests may hand any maker (or the class
+    may be driven through the service with a fake, as
     ``tests/workers/test_file_cleanup.py`` does).
     """
 
@@ -104,7 +122,9 @@ class SubmissionCleanupRepository:
         with ``retention_until IS NOT NULL``, kept for the fail-safe
         reading), no legal hold, not already marked, retention due, and
         the claim not inside the review pipeline. Ordered oldest-due
-        first so a bounded batch drains the most overdue rows.
+        first so a bounded batch drains the most overdue rows. This is
+        only the CANDIDATE listing — the deletion right is claimed
+        separately by ``claim_for_cleanup``.
         """
         from sqlalchemy import select
 
@@ -129,6 +149,7 @@ class SubmissionCleanupRepository:
                         Submission.legal_hold.is_(False),
                         Submission.retention_until.is_not(None),
                         Submission.retention_until <= now,
+                        Submission.cleanup_claimed_at.is_(None),
                         AssignmentClaim.status.not_in(_UNDER_REVIEW_CLAIM_STATUSES),
                     )
                     .order_by(Submission.retention_until, Submission.id)
@@ -154,6 +175,75 @@ class SubmissionCleanupRepository:
                 _deleted_at,
             ) in rows
         ]
+
+    async def claim_for_cleanup(self, record: FileRecord, *, now: datetime) -> bool:
+        """Claim the deletion right over one record (pass 4b ruling).
+
+        ONE conditional UPDATE: the WHERE clause re-evaluates EVERY
+        §13/§27 guard against CURRENT committed state — not permanent,
+        no legal hold, retention snapshot still due, not already
+        deleted, the claim's status still outside the review pipeline,
+        and no claim already held — and the same statement sets
+        ``cleanup_claimed_at = now``. ``RETURNING`` decides: True only
+        for the winner. Single statement = guards and claim are atomic,
+        so a legal_hold or review-pipeline entry committed since the
+        scan makes the claim fail and the object survive. The row lock
+        this UPDATE takes is released at the commit right here — never
+        carried across the provider call.
+        """
+        from sqlalchemy import select, update
+
+        from app.modules.submissions.models import Submission
+        from app.modules.tasks.models import AssignmentClaim
+
+        claim_status_outside_review = (
+            select(AssignmentClaim.id)
+            .where(
+                AssignmentClaim.id == Submission.claim_id,
+                AssignmentClaim.status.not_in(_UNDER_REVIEW_CLAIM_STATUSES),
+            )
+            .exists()
+        )
+        async with self._session_maker() as session:
+            result = await session.execute(
+                update(Submission)
+                .where(
+                    Submission.id == record.submission_id,
+                    Submission.deleted_at.is_(None),
+                    Submission.retention_permanent.is_(False),
+                    Submission.legal_hold.is_(False),
+                    Submission.retention_until.is_not(None),
+                    Submission.retention_until <= now,
+                    Submission.cleanup_claimed_at.is_(None),
+                    claim_status_outside_review,
+                )
+                .values(cleanup_claimed_at=now)
+                .returning(Submission.id)
+            )
+            claimed = result.scalar_one_or_none() is not None
+            await session.commit()
+            return claimed
+
+    async def release_cleanup_claim(self, record: FileRecord) -> None:
+        """Release the claim after a provider failure: clear
+        ``cleanup_claimed_at`` (only while the row is still unmarked) so
+        the next scan re-claims and the protection writers are not
+        blocked on a dead claim. The object is NOT marked deleted."""
+        from sqlalchemy import update
+
+        from app.modules.submissions.models import Submission
+
+        async with self._session_maker() as session:
+            await session.execute(
+                update(Submission)
+                .where(
+                    Submission.id == record.submission_id,
+                    Submission.cleanup_claimed_at.is_not(None),
+                    Submission.deleted_at.is_(None),
+                )
+                .values(cleanup_claimed_at=None)
+            )
+            await session.commit()
 
     async def mark_deleted(
         self, record: FileRecord, *, deleted_at: datetime
@@ -200,6 +290,85 @@ class SubmissionCleanupRepository:
                 "cleanup candidate read and mark_deleted"
             )
 
+    # --- the orphan-intent seam (pass 4b; spec §10/§13/§27) --------------
+
+    async def collect_due_intents(
+        self, now: datetime, *, limit: int = CLEANUP_BATCH_LIMIT
+    ) -> list[IntentRecord]:
+        """Expired never-finalized intents, oldest expiry first: the
+        objects no finalize will ever claim again (finalize refuses at/
+        after ``expires_at``; a BURNED intent's object failed
+        verification and only a fresh intent — a fresh key — can
+        replace it). Finalized intents are excluded: their object
+        belongs to the Submission row and the retention pipeline."""
+        from sqlalchemy import select
+
+        from app.modules.submissions.models import UploadIntent
+
+        async with self._session_maker() as session:
+            rows = (
+                await session.execute(
+                    select(UploadIntent.id, UploadIntent.object_key)
+                    .where(
+                        UploadIntent.expires_at <= now,
+                        UploadIntent.finalized_submission_id.is_(None),
+                        UploadIntent.cleanup_deleted_at.is_(None),
+                    )
+                    .order_by(UploadIntent.expires_at, UploadIntent.id)
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            IntentRecord(intent_id=intent_id, object_key=object_key)
+            for intent_id, object_key in rows
+        ]
+
+    async def claim_intent(self, intent: IntentRecord, *, now: datetime) -> bool:
+        """Claim one intent for deletion: ONE conditional UPDATE
+        re-evaluating every guard (``expires_at <= now``, never
+        finalized, unclaimed) and setting ``cleanup_deleted_at = now``
+        — the claim column doubles as the done marker. Finalize cannot
+        lose to this claim: it takes the intent-row FOR UPDATE before
+        its own expiry check, so a finalize and a claim serialize on
+        the row and the loser's predicate fails."""
+        from sqlalchemy import update
+
+        from app.modules.submissions.models import UploadIntent
+
+        async with self._session_maker() as session:
+            result = await session.execute(
+                update(UploadIntent)
+                .where(
+                    UploadIntent.id == intent.intent_id,
+                    UploadIntent.expires_at <= now,
+                    UploadIntent.finalized_submission_id.is_(None),
+                    UploadIntent.cleanup_deleted_at.is_(None),
+                )
+                .values(cleanup_deleted_at=now)
+                .returning(UploadIntent.id)
+            )
+            claimed = result.scalar_one_or_none() is not None
+            await session.commit()
+            return claimed
+
+    async def release_intent(self, intent: IntentRecord) -> None:
+        """Release the intent claim after a provider failure: clear
+        ``cleanup_deleted_at`` so the next scan retries."""
+        from sqlalchemy import update
+
+        from app.modules.submissions.models import UploadIntent
+
+        async with self._session_maker() as session:
+            await session.execute(
+                update(UploadIntent)
+                .where(
+                    UploadIntent.id == intent.intent_id,
+                    UploadIntent.cleanup_deleted_at.is_not(None),
+                )
+                .values(cleanup_deleted_at=None)
+            )
+            await session.commit()
+
 
 @shared_task(  # type: ignore[untyped-decorator]
     bind=True,
@@ -210,8 +379,10 @@ class SubmissionCleanupRepository:
     max_retries=_MAX_RETRIES,
 )
 def cleanup_files_scan(self: Any, request_id: str) -> dict[str, Any]:
-    """One retention-cleanup scan: discover due files, delete each
-    object-first, mark the row, reduce to the JSON summary (§12).
+    """One retention-cleanup scan, TWO phases (pass 4b): expired files,
+    then orphan intents — discover candidates, claim each through the
+    conditional UPDATE, delete object-first, mark the row, reduce to
+    the JSON summary (§12).
 
     The task body only composes: clock, repository, storage adapter,
     service. Every delete/retain decision lives in
@@ -228,24 +399,34 @@ def cleanup_files_scan(self: Any, request_id: str) -> dict[str, Any]:
         extra={"request_id": request_id, "job_id": job_id},
     )
 
-    async def _scan(session_maker: Any) -> CleanupSummary:
+    async def _scan(session_maker: Any) -> tuple[CleanupSummary, OrphanIntentSummary]:
         from app.core.config import get_settings
         from app.integrations.object_storage_s3 import S3ObjectStorage
-        from app.modules.files.cleanup_service import cleanup_expired_files
+        from app.modules.files.cleanup_service import (
+            cleanup_expired_files,
+            cleanup_orphaned_intents,
+        )
 
         repository = SubmissionCleanupRepository(session_maker)
         storage = S3ObjectStorage(get_settings())
-        return await cleanup_expired_files(now, repository, storage)
+        files = await cleanup_expired_files(now, repository, storage)
+        intents = await cleanup_orphaned_intents(now, repository, storage)
+        return files, intents
 
-    summary = asyncio.run(run_with_session_maker(_scan))
+    files_summary, intents_summary = asyncio.run(run_with_session_maker(_scan))
     payload: dict[str, Any] = {
         "request_id": request_id,
-        "scanned": summary.scanned,
-        "deleted": summary.deleted,
-        "reconciled": summary.reconciled,
-        "already_deleted": summary.already_deleted,
-        "skipped": dict(summary.skipped),
-        "failed": dict(summary.failed),
+        "scanned": files_summary.scanned,
+        "deleted": files_summary.deleted,
+        "reconciled": files_summary.reconciled,
+        "already_deleted": files_summary.already_deleted,
+        "skipped": dict(files_summary.skipped),
+        "failed": dict(files_summary.failed),
+        "intents_scanned": intents_summary.scanned,
+        "intents_deleted": intents_summary.deleted,
+        "intents_missing": intents_summary.missing,
+        "intents_skipped": dict(intents_summary.skipped),
+        "intents_failed": dict(intents_summary.failed),
     }
     logger.info(
         "cleanup_files_scan.end",
