@@ -66,6 +66,16 @@ Design decisions:
   ledger write inside approve joins THIS transaction through
   ``LedgerService.post_entry`` (flush-only), which is what makes
   "release reservation + post entry + status flip" one unit.
+- **Every applied decision writes one durable audit row (G12; PR #2
+  hardening P0-5).** approve/reject/fulfill append a
+  ``REDEMPTION_APPROVE``/``_REJECT``/``_FULFILL`` row to ``audit_logs``
+  through the flush-only ``AuditLogWriter`` INSIDE the decision
+  transaction — decision, ledger/reservation effects, notification
+  intent, and audit trace commit together or not at all. The reject
+  reason rides the audit row (and, since pts-F1, the redemption row
+  itself). Idempotent replays write NOTHING: the replay changes no
+  state, and the first application's audit row already records the
+  decision.
 - **Idempotency.** Approve on APPROVED / reject on REJECTED / fulfill
   on FULFILLED return the existing row untouched (the read-only
   transaction still commits to release the row lock); the other
@@ -91,6 +101,7 @@ from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin, role_value
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, RedemptionStatus, ReservationStatus
 from app.modules.points.ledger_service import LedgerService, PostLedgerEntry
@@ -105,6 +116,9 @@ __all__ = [
     "AcademicTermProvider",
     "InsufficientPointsError",
     "NotificationEventRecorder",
+    "REDEMPTION_APPROVE",
+    "REDEMPTION_FULFILL",
+    "REDEMPTION_REJECT",
     "RedemptionLimitReachedError",
     "RedemptionNotFulfillableError",
     "RedemptionNotReviewableError",
@@ -120,6 +134,17 @@ __all__ = [
     "StaticAcademicTermProvider",
     "window_open",
 ]
+
+# Audit action names (the STAFF_INVITATION_CREATED family; G12 durable
+# audit, PR #2 hardening P0-5): one row per APPLIED decision, written
+# inside the decision transaction (see the module docstring).
+REDEMPTION_APPROVE = "REDEMPTION_APPROVE"
+REDEMPTION_REJECT = "REDEMPTION_REJECT"
+REDEMPTION_FULFILL = "REDEMPTION_FULFILL"
+
+# The audit target vocabulary for redemption decisions: the
+# redemption row itself (target_id = its UUID as text).
+_AUDIT_TARGET_TYPE = "reward_redemption"
 
 # The §16.1 occupancy member set: exactly the statuses that hold one
 # stock unit and one per-term quota slot (spec §16.1; models.py ruling).
@@ -426,7 +451,10 @@ class RedemptionService:
     to a fresh ``LedgerService`` (stateless) and exists for tests and
     future wiring symmetry; ``notification_recorder`` (optional,
     default None; MERGE_CARRIES item 2) records the §25 redemption
-    result events INSIDE the decision transactions (the outbox rule).
+    result events INSIDE the decision transactions (the outbox rule);
+    ``audit`` defaults to a fresh ``AuditLogWriter`` — the flush-only
+    durable-audit seam (G12). None means the default writer, never
+    "no auditing": a wiring slip must not silently drop audit rows.
     """
 
     def __init__(
@@ -436,11 +464,13 @@ class RedemptionService:
         terms: AcademicTermProvider,
         ledger: LedgerService | None = None,
         notification_recorder: NotificationEventRecorder | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._clock = clock
         self._terms = terms
         self._ledger = ledger if ledger is not None else LedgerService()
         self._notification_recorder = notification_recorder
+        self._audit = audit if audit is not None else AuditLogWriter()
 
     # -- request: the atomic reservation (§16.1 申请时 checklist) -------------------
 
@@ -627,9 +657,44 @@ class RedemptionService:
         redemption.decided_at = now
         redemption.decided_by = actor.user_id
         await db.flush()
+        await self._audit_decision(db, actor, redemption, REDEMPTION_APPROVE)
         await self._record_redemption_decided(db, redemption, approved=True)
         await db.commit()
         return redemption
+
+    # -- audit + notification emitters (G12; MERGE_CARRIES item 2) --------------
+
+    async def _audit_decision(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        redemption: RewardRedemption,
+        action: str,
+        *,
+        reason: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        """Append the decision's durable audit row, flush-only inside
+        the decision transaction (G12: actor/target/reason/timestamp —
+        the timestamp is the database ``created_at``). The context pair
+        (whose redemption, which item) rides ``details`` so the audit
+        trail answers the first follow-up question without a join; the
+        fulfill note rides along when one was given."""
+        details: dict[str, str] = {
+            "user_id": str(redemption.user_id),
+            "reward_item_id": str(redemption.reward_item_id),
+        }
+        if note is not None:
+            details["note"] = note
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=action,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(redemption.id),
+            reason=reason,
+            details=details,
+        )
 
     # -- notification emitter (MERGE_CARRIES item 2; §25 critical events) --------
 
@@ -694,7 +759,9 @@ class RedemptionService:
         anything: reservation RELEASED, status REJECTED (the derivation
         drops it from occupancy and quota), and deliberately NO ledger
         entry (spec §16.2: 拒绝不产生消费负流水). The reason is
-        mandatory. An already-REJECTED replay returns the row.
+        mandatory, persisted on the row (``rejection_reason``, PR #2
+        final review pts-F1), and audited. An already-REJECTED replay
+        returns the row.
         """
         reason_text = reason.strip() if isinstance(reason, str) else ""
         if not reason_text:
@@ -719,7 +786,14 @@ class RedemptionService:
         redemption.status = RedemptionStatus.REJECTED.value
         redemption.decided_at = now
         redemption.decided_by = actor.user_id
+        # pts-F1: the validated reason is PERSISTED on the row (staff
+        # surfaces read it back; the student DTO does not carry it) and
+        # rides the audit row below.
+        redemption.rejection_reason = reason_text
         await db.flush()
+        await self._audit_decision(
+            db, actor, redemption, REDEMPTION_REJECT, reason=reason_text
+        )
         await self._record_redemption_decided(
             db, redemption, approved=False, rejection_reason=reason_text
         )
@@ -758,6 +832,9 @@ class RedemptionService:
         redemption.fulfilled_at = self._clock.now()
         redemption.fulfillment_note = note_text
         await db.flush()
+        await self._audit_decision(
+            db, actor, redemption, REDEMPTION_FULFILL, note=note_text
+        )
         await db.commit()
         return redemption
 

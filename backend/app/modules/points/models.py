@@ -53,8 +53,11 @@ Design decisions:
 - `PointReservation` (spec §16.2) freezes points for an open redemption
   request: spendable = ledger balance - active reservations. The lifecycle
   is ACTIVE -> CONSUMED (approved; the freeze becomes a negative
-  REWARD_REDEMPTION ledger row) or ACTIVE -> RELEASED (rejected or timed
-  out), transitioned in place — hence UNIQUE(redemption_id): exactly one
+  REWARD_REDEMPTION ledger row) or ACTIVE -> RELEASED (rejected — an
+  expiry-release path for stale requests is an OPEN PRODUCT DECISION,
+  interfaces.md's RedemptionStatus ruling: no auto-cancel/timeout rule
+  may be added without a new owner ruling, and none is implemented),
+  transitioned in place — hence UNIQUE(redemption_id): exactly one
   reservation row per redemption, and the coherence CHECK pins
   released_at to exactly the non-ACTIVE states. `points` is positive; the
   sign lives in the ledger entry the reservation eventually produces.
@@ -83,6 +86,13 @@ Design decisions:
   fulfillment (spec §16.2: approving and delivering are separate
   transitions); richer state/coherence rules arrive with the redemption
   service, which owns the transitions.
+- `RewardItem.requires_manual_review` is DORMANT V1 configuration (PR #2
+  hardening, G13 方案一): V1 reviews EVERY redemption manually — the
+  redemption service knows no automatic path — so the flag changes no
+  behavior, and the student catalogue deliberately hides it. The DB
+  column stays (history; future admin tooling may set it), but its
+  product semantics (e.g. auto-approve when false) are an open product
+  decision that requires an owner ruling, not an agent choice.
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -267,6 +277,9 @@ class RewardItem(Base):
     available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     available_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Dormant V1 configuration (PR #2 hardening, G13 方案一): V1 reviews
+    # every redemption manually, so this flag gates NOTHING — see the
+    # module docstring for the open-product-decision discipline.
     requires_manual_review: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false")
     )
@@ -320,6 +333,11 @@ class RewardRedemption(Base):
     # Review decision (APPROVED or REJECTED) and its author.
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decided_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    # The mandatory reject reason, persisted at the reject transition
+    # (PR #2 final review pts-F1): exactly REJECTED rows carry a value;
+    # historical REJECTED rows predating migration 0014 keep NULL. Exposed
+    # on the staff review surface only — the student DTO does not carry it.
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
     # Physical fulfillment (spec §16.2: approval and delivery are separate
     # transitions — FULFILLED comes later, by staff).
     fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -332,8 +350,11 @@ class PointReservation(Base):
     Exactly one row per redemption (UNIQUE(redemption_id)): the row is
     created ACTIVE when the request is accepted and transitions in place —
     CONSUMED on approval (the freeze becomes a negative REWARD_REDEMPTION
-    ledger row), RELEASED on rejection or timeout. ``released_at`` is set
-    exactly when the row leaves ACTIVE (the coherence CHECK).
+    ledger row), RELEASED on rejection. An expiry-release path for stale
+    requests is an open product decision (interfaces.md
+    RedemptionStatus ruling) and is deliberately NOT implemented;
+    ``released_at`` is set exactly when the row leaves ACTIVE (the
+    coherence CHECK).
     """
 
     __tablename__ = "point_reservations"

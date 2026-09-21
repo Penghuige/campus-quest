@@ -31,6 +31,15 @@ Drives the real app (``create_app()`` — the points router mounted under
   ruling) — an ACTIVE+TOTP Teacher is 403, an Admin passes — with the
   approve consumption entry, reject freeze release, and fulfill note
   assertions the review flow always had;
+- the durable audit trail (G12; PR #2 hardening P0-5): every APPLIED
+  decision commits one audit_logs row (REDEMPTION_APPROVE / _REJECT /
+  _FULFILL, actor Admin, target the redemption, the reject reason)
+  inside the decision transaction, and idempotent replays write
+  nothing; the reject reason is PERSISTED on the row (``rejection_reason``,
+  final-review pts-F1) and surfaces on the staff DTO only;
+- the dormant-config hide (G13 方案一): the student catalogue DTO no
+  longer carries ``requires_manual_review`` — V1 reviews every
+  redemption manually, so the flag promised nothing it delivered;
 - the role boundary: student surfaces reject staff roles, review
   surfaces reject students and (for decisions) teachers, all with
   PERMISSION_DENIED.
@@ -54,6 +63,7 @@ from app.core.clock import FrozenClock
 from app.core.security import hash_password
 from app.db.session import get_db_session
 from app.main import create_app
+from app.modules.audit.models import AuditLog
 from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
@@ -71,6 +81,11 @@ from app.modules.points.models import (
     RewardItem,
     RewardRedemption,
 )
+from app.modules.points.redemption_service import (
+    REDEMPTION_APPROVE,
+    REDEMPTION_FULFILL,
+    REDEMPTION_REJECT,
+)
 
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
@@ -86,7 +101,6 @@ _REWARD_FIELDS = {
     "per_user_term_limit",
     "available_from",
     "available_until",
-    "requires_manual_review",
     "window_open",
 }
 _STUDENT_REDEMPTION_FIELDS = {
@@ -103,6 +117,7 @@ _STAFF_REDEMPTION_FIELDS = _STUDENT_REDEMPTION_FIELDS | {
     "decided_at",
     "fulfilled_at",
     "fulfillment_note",
+    "rejection_reason",
 }
 _QUEUE_FIELDS = {"items", "total", "limit", "offset"}
 
@@ -644,6 +659,11 @@ async def test_admin_reject_requires_reason_and_releases_the_freeze(
     )
     assert reject.status_code == 200
     assert reject.json()["status"] == "REJECTED"
+    # pts-F1: the validated reason is PERSISTED on the row and surfaces
+    # on the staff DTO (the student DTO never carries it).
+    assert reject.json()["rejection_reason"] == "库存调拨给线下活动"
+    await db_session.refresh(redemption)
+    assert redemption.rejection_reason == "库存调拨给线下活动"
 
     # The freeze is released and NO consumption entry exists (spec
     # §16.2: 拒绝不产生消费负流水).
@@ -660,6 +680,108 @@ async def test_admin_reject_requires_reason_and_releases_the_freeze(
         )
     ).scalar_one()
     assert consumption == 0
+
+
+async def test_redemption_decisions_write_durable_audit_rows(
+    client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
+) -> None:
+    """G12 durable audit (PR #2 hardening P0-5): each APPLIED decision
+    commits one audit_logs row — REDEMPTION_APPROVE / _REJECT /
+    _FULFILL, actor the Admin, target the redemption, the reject reason
+    riding the row — inside the decision transaction; idempotent replays
+    and refused calls write nothing."""
+    world = points_world
+    approved = await _frozen_redemption(
+        db_session, user=world["student"], item=world["open_item"], points=400
+    )
+    rejected = await _frozen_redemption(
+        db_session, user=world["student"], item=world["open_item"], points=400
+    )
+
+    await client.post(
+        f"/api/v1/teacher/rewards/redemptions/{approved.id}/approve",
+        headers=world["admin_headers"],
+    )
+    # Idempotent replay: no second audit row (the replay decides
+    # nothing; the first application is the decision's trace).
+    await client.post(
+        f"/api/v1/teacher/rewards/redemptions/{approved.id}/approve",
+        headers=world["admin_headers"],
+    )
+    fulfill = await client.post(
+        f"/api/v1/teacher/rewards/redemptions/{approved.id}/fulfill",
+        json={"note": "已录入第九周平时分"},
+        headers=world["admin_headers"],
+    )
+    assert fulfill.status_code == 200
+    await client.post(
+        f"/api/v1/teacher/rewards/redemptions/{rejected.id}/reject",
+        json={"reason": "库存调拨给线下活动"},
+        headers=world["admin_headers"],
+    )
+
+    rows = {
+        row.action: row
+        for row in (
+            (
+                await db_session.execute(
+                    select(AuditLog).where(
+                        AuditLog.target_id.in_([str(approved.id), str(rejected.id)])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+    assert set(rows) == {
+        REDEMPTION_APPROVE,
+        REDEMPTION_FULFILL,
+        REDEMPTION_REJECT,
+    }
+
+    admin = world["admin"]
+    approve_row = rows[REDEMPTION_APPROVE]
+    assert approve_row.actor_user_id == admin.id
+    assert approve_row.actor_role == Role.ADMIN.value
+    assert approve_row.target_type == "reward_redemption"
+    assert approve_row.target_id == str(approved.id)
+    assert approve_row.reason is None
+    assert approve_row.details == {
+        "user_id": str(world["student"].id),
+        "reward_item_id": str(world["open_item"].id),
+    }
+    assert approve_row.created_at is not None
+
+    fulfill_row = rows[REDEMPTION_FULFILL]
+    assert fulfill_row.target_id == str(approved.id)
+    assert fulfill_row.details == {
+        "user_id": str(world["student"].id),
+        "reward_item_id": str(world["open_item"].id),
+        "note": "已录入第九周平时分",
+    }
+
+    reject_row = rows[REDEMPTION_REJECT]
+    assert reject_row.target_id == str(rejected.id)
+    assert reject_row.reason == "库存调拨给线下活动"
+    assert reject_row.details == {
+        "user_id": str(world["student"].id),
+        "reward_item_id": str(world["open_item"].id),
+    }
+
+    # A teacher's refused decision writes no audit row (only one
+    # approve row exists despite the replay).
+    approve_rows = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.action == REDEMPTION_APPROVE,
+                AuditLog.target_id == str(approved.id),
+            )
+        )
+    ).scalar_one()
+    assert approve_rows == 1
 
 
 async def test_review_decisions_reject_teachers_until_scoped_delegation(
