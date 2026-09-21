@@ -34,11 +34,24 @@ path; both flows):
 
 ``finalize_upload``:
 
+0. Locator + remote HEAD, both lock-free/off-loop (S3 hardening P1):
+   one lock-free SELECT of the intent's ``claim_id`` and ``object_key``
+   (immutable columns — see LOCK ORDER below), then ``head_object``
+   runs via ``asyncio.to_thread`` BEFORE any row lock is taken. This is
+   safe ONLY because the upload URL is write-once (signed
+   If-None-Match): an object that exists can no longer be replaced
+   through any presigned URL, so the pre-lock HEAD's size/content-type
+   answer remains valid through the short locked transaction — and a
+   slow provider now delays locks it never holds instead of stretching
+   the user/claim/intent lock hold time and blocking the event loop.
+   The HEAD result is stashed, never acted on here: the state machine
+   below decides whether it matters (a finalized replay whose object
+   has since been retention-deleted still returns the Submission; an
+   expired or burned intent answers without the HEAD changing the
+   verdict).
 1. User-row lock + account gate (same as create).
-2. Locator: one lock-free SELECT of the intent's ``claim_id`` (immutable
-   column) — see LOCK ORDER below for why the claim is locked first.
-3. Claim row FOR UPDATE: ownership is judged on the locked row.
-4. Intent row FOR UPDATE: the single-use state machine. FINALIZED
+2. Claim row FOR UPDATE: ownership is judged on the locked row.
+3. Intent row FOR UPDATE: the single-use state machine. FINALIZED
    (``finalized_submission_id`` set) -> return THAT Submission
    (idempotent replay, spec §32: never version N+1) — checked BEFORE
    the claim-submittability gate, so a delayed replay still answers
@@ -46,16 +59,20 @@ path; both flows):
    VALIDATING/UNDER_REVIEW (plan 04 task 7 fix of the T2 carry).
    BURNED (consumed with no submission) or past ``expires_at`` ->
    intent-not-found; the remedy is a fresh intent. OPEN -> proceed.
-5. Claim-submittability gate on the locked claim row (spec §10 step 2:
+4. Claim-submittability gate on the locked claim row (spec §10 step 2:
    VALIDATING/UNDER_REVIEW mean a submission is in flight; the
    terminal states ended the claim), then the recomputed window (time
    may have passed since the intent was issued).
-6. ``head_object`` verification (spec §10 step 6): a missing object is a
-   retryable client race (typed NOT_FOUND, intent stays consumable); a
-   size or content-type mismatch means the stored object contradicts the
-   cleared declaration — the intent is BURNED (conditional UPDATE
-   ``consumed_at IS NULL`` + commit) and the typed error answers.
-7. Retention snapshot (spec §13) from the Task's CURRENT policy at
+5. Verification against the STASHED head (spec §10 step 6): a missing
+   object is a retryable client race (typed NOT_FOUND, intent stays
+   consumable); a size or content-type mismatch means the stored
+   object contradicts the cleared declaration — the intent is BURNED
+   (conditional UPDATE ``consumed_at IS NULL`` + commit) and the typed
+   error answers. With the write-once, size-pinned URL both mismatch
+   branches are defense in depth (the provider already rejected such
+   PUTs at the door); the recheck stays for a provider/bucket
+   misconfigured out from under the presigning assumptions.
+6. Retention snapshot (spec §13) from the Task's CURRENT policy at
    finalize time; version allocation ``max(version)+1`` under the claim
    lock (§31.11 — UNIQUE(claim_id, version) is the database backstop);
    Submission INSERT; the conditional single-use consume
@@ -68,8 +85,9 @@ This is a subsequence of the interfaces.md contract (users -> tasks ->
 assignments/claims), preserved by reading the Task row LOCK-FREE: a
 plain SELECT takes no lock, so no tasks-after-claims lock edge exists
 to cycle against the claim flow's user -> task FOR SHARE -> claim locks.
-The locator SELECTs (intent.claim_id, and nothing else) read immutable
-columns, so the unlocked peek cannot observe half-written state. No
+The locator SELECT (intent.claim_id + intent.object_key, and nothing
+else) reads immutable columns, so the unlocked peek cannot observe
+half-written state. No
 IntegrityError mapping exists here on purpose: every race the unique
 constraints backstop (duplicate version, duplicate key, double consume)
 is already serialized by the user/claim/intent row locks, so an
@@ -100,11 +118,21 @@ Design decisions:
   sanitized (``sanitize_filename``: path components stripped on both
   separators, non-printables dropped, 255-char cap, stable fallback) and
   is display-only metadata.
-- **Declared type pinning:** the presigned URL carries the declared
-  type's MIME (``DECLARED_TYPE_CONTENT_TYPES``), so the provider rejects
-  a PUT with a different Content-Type; finalize re-checks the stored
-  object's content type as defense in depth. Type and size decisions
-  never read the filename.
+- **Declared type/size pinning + write-once (S3 hardening P0/P1):**
+  the presigned URL carries the declared type's MIME
+  (``DECLARED_TYPE_CONTENT_TYPES``), the declared byte size as a signed
+  Content-Length, and a signed If-None-Match:* condition, so the
+  provider rejects a PUT with a different Content-Type (403), a body of
+  any other length (403), and any second PUT onto the same key (412) —
+  inside or past the URL TTL, so a finalized object is immutable from
+  the client side and ``submitted_at``/audit stay authoritative
+  without trusting DB ``consumed_at`` to revoke a signed URL. The
+  client must send the pinned headers with its PUT. Finalize re-checks
+  the stored object's content type and size as defense in depth. Type
+  and size decisions never read the filename. A client whose first PUT
+  failed mid-flight after the object landed gets 412 on retry of the
+  same URL: the object exists, so the remedy is finalize (the object
+  is there) or a fresh intent for a NEW key.
 - **Public DTOs never carry ``object_key``** (spec §40: 对象存储原始路
   径 must not leak): ``schemas.py`` builds responses field by field.
 - **Idempotency-Key (spec §32) is a transport concern** for the router
@@ -135,6 +163,7 @@ Design decisions:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, cast, runtime_checkable
@@ -697,14 +726,17 @@ class UploadService:
             max_upload_bytes=self._max_upload_bytes,
         )
 
-        # (5) Server-generated key + short-lived presigned URL via the
-        # port (spec §10: the key never derives from the filename). A
-        # failed later commit strands this URL — it is never returned and
-        # expires on its own.
+        # (5) Server-generated key + short-lived WRITE-ONCE, size-pinned
+        # presigned URL via the port (spec §10: the key never derives
+        # from the filename; the declared size is signed as the PUT's
+        # Content-Length and the URL admits exactly one successful PUT).
+        # A failed later commit strands this URL — it is never returned
+        # and expires on its own.
         url = self._storage.create_upload_url(
             claim_id=claim.id,
             content_type=DECLARED_TYPE_CONTENT_TYPES[FileType(declared_type)],
             expires_in=self._upload_url_ttl,
+            content_length=size,
         )
 
         # (6) Persist the single-use grant; one commit.
@@ -747,19 +779,31 @@ class UploadService:
         (see the module docstring's dispatch rule); ``request_id`` is the
         correlation id threaded to the job.
         """
+        # (0) Locator + remote HEAD, lock-free and off the event loop
+        # (module docstring step 0): the SELECT reads only immutable
+        # columns, and the provider call happens BEFORE any row lock, so
+        # a slow HEAD delays no lock and blocks no loop. Safe because the
+        # upload URL is write-once: an existing object cannot change
+        # afterwards, so this answer stays valid through the locked
+        # transaction below. The result is stashed, never acted on here —
+        # the state machine decides whether it matters.
+        locator = (
+            await db.execute(
+                select(UploadIntent.claim_id, UploadIntent.object_key).where(
+                    UploadIntent.id == intent_id
+                )
+            )
+        ).one_or_none()
+        if locator is None:
+            raise UploadIntentNotFoundError(intent_id)
+        head = await asyncio.to_thread(
+            self._storage.head_object, object_key=locator.object_key
+        )
+
         # (1) Same-user serialization + account gate as in create.
         await self._lock_account(db, actor)
 
-        # (2) Locator: the intent's claim_id is immutable, so one
-        # lock-free SELECT finds the claim to lock first (LOCK ORDER:
-        # user -> claim -> intent).
-        claim_id = await db.scalar(
-            select(UploadIntent.claim_id).where(UploadIntent.id == intent_id)
-        )
-        if claim_id is None:
-            raise UploadIntentNotFoundError(intent_id)
-
-        # (3) Claim row under FOR UPDATE: ownership is judged on the
+        # (2) Claim row under FOR UPDATE: ownership is judged on the
         # locked row. NOTE (T2 carry, fixed in plan 04 task 7): the
         # claim-SUBMITTABILITY gate runs AFTER the intent state machine
         # below — a delayed replay of an already-finalized intent must
@@ -770,18 +814,18 @@ class UploadService:
         # runs under the claim lock before any new Submission exists.
         claim = await db.scalar(
             select(AssignmentClaim)
-            .where(AssignmentClaim.id == claim_id)
+            .where(AssignmentClaim.id == locator.claim_id)
             .with_for_update()
         )
         if claim is None:
             # The FK guarantees the row exists; this is the defensive
             # 404 for a corrupted graph.
-            raise ClaimNotFoundError(claim_id)
+            raise ClaimNotFoundError(locator.claim_id)
         if claim.user_id != actor.user_id:
-            raise ClaimNotOwnedError(claim_id, actor.user_id)
+            raise ClaimNotOwnedError(locator.claim_id, actor.user_id)
         status = ClaimStatus(claim.status)
 
-        # (4) Intent row under FOR UPDATE: the authoritative single-use
+        # (3) Intent row under FOR UPDATE: the authoritative single-use
         # state machine.
         intent = await db.scalar(
             select(UploadIntent).where(UploadIntent.id == intent_id).with_for_update()
@@ -791,7 +835,8 @@ class UploadService:
         if intent.finalized_submission_id is not None:
             # Idempotent replay (spec §32): the SAME Submission, never a
             # version N+1 — judged BEFORE the submittability gate (see
-            # step 3's note).
+            # step 2's note). The stashed HEAD is irrelevant here even
+            # when the object has since been retention-deleted.
             submission = await db.get(Submission, intent.finalized_submission_id)
             if submission is None:
                 # Unreachable while the FK holds; fail safe, never
@@ -804,7 +849,7 @@ class UploadService:
             # intent.
             raise UploadIntentNotFoundError(intent_id)
 
-        # (5) Claim-submittability gate (moved after the replay; still
+        # (4) Claim-submittability gate (moved after the replay; still
         # on the locked row, still before any write).
         if status not in SUBMITTABLE_STATUSES:
             raise ClaimNotSubmittableError(status)
@@ -821,10 +866,14 @@ class UploadService:
                 status, claim.grace_deadline_at, claim.revision_deadline_at
             )
 
-        # (5) Object verification (spec §10 step 6) inside the locked
-        # transaction, so the consume decision and the object state are
-        # judged in one place.
-        head = self._storage.head_object(object_key=intent.object_key)
+        # (5) Object verification (spec §10 step 6) against the pre-lock
+        # HEAD: write-once makes its size/content-type answer durable
+        # through this transaction, so the consume decision and the
+        # object state are still judged in one place — the locks were
+        # just no longer held while the provider answered. With the
+        # size-pinned, write-once URL both mismatch branches are defense
+        # in depth; they stay for a deployment whose provider stops
+        # enforcing the signed conditions.
         if head is None:
             # The client notified before the upload landed: retryable,
             # the intent stays consumable.

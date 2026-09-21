@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     s3_bucket: str
     s3_access_key: str
     s3_secret_key: str
+    # Signing region for the S3 client. "us-east-1" matches MinIO, which
+    # ignores the region in signatures; a real AWS deployment must set the
+    # bucket's actual region (a wrong region breaks presigned URLs against
+    # AWS). Consumed by `S3ObjectStorage`.
+    s3_region: str = "us-east-1"
     business_timezone: str
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30

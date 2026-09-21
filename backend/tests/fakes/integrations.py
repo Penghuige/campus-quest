@@ -148,14 +148,22 @@ class FakeObjectStorage(_FailureProgrammable):
     """In-memory `ObjectStorage`.
 
     `create_upload_url` issues server-generated keys and pins the declared
-    content type; `put_object` simulates the client completing the
-    presigned PUT; `head_object` then reports the pinned metadata;
-    `download_to_file` replays the PUT content for worker-side reads
-    (a missing key is `FileNotFoundError`, matching the port contract).
-    `delete_object` removes a held object and records its key in
-    `deleted_keys` for exact call-count assertions (a missing object
-    raises `FileNotFoundError`, the §27 reconcile contract; failed calls
-    record nothing, like every fake here).
+    content type (and records the declared content length in
+    `pinned_content_lengths` for call-site assertions); `put_object`
+    simulates the client completing the presigned PUT; `head_object` then
+    reports the pinned metadata; `download_to_file` replays the PUT
+    content for worker-side reads (a missing key is `FileNotFoundError`,
+    matching the port contract). `delete_object` removes a held object
+    and records its key in `deleted_keys` for exact call-count assertions
+    (a missing object raises `FileNotFoundError`, the §27 reconcile
+    contract; failed calls record nothing, like every fake here).
+
+    `put_object` deliberately does NOT model the provider-side URL gates
+    (write-once If-None-Match, signed Content-Length/Content-Type): it
+    is state setup for service tests, including the finalize
+    defense-in-depth branches that need a stored object contradicting
+    the declaration. The provider semantics themselves are proven
+    against real MinIO in tests/integration/test_object_storage_smoke.py.
     """
 
     def __init__(self, *, clock: Clock | None = None) -> None:
@@ -166,11 +174,20 @@ class FakeObjectStorage(_FailureProgrammable):
         self.deleted_keys: list[str] = []
         self.objects: dict[str, ObjectHead] = {}
         self.downloads: list[str] = []
+        # Declared sizes handed to `create_upload_url`, keyed by object
+        # key (public like upload_urls/deleted_keys: callers assert the
+        # intent flow pinned the declared size on the issued URL).
+        self.pinned_content_lengths: dict[str, int | None] = {}
         self._pinned_content_types: dict[str, str] = {}
         self._contents: dict[str, bytes] = {}
 
     def create_upload_url(
-        self, *, claim_id: UUID, content_type: str, expires_in: timedelta
+        self,
+        *,
+        claim_id: UUID,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None = None,
     ) -> UploadUrl:
         self._raise_if_programmed()
         object_key = f"submissions/{claim_id}/{uuid4()}"
@@ -181,6 +198,7 @@ class FakeObjectStorage(_FailureProgrammable):
         )
         self.upload_urls.append(url)
         self._pinned_content_types[url.object_key] = content_type
+        self.pinned_content_lengths[url.object_key] = content_length
         return url
 
     def head_object(self, *, object_key: str) -> ObjectHead | None:

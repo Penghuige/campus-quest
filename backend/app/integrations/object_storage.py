@@ -57,9 +57,15 @@ class ObjectStorage(Protocol):
     worker-side object reads, and retention deletes."""
 
     def create_upload_url(
-        self, *, claim_id: UUID, content_type: str, expires_in: timedelta
+        self,
+        *,
+        claim_id: UUID,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None = None,
     ) -> UploadUrl:
-        """Issue a short-lived presigned PUT and return it with its key.
+        """Issue a short-lived, write-once presigned PUT and return it
+        with its key.
 
         Args:
             claim_id: Claim the upload belongs to; the adapter derives the
@@ -70,6 +76,22 @@ class ObjectStorage(Protocol):
                 provider.
             expires_in: Time-to-live of the URL; keep it short (minutes) —
                 the returned `expires_at` is the instant it stops working.
+            content_length: Declared byte size pinned on the presigned URL
+                as a signed Content-Length header; a client PUT whose body
+                length differs is rejected by the provider (403). Pass the
+                exact declared size that cleared the caller's size policy.
+                ``None`` leaves the length unsigned (legacy/test callers).
+
+        Write-once contract (hardening P0): every issued URL is good for
+        EXACTLY ONE successful PUT. The adapter signs an If-None-Match:*
+        condition into the URL, so the provider rejects any PUT whose key
+        already holds an object (412) — a replayed or re-issued URL can
+        never replace a stored object, at any time inside or past the URL
+        TTL. Callers must not rely on database bookkeeping to revoke the
+        URL: the single-write guarantee is the provider's, not the
+        application's. The client is required to send the pinned headers
+        (Content-Type, Content-Length, If-None-Match: *) with its PUT —
+        omitting a signed header is itself a rejection.
         """
         ...
 
