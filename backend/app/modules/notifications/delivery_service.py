@@ -14,13 +14,34 @@ not-yet-due row (PENDING with scheduled_at > now stays untouched —
 the T8 due-scan owns re-enqueueing), refuses a row another worker
 already claimed (SENDING -> IN_FLIGHT result), and otherwise moves the
 row to SENDING with attempts += 1 BEFORE any external call, then
-COMMITS. Committing the claim before the provider call is what makes a
-crashed provider call observable (the row is stuck in SENDING, not
-silently re-firable) and what serializes two racing workers onto one
-provider call: the loser blocks on the row lock and then observes the
-winner's claim. tx2 (after the provider call) re-locks the row and
-applies the outcome, but only if the row is still SENDING — a
-concurrently forced terminal state always wins over a stale finalize.
+COMMITS.
+
+**Stuck-SENDING recovery (V1 lease semantics: timestamp heuristic, no
+lease column).** A sender that dies between its claim commit and its
+finalize leaves the row in SENDING forever. The T8 due scan re-enqueues
+SENDING rows whose updated_at (refreshed by the claim write) is older
+than the configurable threshold (default 15 minutes), and THIS claim
+gate re-claims exactly those rows: a SENDING claim older than
+`stale_claim_threshold` is presumed dead and falls through to a normal
+re-claim (attempts advances again), while a fresh one still answers
+IN_FLIGHT. There is no lease column and no owner identity, so a slow
+original sender can race its finalize against the re-claim's outcome
+write — the pre-existing finalize-lost-race guard arbitrates, and the
+deterministic provider idempotency key collapses a genuine
+double-send. That trade-off is the documented cost of the heuristic
+over a schema change. The lease's time domain is the SERVICE clock:
+the claim (and every finalize) stamps `updated_at` with the
+caller-side `now` instead of the column's server-side onupdate, so
+"now - updated_at" here and the T8 scan's threshold compare instants
+from one domain; host clock skew skews the heuristic with it.
+
+Committing the claim before the provider call is what makes a crashed
+provider call observable (the row is stuck in SENDING, not silently
+re-firable) and what serializes two racing workers onto one provider
+call: the loser blocks on the row lock and then observes the winner's
+claim. tx2 (after the provider call) re-locks the row and applies the
+outcome, but only if the row is still SENDING — a concurrently
+forced terminal state always wins over a stale finalize.
 
 **Division of retry ownership (single retry home).** The SERVICE owns
 the retry schedule; the Celery job does NOT autoretry on provider
@@ -147,6 +168,14 @@ RETRY_DELAYS: tuple[timedelta, ...] = (
 #: after a failing attempt resolve FAILED (terminal).
 DEFAULT_MAX_ATTEMPTS = 3
 
+#: V1 lease stand-in: a SENDING claim older than this is presumed dead
+#: (crashed sender) and may be re-claimed by the next arrival — the
+#: same threshold the T8 due scan uses to decide which SENDING rows to
+#: re-enqueue (production wiring feeds both from
+#: `NOTIFICATION_DISPATCH_STALE_SENDING_SECONDS` so scanner and gate
+#: can never disagree).
+DEFAULT_STALE_CLAIM_THRESHOLD = timedelta(minutes=15)
+
 # Deadline reminder event keys are "claim:<uuid>:deadline_24h" /
 # "deadline_4h" (deadline_scheduler.deadline_event_key); the claim id
 # is what the suppression resolver reads.
@@ -246,15 +275,22 @@ class DeliveryService:
         email_sender: EmailSender,
         clock: Clock,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        stale_claim_threshold: timedelta = DEFAULT_STALE_CLAIM_THRESHOLD,
         claim_status_resolver: ClaimStatusResolver | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
+        if stale_claim_threshold.total_seconds() < 1:
+            raise ValueError(
+                "stale_claim_threshold must be at least 1 second, got "
+                f"{stale_claim_threshold!r}"
+            )
         self._session_maker = session_maker
         self._sms_sender = sms_sender
         self._email_sender = email_sender
         self._clock = clock
         self._max_attempts = max_attempts
+        self._stale_claim_threshold = stale_claim_threshold
         self._claim_status_resolver = claim_status_resolver
 
     async def send(self, delivery_id: UUID, request_id: str) -> SendResult:
@@ -321,17 +357,39 @@ class DeliveryService:
                 return self._observed(delivery, SendOutcome.ALREADY_FAILED)
             if delivery.status == DeliveryStatus.SENDING.value:
                 # Another worker claimed first and may be mid-call.
-                # V1 has no lease column to time this out; a crashed
-                # sender leaves the row here, visible to admin
-                # queries (documented limitation, needs a lease to
-                # fix).
-                return self._observed(delivery, SendOutcome.IN_FLIGHT)
+                # V1 lease semantics (see module docstring): the claim
+                # write refreshed updated_at, so a claim younger than
+                # the threshold is live -> IN_FLIGHT; an older one is
+                # presumed dead (crashed sender; the T8 scan
+                # re-enqueued exactly these) and falls through to a
+                # normal re-claim below.
+                if now - delivery.updated_at < self._stale_claim_threshold:
+                    return self._observed(delivery, SendOutcome.IN_FLIGHT)
+                logger.warning(
+                    "notification_delivery.stale_claim_reclaimed",
+                    extra={
+                        "delivery_id": str(delivery_id),
+                        "claim_updated_at": (
+                            delivery.updated_at.isoformat()
+                            if delivery.updated_at is not None
+                            else None
+                        ),
+                        "stale_threshold_seconds": (
+                            self._stale_claim_threshold.total_seconds()
+                        ),
+                    },
+                )
             if delivery.scheduled_at > now:
                 return self._observed(delivery, SendOutcome.NOT_DUE)
 
-            # PENDING or RETRYABLE and due: claim before sending.
+            # PENDING or RETRYABLE and due: claim before sending. The
+            # claim stamps updated_at from the SERVICE clock (the same
+            # domain the staleness check below judges in) — an explicit
+            # client value overrides the column's server-side onupdate,
+            # so the lease never mixes two time domains.
             delivery.status = DeliveryStatus.SENDING.value
             delivery.attempts += 1
+            delivery.updated_at = now
 
             notification = await session.get(Notification, delivery.notification_id)
             user = await session.get(User, delivery.user_id)
@@ -529,6 +587,7 @@ class DeliveryService:
                 return self._observed(delivery, SendOutcome.IN_FLIGHT)
 
             delivery.status = status.value
+            delivery.updated_at = now
             delivery.last_error = last_error
             delivery.provider_message_id = None
             if status is DeliveryStatus.SENT:

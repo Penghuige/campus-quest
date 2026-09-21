@@ -173,6 +173,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     LoggingEventPublisher,
 )
+from app.modules.notifications.port import NotificationPort
 from app.modules.tasks.abandon_service import AbandonService
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
@@ -285,7 +286,17 @@ def get_task_service(clock: ClockDep, settings: AppSettings) -> TaskService:
 
 def get_claim_service(clock: ClockDep) -> ClaimService:
     # max_active_claims stays at the spec §8.2 default of 3.
-    return ClaimService(clock=clock)
+    # The notification recorder is the plan 07 T5/T8 production carry:
+    # NotificationPort joins the claim transaction so deadline-reminder
+    # intent commits with the claim or not at all (the outbox rule).
+    # THE SAME clock instance stamps claimed_at and the reminder
+    # scheduling instants — one request, one business-time source —
+    # and the import lives at this composition root, the one layer
+    # allowed to see both modules (notifications -> identity only).
+    return ClaimService(
+        clock=clock,
+        notification_recorder=NotificationPort(clock=clock),
+    )
 
 
 def get_abandon_service(

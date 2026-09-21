@@ -21,6 +21,7 @@ from app.modules.identity import (
     staff_router as identity_staff_router,
 )
 from app.modules.identity.dependencies import get_actor
+from app.modules.notifications import router as notifications_router
 from app.modules.tasks import router as tasks_router
 from app.workers.celery_app import get_celery_app
 
@@ -56,6 +57,12 @@ def create_app() -> FastAPI:
     # needs registering before the mount.
     tasks_router.register_tasks_exception_handlers(app)
     app.include_router(tasks_router.router, prefix="/api/v1")
+
+    # Notifications API (plan 07 T8): the student inbox + mark-read and
+    # the staff failure query. Every typed exception its handlers raise
+    # subclasses BusinessError, so the core envelope handler covers it
+    # and no module-local registration is needed.
+    app.include_router(notifications_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done

@@ -73,7 +73,10 @@ def build_delivery_service() -> DeliveryService:
     and honor `idempotency_key`; nothing else changes). Tests substitute
     the fakes by patching this factory.
     """
+    from datetime import timedelta
+
     from app.core.clock import SystemClock
+    from app.core.config import get_settings
     from app.db.session import get_async_session_maker
     from app.integrations.email import LoggingEmailSender
     from app.integrations.sms import LoggingSmsSender
@@ -83,6 +86,12 @@ def build_delivery_service() -> DeliveryService:
         sms_sender=LoggingSmsSender(),
         email_sender=LoggingEmailSender(),
         clock=SystemClock(),
+        # The claim gate's lease threshold comes from the SAME setting
+        # the T8 due scan reads, so the rows the scanner re-enqueues as
+        # stuck are exactly the rows this gate will re-claim.
+        stale_claim_threshold=timedelta(
+            seconds=get_settings().notification_dispatch_stale_sending_seconds
+        ),
         claim_status_resolver=_claim_status,
     )
 

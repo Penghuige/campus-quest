@@ -163,8 +163,9 @@ def test_worker_cli_style_load_registers_health_job(
     # worker startup.
     assert (
         completed.stdout.strip().splitlines()[-1]
-        == "TASKS=workers.expire_claim,workers.expire_claims_scan,"
-        "workers.health_job,workers.send_notification_delivery"
+        == "TASKS=workers.dispatch_due_notifications,workers.expire_claim,"
+        "workers.expire_claims_scan,workers.health_job,"
+        "workers.send_notification_delivery"
     )
 
 

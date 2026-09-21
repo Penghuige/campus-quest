@@ -39,9 +39,10 @@ from app.core.config import Settings, get_settings
 # no autodiscovery). Each new job module appends itself to this list in
 # its own task.
 JOB_MODULES = (
+    "app.workers.jobs.dispatch_due_notifications",
+    "app.workers.jobs.expire_claims",
     "app.workers.jobs.health",
     "app.workers.jobs.send_notification",
-    "app.workers.jobs.expire_claims",
 )
 
 

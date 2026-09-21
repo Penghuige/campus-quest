@@ -21,6 +21,10 @@ claim-before-send race cannot be simulated on fakes):
   completing the delivery clears read_at.
 - Claim-before-send race: two concurrent sends on independent
   connections produce one provider call; the loser observes the claim.
+- Stuck-SENDING lease heuristic (plan 07 T8 carry, V1 = timestamp over
+  updated_at): a FRESH SENDING claim still answers IN_FLIGHT untouched;
+  a STALE one (older than the threshold) is re-claimed and delivered,
+  attempts advancing on the re-claim.
 - Not-due deliveries are left PENDING and unclaimed.
 
 Real commits require real cleanup: every seeded user/notification/
@@ -178,6 +182,7 @@ async def _seed_rows(
     channel: NotificationChannel = NotificationChannel.SMS,
     scheduled_at: datetime | None = None,
     notification_overrides: dict[str, Any] | None = None,
+    delivery_overrides: dict[str, Any] | None = None,
 ) -> tuple[User, Notification, NotificationDelivery]:
     """Commit a user/notification/delivery triple and return it.
 
@@ -206,6 +211,9 @@ async def _seed_rows(
                 scheduled_at if scheduled_at is not None else _T0 - _ONE_MINUTE
             ),
         )
+        if delivery_overrides:
+            for name, value in delivery_overrides.items():
+                setattr(delivery, name, value)
         session.add(delivery)
         await session.commit()
     return user, notification, delivery
@@ -239,6 +247,7 @@ async def _seeded(
     channel: NotificationChannel = NotificationChannel.SMS,
     scheduled_at: datetime | None = None,
     notification_overrides: dict[str, Any] | None = None,
+    delivery_overrides: dict[str, Any] | None = None,
 ) -> AsyncIterator[tuple[User, Notification, NotificationDelivery]]:
     """`_seed_rows` with teardown (for tests that stay in one event loop;
     the sync Celery test spans several loops and calls the helpers
@@ -251,6 +260,7 @@ async def _seeded(
         channel=channel,
         scheduled_at=scheduled_at,
         notification_overrides=notification_overrides,
+        delivery_overrides=delivery_overrides,
     )
     try:
         yield user, notification, delivery
@@ -697,6 +707,75 @@ async def test_concurrent_claims_produce_single_provider_call(
         loser = next(o for o in outcomes if o is not SendOutcome.SENT)
         assert loser in (SendOutcome.IN_FLIGHT, SendOutcome.ALREADY_SENT)
         assert await _delivery_count(db_engine, delivery.event_key) == 1
+
+
+# --- stuck-SENDING lease heuristic (plan 07 T8) ---------------------------
+
+
+async def test_stale_sending_claim_is_reclaimed(
+    db_engine: AsyncEngine,
+) -> None:
+    # A SENDING row whose claim (updated_at) is older than the 15m
+    # threshold is presumed dead: the next arrival re-claims it and the
+    # delivery completes, attempts advancing on the re-claim.
+    sms = FakeSmsSender()
+    email = FakeEmailSender()
+    service = _service(db_engine, sms=sms, email=email, clock=StepClock(_T0))
+
+    async with _seeded(
+        db_engine,
+        user_overrides={"phone_e164": None},
+        channel=NotificationChannel.IN_APP,
+        delivery_overrides={
+            "status": DeliveryStatus.SENDING.value,
+            "attempts": 1,
+            "updated_at": _T0 - _TWENTY_MINUTES,
+        },
+    ) as seeded:
+        delivery = seeded[2]
+
+        result = await service.send(delivery.id, "req-stale-1")
+        assert result.outcome is SendOutcome.SENT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENT.value
+        # 1 attempt died with the crashed sender; the re-claim is the 2nd.
+        assert row.attempts == 2
+        assert row.sent_at == _T0
+
+    assert sms.messages == []
+    assert email.messages == []
+
+
+async def test_fresh_sending_claim_stays_in_flight(
+    db_engine: AsyncEngine,
+) -> None:
+    # A SENDING claim younger than the threshold belongs to a live
+    # sender: the row is observed IN_FLIGHT and nothing is written.
+    sms = FakeSmsSender()
+    email = FakeEmailSender()
+    service = _service(db_engine, sms=sms, email=email, clock=StepClock(_T0))
+
+    async with _seeded(
+        db_engine,
+        user_overrides={"phone_e164": None},
+        channel=NotificationChannel.IN_APP,
+        delivery_overrides={
+            "status": DeliveryStatus.SENDING.value,
+            "attempts": 1,
+            "updated_at": _T0 - _FIVE_MINUTES,
+        },
+    ) as seeded:
+        delivery = seeded[2]
+
+        result = await service.send(delivery.id, "req-fresh-1")
+        assert result.outcome is SendOutcome.IN_FLIGHT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENDING.value
+        assert row.attempts == 1
+        assert row.sent_at is None
+
+    assert sms.messages == []
+    assert email.messages == []
 
 
 # --- not due -------------------------------------------------------------
