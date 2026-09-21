@@ -158,10 +158,15 @@ def test_worker_cli_style_load_registers_health_job(
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
+    # Every JOB_MODULES entry must appear: a job module that only
+    # registers via in-process import would be invisible to a real
+    # worker startup.
     assert (
         completed.stdout.strip().splitlines()[-1]
-        == "TASKS=workers.health_job,workers.project_ranking_update,"
-        "workers.rebuild_all_rankings,workers.validate_submission"
+        == "TASKS=workers.dispatch_due_notifications,workers.expire_claim,"
+        "workers.expire_claims_scan,workers.health_job,"
+        "workers.project_ranking_update,workers.rebuild_all_rankings,"
+        "workers.send_notification_delivery,workers.validate_submission"
     )
 
 

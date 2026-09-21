@@ -3,7 +3,8 @@
 
 Covers the recording contract from the task brief (exact-delivery
 assertions via list equality), the object-storage fake's key/metadata
-semantics, and raise-on-demand failure programming used by later worker
+semantics (including the retention ``delete_object`` contract from
+spec §27), and raise-on-demand failure programming used by later worker
 tests to simulate provider outages.
 """
 
@@ -238,6 +239,11 @@ def test_download_to_file_writes_stored_content_and_records_the_key(
 
 
 def test_download_to_file_size_defaults_to_content_length() -> None:
+
+
+def test_delete_object_missing_raises_file_not_found_error() -> None:
+    # §27 contract: a missing object is a typed signal the retention
+    # cleanup worker branches on, not a provider failure.
     storage = FakeObjectStorage()
     url = storage.create_upload_url(
         claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
@@ -278,6 +284,35 @@ def test_download_to_file_programmed_failure_raises_and_records_nothing(
     assert storage.downloads == []
 
 
+def test_delete_object_twice_raises_on_second_call() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=10)
+    storage.delete_object(object_key=url.object_key)
+
+    with pytest.raises(FileNotFoundError):
+        storage.delete_object(object_key=url.object_key)
+
+    assert storage.deleted_keys == [url.object_key]
+
+
+def test_delete_object_programmed_failure_deletes_nothing() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=10)
+    storage.fail_with(PermanentProviderError("access denied"))
+
+    with pytest.raises(PermanentProviderError):
+        storage.delete_object(object_key=url.object_key)
+
+    assert storage.head_object(object_key=url.object_key) is not None
+    assert storage.deleted_keys == []
+
+
 def test_fake_rate_limiter_records_exact_checks() -> None:
     limiter = FakeRateLimiter()
 
@@ -293,7 +328,7 @@ def test_fake_rate_limiter_records_exact_checks() -> None:
         )
     ]
     assert limiter.checks_for("auth:login")[0].identifier == "alice"
-    assert limiter.checks_for("auth:register") == []
+    assert limiter.checks_for("auth:otp-send") == []
 
 
 def test_fake_rate_limiter_programmed_bucket_raises() -> None:

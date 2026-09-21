@@ -30,17 +30,27 @@ class SentSms:
 
     `variables` is the render-input snapshot; field equality (including
     `variables` as a mapping) is the exact-delivery contract.
+    `idempotency_key` is None for callers that send single-shot (the
+    identity OTP flow); notification delivery always passes one.
     """
 
     to: str
     template: str
     variables: Mapping[str, Any]
+    idempotency_key: str | None = None
 
 
 class SmsSender(Protocol):
     """Port for sending templated SMS notifications."""
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         """Send one templated SMS.
 
         Args:
@@ -49,6 +59,11 @@ class SmsSender(Protocol):
                 `"deadline_4h"`), never free-form message text.
             variables: Render inputs for the provider template; values must
                 be JSON-serializable.
+            idempotency_key: Optional dedupe key the provider can collapse
+                repeated sends onto (notification delivery passes
+                `"{event_key}:{channel}:{user_id}"` so an
+                UnknownOutcomeError retry cannot double-send, spec
+                §25.3). Single-shot callers omit it.
 
         Raises:
             TemporaryProviderError: transient failure; bounded retry safe.
@@ -66,9 +81,17 @@ class LoggingSmsSender:
     dev-deployment log sink failing must not fail the request.
     """
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         logger.info(
-            "sms send (interim logging adapter) to=%s template=%s",
+            "sms send (interim logging adapter) to=%s template=%s idempotency_key=%s",
             mask_phone(to),
             template,
+            idempotency_key,
         )

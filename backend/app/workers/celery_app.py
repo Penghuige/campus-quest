@@ -22,6 +22,12 @@ Eager execution (`task_always_eager`) is TEST-ONLY and is never set here;
 tests enable it in their fixture. `task_eager_propagates=True` is safe
 app-wide because it only changes how eager (inline) executions surface
 exceptions.
+
+MERGE CARRIES: every work deferred from this branch to the stream
+merge (beat schedule for the scans, cleanup job registration +
+JOB_MODULES entry, the deferred deadline index, 0010 reparent) is
+consolidated in MERGE_CARRIES.md next to this file — the single
+checklist; the scattered in-code TODOs point there too.
 """
 
 from __future__ import annotations
@@ -37,12 +43,16 @@ from app.core.config import Settings, get_settings
 # imported — a worker process imports no test or caller module, so the
 # modules must be named here explicitly (deterministic and reviewable;
 # no autodiscovery). Each new job module appends itself to this list in
-# its own task.
+# its own task. The cleanup scan joins this list at merge
+# (MERGE_CARRIES.md item 3).
 JOB_MODULES = (
+    "app.workers.jobs.dispatch_due_notifications",
+    "app.workers.jobs.expire_claims",
     "app.workers.jobs.health",
-    "app.workers.jobs.validate_submission",
-    "app.workers.jobs.rebuild_rankings",
     "app.workers.jobs.project_ranking_update",
+    "app.workers.jobs.rebuild_rankings",
+    "app.workers.jobs.send_notification",
+    "app.workers.jobs.validate_submission",
 )
 
 
@@ -69,6 +79,16 @@ def create_celery_app(settings: Settings) -> Celery:
         result_serializer="json",
         accept_content=["json"],
         task_eager_propagates=True,
+        # Plan-04 amendment 1 (watchdog/self-heal scope): acknowledge
+        # LATE and reject on worker loss, so a worker dying mid-task
+        # redelivers instead of silently dropping the job. Delivery
+        # becomes at-least-once, which every job must absorb
+        # idempotently: expire_claim replays answer ALREADY_TERMINAL
+        # and write nothing, expire_claims_scan re-discovers only what
+        # is still due, and send_notification_delivery collapses
+        # duplicates claim-before-send (health is pure).
+        task_acks_late=True,
+        task_reject_on_worker_lost=True,
     )
     return app
 

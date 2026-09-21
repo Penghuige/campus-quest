@@ -336,7 +336,7 @@ Canonical service/use-case names (spec §36). Business rules live in these servi
 - Community: `create_comment`, `edit_comment`, `delete_comment`, `vote_comment`, `react_comment`, `report_comment`, `rate_task`
 - Notification: `schedule_due_notifications`, `dispatch_notification`
 
-Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs. Plan 06 exposes `set_vote` / `toggle_reaction` (the toggle semantics under the §22 `vote_comment` / `react_comment` verbs) and `delete_own_comment` + `moderate_delete_comment` (the §21.3 `delete_comment` verb split by authority: owner soft delete vs the reason-mandatory moderation path) alongside the §36 community verbs.
+Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs. Plan 06 exposes `set_vote` / `toggle_reaction` (the toggle semantics under the §22 `vote_comment` / `react_comment` verbs) and `delete_own_comment` + `moderate_delete_comment` (the §21.3 `delete_comment` verb split by authority: owner soft delete vs the reason-mandatory moderation path) alongside the §36 community verbs. Plan 07 T7 additionally exposes the §13/§27 retention-cleanup scan `cleanup_expired_files(now, repo, storage) -> CleanupSummary` (`app.modules.files.cleanup_service`), consumed through the `CleanupRepository` port over `FileRecord` snapshots.
 
 Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
 
@@ -351,6 +351,7 @@ class ObjectStorage(Protocol):
     def create_upload_url(...) -> ...: ...   # short-lived presigned PUT/POST
     def head_object(...) -> ...: ...         # existence + size/content metadata
     def create_download_url(...) -> ...: ... # short-lived signed download URL
+    def delete_object(...) -> None: ...      # retention cleanup (§13/§27); FileNotFoundError when absent
 ```
 
 Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original filenames are display metadata only.
@@ -359,19 +360,35 @@ Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original fil
 
 ```python
 class SmsSender(Protocol):
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None: ...
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None: ...
 ```
 
-Fake: `FakeSmsSender` records `SentSms(to, template, variables)` for exact-delivery assertions.
+`idempotency_key` (optional) lets a provider collapse repeated sends onto one message: notification delivery always passes `"{event_key}:{channel}:{user_id}"` (spec §25.3) so an `UnknownOutcomeError` retry — whose first attempt may have succeeded — cannot double-send; single-shot callers (identity OTP) omit it.
+
+Fake: `FakeSmsSender` records `SentSms(to, template, variables, idempotency_key=None)` for exact-delivery assertions.
 
 ### Email
 
 ```python
 class EmailSender(Protocol):
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None: ...
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None: ...
 ```
 
-Fake: `FakeEmailSender`, same recording contract as SMS.
+Fake: `FakeEmailSender`, same recording contract as SMS (including `idempotency_key`).
 
 ### Ranking projection
 

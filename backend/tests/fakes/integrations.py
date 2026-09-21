@@ -98,11 +98,23 @@ class FakeSmsSender(_FailureProgrammable):
         self.messages: list[SentSms] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         # Snapshot so later caller-side mutation cannot rewrite history.
         self.messages.append(
-            SentSms(to=to, template=template, variables=dict(variables))
+            SentSms(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 
@@ -113,10 +125,22 @@ class FakeEmailSender(_FailureProgrammable):
         self.messages: list[SentEmail] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         self.messages.append(
-            SentEmail(to=to, template=template, variables=dict(variables))
+            SentEmail(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 
@@ -125,9 +149,13 @@ class FakeObjectStorage(_FailureProgrammable):
 
     `create_upload_url` issues server-generated keys and pins the declared
     content type; `put_object` simulates the client completing the
-    presigned PUT; `head_object` then reports the pinned metadata; and
+    presigned PUT; `head_object` then reports the pinned metadata;
     `download_to_file` replays the PUT content for worker-side reads
     (a missing key is `FileNotFoundError`, matching the port contract).
+    `delete_object` removes a held object and records its key in
+    `deleted_keys` for exact call-count assertions (a missing object
+    raises `FileNotFoundError`, the §27 reconcile contract; failed calls
+    record nothing, like every fake here).
     """
 
     def __init__(self, *, clock: Clock | None = None) -> None:
@@ -135,6 +163,7 @@ class FakeObjectStorage(_FailureProgrammable):
         self.failures: list[Exception] = []
         self.upload_urls: list[UploadUrl] = []
         self.download_urls: list[DownloadUrl] = []
+        self.deleted_keys: list[str] = []
         self.objects: dict[str, ObjectHead] = {}
         self.downloads: list[str] = []
         self._pinned_content_types: dict[str, str] = {}
@@ -170,6 +199,13 @@ class FakeObjectStorage(_FailureProgrammable):
         )
         self.download_urls.append(url)
         return url
+
+    def delete_object(self, *, object_key: str) -> None:
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(object_key)
+        del self.objects[object_key]
+        self.deleted_keys.append(object_key)
 
     def put_object(
         self,

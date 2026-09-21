@@ -22,6 +22,7 @@ from app.modules.identity import (
     staff_router as identity_staff_router,
 )
 from app.modules.identity.dependencies import get_actor
+from app.modules.notifications import router as notifications_router
 from app.modules.points import router as points_router
 from app.modules.rankings import router as rankings_router
 from app.modules.submissions import router as submissions_router
@@ -82,6 +83,12 @@ def create_app() -> FastAPI:
     # mount.
     community_router.register_community_exception_handlers(app)
     app.include_router(community_router.router, prefix="/api/v1")
+
+    # Notifications API (plan 07 T8): the student inbox + mark-read and
+    # the staff failure query. Every typed exception its handlers raise
+    # subclasses BusinessError, so the core envelope handler covers it
+    # and no module-local registration is needed.
+    app.include_router(notifications_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done

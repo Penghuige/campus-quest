@@ -54,7 +54,7 @@ class DownloadUrl:
 
 class ObjectStorage(Protocol):
     """Port for presigned uploads, metadata checks, signed downloads,
-    and worker-side object reads."""
+    worker-side object reads, and retention deletes."""
 
     def create_upload_url(
         self, *, claim_id: UUID, content_type: str, expires_in: timedelta
@@ -116,5 +116,20 @@ class ObjectStorage(Protocol):
                 treats it with the storage-transient policy).
             OSError / the adapter failure taxonomy: transient provider
                 failures — retryable by the caller's bounded policy.
+        """
+
+    def delete_object(self, *, object_key: str) -> None:
+        """Delete one stored object (retention cleanup; spec §13, §27).
+
+        Args:
+            object_key: Key previously returned by `create_upload_url`. A
+                missing object raises `FileNotFoundError` — a normal,
+                expected result the retention cleanup worker consumes
+                (§27: an already-marked-deleted row makes it an idempotent
+                success; a row believed present makes it a reconcile) —
+                while provider failures raise the adapter error taxonomy
+                (`TemporaryProviderError` et al.) so callers can pick a
+                retry policy. Deleting an absent object twice therefore
+                raises on the second call, matching real providers.
         """
         ...

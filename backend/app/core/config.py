@@ -123,6 +123,15 @@ class Settings(BaseSettings):
     # Consumed by `CommentService`, which receives the scalar at the
     # composition root.
     comment_max_length: int = 2000
+    # Due-delivery dispatcher (plan 07 T8; spec §25.4: bounded retries must
+    # stay observable): one scan batch's enqueue ceiling, and how long a
+    # SENDING claim may sit before the scan re-enqueues the row. The same
+    # seconds value is wired into the send service's claim gate, so the
+    # scanner (which rows to re-enqueue) and the gate (which claims to
+    # re-claim) always agree on the lease threshold — V1 lease semantics
+    # are this timestamp heuristic over `updated_at`, not a lease column.
+    notification_dispatch_batch_limit: int = 500
+    notification_dispatch_stale_sending_seconds: int = 900
 
     @field_validator("business_timezone")
     @classmethod
@@ -157,6 +166,31 @@ class Settings(BaseSettings):
         # at settings load, not at the first comment attempt.
         if value < 1:
             raise ValueError(f"comment_max_length must be >= 1, got {value}")
+        return value
+
+    @field_validator("notification_dispatch_batch_limit")
+    @classmethod
+    def _validate_notification_dispatch_batch_limit(cls, value: int) -> int:
+        # A ceiling below 1 disables the scan (every beat discovers
+        # nothing); a deployment wanting dispatch off should not run the
+        # beat, not configure a scan that silently drops every due
+        # delivery.
+        if value < 1:
+            raise ValueError(
+                f"notification_dispatch_batch_limit must be >= 1, got {value}"
+            )
+        return value
+
+    @field_validator("notification_dispatch_stale_sending_seconds")
+    @classmethod
+    def _validate_notification_dispatch_stale_sending_seconds(cls, value: int) -> int:
+        # A zero threshold would make every in-flight claim instantly
+        # "stale" and re-enqueue live sends on every beat — the opposite
+        # of the lease the heuristic stands in for.
+        if value < 1:
+            raise ValueError(
+                f"notification_dispatch_stale_sending_seconds must be >= 1, got {value}"
+            )
         return value
 
     @field_validator("token_secret")
