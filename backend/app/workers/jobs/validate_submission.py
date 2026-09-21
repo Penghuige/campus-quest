@@ -61,6 +61,7 @@ from app.core.clock import Clock, SystemClock
 from app.core.config import Settings, get_settings
 from app.integrations.errors import TemporaryProviderError, UnknownOutcomeError
 from app.integrations.object_storage import ObjectStorage
+from app.modules.submissions.cleanup_claim import CleanupClaimConflictError
 from app.modules.submissions.enums import ValidationStatus
 from app.modules.submissions.validation_runner import SandboxLimits, ValidatorSandbox
 from app.modules.submissions.validators.common import PreviewSpec
@@ -77,7 +78,21 @@ logger = logging.getLogger(__name__)
 #: The transient classes the bounded autoretry covers (§13 adapter
 #: taxonomy: temporary and unknown-outcome; ``OSError`` covers raw
 #: storage failures and the port's missing-object FileNotFoundError).
-_RETRYABLE_TRANSIENTS = (OSError, TemporaryProviderError, UnknownOutcomeError)
+#: ``CleanupClaimConflictError`` (hardening pass 4b) is the typed 409
+#: the protected claim transitions (validation tx1's VALIDATING entry,
+#: the reward-lock UNDER_REVIEW entry) raise while a file-cleanup
+#: deletion claim is in flight: protection must win, deletion is the
+#: retryable side, and the claim window is seconds — the bounded
+#: backoff below outlives it. Both sides are replay-safe (a retried
+#: tx1 rolls back whole; a retried chained call replays the terminal
+#: VALIDATED state), and after ``max_retries`` the job fails loudly for
+#: the operator remedy (clearing a stranded claim).
+_RETRYABLE_TRANSIENTS = (
+    OSError,
+    TemporaryProviderError,
+    UnknownOutcomeError,
+    CleanupClaimConflictError,
+)
 
 _MAX_RETRIES = 5
 

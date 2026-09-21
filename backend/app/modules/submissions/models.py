@@ -186,6 +186,24 @@ class Submission(Base):
             "object exists."
         ),
     )
+    cleanup_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "Cleanup-worker deletion claim (hardening pass 4b): the single "
+            "conditional UPDATE that re-evaluates every §13/§27 guard "
+            "against CURRENT state sets this before the object delete — "
+            "single statement, so guards and claim are atomic and the "
+            "pre-claim scan snapshot is never raced against. NULL while "
+            "unclaimed; cleared to release after a provider failure so the "
+            "next scan retries; stays set after a completed deletion "
+            "(deleted_at records the completion). Protection writers "
+            "(legal_hold, claim -> VALIDATING/UNDER_REVIEW) must reject "
+            "with a typed 409 while this is set with deleted_at NULL: "
+            "protection must win, deletion is the retryable side. legal_hold "
+            "itself has NO service write point today (operator/DBA action) "
+            "— whoever sets it retries on that 409 the same way."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
@@ -241,6 +259,23 @@ class UploadIntent(Base):
     # Idempotent-replay pointer: the Submission this intent produced.
     finalized_submission_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("submissions.id")
+    )
+    cleanup_deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "Orphan-intent cleanup claim + done marker (hardening pass 4b): "
+            "the conditional UPDATE claiming the intent (expires_at past, "
+            "never finalized, unclaimed) sets this, and the same column "
+            "doubles as the deletion record — an intent has no separate "
+            "fact row, and no protection transition races it (finalize "
+            "refuses expired intents under the intent-row FOR UPDATE it "
+            "already takes, so a claim and a finalize serialize on the "
+            "row). Cleared to release after a provider failure; kept on "
+            "FileNotFoundError (idempotent success). Cleanup only ever "
+            "claims intents past expires_at: the presigned URL TTL is "
+            "configured shorter than the intent TTL, so no legal PUT can "
+            "land after expires_at."
+        ),
     )
 
 

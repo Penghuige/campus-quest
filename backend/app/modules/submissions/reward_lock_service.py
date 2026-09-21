@@ -124,6 +124,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.events import DomainEvent, DomainEventPublisher
+from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
 from app.modules.submissions.enums import RewardLockStatus, ValidationStatus
 from app.modules.submissions.models import RewardLockHistory, Submission
 from app.modules.submissions.validation_service import SubmissionNotFoundError
@@ -354,8 +355,16 @@ class RewardLockService:
             )
             established = (from_status, tier, points)
 
-        # (5) Claim transition + latest pointer.
+        # (5) Claim transition + latest pointer. The UNDER_REVIEW entry
+        # carries the deletion-claim guard (hardening pass 4b, spec
+        # §27): entering the review pipeline protects EVERY submission
+        # under the claim, so an in-flight cleanup claim (an overdue old
+        # version being deleted right now) refuses the transition with
+        # a typed 409 — protection must win, deletion is retryable (the
+        # validation job's bounded autoretry covers the seconds-level
+        # claim window).
         if status in _REVIEW_ENTRY_STATUSES:
+            await ensure_no_active_cleanup_claim(db, claim.id)
             claim.status = ClaimStatus.UNDER_REVIEW.value
         await self._bump_latest(db, claim, submission)
 

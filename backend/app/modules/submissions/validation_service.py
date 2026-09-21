@@ -108,6 +108,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.integrations.object_storage import ObjectStorage
+from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
 from app.modules.submissions.enums import FileType, ValidationStatus
 from app.modules.submissions.models import Submission, SubmissionValidation
 from app.modules.submissions.schema import SchemaParseError, SubmissionSchema
@@ -312,6 +313,15 @@ class ValidationService:
             claim is not None
             and ClaimStatus(claim.status) in _CLAIM_ACTIONABLE_STATUSES
         ):
+            # Deletion-claim guard (hardening pass 4b, spec §27): this
+            # transition moves EVERY submission under the claim into the
+            # protected set, so an in-flight cleanup claim (an overdue
+            # old version being deleted right now) must refuse it with
+            # a typed 409 — protection must win, deletion is retryable
+            # (the job's bounded autoretry covers the seconds-level
+            # claim window). Nothing is written: raising here rolls the
+            # whole tx1 back.
+            await ensure_no_active_cleanup_claim(db, claim.id)
             claim.status = ClaimStatus.VALIDATING.value
         run = SubmissionValidation(
             submission_id=submission.id,
