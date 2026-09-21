@@ -49,7 +49,16 @@ export function readCsrfToken(): string | null {
     .split(";")
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${CSRF_COOKIE_NAME}=`));
-  return match ? decodeURIComponent(match.slice(CSRF_COOKIE_NAME.length + 1)) : null;
+  if (!match) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(match.slice(CSRF_COOKIE_NAME.length + 1));
+  } catch {
+    // A malformed escape sequence must never break the request path; a
+    // cookie we cannot decode simply provides no CSRF token.
+    return null;
+  }
 }
 
 function hasNativeBody(value: unknown): boolean {

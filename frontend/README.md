@@ -44,4 +44,17 @@ peer range.
 
 Unit tests use the Node built-in runner (`node:test`) executed through
 `tsx` — no extra framework dependency. Files live in `src/__tests__/*.test.ts`
-and are type-checked by `npm run typecheck` like any other source.
+and are type-checked by `npm run typecheck` like any other source. API calls
+in tests are exercised through a stubbed `globalThis.fetch` (the api client's
+test seam); no mocking library is used because
+`docs/quality/frontend-patterns.md` prescribes none.
+
+## e2e (spec only until Plan 10)
+
+`e2e/auth.spec.ts` holds the registration/login Playwright flows written by
+Plan 09 Task 2. Playwright is NOT installed yet: the directory is excluded
+from `tsconfig.json` (by include list) and from ESLint (`eslint.config.mjs`
+globalIgnores), and every test is skipped unless `CQ_E2E=1` — so typecheck,
+lint, and build never depend on it. Plan 10 installs `@playwright/test`, adds
+the `test:e2e` script, removes the eslint ignore, and runs the suite with
+`CQ_E2E=1 CQ_E2E_BASE_URL=… CQ_E2E_API_URL=… CQ_E2E_OTP_CODE=…`.
