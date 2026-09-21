@@ -133,7 +133,13 @@ _CSV_SCHEMA = {
     ]
 }
 
-_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at", "headers"}
+_INTENT_FIELDS = {
+    "intent_id",
+    "upload_url",
+    "expires_at",
+    "headers",
+    "pinned_content_length",
+}
 _SUBMISSION_FIELDS = {
     "id",
     "claim_id",
@@ -545,6 +551,17 @@ async def test_full_submission_flow_enqueues_validation_and_reports_back(
     intent = intended.json()
     assert set(intent) == _INTENT_FIELDS
     assert "object_key" not in intent
+    # The signing contract is an adapter passthrough (hardening P4c):
+    # the echo headers are exactly what the fake adapter signed, and
+    # Content-Length is NOT among them — a browser cannot set it
+    # (forbidden header); the byte pin travels as the scalar field and
+    # equals the declared size that cleared the policy.
+    assert intent["headers"] == {
+        "If-None-Match": "*",
+        "Content-Type": "text/csv",
+    }
+    assert "Content-Length" not in intent["headers"]
+    assert intent["pinned_content_length"] == len(_CSV_BYTES)
     object_key = fake_storage.upload_urls[-1].object_key
 
     # -- the browser completes the presigned PUT directly to storage ----------

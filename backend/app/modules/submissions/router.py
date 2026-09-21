@@ -371,8 +371,10 @@ async def create_upload_intent(
 
     The browser PUTs the file straight to storage — the 200 MB payload
     never streams through this API. The response carries the intent id,
-    the short-lived URL, and the URL's expiry; the server-generated
-    object key stays server-side (spec §40).
+    the short-lived URL, the URL's expiry, and the adapter-owned signing
+    contract (echo headers + pinned byte count, passed through — see
+    ``UploadIntentResponse`` for the Content-Length browser semantics);
+    the server-generated object key stays server-side (spec §40).
     """
     await _enforce_rate_limit(limiter, "submissions:upload-intent", str(actor.user_id))
     intent = await uploads.create_upload_intent(
@@ -388,6 +390,7 @@ async def create_upload_intent(
         upload_url=intent.upload_url,
         expires_at=intent.url_expires_at,
         headers=intent.signed_headers,
+        pinned_content_length=intent.pinned_content_length,
     )
 
 

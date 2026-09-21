@@ -21,8 +21,10 @@ Single responsibility: the submission/review wire shapes, and nothing else.
   clients) nor any internal/audit column: privacy by construction.
 - ``UploadIntentResponse`` hands the client exactly what the presigned
   flow needs: the intent id to finalize later, the short-lived upload
-  URL, and when that URL dies. The server-generated object key stays
-  server-side.
+  URL, when that URL dies, and the adapter-owned signing contract
+  (echo headers + pinned byte count — see the model docstring for the
+  browser-forbidden-header semantics of Content-Length). The
+  server-generated object key stays server-side.
 - ``SubmissionValidationResponse``/``ValidationReportPayload`` are the
   student-safe §12.4 projection: the persisted report travels as-is
   (it contains no object keys and no parser internals by construction —
@@ -75,16 +77,29 @@ class UploadIntentRequest(BaseModel):
 
 class UploadIntentResponse(BaseModel):
     """The issued grant: the intent id for the later finalize call, the
-    short-lived presigned upload URL, its expiry instant, and the exact
-    PUT headers the URL signed — the client echoes them verbatim on the
-    PUT (write-once condition, pinned content type, declared byte
-    length); reconstructing them from documentation is a contract gap
-    the composition smoke surfaced (PR #2 hardening step 13)."""
+    short-lived presigned upload URL, its expiry instant, and the
+    signing contract PASSED THROUGH from the storage adapter — the PUT
+    headers the URL signed (``headers``) and the pinned byte count
+    (``pinned_content_length``). The client echoes the headers verbatim
+    (write-once condition, pinned content type); reconstructing them
+    from documentation is a contract gap the composition smoke
+    surfaced (PR #2 hardening step 13).
+
+    Browser semantics (hardening P4c): ``headers`` NEVER contains
+    Content-Length — a browser cannot set it programmatically (a
+    forbidden request header, MDN), so advertising it would tell the
+    client to do the impossible. Instead the client must send a body of
+    EXACTLY ``pinned_content_length`` bytes: a browser does that with a
+    Blob/File whose declared size equals the pin (the browser then
+    frames Content-Length itself and the signature holds), a non-browser
+    client sets Content-Length explicitly.
+    """
 
     intent_id: UUID
     upload_url: str
     expires_at: datetime
     headers: dict[str, str]
+    pinned_content_length: int
 
 
 class UploadCompleteRequest(BaseModel):

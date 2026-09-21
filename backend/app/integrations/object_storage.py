@@ -27,11 +27,27 @@ from uuid import UUID
 
 @dataclass(frozen=True)
 class UploadUrl:
-    """A short-lived presigned upload target for one server-generated key."""
+    """A short-lived presigned upload target for one server-generated key.
+
+    The signing contract travels WITH the URL (single source of truth):
+    ``client_headers`` are the headers the client MUST send verbatim with
+    its PUT (they are signed — omitting or altering one breaks the
+    signature), and ``pinned_content_length`` is the exact byte count the
+    PUT body must carry. Content-Length is deliberately NOT a member of
+    ``client_headers``: browsers cannot set it programmatically (a
+    forbidden request header, MDN) — a browser satisfies the pin with a
+    Blob whose declared size equals ``pinned_content_length`` and lets
+    the browser frame the header itself; a non-browser client sets
+    Content-Length explicitly (Python clients can and must).
+    """
 
     object_key: str
     url: str
     expires_at: datetime
+    client_headers: dict[str, str]
+    #: ``None`` only when the URL was issued without a signed length
+    #: (legacy/test callers); the production upload flow always pins.
+    pinned_content_length: int | None
 
 
 @dataclass(frozen=True)
@@ -89,9 +105,21 @@ class ObjectStorage(Protocol):
         never replace a stored object, at any time inside or past the URL
         TTL. Callers must not rely on database bookkeeping to revoke the
         URL: the single-write guarantee is the provider's, not the
-        application's. The client is required to send the pinned headers
-        (Content-Type, Content-Length, If-None-Match: *) with its PUT —
-        omitting a signed header is itself a rejection.
+        application's. The client echoes the returned ``client_headers``
+        (Content-Type, If-None-Match) and sends a body of exactly
+        ``pinned_content_length`` bytes — omitting a signed header or
+        framing any other length is itself a rejection.
+
+        Ownership of the signing contract (hardening P4c): the ADAPTER
+        owns the signing policy and describes it on this return value;
+        the application echoes, never reconstructs. Whatever headers and
+        length the adapter signed must be exactly what the client is
+        told to send — a second, independent reconstruction in service
+        code would silently desync from the real signature the day the
+        policy changes. ``Content-Length`` is never a client header: it
+        is a browser-forbidden header, so it travels as the scalar
+        ``pinned_content_length`` (a Blob of that declared size lets the
+        browser satisfy the pin automatically).
         """
         ...
 

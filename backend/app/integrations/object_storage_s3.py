@@ -35,7 +35,13 @@ frozen source of truth):
     header (a PUT whose body length differs is rejected 403 — the
     client cannot frame the request with any other length without
     breaking the signature). ``expires_at`` comes from the injected
-    ``Clock`` (``SystemClock`` by default), mirroring the fake.
+    ``Clock`` (``SystemClock`` by default), mirroring the fake;
+  * the signing contract is returned, not documented elsewhere:
+    ``client_headers`` (If-None-Match, Content-Type — no
+    Content-Length, a browser-forbidden header) and
+    ``pinned_content_length`` describe exactly what was signed, and the
+    application echoes them to the client verbatim (hardening P4c:
+    single-source contract, no independent reconstruction).
 - ``head_object`` maps a provider 404 to ``None``; ``NoSuchBucket`` is
   NOT a missing-object answer but a broken deployment configuration and
   fails closed as ``PermanentProviderError``.
@@ -219,6 +225,14 @@ class S3ObjectStorage:
         client cannot frame its request at any other length without
         breaking the signature (403). The smoke test proves both
         behaviors against real MinIO over real HTTP.
+
+        The signing contract rides on the return value (single source of
+        truth, hardening P4c): ``client_headers`` carries exactly the
+        headers a client must echo verbatim (If-None-Match, the pinned
+        Content-Type — Content-Length is browser-forbidden and stays
+        OUT of it), and ``pinned_content_length`` is the byte count the
+        body must carry. The application passes both through to the
+        client untouched; it never rebuilds them.
         """
         object_key = f"submissions/{claim_id}/{uuid4()}"
         params: dict[str, Any] = {
@@ -241,6 +255,11 @@ class S3ObjectStorage:
             object_key=object_key,
             url=url,
             expires_at=self._clock.now() + expires_in,
+            client_headers={
+                "If-None-Match": "*",
+                "Content-Type": content_type,
+            },
+            pinned_content_length=content_length,
         )
 
     def head_object(self, *, object_key: str) -> ObjectHead | None:

@@ -118,6 +118,29 @@ def test_upload_url_records_pinned_content_length() -> None:
     assert storage.pinned_content_lengths[unpinned.object_key] is None
 
 
+def test_upload_url_returns_adapter_signing_contract() -> None:
+    """The fake mirrors the S3 adapter's return contract (hardening
+    P4c): the echo headers a client must send verbatim, and the pinned
+    byte count as a scalar — Content-Length is never a client header
+    (browser-forbidden), so it must not appear in client_headers."""
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID,
+        content_type="text/csv",
+        expires_in=TTL,
+        content_length=512,
+    )
+    assert url.client_headers == {"If-None-Match": "*", "Content-Type": "text/csv"}
+    assert "Content-Length" not in url.client_headers
+    assert url.pinned_content_length == 512
+
+    unpinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    assert unpinned.client_headers == {"If-None-Match": "*", "Content-Type": "text/csv"}
+    assert unpinned.pinned_content_length is None
+
+
 def test_head_object_returns_pinned_metadata_after_simulated_upload() -> None:
     storage = FakeObjectStorage()
     url = storage.create_upload_url(
