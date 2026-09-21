@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
@@ -151,6 +151,16 @@ class SystemSettingService:
         """
         stored_key = _validated("key", key, _KEY_MAX_LENGTH)
         stored_value = _validated("value", value)
+        # First write upsert (PR #2 closure review P2): two concurrent
+        # writes of a brand-new key both miss the FOR UPDATE select and
+        # both INSERT — the pk loser surfaced IntegrityError as a 500.
+        # The insert path is now a PostgreSQL UPSERT: the constraint
+        # conflict resolves inside the database, so a concurrent admin
+        # write is serialization, never an INTERNAL_ERROR. The
+        # pre-read still supplies the audited old_value (a lost race
+        # may audit a stale old_value; the row itself stays correct —
+        # last write wins under the upsert, and a settings key has one
+        # authoritative writer in practice).
         row = await db.scalar(
             select(SystemSetting)
             .where(SystemSetting.key == stored_key)
@@ -162,11 +172,27 @@ class SystemSettingService:
         )
         previous = row.value if row is not None else None
         if row is None:
-            db.add(
-                SystemSetting(
-                    key=stored_key, value=stored_value, updated_by_user_id=actor.user_id
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            statement = (
+                pg_insert(SystemSetting)
+                .values(
+                    key=stored_key,
+                    value=stored_value,
+                    updated_by_user_id=actor.user_id,
+                )
+                .on_conflict_do_update(
+                    index_elements=[SystemSetting.key],
+                    set_={
+                        "value": stored_value,
+                        "updated_by_user_id": actor.user_id,
+                        # The ORM-level onupdate does not fire for this
+                        # core upsert — stamp the touch explicitly.
+                        "updated_at": func.now(),
+                    },
                 )
             )
+            await db.execute(statement)
         else:
             row.value = stored_value
             row.updated_by_user_id = actor.user_id
