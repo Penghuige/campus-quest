@@ -72,12 +72,17 @@ class RateLimitRule:
 
 
 # One rule per rate-limited endpoint: identity endpoints plus the
-# student-heavy task actions. Login caps are tighter-window
-# (brute force); send-flavored endpoints cap per hour on top of the OTP
-# service's own per-phone/per-IP caps (spec §33.1/§33.2). Claim/abandon cap
-# per authenticated user id: both already carry business-side ceilings (the
-# §8.2 quota, the §8.5 daily abandon cap), so these windows are
-# anti-hammering, not quota enforcement.
+# student-heavy task and community write actions. Login caps are
+# tighter-window (brute force); send-flavored endpoints cap per hour on top
+# of the OTP service's own per-phone/per-IP caps (spec §33.1/§33.2).
+# Claim/abandon cap per authenticated user id: both already carry
+# business-side ceilings (the §8.2 quota, the §8.5 daily abandon cap), so
+# these windows are anti-hammering, not quota enforcement. The community
+# buckets (plan 06 task 9) key the same way: comment create and report are
+# the stricter pair — publish-immediately thread content (spec §21.1 rate
+# limit) and moderation-queue flooding (spec §23) are the abuse surfaces —
+# while edit/vote/reaction windows only anti-hammer toggles the services
+# already keep idempotent.
 RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
     rule.bucket: rule
     for rule in (
@@ -90,6 +95,11 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="me:phone-change", limit=5, window_seconds=3600),
         RateLimitRule(bucket="tasks:claim", limit=20, window_seconds=60),
         RateLimitRule(bucket="claims:abandon", limit=10, window_seconds=60),
+        RateLimitRule(bucket="comments:create", limit=10, window_seconds=60),
+        RateLimitRule(bucket="comments:edit", limit=20, window_seconds=60),
+        RateLimitRule(bucket="comments:vote", limit=30, window_seconds=60),
+        RateLimitRule(bucket="comments:reaction", limit=30, window_seconds=60),
+        RateLimitRule(bucket="comments:report", limit=5, window_seconds=60),
     )
 }
 
