@@ -26,6 +26,7 @@ from app.modules.notifications import router as notifications_router
 from app.modules.points import router as points_router
 from app.modules.rankings import router as rankings_router
 from app.modules.submissions import router as submissions_router
+from app.modules.system import router as system_router
 from app.modules.tasks import router as tasks_router
 from app.workers.celery_app import get_celery_app
 
@@ -89,6 +90,12 @@ def create_app() -> FastAPI:
     # subclasses BusinessError, so the core envelope handler covers it
     # and no module-local registration is needed.
     app.include_router(notifications_router.router, prefix="/api/v1")
+
+    # System settings admin API (PR #2 hardening step 8): the audited
+    # CURRENT_ACADEMIC_TERM surface — GET/PUT resolve through the same
+    # typed BusinessError family, so the core envelope handler covers
+    # this module too.
+    app.include_router(system_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done
