@@ -34,6 +34,10 @@ const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
 const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
 const STAFF = process.env.CQ_E2E_STAFF; // "teacher@school.edu:correct-horse"
 const STAFF_TOTP_SECRET = process.env.CQ_E2E_STAFF_TOTP_SECRET;
+// An UNRELATED teacher for the access-denied negative (F6): a second
+// seeded account with no collaboration on the first teacher's task.
+const STAFF2 = process.env.CQ_E2E_STAFF2;
+const STAFF2_TOTP_SECRET = process.env.CQ_E2E_STAFF2_TOTP_SECRET;
 
 test.skip(
   !E2E_ENABLED,
@@ -83,14 +87,16 @@ function totpCode(secret: string, atMs: number = Date.now()): string {
 }
 
 /** Log in through the staff login page (T8 surface) with password + TOTP. */
-async function loginAsTeacher(page: import("@playwright/test").Page): Promise<void> {
-  const [email, password] = (STAFF ?? "").split(":");
+async function loginAsStaff(
+  page: import("@playwright/test").Page,
+  credentials: string,
+  totpSecret: string,
+): Promise<void> {
+  const [email, password] = credentials.split(":");
   await page.goto(STAFF_LOGIN_URL);
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
-  await page
-    .getByLabel("动态验证码")
-    .fill(totpCode(STAFF_TOTP_SECRET!));
+  await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/`));
 }
@@ -102,10 +108,13 @@ function assignmentsCsv(): string {
 
 test.describe("teacher workspace (brief: create -> import -> publish)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAsTeacher(page);
+    await loginAsStaff(page, STAFF!, STAFF_TOTP_SECRET!);
   });
 
-  test("create draft -> import preview/confirm -> publish -> status flips", async ({ page }) => {
+  test("create draft -> edit-in schema -> import preview/confirm -> publish; unrelated teacher denied", async ({
+    page,
+    browser,
+  }) => {
     await page.goto(`${BASE_URL}/teacher/tasks`);
 
     // Create dialog: the publish-validation fields; obvious mistakes stay
@@ -132,6 +141,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // Detail: import flow (spec §7.1 preview -> explicit confirm -> summary).
     await row.getByRole("link").click();
+    const detailUrl = page.url();
     await page.getByLabel("任务单元导入").scrollIntoViewIfNeeded();
     await page.locator("#assignment-import-file").setInputFiles({
       name: "assignments.csv",
@@ -151,6 +161,18 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await preview.getByRole("button", { name: /确认导入 1 行/ }).click();
     await expect(page.getByText("已成功导入 1 个任务单元")).toBeVisible();
 
+    // Edit-in the publish-required schema (the create dialog left it
+    // draft-legal): the edit dialog reuses the create fields, prefilled.
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    const editDialog = page.locator("dialog[aria-labelledby='edit-task-title']");
+    await expect(editDialog).toBeVisible();
+    await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
+    await editDialog.locator("#task-schema-version").fill("1");
+    await editDialog.getByRole("button", { name: "保存修改" }).click();
+    await expect(editDialog).not.toBeVisible();
+    // The detail refetch renders the stored schema in the facts.
+    await expect(page.getByText(/v1.*columns/)).toBeVisible();
+
     // Publish from the detail head: explicit confirm, then the badge flips.
     await page.getByRole("button", { name: "发布", exact: true }).click();
     const confirm = page.locator("dialog[aria-labelledby='lifecycle-confirm-title']");
@@ -158,6 +180,22 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await expect(confirm.getByText(/发布后任务立即对学生可见/)).toBeVisible();
     await confirm.getByRole("button", { name: "确认发布" }).click();
     await expect(page.locator(".page-head").getByText("已发布")).toBeVisible();
+
+    // F6: an UNRELATED teacher (no ownership/collaboration) opening this
+    // task's detail gets the access-denied panel, not broken sections.
+    test.skip(
+      STAFF2 === undefined || STAFF2_TOTP_SECRET === undefined,
+      "the unrelated-teacher check needs CQ_E2E_STAFF2 + CQ_E2E_STAFF2_TOTP_SECRET (a second seeded teacher); Plan 10's fixture provides them.",
+    );
+    const context = await browser.newContext();
+    const other = await context.newPage();
+    await loginAsStaff(other, STAFF2!, STAFF2_TOTP_SECRET!);
+    await other.goto(detailUrl);
+    await expect(
+      other.getByText("任务不存在，或您不是该任务的所有者 / 协作者，无法访问。"),
+    ).toBeVisible();
+    await expect(other.getByRole("link", { name: "返回任务管理" })).toBeVisible();
+    await context.close();
   });
 
   test("student session gets the permission-denied panel, not broken controls", async ({

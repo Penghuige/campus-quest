@@ -23,8 +23,9 @@ import { formatFileSize } from "@/features/submissions/api";
 import { rarityView } from "@/features/tasks/display";
 
 import { getTeacherTask, type TaskTransitionDto, type TeacherTaskDto } from "./teacherApi";
-import { taskStatusView } from "./teacherView";
+import { taskEditable, taskStatusView } from "./teacherView";
 import { TaskLifecycleActions } from "./TaskLifecycleActions";
+import { EditTaskDialog } from "./EditTaskDialog";
 import { AssignmentImport } from "./AssignmentImport";
 import { CollaboratorsPanel } from "./CollaboratorsPanel";
 import { CommunityModeration } from "./CommunityModeration";
@@ -41,6 +42,7 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
   const [state, setState] = useState<DetailState>({ kind: "loading" });
   const [reloadSeed, setReloadSeed] = useState(0);
   const [statsSeed, setStatsSeed] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     // The effect only STARTS the fetch (the island rule): refetches after
@@ -135,11 +137,22 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
             <span className="page-subtitle">创建于 {formatDeadlineDateTime(createdMs)}</span>
           </p>
         </div>
-        <TaskLifecycleActions
-          taskId={task.id}
-          status={task.status}
-          onTransitioned={onTransitioned}
-        />
+        <div className="dialog-actions">
+          {taskEditable(task.status) ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setEditOpen(true)}
+            >
+              编辑
+            </button>
+          ) : null}
+          <TaskLifecycleActions
+            taskId={task.id}
+            status={task.status}
+            onTransitioned={onTransitioned}
+          />
+        </div>
       </div>
 
       <section className="section" aria-label="任务配置">
@@ -204,6 +217,18 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
           ) : null}
         </dl>
       </section>
+
+      {editOpen ? (
+        <EditTaskDialog
+          task={task}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          onUpdated={() => {
+            setEditOpen(false);
+            setReloadSeed((seed) => seed + 1);
+          }}
+        />
+      ) : null}
 
       <TaskStatisticsPanel taskId={task.id} reloadSeed={statsSeed} />
       <AssignmentImport taskId={task.id} onImported={onImported} />

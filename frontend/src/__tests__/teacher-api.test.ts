@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import {
   addCollaborator,
   approveSubmission,
+  updateTeacherTask,
   confirmAssignmentImport,
   createTeacherTask,
   getTaskStatistics,
@@ -162,6 +163,23 @@ describe("teacher task endpoints", () => {
     stubFetch("", 204);
     await removeCollaborator("t1", "t2");
     assert.equal(recorded?.method, "DELETE");
+  });
+
+  test("update PATCHes a DIFF-ONLY partial body verbatim", async () => {
+    stubFetch(JSON.stringify({ id: "t1", status: "DRAFT" }));
+    await updateTeacherTask("t1", {
+      title: "新标题",
+      submission_schema: { columns: ["platform"] },
+      submission_schema_version: 1,
+    });
+    assert.equal(recorded?.url, "/api/v1/teacher/tasks/t1");
+    assert.equal(recorded?.method, "PATCH");
+    assert.deepEqual(JSON.parse(String(recorded?.body)), {
+      title: "新标题",
+      submission_schema: { columns: ["platform"] },
+      submission_schema_version: 1,
+    });
+    assert.equal(recorded?.credentials, "include");
   });
 
   test("statistics rides GET /teacher/tasks/{id}/statistics", async () => {

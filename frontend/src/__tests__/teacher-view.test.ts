@@ -19,10 +19,19 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import type { ImportPreviewDto, ModerationCommentDto } from "../features/admin/teacherApi";
+import { ApiError } from "../lib/errors";
+import type {
+  ImportPreviewDto,
+  ModerationCommentDto,
+  TeacherTaskDto,
+} from "../features/admin/teacherApi";
 import {
+  capRowErrors,
   COLLABORATOR_PERMISSIONS,
+  describeEditError,
+  envelopeFields,
   EMPTY_TASK_FORM,
+  frozenFieldText,
   importPreviewView,
   INVALIDATE_WARNING_TEXT,
   lifecycleActions,
@@ -34,7 +43,11 @@ import {
   reviewStatusView,
   reviewTextReady,
   rewardLockView,
+  taskEditable,
+  taskFormFromTask,
   taskFormToBody,
+  taskFormToUpdateBody,
+  toDatetimeLocalValue,
   taskStatusView,
   validateTaskForm,
   versionText,
@@ -58,6 +71,231 @@ function readyForm() {
     fileTypes: ["CSV"],
   });
 }
+
+/** A schema-less FIXED DRAFT — exactly what the create dialog can produce. */
+function draftTask(overrides: Partial<TeacherTaskDto> = {}): TeacherTaskDto {
+  return {
+    id: "t1",
+    title: "图书馆书影采集",
+    description: "拍摄图书馆藏书",
+    task_type: "DATA_CRAWL",
+    rarity: "NORMAL",
+    base_reward_points: 160,
+    status: "DRAFT",
+    deadline_mode: "FIXED",
+    fixed_deadline_at: "2026-10-30T10:00:00.000Z",
+    duration_minutes: null,
+    claim_cutoff_minutes: 240,
+    grace_period_minutes: 1440,
+    submission_schema: null,
+    submission_schema_version: null,
+    allowed_file_types: ["CSV"],
+    max_file_size_bytes: 50 * 1024 * 1024,
+    notify_24h: true,
+    notify_4h: true,
+    notification_channels: ["SMS", "EMAIL", "IN_APP"],
+    published_at: null,
+    closed_at: null,
+    created_at: "2026-09-20T12:00:00Z",
+    ...overrides,
+  } as TeacherTaskDto;
+}
+
+describe("task edit surface (spec §6.2 V1 edit rule)", () => {
+  test("taskEditable: DRAFT/PUBLISHED/PAUSED yes; CLOSED/ARCHIVED never", () => {
+    assert.equal(taskEditable("DRAFT"), true);
+    assert.equal(taskEditable("PUBLISHED"), true);
+    assert.equal(taskEditable("PAUSED"), true);
+    assert.equal(taskEditable("CLOSED"), false);
+    assert.equal(taskEditable("ARCHIVED"), false);
+  });
+
+  test("taskFormFromTask round-trips the editable values (ISO -> datetime-local)", () => {
+    const values = taskFormFromTask(draftTask());
+    assert.equal(values.title, "图书馆书影采集");
+    assert.equal(values.baseRewardPoints, "160");
+    assert.equal(values.deadlineMode, "FIXED");
+    // Zone-independent symmetry: the datetime-local value is LOCAL wall
+    // time (the input's semantics), so re-parsing it yields the task's
+    // UTC instant on ANY host timezone — no phantom deadline diff.
+    assert.equal(
+      new Date(values.fixedDeadlineLocal).getTime(),
+      Date.parse("2026-10-30T10:00:00.000Z"),
+    );
+    assert.equal(
+      toDatetimeLocalValue(Date.parse("2026-10-30T10:00:00.000Z")),
+      values.fixedDeadlineLocal,
+    );
+    assert.equal(values.maxFileSizeMb, "50");
+    assert.deepEqual(values.fileTypes, ["CSV"]);
+    assert.equal(values.submissionSchema, "");
+    assert.equal(values.submissionSchemaVersion, "");
+  });
+
+  test("DRAFT: changed fields ride the PATCH; unchanged fields stay home", () => {
+    const values = {
+      ...taskFormFromTask(draftTask()),
+      submissionSchema: '{"columns":["platform","keyword"]}',
+      submissionSchemaVersion: "1",
+    };
+    const result = taskFormToUpdateBody(values, draftTask(), NOW);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, {});
+    // ONLY the two schema fields changed -> only they ride the body.
+    assert.deepEqual(result.body, {
+      submission_schema: { columns: ["platform", "keyword"] },
+      submission_schema_version: 1,
+    });
+  });
+
+  test("DRAFT: no diff -> empty body (the dialog closes without a request)", () => {
+    const result = taskFormToUpdateBody(taskFormFromTask(draftTask()), draftTask(), NOW);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.body, {});
+  });
+
+  test("PUBLISHED: contract diffs are EXCLUDED — an unchanged value must not ride either", () => {
+    const task = draftTask({ status: "PUBLISHED", published_at: "2026-09-21T00:00:00Z" });
+    const values = {
+      ...taskFormFromTask(task),
+      title: "更新后的标题",
+      // Contract-looking changes on a published task...
+      baseRewardPoints: "999",
+      submissionSchema: '{"columns":["x"]}',
+    };
+    const result = taskFormToUpdateBody(values, task, NOW);
+    assert.equal(result.ok, true);
+    // ...never enter the body; only the presentation change rides.
+    assert.deepEqual(result.body, { title: "更新后的标题" });
+  });
+
+  test("provided-only validation: an unchanged invalid band never blocks the save", () => {
+    // A DRAFT whose deadline is already in the past (legal as a draft):
+    // editing ONLY the title must not be blocked by the deadline band.
+    const task = draftTask({ fixed_deadline_at: "2020-01-01T00:00:00.000Z" });
+    const values = { ...taskFormFromTask(task), title: "仅改标题" };
+    const result = taskFormToUpdateBody(values, task, NOW);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.body, { title: "仅改标题" });
+  });
+
+  test("a CHANGED field must pass its band (reward 0 refused client-side)", () => {
+    const values = { ...taskFormFromTask(draftTask()), baseRewardPoints: "0" };
+    const result = taskFormToUpdateBody(values, draftTask(), NOW);
+    assert.equal(result.ok, false);
+    assert.equal(result.errors.baseRewardPoints, "基础奖励积分必须大于 0");
+  });
+
+  test("a changed-but-unparseable schema text is refused client-side", () => {
+    const values = { ...taskFormFromTask(draftTask()), submissionSchema: "{bad" };
+    const result = taskFormToUpdateBody(values, draftTask(), NOW);
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.errors.submissionSchema,
+      "提交校验 schema 必须是非空 JSON 对象",
+    );
+  });
+
+  test("the load-bearing chain: create schema-less -> edit-in schema -> publish", () => {
+    // Step 1: the create dialog accepts a schema-less DRAFT (DRAFT-legal).
+    const createResult = taskFormToBody(readyForm(), NOW);
+    assert.equal(createResult.ok, true);
+    assert.equal(createResult.body?.submission_schema, null);
+
+    // Step 2 (server): the created DRAFT echoes back without a schema.
+    const task = draftTask();
+
+    // Step 3: the edit dialog adds the schema; the diff body carries it.
+    const editResult = taskFormToUpdateBody(
+      {
+        ...taskFormFromTask(task),
+        submissionSchema: '{"columns":["platform","keyword"]}',
+        submissionSchemaVersion: "1",
+      },
+      task,
+      NOW,
+    );
+    assert.equal(editResult.ok, true);
+    assert.deepEqual(editResult.body?.submission_schema, {
+      columns: ["platform", "keyword"],
+    });
+    assert.equal(editResult.body?.submission_schema_version, 1);
+
+    // Step 4: publish becomes available and is confirm-gated.
+    const publish = lifecycleActions("DRAFT")[0];
+    assert.equal(publish.verb, "publish");
+    assert.equal(publish.confirmRequired, true);
+  });
+
+  test("frozenFieldText branches on details.fields, never the message", () => {
+    const error = new ApiError({
+      code: "VALIDATION_ERROR",
+      message: "some unrelated message text",
+      status: 400,
+      details: { fields: ["base_reward_points", "deadline_mode"], status: "PUBLISHED" },
+    });
+    assert.equal(
+      frozenFieldText(error),
+      "以下字段在发布后已冻结，不可修改：基础奖励积分、截止模式",
+    );
+    // Any other failure shape: null (the generic path handles it).
+    assert.equal(
+      frozenFieldText(
+        new ApiError({ code: "VALIDATION_ERROR", message: "x", status: 400, details: null }),
+      ),
+      null,
+    );
+    assert.equal(
+      frozenFieldText(
+        new ApiError({ code: "TASK_NOT_CLAIMABLE", message: "x", status: 409, details: null }),
+      ),
+      null,
+    );
+    assert.equal(frozenFieldText(new Error("network")), null);
+    assert.deepEqual(envelopeFields(null), []);
+    assert.deepEqual(envelopeFields({ fields: ["a", 3, "b"] }), ["a", "b"]);
+  });
+
+  test("describeEditError: frozen line > envelope message > network", () => {
+    const frozen = describeEditError(
+      new ApiError({
+        code: "VALIDATION_ERROR",
+        message: "server text",
+        status: 400,
+        details: { fields: ["allowed_file_types"] },
+        requestId: "req-1",
+      }),
+    );
+    assert.equal(frozen.summary, "以下字段在发布后已冻结，不可修改：允许的文件类型");
+    assert.equal(frozen.requestId, "req-1");
+
+    const generic = describeEditError(
+      new ApiError({ code: "VALIDATION_ERROR", message: "任务标题不能为空", status: 400 }),
+    );
+    assert.equal(generic.summary, "任务标题不能为空");
+
+    const network = describeEditError(new TypeError("offline"));
+    assert.equal(network.summary, "网络异常，请检查连接后重试");
+  });
+});
+
+describe("import row-error table cap (F4)", () => {
+  test("caps at 50 with an accurate hidden count; data itself untouched", () => {
+    const rows = Array.from({ length: 60 }, (_, index) => ({ n: index }));
+    const { visible, hiddenCount } = capRowErrors(rows);
+    assert.equal(visible.length, 50);
+    assert.equal(visible[0].n, 0);
+    assert.equal(hiddenCount, 10);
+    assert.equal(rows.length, 60, "the in-memory list stays whole");
+  });
+
+  test("short lists pass through untouched", () => {
+    const rows = [{ n: 1 }, { n: 2 }];
+    const { visible, hiddenCount } = capRowErrors(rows);
+    assert.equal(visible.length, 2);
+    assert.equal(hiddenCount, 0);
+  });
+});
 
 describe("taskStatusView (design §9: product wording, never raw enums)", () => {
   test("every status maps to zh-CN wording", () => {

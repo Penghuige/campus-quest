@@ -160,6 +160,45 @@ export function createTeacherTask(
   });
 }
 
+/**
+ * `TaskUpdateRequest` — the partial-edit body (absent/undefined means
+ * UNCHANGED; the backend also treats explicit null as unchanged, so a
+ * field can never be cleared through this surface). The V1 edit rule:
+ * presentation fields (title/description/notify/channels) on any live
+ * status; contract fields DRAFT-only — a contract field provided on a
+ * PUBLISHED/PAUSED task answers `ImmutableTaskFieldError` (the
+ * VALIDATION_ERROR envelope with `details.fields`), and CLOSED/ARCHIVED
+ * accept nothing. Build DIFF-ONLY bodies: an unchanged contract value
+ * sent on a published task is still "provided" and still rejected.
+ */
+export interface TaskUpdateBody {
+  title?: string;
+  description?: string;
+  notify_24h?: boolean;
+  notify_4h?: boolean;
+  notification_channels?: string[];
+  base_reward_points?: number;
+  deadline_mode?: string;
+  fixed_deadline_at?: string;
+  duration_minutes?: number;
+  claim_cutoff_minutes?: number;
+  submission_schema?: Record<string, unknown>;
+  submission_schema_version?: number;
+  allowed_file_types?: string[];
+  max_file_size_bytes?: number;
+}
+
+/** Partial edit under the V1 edit rule (PATCH /teacher/tasks/{id}). */
+export function updateTeacherTask(
+  taskId: string,
+  body: TaskUpdateBody,
+): Promise<TeacherTaskDto> {
+  return apiRequest<TeacherTaskDto>(
+    `/api/v1/teacher/tasks/${encodeURIComponent(taskId)}`,
+    { method: "PATCH", body },
+  );
+}
+
 /** The five lifecycle verbs (spec §6.2 transition table). */
 export const TASK_LIFECYCLE_VERBS = [
   "publish",

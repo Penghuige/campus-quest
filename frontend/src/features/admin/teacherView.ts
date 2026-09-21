@@ -16,6 +16,8 @@
  * one (the Object.keys shape is pinned by unit test).
  */
 import { formatFileSize } from "@/features/submissions/api";
+import type { AuthErrorView } from "@/features/auth/errors";
+import { isApiError } from "@/lib/errors";
 
 import type {
   ImportPreviewDto,
@@ -24,6 +26,8 @@ import type {
   TaskCreateBody,
   TaskFileTypeKey,
   TaskLifecycleVerb,
+  TaskUpdateBody,
+  TeacherTaskDto,
 } from "./teacherApi";
 
 // --- task status (design §9: product wording, color supplemental) ---------------------
@@ -354,6 +358,319 @@ export function taskFormToBody(
   };
 }
 
+// --- task edit (spec §6.2 V1 edit rule; the create form reused) ------------------------
+
+/** Form keys the create/edit bands and the edit rule key off. */
+export type TaskFormFieldKey =
+  | "title"
+  | "description"
+  | "baseRewardPoints"
+  | "deadlineMode"
+  | "fixedDeadlineLocal"
+  | "durationMinutes"
+  | "claimCutoffMinutes"
+  | "rarity"
+  | "fileTypes"
+  | "maxFileSizeMb"
+  | "submissionSchema"
+  | "submissionSchemaVersion";
+
+/**
+ * The frozen set in form terms: the backend's `_CONTRACT_FIELDS` plus
+ * rarity (which the update transport cannot carry at all). An
+ * affordance only — the server's `ImmutableTaskFieldError` envelope
+ * stays the verdict.
+ */
+export const POST_PUBLISH_FROZEN_FIELDS: ReadonlySet<TaskFormFieldKey> =
+  new Set([
+    "baseRewardPoints",
+    "deadlineMode",
+    "fixedDeadlineLocal",
+    "durationMinutes",
+    "claimCutoffMinutes",
+    "submissionSchema",
+    "submissionSchemaVersion",
+    "fileTypes",
+    "maxFileSizeMb",
+    "rarity",
+  ]);
+
+/**
+ * Whether the edit surface renders at all: DRAFT edits everything,
+ * PUBLISHED/PAUSED edit presentation fields, CLOSED/ARCHIVED accept
+ * nothing (a fieldless edit is a backend no-op — the UI offers no edit).
+ */
+export function taskEditable(status: string): boolean {
+  return status === "DRAFT" || status === "PUBLISHED" || status === "PAUSED";
+}
+
+/**
+ * Epoch ms -> a `datetime-local` input value in the BROWSER's zone.
+ *
+ * Symmetry is the contract: `new Date(value)` (how every consumer of a
+ * datetime-local string parses it, including this module's own band
+ * checks and body builders) interprets the string as LOCAL wall time,
+ * so seeding the input must ALSO render local wall time — slicing the
+ * UTC ISO string instead shifts every round-trip by the zone offset and
+ * manufactures a phantom deadline diff (patterns §14).
+ */
+export function toDatetimeLocalValue(ms: number): string {
+  const date = new Date(ms);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/** Initial form values from the task detail (ISO -> datetime-local). */
+export function taskFormFromTask(task: TeacherTaskDto): TaskFormValues {
+  return {
+    title: task.title,
+    description: task.description,
+    baseRewardPoints: String(task.base_reward_points),
+    deadlineMode: task.deadline_mode === "RELATIVE" ? "RELATIVE" : "FIXED",
+    fixedDeadlineLocal:
+      task.fixed_deadline_at !== null
+        ? toDatetimeLocalValue(Date.parse(task.fixed_deadline_at))
+        : "",
+    durationMinutes:
+      task.duration_minutes !== null ? String(task.duration_minutes) : "",
+    claimCutoffMinutes: String(task.claim_cutoff_minutes),
+    rarity: task.rarity,
+    fileTypes: [...task.allowed_file_types] as TaskFileTypeKey[],
+    maxFileSizeMb: String(Math.round(task.max_file_size_bytes / (1024 * 1024))),
+    submissionSchema:
+      task.submission_schema !== null
+        ? JSON.stringify(task.submission_schema)
+        : "",
+    submissionSchemaVersion:
+      task.submission_schema_version !== null
+        ? String(task.submission_schema_version)
+        : "",
+  };
+}
+
+export interface TaskFormToUpdateResult {
+  ok: boolean;
+  /** Diff-only PATCH body; `{}` when nothing changed. */
+  body?: TaskUpdateBody;
+  errors: TaskFormErrors;
+}
+
+function sameSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((value, index) => value === b[index]);
+}
+
+/**
+ * Build the DIFF-ONLY update body (spec §6.2). This is not politeness —
+ * it is the contract: the backend counts any non-null provided contract
+ * field as PROVIDED, so an unchanged value sent on a PUBLISHED task is
+ * still an `ImmutableTaskFieldError`. Contract fields therefore enter
+ * the body only when the task is DRAFT and the value actually changed;
+ * presentation fields ride whenever they differ.
+ *
+ * Validation mirrors the server's provided-only scope: a band error on
+ * an UNCHANGED field does not block the save (a DRAFT may stay
+ * incomplete); a changed field must pass its band; a schema text that
+ * changed but does not parse is refused client-side.
+ */
+export function taskFormToUpdateBody(
+  values: TaskFormValues,
+  task: TeacherTaskDto,
+  nowMs: number,
+): TaskFormToUpdateResult {
+  const allErrors = validateTaskForm(values, nowMs);
+  const draft = task.status === "DRAFT";
+  const body: TaskUpdateBody = {};
+
+  if (values.title.trim() !== task.title) {
+    body.title = values.title.trim();
+  }
+  if (values.description.trim() !== task.description) {
+    body.description = values.description.trim();
+  }
+
+  if (draft) {
+    const reward = parseIntOrNaN(values.baseRewardPoints);
+    if (!Number.isNaN(reward) && reward !== task.base_reward_points) {
+      body.base_reward_points = reward;
+    }
+    if (values.deadlineMode !== task.deadline_mode) {
+      body.deadline_mode = values.deadlineMode;
+    }
+    if (values.deadlineMode === "FIXED" && values.fixedDeadlineLocal !== "") {
+      const deadlineMs = new Date(values.fixedDeadlineLocal).getTime();
+      if (
+        !Number.isNaN(deadlineMs) &&
+        (task.fixed_deadline_at === null ||
+          deadlineMs !== Date.parse(task.fixed_deadline_at))
+      ) {
+        body.fixed_deadline_at = new Date(
+          values.fixedDeadlineLocal,
+        ).toISOString();
+      }
+    }
+    const duration = parseIntOrNaN(values.durationMinutes);
+    if (
+      values.deadlineMode === "RELATIVE" &&
+      !Number.isNaN(duration) &&
+      duration !== task.duration_minutes
+    ) {
+      body.duration_minutes = duration;
+    }
+    const cutoff = parseIntOrNaN(values.claimCutoffMinutes);
+    if (!Number.isNaN(cutoff) && cutoff !== task.claim_cutoff_minutes) {
+      body.claim_cutoff_minutes = cutoff;
+    }
+    if (!sameSet(values.fileTypes, task.allowed_file_types)) {
+      body.allowed_file_types = [...values.fileTypes];
+    }
+    const sizeBytes = Math.round(
+      Number.parseFloat(values.maxFileSizeMb) * 1024 * 1024,
+    );
+    if (Number.isFinite(sizeBytes) && sizeBytes !== task.max_file_size_bytes) {
+      body.max_file_size_bytes = sizeBytes;
+    }
+    if (values.submissionSchema.trim() !== "") {
+      const schema = parseSubmissionSchema(values.submissionSchema);
+      if (
+        schema !== null &&
+        JSON.stringify(schema) !== JSON.stringify(task.submission_schema ?? null)
+      ) {
+        body.submission_schema = schema;
+      }
+    }
+    const versionText = values.submissionSchemaVersion.trim();
+    if (versionText !== "") {
+      const version = parseIntOrNaN(versionText);
+      if (
+        !Number.isNaN(version) &&
+        version !== task.submission_schema_version
+      ) {
+        body.submission_schema_version = version;
+      }
+    }
+  }
+
+  // Validate PROVIDED fields only (the server's scope): map each body
+  // field to its band error; an unparseable schema text never reaches
+  // the body and is flagged when the text actually changed.
+  const errors: TaskFormErrors = {};
+  const pick = (formKey: keyof TaskFormErrors, provided: boolean) => {
+    if (provided && allErrors[formKey] !== undefined) {
+      errors[formKey] = allErrors[formKey];
+    }
+  };
+  pick("title", body.title !== undefined);
+  pick("description", body.description !== undefined);
+  pick("baseRewardPoints", body.base_reward_points !== undefined);
+  pick(
+    "deadline",
+    body.deadline_mode !== undefined ||
+      body.fixed_deadline_at !== undefined ||
+      body.duration_minutes !== undefined,
+  );
+  pick("claimCutoffMinutes", body.claim_cutoff_minutes !== undefined);
+  pick("fileTypes", body.allowed_file_types !== undefined);
+  pick("maxFileSizeMb", body.max_file_size_bytes !== undefined);
+  const schemaChanged =
+    values.submissionSchema.trim() !==
+    (task.submission_schema !== null
+      ? JSON.stringify(task.submission_schema)
+      : "");
+  pick(
+    "submissionSchema",
+    body.submission_schema !== undefined || schemaChanged,
+  );
+
+  return {
+    ok: Object.keys(errors).length === 0,
+    body,
+    errors,
+  };
+}
+
+// --- frozen-field envelope rendering (ImmutableTaskFieldError) -------------------------
+
+const FROZEN_FIELD_LABELS: Record<string, string> = {
+  base_reward_points: "基础奖励积分",
+  deadline_mode: "截止模式",
+  fixed_deadline_at: "固定截止时间",
+  duration_minutes: "提交时限",
+  claim_cutoff_minutes: "领取截止",
+  submission_schema: "提交校验 schema",
+  submission_schema_version: "schema 版本",
+  allowed_file_types: "允许的文件类型",
+  max_file_size_bytes: "单文件上限",
+};
+
+/** Wire field names an ImmutableTaskFieldError envelope carries, if any. */
+export function envelopeFields(details: unknown): string[] {
+  if (typeof details !== "object" || details === null) {
+    return [];
+  }
+  const fields = (details as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) {
+    return [];
+  }
+  return fields.filter((value): value is string => typeof value === "string");
+}
+
+/**
+ * The frozen-field line for an edit rejection: the backend's
+ * `ImmutableTaskFieldError` renders VALIDATION_ERROR with
+ * `details.fields` — branch on THAT (never the message text) and name
+ * the frozen fields in product wording. Null for any other failure.
+ */
+export function frozenFieldText(error: unknown): string | null {
+  if (!isApiError(error) || error.code !== "VALIDATION_ERROR") {
+    return null;
+  }
+  const fields = envelopeFields(error.details);
+  if (fields.length === 0) {
+    return null;
+  }
+  return `以下字段在发布后已冻结，不可修改：${fields
+    .map((field) => FROZEN_FIELD_LABELS[field] ?? field)
+    .join("、")}`;
+}
+
+/**
+ * Shared task-mutation error view (create + edit): network line, else
+ * the envelope message with the request id. The frozen-field special
+ * case belongs to the edit surface (`describeEditError`).
+ */
+export function describeTaskMutationError(
+  error: unknown,
+  fallback: string,
+): AuthErrorView {
+  if (!isApiError(error)) {
+    return { summary: "网络异常，请检查连接后重试", fieldErrors: {}, requestId: null };
+  }
+  return {
+    summary: error.message || fallback,
+    fieldErrors: {},
+    requestId: error.requestId,
+  };
+}
+
+/** Edit-mutation error view: frozen-field line > envelope message > network. */
+export function describeEditError(error: unknown): AuthErrorView {
+  const frozen = frozenFieldText(error);
+  if (frozen !== null) {
+    const requestId =
+      isApiError(error) && error.requestId !== null ? error.requestId : null;
+    return { summary: frozen, fieldErrors: {}, requestId };
+  }
+  return describeTaskMutationError(error, "保存失败，请稍后重试");
+}
+
 // --- assignment import preview (spec §7.1 steps 1-6) ----------------------------------
 
 export interface ImportErrorRowView {
@@ -431,6 +748,25 @@ export function importPreviewView(preview: ImportPreviewDto): ImportPreviewView 
 function parseRowNumber(where: string): number {
   const match = where.match(/^第 (\d+) 行$/);
   return match === null ? Number.MAX_SAFE_INTEGER : Number.parseInt(match[1], 10);
+}
+
+/** Render cap for the import row-error table (display only; data stays whole). */
+export const IMPORT_ERROR_TABLE_CAP = 50;
+
+/**
+ * Cap the error table at `cap` rows, reporting how many are hidden — a
+ * 5000-row import with thousands of errors must not freeze the page on
+ * table layout. The FULL list stays in memory; the counts line already
+ * carries the server totals.
+ */
+export function capRowErrors<T>(
+  rows: readonly T[],
+  cap: number = IMPORT_ERROR_TABLE_CAP,
+): { visible: T[]; hiddenCount: number } {
+  return {
+    visible: rows.slice(0, cap),
+    hiddenCount: Math.max(rows.length - cap, 0),
+  };
 }
 
 // --- review queue (spec §12.4 UI list, §11.3 decisions) --------------------------------

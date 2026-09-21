@@ -30,7 +30,7 @@ import {
   type ImportConfirmDto,
   type ImportPreviewDto,
 } from "./teacherApi";
-import { importPreviewView } from "./teacherView";
+import { capRowErrors, importPreviewView } from "./teacherView";
 
 /** Mirrors of the backend importer caps (Settings defaults). */
 export const IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -188,6 +188,9 @@ function ImportPreviewTable({
   onConfirm: () => void;
 }) {
   const view = importPreviewView(preview);
+  // Render cap (F4): a multi-thousand-row error list must not freeze the
+  // page on table layout; the full list stays in `view.rowErrors`.
+  const capped = capRowErrors(view.rowErrors);
   return (
     <div className="import-preview">
       <p className="upload-file-line">
@@ -228,7 +231,7 @@ function ImportPreviewTable({
                 </tr>
               </thead>
               <tbody>
-                {view.rowErrors.map((row) => (
+                {capped.visible.map((row) => (
                   <tr key={row.key}>
                     <td>{row.where}</td>
                     <td className="mono">{row.platform ?? "—"}</td>
@@ -239,6 +242,12 @@ function ImportPreviewTable({
               </tbody>
             </table>
           </div>
+          {capped.hiddenCount > 0 ? (
+            <p className="report-preview-note">
+              表格仅显示前 {capped.visible.length} 行，另有 {capped.hiddenCount}{" "}
+              行问题未展开（总数以上方统计为准）。
+            </p>
+          ) : null}
         </>
       ) : null}
 

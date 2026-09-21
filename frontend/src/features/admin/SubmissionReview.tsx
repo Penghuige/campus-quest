@@ -47,6 +47,7 @@ import {
   lockedTierText,
   reviewStatusView,
   reviewTextReady,
+  rewardLockView,
   versionText,
 } from "./teacherView";
 
@@ -286,22 +287,43 @@ function ReviewDetail({
   const [dialog, setDialog] = useState<"approve" | "revision" | "invalidate" | null>(
     null,
   );
+  const [downloadError, setDownloadError] = useState<unknown>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const onDownload = useCallback(async () => {
     // Mint a short-lived presigned GET on click (spec §33.3): a URL
-    // embedded in the page would expire under the reviewer.
-    const grant = await mintSubmissionDownload(item.submission_id);
-    window.open(grant.url, "_blank", "noopener");
+    // embedded in the page would expire under the reviewer. A failed
+    // mint renders inline with retry — never a silent rejection.
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const grant = await mintSubmissionDownload(item.submission_id);
+      window.open(grant.url, "_blank", "noopener");
+    } catch (cause) {
+      setDownloadError(cause);
+    } finally {
+      setDownloading(false);
+    }
   }, [item.submission_id]);
 
   return (
     <div className="review-detail">
       <div className="section-head">
         <h2 className="section-title">审核提交</h2>
-        <button type="button" className="btn btn-ghost" onClick={() => void onDownload()}>
-          下载文件
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => void onDownload()}
+          disabled={downloading}
+          aria-busy={downloading}
+        >
+          {downloading ? <span className="spinner" aria-hidden="true" /> : null}
+          <span>下载文件</span>
         </button>
       </div>
+      {downloadError !== null ? (
+        <SectionError error={downloadError} onRetry={() => void onDownload()} />
+      ) : null}
 
       <dl className="fact-rows">
         <div className="fact-row">
@@ -657,6 +679,10 @@ function OutcomeAlert({
     outcome.kind === "approved"
       ? null
       : formatDeadlineDateTime(parseServerInstant(outcome.result.revision_deadline_at));
+  // Product wording only (design §9): claim/lock status render through
+  // the label maps, never the raw enum strings.
+  const claimLabel = claimStatusView(outcome.result.claim_status).label;
+  const lockLabel = rewardLockView(outcome.result.reward_lock_status).label;
   return (
     <div
       className={`alert ${outcome.kind === "approved" ? "alert-success" : outcome.kind === "revision" ? "alert-warning" : "alert-error"}`}
@@ -664,7 +690,8 @@ function OutcomeAlert({
     >
       {outcome.kind === "approved" ? (
         <p>
-          已通过该提交；领取状态 {outcome.result.claim_status}
+          已通过该提交；领取状态「{claimLabel}
+          {outcome.result.reward_lock_status === "CONFIRMED" ? ` · ${lockLabel}` : ""}」
           {outcome.result.points_granted !== null
             ? `，已发放 ${outcome.result.points_granted} 积分`
             : ""}
@@ -676,8 +703,8 @@ function OutcomeAlert({
         </p>
       ) : (
         <p>
-          已判无效；奖励锁定已取消（{outcome.result.reward_lock_status}），学生需在{" "}
-          {revisionDeadline} 前重新提交并重新核算。
+          已判无效；奖励锁定已取消（{lockLabel}），学生需在 {revisionDeadline}{" "}
+          前重新提交并重新核算。
         </p>
       )}
       <p>
