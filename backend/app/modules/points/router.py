@@ -90,14 +90,19 @@ Other transport decisions
   lives HERE in the serializer only — ``LedgerService`` and the wallet
   row stay untouched, so the internal figures remain auditable and the
   redemption gate keeps deciding on the raw spendable.
-- **The academic-term provider is settings-driven.**
-  ``SettingsAcademicTermProvider`` reads ``Settings
-  .current_academic_term`` (the dev default "2026-fall"; Plan 08 moves
-  it to the audited admin-configurable CURRENT_ACADEMIC_TERM system
-  setting). The key is validated at construction (a misconfigured
-  deployment fails at wiring time — the service's own ruling), and the
-  redemption snapshot at creation time is unchanged: history keeps the
-  term it was created under.
+- **The academic-term provider is the audited system setting first,
+  the env seed second** (PR #2 hardening step 8).
+  ``SystemAcademicTermProvider`` resolves the term ONCE per request:
+  the ``system_settings`` CURRENT_ACADEMIC_TERM row (set through the
+  audited admin settings API, ``/api/v1/admin/settings
+  /current-academic-term``) when present, ``Settings
+  .current_academic_term`` (env CURRENT_ACADEMIC_TERM) as the bootstrap
+  seed when not — G7: the settings row is the fact, the env var is the
+  initial seed. The chosen key is validated at construction, so a
+  corrupted row fails the request loudly instead of silently reverting
+  to the seed; the redemption snapshot at creation time is unchanged:
+  history keeps the term it was created under even after the setting
+  moves on.
 """
 
 from __future__ import annotations
@@ -129,9 +134,10 @@ from app.modules.points.ledger_service import (
 from app.modules.points.models import RewardItem, RewardRedemption
 from app.modules.points.redemption_service import (
     RedemptionService,
-    SettingsAcademicTermProvider,
+    SystemAcademicTermProvider,
     window_open,
 )
+from app.modules.system.service import CURRENT_ACADEMIC_TERM, SystemSettingService
 
 # --- pagination bounds (the documented offset choice) --------------------------------
 
@@ -262,17 +268,27 @@ def get_ledger_service() -> LedgerService:
     return LedgerService(ranking_dispatcher=get_ranking_dispatcher())
 
 
-def get_academic_term_provider() -> SettingsAcademicTermProvider:
-    """The settings-driven term binding (see the module docstring): the
-    key is read from ``Settings.current_academic_term`` and validated at
-    construction so a misconfiguration fails at wiring time rather than
-    at the first redemption."""
-    return SettingsAcademicTermProvider(get_settings())
+async def get_academic_term_provider(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SystemAcademicTermProvider:
+    """The production term binding (see the module docstring): the
+    system_settings row is read ONCE per request on the request's own
+    session, and the provider applies the row-over-seed priority and
+    the wiring-time validation — the rule lives in the provider family,
+    this composition only fetches the value.
+
+    The storage read goes through the system module's service (the
+    dependency arrow points IN, the audit-module discipline: this
+    composition root is the layer allowed to see both modules)."""
+    configured = await SystemSettingService().get(db, CURRENT_ACADEMIC_TERM)
+    return SystemAcademicTermProvider(
+        configured_term=configured, fallback=get_settings()
+    )
 
 
 def get_redemption_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
-    terms: Annotated[SettingsAcademicTermProvider, Depends(get_academic_term_provider)],
+    terms: Annotated[SystemAcademicTermProvider, Depends(get_academic_term_provider)],
 ) -> RedemptionService:
     # The ledger is the dispatcher-bound production construction (the
     # get_ledger_service ruling): today's redemption entries are all

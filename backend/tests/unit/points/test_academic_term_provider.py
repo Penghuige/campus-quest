@@ -1,15 +1,25 @@
 # backend/tests/unit/points/test_academic_term_provider.py
-"""The settings-driven academic-term provider (PR #2 hardening, Task 4).
+"""The academic-term provider family (PR #2 hardening, tasks 4 + 8).
 
 ``SettingsAcademicTermProvider`` reads ``Settings.current_academic_term``
-(the committed dev default "2026-fall"; deployments turn the term with
-CURRENT_ACADEMIC_TERM until Plan 08's audited admin setting). The key is
+(the committed dev default "2026-fall"; the env seed). The key is
 validated at construction — a misconfigured deployment fails at wiring
-time (the StaticAcademicTermProvider ruling carried over). Redemption
-snapshot behavior (the term persisted at creation time) is asserted at
-the API/service layers: ``tests/integration/points/test_points_api.py``
-(``term_key == "2026-fall"`` flows through this provider) and
-``test_redemption_concurrency.py``
+time (the StaticAcademicTermProvider ruling carried over).
+
+``SystemAcademicTermProvider`` (step 8) is the production binding: the
+``system_settings`` CURRENT_ACADEMIC_TERM row is the fact, the settings
+value is only the bootstrap seed (G7) — row present -> row value; no
+row -> seed; a present-but-corrupt row fails LOUDLY (no silent seed
+fallback that would quietly freeze every new redemption on a stale
+term). The per-request storage read is the composition root's job
+(points/router.py, asserted at the API layer in
+tests/integration/points/test_term_setting_provider.py); what is pinned
+here is the priority and validation RULE.
+
+Redemption snapshot behavior (the term persisted at creation time) is
+asserted at the API/service layers: ``tests/integration/points/
+test_points_api.py`` (``term_key == "2026-fall"`` flows through the
+provider) and ``test_redemption_concurrency.py``
 (``test_term_limit_counts_snapshot_releases_on_reject_and_switches``).
 """
 
@@ -21,11 +31,12 @@ from app.core.config import Settings
 from app.modules.points.redemption_service import (
     AcademicTermConfigurationError,
     SettingsAcademicTermProvider,
+    SystemAcademicTermProvider,
 )
 
 
 def _settings(current_academic_term: str) -> Settings:
-    # The mandatory deployment fields are dummies: the provider reads
+    # The mandatory deployment fields are dummies: the providers read
     # one field and the unit under test never touches a database.
     return Settings(
         database_url="postgresql+asyncpg://u:p@db/test",
@@ -82,3 +93,59 @@ def test_unusable_term_fails_at_construction(bad: str) -> None:
     calendar guess at redemption time."""
     with pytest.raises(AcademicTermConfigurationError):
         SettingsAcademicTermProvider(_settings(bad))
+
+
+# --- SystemAcademicTermProvider (PR #2 hardening step 8) ------------------------------
+
+
+def test_system_setting_row_is_the_fact_over_the_seed() -> None:
+    """G7: a present system_settings row wins over the env seed — the
+    row is what the admin configured through the audited API."""
+    provider = SystemAcademicTermProvider(
+        configured_term="2027-spring", fallback=_settings("2026-fall")
+    )
+    assert provider.current_term_key() == "2027-spring"
+
+
+def test_no_row_falls_back_to_the_seed() -> None:
+    """First boot, before any admin sets the term: the deployment seed
+    (env CURRENT_ACADEMIC_TERM) is the initial value."""
+    provider = SystemAcademicTermProvider(
+        configured_term=None, fallback=_settings("2026-fall")
+    )
+    assert provider.current_term_key() == "2026-fall"
+
+
+@pytest.mark.parametrize("corrupt", ["", "   ", "x" * 65])
+def test_corrupt_row_fails_loudly_instead_of_seed_fallback(corrupt: str) -> None:
+    """A blank/over-width ROW value (only reachable by direct database
+    edits — the admin API validates) is a configuration failure, not a
+    cue to silently fall back to the seed: masking it would quietly move
+    every new redemption to the stale seed term (the fail-closed G5
+    posture; the same ruling as the wiring-time validation)."""
+    with pytest.raises(AcademicTermConfigurationError):
+        SystemAcademicTermProvider(
+            configured_term=corrupt, fallback=_settings("2026-fall")
+        )
+
+
+@pytest.mark.parametrize("corrupt_seed", ["", "   ", "x" * 65])
+def test_corrupt_seed_fails_when_it_is_the_answer(corrupt_seed: str) -> None:
+    """No row + unusable seed is the same wiring-time configuration
+    failure the SettingsAcademicTermProvider has always enforced. With a
+    row present the seed is not consulted (masked, not validated — the
+    row is the answer)."""
+    with pytest.raises(AcademicTermConfigurationError):
+        SystemAcademicTermProvider(
+            configured_term=None, fallback=_settings(corrupt_seed)
+        )
+
+
+def test_row_value_is_stripped_like_every_term_key() -> None:
+    """The provider family's read-time semantics: the term key is the
+    stripped value (the redemption service re-validates, but the
+    provider's answer is already canonical)."""
+    provider = SystemAcademicTermProvider(
+        configured_term="  2027-spring  ", fallback=_settings("2026-fall")
+    )
+    assert provider.current_term_key() == "2027-spring"

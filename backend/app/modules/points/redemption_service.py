@@ -132,6 +132,7 @@ __all__ = [
     "RewardRedemptionNotFoundError",
     "SettingsAcademicTermProvider",
     "StaticAcademicTermProvider",
+    "SystemAcademicTermProvider",
     "window_open",
 ]
 
@@ -225,10 +226,60 @@ class SettingsAcademicTermProvider:
     StaticAcademicTermProvider wiring-time ruling), so a misconfigured
     deployment fails when the provider is built, not at the first
     redemption. The snapshot semantics are unchanged: a redemption keeps
-    the term it was created under even after the setting moves on."""
+    the term it was created under even after the setting moves on.
+
+    Superseded as the production binding by
+    ``SystemAcademicTermProvider`` (PR #2 hardening step 8); kept
+    exported because it remains the env-seed semantics seed tests pin
+    (tests/unit/points/test_academic_term_provider.py)."""
 
     def __init__(self, settings: Settings) -> None:
         self._term_key = _validated_term_key(settings.current_academic_term)
+
+    def current_term_key(self) -> str:
+        return self._term_key
+
+
+class SystemAcademicTermProvider:
+    """The production ``AcademicTermProvider`` (PR #2 hardening step 8:
+    the audited, admin-configurable CURRENT_ACADEMIC_TERM).
+
+    Priority — G7: the ``system_settings`` CURRENT_ACADEMIC_TERM row is
+    the FACT; ``Settings.current_academic_term`` (the
+    CURRENT_ACADEMIC_TERM env var, dev default "2026-fall") is only the
+    INITIAL SEED a deployment boots with, never an override:
+
+    1. row present -> the row's value (set through the audited admin
+       settings API);
+    2. no row -> the settings seed (first boot, before any admin has
+       configured a term).
+
+    A present-but-corrupt row (blank/over-width — unreachable through
+    the API, which validates, so only direct database edits get there)
+    fails LOUDLY at construction instead of silently falling back to
+    the seed: masking a corrupted setting would quietly move every new
+    redemption to a stale term (the same fail-closed ruling as the
+    wiring-time validation below).
+
+    The storage read is async but this protocol is sync and side-effect
+    free — the key is configuration state read ONCE per request — so
+    the composition root's dependency resolves the row and builds this
+    provider with the answer (points/router.py); the priority and
+    validation RULE lives here, in the provider family, so no
+    composition root can get it wrong, and the admin settings GET
+    resolves the effective term through this same class (the
+    window_open one-rule ruling).
+
+    Snapshot semantics are unchanged (spec §16.1): a redemption keeps
+    the term it was created under even after the setting moves on."""
+
+    def __init__(self, *, configured_term: str | None, fallback: Settings) -> None:
+        chosen = (
+            configured_term
+            if configured_term is not None
+            else fallback.current_academic_term
+        )
+        self._term_key = _validated_term_key(chosen)
 
     def current_term_key(self) -> str:
         return self._term_key

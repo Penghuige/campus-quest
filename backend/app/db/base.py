@@ -55,4 +55,5 @@ from app.modules.rankings import (  # noqa: E402, F401
     honor_models as ranking_honor_models,
 )
 from app.modules.submissions import models as submission_models  # noqa: E402, F401
+from app.modules.system import models as system_models  # noqa: E402, F401
 from app.modules.tasks import models as task_models  # noqa: E402, F401
