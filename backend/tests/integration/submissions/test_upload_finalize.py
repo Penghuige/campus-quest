@@ -307,6 +307,12 @@ async def test_full_flow_creates_version_one_submission(
             assert receipt.upload_url.endswith(intent.object_key)
             assert receipt.url_expires_at == _NOW + timedelta(minutes=10)
 
+            # The URL pins the declared size as its signed
+            # Content-Length (S3 hardening P1: the entry size gate).
+            assert storage.pinned_content_lengths[receipt.object_key] == (
+                _DECLARED_SIZE
+            )
+
             storage.put_object(object_key=intent.object_key, size=_DECLARED_SIZE)
             submission = await service.finalize_upload(
                 session, _actor(seed.student), receipt.intent_id

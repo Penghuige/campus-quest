@@ -103,6 +103,21 @@ def test_upload_url_expiry_comes_from_injected_clock() -> None:
     assert url.expires_at == FROZEN_NOW + TTL
 
 
+def test_upload_url_records_pinned_content_length() -> None:
+    storage = FakeObjectStorage()
+    pinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL, content_length=2048
+    )
+    unpinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    # The declared size is recorded for call-site assertions (the intent
+    # flow must pin what cleared its size policy); legacy callers that
+    # pass nothing record None.
+    assert storage.pinned_content_lengths[pinned.object_key] == 2048
+    assert storage.pinned_content_lengths[unpinned.object_key] is None
+
+
 def test_head_object_returns_pinned_metadata_after_simulated_upload() -> None:
     storage = FakeObjectStorage()
     url = storage.create_upload_url(

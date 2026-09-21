@@ -5,10 +5,14 @@ WHY this module exists: the port (``integrations/object_storage.py``)
 was protocol-only with every composition root raising
 ``NotImplementedError`` — a deployment's upload-intent request and every
 validation job failed until an adapter landed. This is that adapter:
-boto3's SYNCHRONOUS client, because the Celery task body and the FastAPI
-request handlers call it are sync/one-shot call sites (no event loop to
-block that isn't already dedicated to the call); aioboto3 is
-deliberately not introduced.
+boto3's SYNCHRONOUS client. aioboto3 is deliberately not introduced, so
+the SYNCHRONOUS call boundary is the caller's concern: the Celery task
+body is its own thread, while FastAPI request handlers run on an event
+loop and MUST move blocking calls (``head_object`` in the finalize flow)
+across a thread boundary — ``upload_service.finalize_upload`` does that
+with ``asyncio.to_thread``. Presigning (``create_upload_url`` /
+``create_download_url``) is local computation with no provider I/O and
+stays inline.
 
 Port contract, implemented clause by clause (docstring there is the
 frozen source of truth):
@@ -16,11 +20,22 @@ frozen source of truth):
 - Keys are ALWAYS server-generated ``submissions/{claim_id}/{uuid4()}``;
   no caller path fragment ever reaches a key (interfaces.md Adapter
   Ports; backend-engineering §16).
-- ``create_upload_url`` presigns a PUT with the declared Content-Type
-  as a SigV4 signed header — a client PUT carrying a different
-  Content-Type is rejected by the provider (403), which the smoke test
-  proves live. ``expires_at`` comes from the injected ``Clock``
-  (``SystemClock`` by default), mirroring the fake.
+- ``create_upload_url`` presigns a WRITE-ONCE, size-pinned PUT (S3
+  hardening P0/P1, proven live against the pinned MinIO
+  RELEASE.2025-09-07 — the same image CI runs — see
+  tests/integration/test_object_storage_smoke.py):
+  * ``IfNoneMatch="*"`` is signed as a header, so a client PUT whose
+    key already holds an object is rejected 412 and an upload whose
+    PUT omits the header is rejected — the URL is good for exactly
+    one successful PUT, forever (the condition outlives the TTL;
+    nothing can replace a stored object through any presigned URL).
+  * the declared Content-Type is signed (a PUT with a different
+    Content-Type is rejected 403);
+  * the declared ``content_length`` is signed as the Content-Length
+    header (a PUT whose body length differs is rejected 403 — the
+    client cannot frame the request with any other length without
+    breaking the signature). ``expires_at`` comes from the injected
+    ``Clock`` (``SystemClock`` by default), mirroring the fake.
 - ``head_object`` maps a provider 404 to ``None``; ``NoSuchBucket`` is
   NOT a missing-object answer but a broken deployment configuration and
   fails closed as ``PermanentProviderError``.
@@ -52,8 +67,10 @@ Fail-closed configuration chain (G5): every s3_* field on
 ``Settings`` is required, so a missing endpoint/bucket/credential
 fails at ``Settings`` construction — this module contains zero
 credential literals and no environment fallback: what it reads is
-exactly the four ``Settings`` fields handed to it. There is no
-in-memory or no-op fallback anywhere in this chain.
+exactly the ``Settings`` fields handed to it (the signing region is
+``Settings.s3_region``; its default matches MinIO's ignore-the-region
+behavior, and a real AWS deployment sets the bucket region). There is
+no in-memory or no-op fallback anywhere in this chain.
 """
 
 from __future__ import annotations
@@ -98,11 +115,6 @@ _TEMPORARY_ERROR_CODES = frozenset(
 #: ClientError codes proving the OBJECT is absent (a normal result for
 #: head/missing-key paths), distinct from a broken bucket.
 _MISSING_OBJECT_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
-
-#: MinIO ignores the signing region; real-AWS deployments targeting a
-#: specific region can override it via the standard AWS environment
-#: boto3 already reads — the adapter adds no Settings field of its own.
-_DEFAULT_REGION = "us-east-1"
 
 
 def _error_code(exc: ClientError) -> str:
@@ -175,11 +187,12 @@ class S3ObjectStorage:
             endpoint_url=settings.s3_endpoint_url,
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
-            region_name=_DEFAULT_REGION,
+            region_name=settings.s3_region,
             # path-style addressing: the endpoint is a host:port (MinIO
             # or an S3-compatible gateway), never a wildcard-DNS
-            # virtual-host scheme; s3v4 signatures the Content-Type for
-            # presigned PUTs, which is the port's content-type pin.
+            # virtual-host scheme; s3v4 signs the presigned PUT's pinned
+            # headers (Content-Type, Content-Length, If-None-Match),
+            # which is how the port's write-once and size pins enforce.
             config=Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
@@ -188,18 +201,38 @@ class S3ObjectStorage:
         )
 
     def create_upload_url(
-        self, *, claim_id: UUID, content_type: str, expires_in: timedelta
+        self,
+        *,
+        claim_id: UUID,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None = None,
     ) -> UploadUrl:
-        """Presigned PUT on a server-generated key (port contract)."""
+        """Presigned WRITE-ONCE PUT on a server-generated key (port
+        contract).
+
+        ``IfNoneMatch="*"`` is always signed: exactly one successful PUT
+        per key, and no PUT — this URL or any later one — can replace a
+        stored object (412 while the provider enforces the condition,
+        which on S3-compatible providers outlives the URL TTL). A
+        ``content_length`` is signed as the Content-Length header: the
+        client cannot frame its request at any other length without
+        breaking the signature (403). The smoke test proves both
+        behaviors against real MinIO over real HTTP.
+        """
         object_key = f"submissions/{claim_id}/{uuid4()}"
+        params: dict[str, Any] = {
+            "Bucket": self._bucket,
+            "Key": object_key,
+            "ContentType": content_type,
+            "IfNoneMatch": "*",
+        }
+        if content_length is not None:
+            params["ContentLength"] = content_length
         try:
             url: str = self._client.generate_presigned_url(
                 "put_object",
-                Params={
-                    "Bucket": self._bucket,
-                    "Key": object_key,
-                    "ContentType": content_type,
-                },
+                Params=params,
                 ExpiresIn=int(expires_in.total_seconds()),
             )
         except (ClientError, BotoCoreError) as exc:
