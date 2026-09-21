@@ -260,12 +260,8 @@ def register_community_exception_handlers(app: FastAPI) -> None:
     def _render(
         status_code: int,
         code: ErrorCode,
-    ) -> Callable[
-        [StarletteRequest, Exception], Coroutine[Any, Any, JSONResponse]
-    ]:
-        async def handler(
-            request: StarletteRequest, exc: Exception
-        ) -> JSONResponse:
+    ) -> Callable[[StarletteRequest, Exception], Coroutine[Any, Any, JSONResponse]]:
+        async def handler(request: StarletteRequest, exc: Exception) -> JSONResponse:
             request_id = getattr(request.state, "request_id", None)
             headers = {REQUEST_ID_HEADER: request_id} if request_id else None
             return JSONResponse(
@@ -855,9 +851,7 @@ async def list_moderation_comments(
 
     total = int(
         await db.scalar(
-            select(func.count())
-            .select_from(Comment)
-            .where(Comment.task_id == task_id)
+            select(func.count()).select_from(Comment).where(Comment.task_id == task_id)
         )
         or 0
     )

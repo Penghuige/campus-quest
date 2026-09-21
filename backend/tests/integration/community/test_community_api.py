@@ -711,10 +711,14 @@ async def test_rating_eligibility_upsert_and_real_aggregate_on_task_detail(
     assert second.status_code == 200, second.text
 
     rows = (
-        await db_session.execute(
-            select(TaskRating.rating).where(TaskRating.task_id == task.id)
+        (
+            await db_session.execute(
+                select(TaskRating.rating).where(TaskRating.task_id == task.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert sorted(rows) == [3, 5]
 
     # The tasks detail reads the REAL aggregate through the swapped port.
@@ -813,9 +817,7 @@ async def test_report_queue_shows_reporter_to_teacher_not_students(
     refreshed = await client.get(
         f"/api/v1/teacher/tasks/{task.id}/reports", headers=_bearer(teacher_tokens)
     )
-    by_comment = {
-        item["comment"]["id"]: item for item in refreshed.json()["items"]
-    }
+    by_comment = {item["comment"]["id"]: item for item in refreshed.json()["items"]}
     fold = by_comment[anonymous.json()["id"]]
     assert fold["reporter_user_id"] is None
     assert fold["reporter_nickname"] is None
