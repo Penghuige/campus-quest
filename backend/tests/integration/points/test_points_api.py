@@ -72,6 +72,12 @@ from app.modules.points.models import (
     RewardRedemption,
 )
 
+# The whole module needs the real PostgreSQL test database (db_session
+# fixtures); without this marker CI's `-m integration` selection
+# silently deselected every test here — a coverage hole found in the
+# PR #2 hardening step-7 review (G18).
+pytestmark = pytest.mark.integration
+
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
 _TERM = "2026-fall"

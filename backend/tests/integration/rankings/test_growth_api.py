@@ -80,6 +80,10 @@ _PASSWORD = "correct-horse-battery"
 # Anchored to the real now: access tokens must decode against wall-clock
 # time (the submissions-API precedent), while every BUSINESS period in
 # this file derives from the frozen clock for determinism.
+# Real-PostgreSQL module (db_session fixtures); the marker keeps CI's
+# `-m integration` selection from silently deselecting these tests (G18).
+pytestmark = pytest.mark.integration
+
 _T0 = datetime.now(UTC).replace(microsecond=0)
 
 _GROWTH_FIELDS = {
