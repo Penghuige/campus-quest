@@ -11,10 +11,12 @@ PostgreSQL being reachable.
   carries none of the author's known identity facts (student number /
   username, phone, email, raw user id) — spec §40 公开页面不得暴露.
 - Non-anonymous comments show the nickname and nothing else identity-wise.
-- The moderation DTO (Task 8 placeholder) carries no author identity
-  either; ``moderation_key`` stays a None seam until that task lands, and
-  ``hard_hidden`` (task 3) exposes the Admin hard-hide flag for
-  moderation review without resurrecting public visibility.
+- The moderation DTO (task 8) is Teacher-safe: anonymous records
+  render 匿名用户 plus the derived pseudonymous ``moderation_key``
+  (never the nickname or any identity fact), named records render the
+  nickname and no key; ``hard_hidden`` (task 3) exposes the Admin
+  hard-hide flag for moderation review without resurrecting public
+  visibility.
 - Tombstones (task 3, spec §21.3 该评论已删除): a soft-deleted parent kept
   for thread anchoring serializes with null content and the uniform
   deleted display — for anonymous AND named authors alike.
@@ -45,6 +47,7 @@ from app.modules.community.schemas import CommentPublic, ModerationComment
 from app.modules.community.serializers import (
     ANONYMOUS_AUTHOR_DISPLAY,
     DELETED_COMMENT_DISPLAY,
+    derive_moderation_key,
     serialize_moderation_comment,
     serialize_public_comment,
     serialize_tombstone_comment,
@@ -71,7 +74,7 @@ _PUBLIC_FIELDS = {
     "deleted",
 }
 
-_MODERATION_FIELDS = (_PUBLIC_FIELDS - {"author_display"}) | {
+_MODERATION_FIELDS = _PUBLIC_FIELDS | {
     "moderation_key",
     "hard_hidden",
 }
@@ -151,22 +154,41 @@ def test_public_dto_carries_thread_and_state_shape() -> None:
     assert public.deleted is False
 
 
-def test_moderation_dto_has_no_author_identity() -> None:
-    # The Task 8 placeholder shape: everything public except the author
-    # display, plus a None moderation_key seam and the task-3 hard_hidden
-    # flag. No nickname, no user_id — the pseudonymous key is Task 8's to
-    # derive.
+def test_moderation_dto_is_teacher_safe() -> None:
+    # The task-8 shape: anonymous records render 匿名用户 plus the
+    # derived pseudonymous key — never the nickname or any identity
+    # fact — and carry the task-3 hard_hidden flag (unset on live
+    # comments).
     comment = _comment(is_anonymous=True)
-    moderation = serialize_moderation_comment(comment)
+    moderation = serialize_moderation_comment(
+        comment, author_nickname="小北", key_secret="unit-key-secret"
+    )
 
     assert {field.name for field in dataclasses.fields(ModerationComment)} == (
         _MODERATION_FIELDS
     )
-    assert moderation.moderation_key is None
+    assert moderation.author_display == ANONYMOUS_AUTHOR_DISPLAY
+    assert moderation.moderation_key == derive_moderation_key(
+        comment.task_id, comment.user_id, secret="unit-key-secret"
+    )
     assert moderation.hard_hidden is False  # live comments: flag unset
     payload = json.dumps(dataclasses.asdict(moderation), default=str)
     for fact in _identity_facts(comment.user_id):
         assert fact not in payload
+
+
+def test_moderation_dto_named_comment_shows_nickname_without_key() -> None:
+    # Named records correlate by the (already public) nickname;
+    # deriving the key there would join the author's named and
+    # anonymous comments in one Task — the deanonymization the key
+    # must not perform.
+    comment = _comment(is_anonymous=False)
+    moderation = serialize_moderation_comment(
+        comment, author_nickname="小北", key_secret="unit-key-secret"
+    )
+
+    assert moderation.author_display == "小北"
+    assert moderation.moderation_key is None
 
 
 # --- tombstones (task 3, spec §21.3 该评论已删除) ------------------------------------

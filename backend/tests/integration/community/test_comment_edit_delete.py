@@ -892,11 +892,13 @@ async def test_hard_hidden_comment_still_serializes_for_moderation_with_flag(
 
     row = await db_session.scalar(select(Comment).where(Comment.id == root.id))
     assert row is not None
-    moderation = serialize_moderation_comment(row)
+    moderation = serialize_moderation_comment(
+        row, author_nickname=_STUDENT_NICKNAME, key_secret="integration-key-secret"
+    )
     assert moderation.content == "根：涉及隐私"
     assert moderation.hard_hidden is True
     assert moderation.deleted is True
-    assert moderation.moderation_key is None  # T8 seam untouched
+    assert moderation.moderation_key is None  # named record: no key
 
     items, _total = await _service().list_comments(
         db_session, task.id, limit=20, offset=0

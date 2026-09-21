@@ -15,12 +15,15 @@ anonymity contract is enforced at one seam instead of per call site:
   a deleted comment carries neither its text nor its author on the
   public surface. Thread structure (id, parent_id, timestamps) stays so
   children remain attached.
-- moderation (task 8 placeholder): NO author material at all — the
-  pseudonymous ``moderation_key`` is a None seam until that task derives
-  it server-side. ``hard_hidden`` (task 3) is the one moderation-only
-  flag: the public surface renders hard-hidden comments nothing, while
-  the moderation surface still sees the row, its content, and the fact
-  that an Admin privacy/legal removal happened.
+- moderation (task 8, spec §21.4 追溯): the Teacher-safe record — the
+  nickname for named authors (already public), 匿名用户 for anonymous
+  ones, plus the pseudonymous ``moderation_key`` derived server-side
+  from (task, author) exactly on anonymous records (named records carry
+  no key: a key there would join an author's named and anonymous
+  comments in one Task). ``hard_hidden`` (task 3) is the one
+  moderation-only flag: the public surface renders hard-hidden comments
+  nothing, while the moderation surface still sees the row, its
+  content, and the fact that an Admin privacy/legal removal happened.
 
 XSS posture (spec §21.1 防 XSS): ``content`` passes through verbatim as
 plain text. The module never produces, escapes, or sanitizes HTML — the
@@ -31,12 +34,17 @@ JSON string value as markup is the client's defect to fix.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+from uuid import UUID
+
 from app.modules.community.models import Comment
 from app.modules.community.schemas import CommentPublic, ModerationComment
 
 __all__ = [
     "ANONYMOUS_AUTHOR_DISPLAY",
     "DELETED_COMMENT_DISPLAY",
+    "derive_moderation_key",
     "serialize_moderation_comment",
     "serialize_public_comment",
     "serialize_tombstone_comment",
@@ -49,6 +57,41 @@ ANONYMOUS_AUTHOR_DISPLAY = "匿名用户"
 # “该评论已删除” — uniform for anonymous and named authors, so the
 # deleted comment's author is as unreachable as its content.
 DELETED_COMMENT_DISPLAY = "该评论已删除"
+
+# Domain-separation label binding the moderation-key subkey to this one
+# purpose, so the settings-derived secret never signs two meanings with
+# the same key material (the NIST SP 800-108 KDF construction).
+_MODERATION_KEY_LABEL = b"campusquest:community:moderation-key:v1"
+
+
+def derive_moderation_key(task_id: UUID, user_id: UUID, *, secret: str) -> str:
+    """The pseudonymous moderation key: 16 hex chars of
+    HMAC-SHA256(HMAC-SHA256(secret, label), "{task_id}:{user_id}").
+
+    Properties the moderation contract leans on (spec §21.4):
+
+    - STABLE per (task, author): the same pair derives the same key, so
+      a moderator correlates one anonymous author's comments within a
+      Task without learning who they are.
+    - SCOPED: a different task or a different author derives a
+      different key — the correlation never crosses Task boundaries.
+    - KEYED: without ``secret`` the pair does not predict the key (a
+      plain digest of public ids would be guessable), and the key does
+      not invert to the pair or to any identity fact. The student
+      number is not an input at all, so the key can never equal or
+      leak it.
+    - ``secret`` is settings-derived key material (Settings'
+      token_secret by default, domain-separated by the label above);
+      rotating the settings secret deliberately re-keys every
+      moderation key.
+    """
+    purpose_key = hmac.new(
+        secret.encode("utf-8"), _MODERATION_KEY_LABEL, hashlib.sha256
+    ).digest()
+    digest = hmac.new(
+        purpose_key, f"{task_id}:{user_id}".encode(), hashlib.sha256
+    ).hexdigest()
+    return digest[:16]
 
 
 def serialize_public_comment(
@@ -105,15 +148,27 @@ def serialize_tombstone_comment(comment: Comment) -> CommentPublic:
 
 
 def serialize_moderation_comment(
-    comment: Comment, *, edited: bool = False
+    comment: Comment,
+    *,
+    author_nickname: str,
+    key_secret: str,
+    edited: bool = False,
 ) -> ModerationComment:
-    """Build the moderation DTO — no author identity, key seam unfilled.
+    """Build the moderation DTO — the Teacher-safe author surface (spec
+    §21.4).
 
-    Task 8 extends this signature with the derived ``moderation_key``;
-    until then the base shape is stable so moderation surfaces can be
-    built against it. ``hard_hidden`` (task 3) distinguishes Admin
-    privacy/legal removals from ordinary soft deletes: both are
-    ``deleted`` here, only the former is flagged.
+    ``author_nickname`` is the ONLY join material the caller supplies,
+    and it renders ONLY for named comments — an anonymous record shows
+    匿名用户 whatever the nickname is. ``key_secret`` is the
+    settings-derived HMAC material; the ``moderation_key`` is derived
+    here, server-side, and rides exactly the anonymous records: a named
+    record's correlation handle is its (already public) nickname, and a
+    key there would join the author's named and anonymous comments in
+    one Task — the deanonymization this seam exists to prevent. The
+    row's ``user_id`` is deliberately unread beyond the keyed digest,
+    so the raw id cannot smuggle into the shape. ``hard_hidden``
+    (task 3) distinguishes Admin privacy/legal removals from ordinary
+    soft deletes: both are ``deleted`` here, only the former is flagged.
     """
     return ModerationComment(
         id=comment.id,
@@ -121,10 +176,17 @@ def serialize_moderation_comment(
         parent_id=comment.parent_id,
         content=comment.content,
         is_anonymous=comment.is_anonymous,
+        author_display=(
+            ANONYMOUS_AUTHOR_DISPLAY if comment.is_anonymous else author_nickname
+        ),
         created_at=comment.created_at,
         updated_at=comment.updated_at,
         edited=edited,
         deleted=comment.deleted_at is not None,
-        moderation_key=None,
+        moderation_key=(
+            derive_moderation_key(comment.task_id, comment.user_id, secret=key_secret)
+            if comment.is_anonymous
+            else None
+        ),
         hard_hidden=bool(comment.is_hard_hidden),
     )

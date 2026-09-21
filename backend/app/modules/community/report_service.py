@@ -68,7 +68,13 @@ Design decisions:
   row to the REPORTER themself: the caller's own identity is not a
   leak, and the row carries no comment-author identity to leak either.
   The public comment surface (``CommentPublic``) has no report fields
-  by construction.
+  by construction. **Self-report fold (task 6 review F2):** when
+  ``reporter_user_id`` equals the comment's ``user_id``, BOTH reporter
+  fields render None — the anonymous author reporting their own comment
+  must not have their nickname surface beside it. The comment context
+  itself is the task-8 Teacher-safe record (serializers):
+  匿名用户 + the pseudonymous ``moderation_key`` for anonymous
+  comments, the nickname for named ones, never the raw author id.
 - **Pagination.** Newest first (``created_at`` DESC, id tie-break), one
   limit/offset page plus the rendered total — the query_service
   pattern; ``limit``/``offset`` arrive already bounded (the route owns
@@ -94,6 +100,7 @@ from sqlalchemy import String, Uuid, column, func, select, table
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
@@ -222,14 +229,27 @@ class ReportService:
     ``report_comment`` files, ``list_task_reports`` reviews.
 
     ``note_max_length`` is injectable for tests and deployments; the
-    default is the documented service constant. No clock, no events
-    (see the module docstring — task 8 owns the handling transitions).
+    default is the documented service constant.
+    ``moderation_key_secret`` is the settings-derived HMAC material
+    behind the queue's pseudonymous moderation keys (see
+    ``serializers.derive_moderation_key``); None resolves
+    Settings.token_secret — the composition-root default. No clock, no
+    events (see the module docstring — the task-8 reveal owns its own
+    audit stream in ModerationService).
     """
 
     def __init__(
-        self, *, note_max_length: int = DEFAULT_REPORT_NOTE_MAX_LENGTH
+        self,
+        *,
+        note_max_length: int = DEFAULT_REPORT_NOTE_MAX_LENGTH,
+        moderation_key_secret: str | None = None,
     ) -> None:
         self._note_max_length = note_max_length
+        self._moderation_key_secret = (
+            moderation_key_secret
+            if moderation_key_secret is not None
+            else get_settings().token_secret
+        )
 
     async def report_comment(
         self,
@@ -311,12 +331,23 @@ class ReportService:
             .where(CommentRevision.comment_id == Comment.id)
             .exists()
         )
+        # The author's users row joins under an alias: the nickname is
+        # the Teacher-safe display for named comments, while the key
+        # derives from the (task, author) pair server-side.
+        author_users = _USERS.alias("moderation_author_users")
         rows = (
             await db.execute(
-                select(CommentReport, Comment, _USERS.c.nickname, edited_flag)
+                select(
+                    CommentReport,
+                    Comment,
+                    _USERS.c.nickname,
+                    author_users.c.nickname,
+                    edited_flag,
+                )
                 .select_from(CommentReport)
                 .join(Comment, Comment.id == CommentReport.comment_id)
                 .join(_USERS, _USERS.c.id == CommentReport.reporter_user_id)
+                .join(author_users, author_users.c.id == Comment.user_id)
                 .where(Comment.task_id == task_id)
                 .order_by(CommentReport.created_at.desc(), CommentReport.id)
                 .limit(limit)
@@ -326,18 +357,36 @@ class ReportService:
         return [
             CommentReportView(
                 id=report.id,
-                comment=serialize_moderation_comment(comment, edited=edited),
+                comment=serialize_moderation_comment(
+                    comment,
+                    author_nickname=str(author_nickname),
+                    key_secret=self._moderation_key_secret,
+                    edited=edited,
+                ),
                 category=report.category,
                 note=report.note,
                 status=report.status,
-                reporter_user_id=report.reporter_user_id,
-                # Row unpacks arrive as Any; the column is NOT NULL VARCHAR.
-                reporter_nickname=str(nickname),
+                # Self-report fold (task 6 review F2): the reporter IS
+                # the comment's author -> no reporter identity renders;
+                # their nickname beside an anonymous comment would
+                # deanonymize it. Otherwise the reporter fields are the
+                # moderators' material (row unpacks are Any; the column
+                # is NOT NULL VARCHAR).
+                reporter_user_id=(
+                    None
+                    if report.reporter_user_id == comment.user_id
+                    else report.reporter_user_id
+                ),
+                reporter_nickname=(
+                    None
+                    if report.reporter_user_id == comment.user_id
+                    else str(nickname)
+                ),
                 created_at=report.created_at,
                 handled_by=report.handled_by,
                 handled_at=report.handled_at,
             )
-            for report, comment, nickname, edited in rows
+            for report, comment, nickname, author_nickname, edited in rows
         ], total
 
     # -- internals ----------------------------------------------------------------
