@@ -136,6 +136,7 @@ __all__ = [
     "RewardAlreadyReversedError",
     "RewardReversalPermissionDeniedError",
     "RewardReversalReasonRequiredError",
+    "WalletSummary",
 ]
 
 # The §31.6 idempotency mechanism's name (migration 0007): only this
@@ -170,6 +171,19 @@ class PostLedgerEntry:
     reversal_of_id: UUID | None = None
     operator_id: UUID | None = None
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WalletSummary:
+    """The wallet display read (spec §15.1/§16.2, plan 05 task 8): the
+    projection's two figures plus the spendable derivation (available
+    minus ACTIVE reservations). A user without a wallet reads all
+    zeros — the projection row is created lazily by the first
+    balance-affecting entry."""
+
+    available_points: int
+    earned_points: int
+    spendable_points: int
 
 
 class InvalidLedgerEntryError(BusinessError):
@@ -410,6 +424,38 @@ class LedgerService:
         )
         assert frozen is not None
         return available - frozen
+
+    async def get_wallet_summary(
+        self, db: AsyncSession, user_id: UUID
+    ) -> WalletSummary:
+        """The wallet display read (spec §15.1/§16.2): the projection's
+        available/earned figures plus the spendable derivation in one
+        place, so the ``/points/me`` strip and any future surface quote
+        identical numbers. Lock-free like ``get_spendable_points``; a
+        user without a wallet row reads all zeros."""
+        row = (
+            await db.execute(
+                select(PointWallet.available_points, PointWallet.earned_points).where(
+                    PointWallet.user_id == user_id
+                )
+            )
+        ).first()
+        if row is None:
+            return WalletSummary(
+                available_points=0, earned_points=0, spendable_points=0
+            )
+        frozen = await db.scalar(
+            select(func.coalesce(func.sum(PointReservation.points), 0)).where(
+                PointReservation.user_id == user_id,
+                PointReservation.status == ReservationStatus.ACTIVE.value,
+            )
+        )
+        assert frozen is not None
+        return WalletSummary(
+            available_points=int(row.available_points),
+            earned_points=int(row.earned_points),
+            spendable_points=int(row.available_points) - int(frozen),
+        )
 
     async def grant_assignment_reward(
         self,

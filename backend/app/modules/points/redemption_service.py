@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Final, Protocol
+from typing import Final, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -109,6 +109,7 @@ __all__ = [
     "RewardOutOfStockError",
     "RewardRedemptionNotFoundError",
     "StaticAcademicTermProvider",
+    "window_open",
 ]
 
 # The §16.1 occupancy member set: exactly the statuses that hold one
@@ -344,9 +345,14 @@ class RedemptionNotFulfillableError(BusinessError):
         )
 
 
-def _window_open(item: RewardItem, now: datetime) -> bool:
+def window_open(item: RewardItem, now: datetime) -> bool:
     """The half-open window available_from <= now < available_until;
-    either bound NULL = unbounded in that direction (spec §16.1)."""
+    either bound NULL = unbounded in that direction (spec §16.1).
+
+    Public since plan 05 task 8: the student rewards listing computes
+    the same server-side verdict for display, and the verdict must be
+    ONE rule — a listing that disagreed with the request gate would
+    advertise an unredeemable item."""
     after_start = item.available_from is None or now >= item.available_from
     before_end = item.available_until is None or now < item.available_until
     return after_start and before_end
@@ -418,7 +424,7 @@ class RedemptionService:
         # review-service discipline): the window verdict belongs to
         # one instant.
         now = self._clock.now()
-        if not _window_open(item, now):
+        if not window_open(item, now):
             item_id, available_from, available_until = (
                 item.id,
                 item.available_from,
@@ -640,6 +646,65 @@ class RedemptionService:
         await db.flush()
         await db.commit()
         return redemption
+
+    # -- reads (plan 05 task 8: the listing surfaces) --------------------------------
+
+    async def list_reward_items(
+        self, db: AsyncSession, *, include_disabled: bool = False
+    ) -> list[RewardItem]:
+        """The redeemable catalogue for the student listing (spec §16):
+        enabled items only by default (``include_disabled`` serves the
+        future admin catalogue view), stable by name then id so the
+        shelf does not reshuffle between requests. Read-only; the
+        window verdict is the caller's to compute with ``window_open``
+        at its own clock instant."""
+        stmt = select(RewardItem)
+        if not include_disabled:
+            stmt = stmt.where(RewardItem.enabled.is_(True))
+        stmt = stmt.order_by(RewardItem.name, RewardItem.id)
+        return list((await db.scalars(stmt)).all())
+
+    async def list_redemptions(
+        self,
+        db: AsyncSession,
+        *,
+        statuses: tuple[str, ...] | None = None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[RewardRedemption, str]], int]:
+        """The staff review queue: ``(redemption, item_name)`` rows,
+        OLDEST FIRST (the fair review order), offset-paginated with the
+        total.
+
+        ``statuses=None`` (the default) is the PENDING set — REQUESTED
+        and UNDER_REVIEW, the decisions that still await a reviewer
+        (spec §16.1); an explicit tuple lets the surface find, e.g.,
+        APPROVED-but-unfulfilled rows for the fulfillment pass. A
+        REJECTED row never appears in the default queue — the flip
+        itself released it (spec §16.1)."""
+        if statuses is None:
+            statuses = (
+                RedemptionStatus.REQUESTED.value,
+                RedemptionStatus.UNDER_REVIEW.value,
+            )
+        filters = (RewardRedemption.status.in_(statuses),)
+        total = cast(
+            "int",
+            await db.scalar(
+                select(func.count()).select_from(RewardRedemption).where(*filters)
+            ),
+        )
+        rows = (
+            await db.execute(
+                select(RewardRedemption, RewardItem.name)
+                .join(RewardItem, RewardRedemption.reward_item_id == RewardItem.id)
+                .where(*filters)
+                .order_by(RewardRedemption.created_at, RewardRedemption.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        return [(redemption, item_name) for redemption, item_name in rows], total
 
     # -- shared helpers ----------------------------------------------------------------
 

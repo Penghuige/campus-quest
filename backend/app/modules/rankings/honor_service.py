@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -97,7 +98,10 @@ __all__ = [
     "HonorNotOwnedError",
     "HonorService",
     "HonorTrigger",
+    "OwnedHonor",
     "UserNotFoundError",
+    "completion_counts",
+    "current_on_time_streak",
     "matching_honor_definitions",
 ]
 
@@ -394,6 +398,74 @@ class CommemorativeHonorRequiredError(BusinessError):
         )
 
 
+# --- the shared §19 claim-fact queries ------------------------------------------------
+#
+# Extracted from HonorService (plan 05 task 8) because the growth page
+# (growth_service) computes the SAME facts: completed count, on-time
+# count/ratio, and the current on-time streak. One query vocabulary, one
+# §19 judgment — the honor evaluation and the growth profile can never
+# disagree about whether a claim was on time.
+
+
+async def completion_counts(session: AsyncSession, user_id: UUID) -> tuple[int, int]:
+    """``(completed, on_time)`` claim counts in one round trip (spec §19
+    累计完成任务数 / 按时完成率): total COMPLETED claims and the subset
+    whose FINAL valid reward lock was on time — the ``reward_tier_locked
+    == 100`` projection, the honor service's §19 judgment (see the
+    module docstring: the §9.3 ladder awards tier 100 only on the
+    on-time arm and the §11.3 re-lock clamp forces a re-locked claim to
+    <= 20, so an invalidated empty shell followed by a late valid
+    submission is LATE, never on-time)."""
+    stmt = select(
+        func.count().label("completed"),
+        func.count()
+        .filter(AssignmentClaim.reward_tier_locked == _ON_TIME_TIER)
+        .label("on_time"),
+    ).where(
+        AssignmentClaim.user_id == user_id,
+        AssignmentClaim.status == ClaimStatus.COMPLETED.value,
+    )
+    row = (await session.execute(stmt)).one()
+    return int(row.completed), int(row.on_time)
+
+
+async def current_on_time_streak(session: AsyncSession, user_id: UUID) -> int:
+    """Current consecutive on-time completions, newest first (spec §19
+    当前连续按时数): walk the COMPLETED claims from the most recent and
+    stop at the first non-tier-100 one."""
+    stmt = (
+        select(AssignmentClaim.reward_tier_locked)
+        .where(
+            AssignmentClaim.user_id == user_id,
+            AssignmentClaim.status == ClaimStatus.COMPLETED.value,
+        )
+        .order_by(
+            func.coalesce(
+                AssignmentClaim.terminal_at, AssignmentClaim.claimed_at
+            ).desc()
+        )
+    )
+    streak = 0
+    for tier in (await session.execute(stmt)).scalars():
+        if tier != _ON_TIME_TIER:
+            break
+        streak += 1
+    return streak
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedHonor:
+    """One honor a user owns, flattened for read surfaces (the growth
+    page's 已获得荣誉): the grant's ``granted_at`` plus the definition's
+    display facts."""
+
+    honor_id: UUID
+    name: str
+    honor_type: str
+    period: str | None
+    granted_at: datetime
+
+
 # --- the service ----------------------------------------------------------------------
 
 
@@ -417,9 +489,10 @@ class HonorService:
         await self._require_user(session, user_id)
         facts = HonorFacts()
         if event.trigger in _LIFETIME_TRIGGERS:
+            completed_count, _on_time = await completion_counts(session, user_id)
             facts = HonorFacts(
-                completed_count=await self._completed_count(session, user_id),
-                on_time_streak=await self._on_time_streak(session, user_id),
+                completed_count=completed_count,
+                on_time_streak=await current_on_time_streak(session, user_id),
                 earned_points=await self._repository.user_score(
                     session, user_id, None, None
                 ),
@@ -432,40 +505,28 @@ class HonorService:
                 granted.append(user_honor)
         return granted
 
-    async def _completed_count(self, session: AsyncSession, user_id: UUID) -> int:
-        """Total COMPLETED claims (spec §19 累计完成任务数口径)."""
+    async def list_user_honors(
+        self, session: AsyncSession, user_id: UUID
+    ) -> list[OwnedHonor]:
+        """Every honor the user owns, newest grant first (spec §18/§19:
+        the growth page's 已获得荣誉 read). Read-only, one join — no
+        grant, no display change."""
         stmt = (
-            select(func.count())
-            .select_from(AssignmentClaim)
-            .where(
-                AssignmentClaim.user_id == user_id,
-                AssignmentClaim.status == ClaimStatus.COMPLETED.value,
-            )
+            select(Honor, UserHonor)
+            .join(UserHonor, UserHonor.honor_id == Honor.id)
+            .where(UserHonor.user_id == user_id)
+            .order_by(UserHonor.granted_at.desc(), Honor.name)
         )
-        return int(await session.scalar(stmt) or 0)
-
-    async def _on_time_streak(self, session: AsyncSession, user_id: UUID) -> int:
-        """Current consecutive on-time completions, newest first
-        (spec §19 当前连续按时数): walk the COMPLETED claims from the most
-        recent and stop at the first non-tier-100 one."""
-        stmt = (
-            select(AssignmentClaim.reward_tier_locked)
-            .where(
-                AssignmentClaim.user_id == user_id,
-                AssignmentClaim.status == ClaimStatus.COMPLETED.value,
+        return [
+            OwnedHonor(
+                honor_id=honor.id,
+                name=honor.name,
+                honor_type=honor.honor_type,
+                period=honor.period,
+                granted_at=grant.granted_at,
             )
-            .order_by(
-                func.coalesce(
-                    AssignmentClaim.terminal_at, AssignmentClaim.claimed_at
-                ).desc()
-            )
-        )
-        streak = 0
-        for tier in (await session.execute(stmt)).scalars():
-            if tier != _ON_TIME_TIER:
-                break
-            streak += 1
-        return streak
+            for honor, grant in (await session.execute(stmt)).all()
+        ]
 
     async def _ensure_definition_row(
         self,

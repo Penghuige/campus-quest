@@ -126,6 +126,27 @@ class RankingService:
                 entries.append(entry)
         return entries
 
+    async def my_standing(
+        self, redis: Redis, user_id: UUID, period: RankingPeriod
+    ) -> tuple[int | None, int | None]:
+        """The caller's own ``(rank, score)`` on one board (1-based
+        rank; both ``None`` when they hold no score there).
+
+        The boards' companion read for the "my rank" strip the growth
+        page and the top-N responses carry: same keys, same projection,
+        no nickname enrichment — the caller already knows who they are.
+        Number-only by construction, so no §17/§40 field can leak.
+        """
+        member = str(user_id)
+        rank = cast("int | None", await redis.zrevrank(period.redis_key(), member))
+        # ``zscore`` is already typed ``float | None`` by redis-py here
+        # (unlike ``zrevrank``'s wider union), so no cast seam is needed.
+        score = await redis.zscore(period.redis_key(), member)
+        return (
+            int(rank) + 1 if rank is not None else None,
+            int(score) if score is not None else None,
+        )
+
     async def _entry_for(
         self, session: AsyncSession, member: str, score: float, rank: int
     ) -> RankingEntry | None:
