@@ -1,6 +1,7 @@
 # backend/app/workers/jobs/cleanup_files.py
 """File-retention cleanup worker home (plan 07 T7; spec §13, §27;
-MERGE_CARRIES item 3 — completed at the merge; hardening pass 4b).
+MERGE_CARRIES item 3 — completed at the merge; hardening pass 4b; pass
+5a leases + unified serialization boundary).
 
 - ``SubmissionCleanupRepository`` is the real ``CleanupRepository`` over
   the submissions table: due retention snapshots joined to their claims,
@@ -8,23 +9,34 @@ MERGE_CARRIES item 3 — completed at the merge; hardening pass 4b).
   rows already marked deleted, not-yet-due snapshots, and claims still
   inside the review pipeline (status VALIDATING / UNDER_REVIEW — §27
   不得误删尚在审核中的文件). The service re-validates every guard per
-  record, and — pass 4b — deletion AUTHORITY is the conditional claim:
-  ``claim_for_cleanup`` is ONE UPDATE whose WHERE re-evaluates every
-  guard against current committed state and whose RETURNING hands the
-  deletion right to exactly one caller (the TOCTOU closure: a
-  protection landing between scan and claim makes the claim fail).
+  record, and — pass 4b — deletion AUTHORITY is the claimed lease
+  (``cleanup_claimed_at`` + ``cleanup_lease_expires_at``, pass 5a):
+  ``claim_for_cleanup`` is a SHORT transaction that locks the submission
+  row and then the claim row — the SAME submission -> claim order the
+  protection paths (validation tx1/tx2) lock them; the reward-lock
+  review entry locks the claim row alone, which the claim's second lock
+  serializes with — re-evaluates every §13/§27 guard against CURRENT
+  committed state under both locks, writes the lease, and commits (pass
+  5a's unified serialization boundary: the protection writers'
+  claim-row-locked guard and this claim can no longer interleave —
+  whichever side takes the locks first wins). An expired lease is a
+  crashed worker: the row re-enters the candidate set and the takeover
+  resets both timestamps after the same guarded re-evaluation.
 - The same repository is the real ``OrphanIntentRepository`` (pass 4b):
   expired never-finalized upload intents — open-expired and burned
-  alike — claimed by the same conditional-UPDATE primitive over
-  ``upload_intents.cleanup_deleted_at`` and deleted; finalized intents
-  are never touched. Cleanup only ever claims intents PAST
-  ``expires_at``, safe because the presigned URL TTL deploys shorter
-  than the intent TTL (no legal PUT can land after expiry).
+  alike — claimed by the same conditional-UPDATE primitive (pass 5a
+  splits the claim columns ``cleanup_claimed_at`` /
+  ``cleanup_lease_expires_at`` from the ``cleanup_deleted_at`` DONE
+  marker) and deleted; finalized intents are never touched. Intents
+  carry no protection semantics, so the single conditional UPDATE
+  remains their whole serialization boundary — the lease adds only
+  crash takeover. Cleanup only ever claims intents PAST ``expires_at``,
+  safe because the presigned URL TTL deploys shorter than the intent
+  TTL (no legal PUT can land after expiry).
 - ``workers.cleanup_expired_files`` is the Celery scan shell: sample the
-  SystemClock, build the repository over the shared per-job session
-  source plus the production S3 adapter, run the TWO phases (files,
-  then orphan intents — same job, same beat entry), return the JSON
-  summary.
+  SystemClock, build the repository (lease length from Settings) and the
+  object-storage adapter, run the TWO phases (files, then orphan
+  intents — same job, same beat entry), return the JSON summary.
 
 Session lifecycle: the whole scan runs through
 ``app.workers.session_source.run_with_session_maker`` — one fresh engine
@@ -32,8 +44,8 @@ created and disposed inside this task's ``asyncio.run``, every session
 the repository opens rides that engine, and no pooled connection ever
 crosses the loop boundary the next task invocation closes. Every
 repository method is its own short transaction: the claim takes and
-releases its row lock in one statement, and NO lock is ever held across
-the S3 delete (the declarative-claim ruling).
+releases its two row locks in one transaction, and NO lock is ever held
+across the S3 delete (the declarative-claim ruling).
 
 Retry policy: transient database failures (``OperationalError`` /
 ``DBAPIError``) retry with bounded backoff — the scan's per-record work
@@ -56,7 +68,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -98,9 +110,9 @@ _MAX_RETRIES = 5
 
 class SubmissionCleanupRepository:
     """The real ``CleanupRepository`` and ``OrphanIntentRepository``
-    (spec §13/§27; pass 4b): due submissions and orphan intents from
-    PostgreSQL, the conditional deletion claim, idempotent
-    ``deleted_at`` compare-and-set.
+    (spec §13/§27; pass 4b claim, pass 5a lease): due submissions and
+    orphan intents from PostgreSQL, the lock-ordered leased deletion
+    claim with crash takeover, idempotent ``deleted_at`` compare-and-set.
 
     Every session opens through the injected maker — in production the
     per-job maker from ``run_with_session_maker``, so the repository
@@ -109,8 +121,21 @@ class SubmissionCleanupRepository:
     ``tests/workers/test_file_cleanup.py`` does).
     """
 
-    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        *,
+        lease_seconds: int,
+    ) -> None:
+        """``lease_seconds`` is the claim lease length (the
+        ``cleanup_claim_lease_seconds`` setting in production; explicit
+        here so the exclusivity horizon under test is a visible fact,
+        not a hidden default)."""
         self._session_maker = session_maker
+        self._lease_seconds = lease_seconds
+
+    def _lease_expiry(self, now: datetime) -> datetime:
+        return now + timedelta(seconds=self._lease_seconds)
 
     async def collect_due_files(
         self, now: datetime, *, limit: int = CLEANUP_BATCH_LIMIT
@@ -120,13 +145,16 @@ class SubmissionCleanupRepository:
         The exclusion set is the §13/§27 candidate filter: not permanent
         (the XOR-checked snapshot columns make the predicate redundant
         with ``retention_until IS NOT NULL``, kept for the fail-safe
-        reading), no legal hold, not already marked, retention due, and
-        the claim not inside the review pipeline. Ordered oldest-due
-        first so a bounded batch drains the most overdue rows. This is
-        only the CANDIDATE listing — the deletion right is claimed
-        separately by ``claim_for_cleanup``.
+        reading), no legal hold, not already marked, retention due, the
+        claim not inside the review pipeline — and no LIVE cleanup lease
+        (unclaimed rows, plus claimed rows whose lease expired: pass 5a
+        ends the permanent exclusion of claimed rows — an expired lease
+        is a crashed worker whose row the scan must take over). Ordered
+        oldest-due first so a bounded batch drains the most overdue
+        rows. This is only the CANDIDATE listing — the deletion right is
+        claimed separately by ``claim_for_cleanup``.
         """
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
 
         from app.modules.submissions.models import Submission
         from app.modules.tasks.models import AssignmentClaim
@@ -149,7 +177,14 @@ class SubmissionCleanupRepository:
                         Submission.legal_hold.is_(False),
                         Submission.retention_until.is_not(None),
                         Submission.retention_until <= now,
-                        Submission.cleanup_claimed_at.is_(None),
+                        # No live lease: unclaimed, or claimed with an
+                        # expired lease (crash takeover re-candidates the
+                        # row). A claimed row with a NULL lease stays
+                        # excluded — unknown lease reads as live.
+                        or_(
+                            Submission.cleanup_claimed_at.is_(None),
+                            Submission.cleanup_lease_expires_at <= now,
+                        ),
                         AssignmentClaim.status.not_in(_UNDER_REVIEW_CLAIM_STATUSES),
                     )
                     .order_by(Submission.retention_until, Submission.id)
@@ -177,58 +212,90 @@ class SubmissionCleanupRepository:
         ]
 
     async def claim_for_cleanup(self, record: FileRecord, *, now: datetime) -> bool:
-        """Claim the deletion right over one record (pass 4b ruling).
+        """Claim the deletion right over one record (pass 4b ruling;
+        pass 5a unified serialization boundary + lease).
 
-        ONE conditional UPDATE: the WHERE clause re-evaluates EVERY
-        §13/§27 guard against CURRENT committed state — not permanent,
-        no legal hold, retention snapshot still due, not already
-        deleted, the claim's status still outside the review pipeline,
-        and no claim already held — and the same statement sets
-        ``cleanup_claimed_at = now``. ``RETURNING`` decides: True only
-        for the winner. Single statement = guards and claim are atomic,
-        so a legal_hold or review-pipeline entry committed since the
-        scan makes the claim fail and the object survive. The row lock
-        this UPDATE takes is released at the commit right here — never
-        carried across the provider call.
+        ONE short transaction, locked in the protection paths' own
+        order: (1) the submission row FOR UPDATE, (2) the claim row FOR
+        UPDATE — the same submission -> claim direction validation tx1 /
+        tx2 take (no service locks claim -> submission, so no cycle can
+        form). Under BOTH locks every §13/§27 guard is re-evaluated
+        against the CURRENT committed rows — not permanent, no legal
+        hold, retention still due, not already deleted, the claim's
+        status still outside the review pipeline, and no LIVE lease
+        held — and the same transaction writes the lease
+        (``cleanup_claimed_at = now`` plus
+        ``cleanup_lease_expires_at = now + lease_seconds``) and commits.
+        A takeover (the previous lease expired) resets both timestamps.
+
+        Mutual exclusion with the protection writers is the row locks
+        themselves: a protection transaction holding either lock blocks
+        this claim until it commits, and this claim's guard then sees
+        the committed protected state and fails — and vice versa, a
+        protection arriving mid-claim waits and its guard sees the
+        committed live lease (the typed 409). The locks are released at
+        the commit right here — never carried across the provider call.
         """
-        from sqlalchemy import select, update
+        from sqlalchemy import select
 
         from app.modules.submissions.models import Submission
         from app.modules.tasks.models import AssignmentClaim
 
-        claim_status_outside_review = (
-            select(AssignmentClaim.id)
-            .where(
-                AssignmentClaim.id == Submission.claim_id,
-                AssignmentClaim.status.not_in(_UNDER_REVIEW_CLAIM_STATUSES),
-            )
-            .exists()
-        )
         async with self._session_maker() as session:
-            result = await session.execute(
-                update(Submission)
-                .where(
-                    Submission.id == record.submission_id,
-                    Submission.deleted_at.is_(None),
-                    Submission.retention_permanent.is_(False),
-                    Submission.legal_hold.is_(False),
-                    Submission.retention_until.is_not(None),
-                    Submission.retention_until <= now,
-                    Submission.cleanup_claimed_at.is_(None),
-                    claim_status_outside_review,
-                )
-                .values(cleanup_claimed_at=now)
-                .returning(Submission.id)
+            # (1) The submission row lock — the protection paths' FIRST
+            # lock (validation tx1's `SELECT submissions ... FOR UPDATE`).
+            submission = await session.scalar(
+                select(Submission)
+                .where(Submission.id == record.submission_id)
+                .with_for_update()
             )
-            claimed = result.scalar_one_or_none() is not None
+            if submission is None:
+                # Rows are never deleted from this table, so a live
+                # candidate cannot vanish; if it somehow does, the
+                # fail-safe answer is claim-lost (no deletion right).
+                await session.rollback()
+                return False
+            # (2) The claim row lock — same direction as validation
+            # tx1's second lock; the reward-lock review entry takes this
+            # lock alone, which is the boundary it serializes on.
+            claim = await session.scalar(
+                select(AssignmentClaim)
+                .where(AssignmentClaim.id == submission.claim_id)
+                .with_for_update()
+            )
+            lease_live = (
+                submission.cleanup_claimed_at is not None
+                and submission.deleted_at is None
+                and (
+                    submission.cleanup_lease_expires_at is None
+                    or submission.cleanup_lease_expires_at > now
+                )
+            )
+            if (
+                submission.deleted_at is not None
+                or submission.retention_permanent
+                or submission.legal_hold
+                or submission.retention_until is None
+                or submission.retention_until > now
+                or lease_live
+                or claim is None  # FK-broken unreachable shape
+                or claim.status in _UNDER_REVIEW_CLAIM_STATUSES
+            ):
+                # A guard failed on the locked current state, or another
+                # delivery holds a live lease: no deletion right. Read-
+                # only transaction — rollback releases both locks.
+                await session.rollback()
+                return False
+            submission.cleanup_claimed_at = now
+            submission.cleanup_lease_expires_at = self._lease_expiry(now)
             await session.commit()
-            return claimed
+            return True
 
     async def release_cleanup_claim(self, record: FileRecord) -> None:
-        """Release the claim after a provider failure: clear
-        ``cleanup_claimed_at`` (only while the row is still unmarked) so
-        the next scan re-claims and the protection writers are not
-        blocked on a dead claim. The object is NOT marked deleted."""
+        """Release the claim after a provider failure: clear BOTH lease
+        columns (only while the row is still unmarked) so the next scan
+        re-claims and the protection writers are not blocked on a dead
+        claim. The object is NOT marked deleted."""
         from sqlalchemy import update
 
         from app.modules.submissions.models import Submission
@@ -241,7 +308,10 @@ class SubmissionCleanupRepository:
                     Submission.cleanup_claimed_at.is_not(None),
                     Submission.deleted_at.is_(None),
                 )
-                .values(cleanup_claimed_at=None)
+                .values(
+                    cleanup_claimed_at=None,
+                    cleanup_lease_expires_at=None,
+                )
             )
             await session.commit()
 
@@ -300,8 +370,11 @@ class SubmissionCleanupRepository:
         after ``expires_at``; a BURNED intent's object failed
         verification and only a fresh intent — a fresh key — can
         replace it). Finalized intents are excluded: their object
-        belongs to the Submission row and the retention pipeline."""
-        from sqlalchemy import select
+        belongs to the Submission row and the retention pipeline. A
+        live cleanup lease also excludes the row (pass 5a); an EXPIRED
+        lease re-candidates it — the claiming worker died between claim
+        and delete, and this scan takes over."""
+        from sqlalchemy import or_, select
 
         from app.modules.submissions.models import UploadIntent
 
@@ -313,6 +386,10 @@ class SubmissionCleanupRepository:
                         UploadIntent.expires_at <= now,
                         UploadIntent.finalized_submission_id.is_(None),
                         UploadIntent.cleanup_deleted_at.is_(None),
+                        or_(
+                            UploadIntent.cleanup_claimed_at.is_(None),
+                            UploadIntent.cleanup_lease_expires_at <= now,
+                        ),
                     )
                     .order_by(UploadIntent.expires_at, UploadIntent.id)
                     .limit(limit)
@@ -326,12 +403,17 @@ class SubmissionCleanupRepository:
     async def claim_intent(self, intent: IntentRecord, *, now: datetime) -> bool:
         """Claim one intent for deletion: ONE conditional UPDATE
         re-evaluating every guard (``expires_at <= now``, never
-        finalized, unclaimed) and setting ``cleanup_deleted_at = now``
-        — the claim column doubles as the done marker. Finalize cannot
-        lose to this claim: it takes the intent-row FOR UPDATE before
-        its own expiry check, so a finalize and a claim serialize on
-        the row and the loser's predicate fails."""
-        from sqlalchemy import update
+        finalized, not done, no live lease — unclaimed, or claimed with
+        an expired lease, which this takeover RESETS to a fresh lease)
+        and setting ``cleanup_claimed_at`` plus
+        ``cleanup_lease_expires_at``; ``cleanup_deleted_at`` stays NULL
+        until ``mark_intent_deleted`` records the completion (pass 5a
+        splits the pass-4b combined column). Finalize cannot lose to
+        this claim: it takes the intent-row FOR UPDATE before its own
+        expiry check, so the two serialize on the row; intents carry no
+        protection transition, so the single statement is their whole
+        serialization boundary."""
+        from sqlalchemy import or_, update
 
         from app.modules.submissions.models import UploadIntent
 
@@ -343,17 +425,28 @@ class SubmissionCleanupRepository:
                     UploadIntent.expires_at <= now,
                     UploadIntent.finalized_submission_id.is_(None),
                     UploadIntent.cleanup_deleted_at.is_(None),
+                    or_(
+                        UploadIntent.cleanup_claimed_at.is_(None),
+                        UploadIntent.cleanup_lease_expires_at <= now,
+                    ),
                 )
-                .values(cleanup_deleted_at=now)
+                .values(
+                    cleanup_claimed_at=now,
+                    cleanup_lease_expires_at=self._lease_expiry(now),
+                )
                 .returning(UploadIntent.id)
             )
             claimed = result.scalar_one_or_none() is not None
             await session.commit()
             return claimed
 
-    async def release_intent(self, intent: IntentRecord) -> None:
-        """Release the intent claim after a provider failure: clear
-        ``cleanup_deleted_at`` so the next scan retries."""
+    async def mark_intent_deleted(
+        self, intent: IntentRecord, *, deleted_at: datetime
+    ) -> None:
+        """Record the deletion's completion (the DONE marker, pass 5a):
+        set ``cleanup_deleted_at`` only while NULL — idempotent, so a
+        redelivered job or the takeover after a delete-that-already-
+        happened marks at most one instant and never overwrites one."""
         from sqlalchemy import update
 
         from app.modules.submissions.models import UploadIntent
@@ -363,9 +456,31 @@ class SubmissionCleanupRepository:
                 update(UploadIntent)
                 .where(
                     UploadIntent.id == intent.intent_id,
-                    UploadIntent.cleanup_deleted_at.is_not(None),
+                    UploadIntent.cleanup_deleted_at.is_(None),
                 )
-                .values(cleanup_deleted_at=None)
+                .values(cleanup_deleted_at=deleted_at)
+            )
+            await session.commit()
+
+    async def release_intent(self, intent: IntentRecord) -> None:
+        """Release the intent claim after a provider failure: clear BOTH
+        lease columns so the next scan retries (the done marker stays
+        NULL — the deletion never settled)."""
+        from sqlalchemy import update
+
+        from app.modules.submissions.models import UploadIntent
+
+        async with self._session_maker() as session:
+            await session.execute(
+                update(UploadIntent)
+                .where(
+                    UploadIntent.id == intent.intent_id,
+                    UploadIntent.cleanup_claimed_at.is_not(None),
+                )
+                .values(
+                    cleanup_claimed_at=None,
+                    cleanup_lease_expires_at=None,
+                )
             )
             await session.commit()
 
@@ -407,8 +522,11 @@ def cleanup_files_scan(self: Any, request_id: str) -> dict[str, Any]:
             cleanup_orphaned_intents,
         )
 
-        repository = SubmissionCleanupRepository(session_maker)
-        storage = S3ObjectStorage(get_settings())
+        settings = get_settings()
+        repository = SubmissionCleanupRepository(
+            session_maker, lease_seconds=settings.cleanup_claim_lease_seconds
+        )
+        storage = S3ObjectStorage(settings)
         files = await cleanup_expired_files(now, repository, storage)
         intents = await cleanup_orphaned_intents(now, repository, storage)
         return files, intents

@@ -190,6 +190,15 @@ class Settings(BaseSettings):
     notification_dispatch_scan_interval_seconds: int = 60
     claim_expiry_scan_interval_seconds: int = 60
     file_cleanup_scan_interval_seconds: int = 900
+    # Cleanup deletion-claim lease (PR #2 hardening pass 5a, P0-2): how
+    # long a claimed deletion right stays exclusive. Sized above the
+    # claim -> provider delete -> completion-mark window of a healthy
+    # worker, so a live claim is never stolen; a worker that dies between
+    # its claim commit and the S3 delete leaves exactly this much
+    # stranded-claim exposure before the next scan takes over (re-claims
+    # under the protection paths' own row locks and converges, §27).
+    # Wired into SubmissionCleanupRepository by the cleanup job.
+    cleanup_claim_lease_seconds: int = 300
     # Stale-VALIDATING recovery (PR #2 hardening sub-F2): a submission
     # whose validation job exhausted its bounded retries (or lost its
     # instances) stays VALIDATING forever with its claim riding along in
@@ -277,6 +286,20 @@ class Settings(BaseSettings):
         # cadence the broker cannot absorb.
         if value < 1:
             raise ValueError(f"beat scan intervals must be >= 1 second, got {value}")
+        return value
+
+    @field_validator("cleanup_claim_lease_seconds")
+    @classmethod
+    def _validate_cleanup_claim_lease_seconds(cls, value: int) -> int:
+        # A sub-second lease would treat every live claim as expired and
+        # re-claim in-flight deletions on every scan — the opposite of
+        # the exclusivity the lease exists for. (There is deliberately no
+        # upper bound: a longer lease only widens the crash-stranded
+        # window, which the takeover still closes.)
+        if value < 1:
+            raise ValueError(
+                f"cleanup_claim_lease_seconds must be >= 1 second, got {value}"
+            )
         return value
 
     @field_validator("stale_validating_requeue_seconds")

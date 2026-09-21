@@ -1,14 +1,15 @@
 # backend/tests/workers/test_cleanup_deletion_claim.py
 """The pass-4b deletion-claim contract against real PostgreSQL (spec
 §13/§27; G15: concurrency invariants are proven on real PG with
-independent connections, never with mocks).
+independent connections, never with mocks), extended by pass 5a (claim
+leases + the unified serialization boundary).
 
 What the owner-named TOCTOU race proved BEFORE pass 4b: the cleanup scan
 returned detached boolean snapshots, so a protection (legal_hold, a
 claim entering the review pipeline) that landed between the scan and
 the provider delete was invisible — the object died anyway. The claim
-conditional UPDATE closes it: every guard is re-evaluated against
-CURRENT committed state in the same statement that takes the claim.
+closes it: every guard is re-evaluated against CURRENT committed state
+under the row locks the protection paths themselves take.
 
 Coverage:
 
@@ -28,11 +29,35 @@ Coverage:
   missing object is idempotent success, a provider failure releases
   the claim for the next scan.
 
+Pass 5a (P0-1/P0-2) adds, further down this file:
+
+- the PAUSE race, positive form: a protection transaction holding its
+  row locks and having passed the guard, paused BEFORE its status
+  commit, while the cleanup tries to claim — the cleanup must NEVER
+  obtain the deletion right (it blocks on the protection's lock until
+  the protection commits, then loses the guard re-evaluation), and
+  storage.delete_object is never called. Both protection shapes:
+  validation tx1 (submission -> claim locks) and the reward-lock review
+  entry (claim lock alone);
+- CRASH convergence (P0-2), all through scan reruns — no manual SQL
+  state surgery anywhere: a worker dying right after its claim commit
+  is taken over once the lease expires and the deletion completes; a
+  worker dying after the S3 delete but before the DB mark converges
+  through the §27 missing-object branch (takeover claim -> delete 404s
+  -> reconcile mark); an intent-side crash converges the same way;
+- the lease-aware protection guard: a LIVE lease (and a NULL lease —
+  fail-safe) still refuses protection; an EXPIRED lease no longer
+  does (protection wins over a stale lease).
+
 Harness notes (the test_file_cleanup.py conventions): explicit
 committed sessions from a NullPool engine factory — every asyncio.run
 phase runs on a fresh event loop, so pooled connections must never be
 reused across them; usernames embed a per-run token; every test removes
-its rows with committed DELETEs in FK order in ``finally``.
+its rows with committed DELETEs in FK order in ``finally``. The pause
+races run their concurrent arms on ONE loop with asyncio tasks over
+independent sessions (two connections, G15's requirement) — the
+protection arm holds real FOR UPDATE locks across an await, which only
+a genuinely separate session can do.
 """
 
 from __future__ import annotations
@@ -50,17 +75,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.modules.files.cleanup_service import (
+    CleanupSummary,
     FileCleanupOutcome,
     FileRecord,
+    IntentRecord,
     OrphanIntentOutcome,
     OrphanIntentSummary,
     cleanup_expired_file,
+    cleanup_expired_files,
     cleanup_orphaned_intents,
 )
 from tests.fakes.integrations import FakeObjectStorage
 
 NOW = datetime(2026, 9, 22, 3, 0, tzinfo=UTC)
 TTL = timedelta(minutes=5)
+# The claim lease length wired into every repository below (the
+# cleanup_claim_lease_seconds default; explicit so the takeover horizon
+# under test is a visible fact).
+LEASE_SECONDS = 300
+LEASE = timedelta(seconds=LEASE_SECONDS)
 
 _TEST_DATABASE_MARKER = "campusquest_test"
 _DEFAULT_DATABASE_URL = (
@@ -375,7 +408,7 @@ def test_real_repository_claim_reevaluates_every_guard() -> None:
     maker = _factory()
     run = uuid.uuid4().hex[:8]
     world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
     record: FileRecord | None = None
 
     async def _reset() -> None:
@@ -386,6 +419,7 @@ def test_real_repository_claim_reevaluates_every_guard() -> None:
                 .values(
                     legal_hold=False,
                     cleanup_claimed_at=None,
+                    cleanup_lease_expires_at=None,
                     deleted_at=None,
                     retention_until=NOW - timedelta(days=30),
                     retention_permanent=False,
@@ -488,7 +522,7 @@ def test_race_legal_hold_between_scan_and_claim_loses_the_deletion() -> None:
     maker = _factory()
     run = uuid.uuid4().hex[:8]
     world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
 
     try:
         # Connection A: the scan snapshot.
@@ -542,7 +576,7 @@ def test_race_review_entry_between_scan_and_claim_loses_the_deletion() -> None:
     maker = _factory()
     run = uuid.uuid4().hex[:8]
     world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
 
     try:
         record = _scan_snapshot(maker, world)
@@ -591,11 +625,11 @@ def test_held_claim_rejects_protection_then_release_admits_it_again() -> None:
     maker = _factory()
     run = uuid.uuid4().hex[:8]
     world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
 
     async def _guard() -> None:
         async with maker() as session:
-            await ensure_no_active_cleanup_claim(session, world.claim_id)
+            await ensure_no_active_cleanup_claim(session, world.claim_id, now=NOW)
 
     try:
         record = _scan_snapshot(maker, world)
@@ -861,7 +895,7 @@ def test_orphan_intent_cleanup_matrix() -> None:
             ),
         )
     )
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
     storage = FakeObjectStorage()
     # The burned intent's object exists; the open-expired one never
     # landed (the common never-uploaded shape). The key was seeded in
@@ -923,7 +957,7 @@ def test_orphan_intent_provider_failure_releases_claim_for_next_scan() -> None:
             intents=(IntentSpec(name="stuck", expires_at=NOW - timedelta(hours=1)),),
         )
     )
-    repository = SubmissionCleanupRepository(maker)
+    repository = SubmissionCleanupRepository(maker, lease_seconds=300)
     storage = FakeObjectStorage()
     key = asyncio.run(_intent_key(maker, world, "stuck"))
     _hold(storage, key)
@@ -1078,3 +1112,481 @@ def test_cleanup_scan_job_runs_both_phases_end_to_end(celery_app: Any) -> None:
     finally:
         asyncio.run(_cleanup_world(maker, world))
         get_settings.cache_clear()
+
+
+# --- pass 5a, P0-1: the pause race, positive form -------------------------------------
+#
+# The both-in-flight window pass 4b left open: a protection transaction
+# that had PASSED its guard but not yet committed, with the cleanup
+# claim committing in between. The unified serialization boundary must
+# make that impossible: the claim takes the SAME row locks the
+# protection holds, so it blocks until the protection commits, then
+# loses the guard re-evaluation. Both protection shapes are pinned.
+
+
+def _run_pause_race(
+    maker: async_sessionmaker[AsyncSession],
+    world: World,
+    *,
+    protection_locks_submission: bool,
+) -> tuple[FileCleanupOutcome, FakeObjectStorage]:
+    """One pause-race scenario: the protection arm (an independent
+    session mirroring the real write point's lock sequence) takes its
+    locks, passes the guard, signals ``held``, and pauses BEFORE writing
+    the protected status; the cleanup then attempts the full per-file
+    decision (claim -> delete) on another session; the protection
+    commits; the scenario returns the cleanup's outcome plus the storage
+    fake for zero-call assertions.
+
+    ``protection_locks_submission`` selects the shape: validation tx1
+    (submission FOR UPDATE, then claim FOR UPDATE) or the reward-lock
+    review entry (claim FOR UPDATE alone — the shape under which the
+    pass-4b single-statement claim could still slip through, because it
+    blocked on no lock the protection held).
+    """
+    from sqlalchemy import select
+
+    from app.modules.submissions.cleanup_claim import (
+        ensure_no_active_cleanup_claim,
+    )
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.models import AssignmentClaim
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+    storage = FakeObjectStorage()
+    submission_id = world.submission_ids["due"]
+
+    async def _protection(
+        session: AsyncSession, held: asyncio.Event, proceed: asyncio.Event
+    ) -> None:
+        submission: Submission | None = None
+        if protection_locks_submission:
+            # validation_service tx1's first lock: submissions FOR UPDATE.
+            submission = await session.scalar(
+                select(Submission)
+                .where(Submission.id == submission_id)
+                .with_for_update()
+            )
+            assert submission is not None
+            claim_id = submission.claim_id
+        else:
+            # reward_lock_service: plain anchor read, NO submission lock.
+            anchor = await session.get(Submission, submission_id)
+            assert anchor is not None
+            claim_id = anchor.claim_id
+        # The shared serialization point: the claim row FOR UPDATE.
+        claim = await session.scalar(
+            select(AssignmentClaim)
+            .where(AssignmentClaim.id == claim_id)
+            .with_for_update()
+        )
+        assert claim is not None
+        # The guard passes — no claim exists yet — exactly the pass-4b
+        # both-in-flight setup.
+        await ensure_no_active_cleanup_claim(session, claim.id, now=NOW)
+        held.set()
+        await proceed.wait()  # PAUSED between guard check and status commit
+        if protection_locks_submission:
+            assert submission is not None
+            submission.validation_status = "VALIDATING"
+        claim.status = "VALIDATING" if protection_locks_submission else "UNDER_REVIEW"
+        await session.commit()
+
+    async def _snapshot() -> FileRecord:
+        # The scan snapshot, read inline (the sync _scan_snapshot helper
+        # runs its own asyncio.run, illegal inside this scenario's loop).
+        async with maker() as session:
+            row = await session.get(Submission, submission_id)
+            assert row is not None
+            return FileRecord(
+                submission_id=row.id,
+                object_key=row.object_key,
+                retention_until=row.retention_until,
+            )
+
+    async def _scenario() -> FileCleanupOutcome:
+        held = asyncio.Event()
+        proceed = asyncio.Event()
+        async with maker() as protection_session:
+            protection = asyncio.create_task(
+                _protection(protection_session, held, proceed)
+            )
+            await asyncio.wait_for(held.wait(), timeout=10)
+            record = await _snapshot()
+            _hold(storage, record.object_key)
+            cleanup = asyncio.create_task(
+                cleanup_expired_file(record, repo=repository, storage=storage, now=NOW)
+            )
+            # Give the cleanup time to reach (and block on) the
+            # protection's row lock: it must still be undecided here.
+            await asyncio.sleep(0.2)
+            assert not cleanup.done(), (
+                "the cleanup claim must be BLOCKED on the protection's "
+                "row lock, not decided while the protection is paused"
+            )
+            proceed.set()
+            outcome = await asyncio.wait_for(cleanup, timeout=30)
+            await asyncio.wait_for(protection, timeout=10)
+            return outcome
+
+    return asyncio.run(_scenario()), storage
+
+
+@pytest.mark.integration
+def test_pause_race_validation_entry_never_yields_the_deletion_right() -> None:
+    """Owner-named pause race, validation-tx1 shape (submission ->
+    claim locks): the protection holds both row locks past its guard
+    check; the cleanup's claim blocks on the submission lock; the
+    protection commits VALIDATING; the cleanup's guard re-evaluation
+    then sees the review-pipeline status and fails — the cleanup NEVER
+    obtains the deletion right and delete_object is never called."""
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.models import AssignmentClaim
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    try:
+        outcome, storage = _run_pause_race(
+            maker, world, protection_locks_submission=True
+        )
+        assert outcome is FileCleanupOutcome.SKIPPED_CLAIM_LOST
+        assert storage.deleted_keys == []
+        assert (
+            storage.head_object(object_key=_scan_snapshot(maker, world).object_key)
+            is not None
+        )
+
+        async def _state() -> tuple[Any, Any, Any, str]:
+            async with maker() as session:
+                submission = await session.get(Submission, world.submission_ids["due"])
+                claim_status = await session.scalar(
+                    select(AssignmentClaim.status).where(
+                        AssignmentClaim.id == world.claim_id
+                    )
+                )
+                assert submission is not None and claim_status is not None
+                return (
+                    submission.cleanup_claimed_at,
+                    submission.cleanup_lease_expires_at,
+                    submission.deleted_at,
+                    claim_status,
+                )
+
+        claimed_at, lease_at, deleted_at, claim_status = asyncio.run(_state())
+        assert claimed_at is None  # never obtained the deletion right
+        assert lease_at is None
+        assert deleted_at is None
+        assert claim_status == "VALIDATING"  # the protection won
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+@pytest.mark.integration
+def test_pause_race_review_entry_never_yields_the_deletion_right() -> None:
+    """Owner-named pause race, reward-lock shape (claim row lock
+    ALONE — the sharpest regression pin: the pass-4b single-statement
+    claim blocked on no lock this protection holds, so it could commit
+    mid-protection; the pass-5a claim's second lock now serializes with
+    it): the cleanup locks the free submission row, blocks on the claim
+    row, the protection commits UNDER_REVIEW, and the guard
+    re-evaluation under the acquired locks fails the claim."""
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.models import AssignmentClaim
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    try:
+        outcome, storage = _run_pause_race(
+            maker, world, protection_locks_submission=False
+        )
+        assert outcome is FileCleanupOutcome.SKIPPED_CLAIM_LOST
+        assert storage.deleted_keys == []
+
+        async def _state() -> tuple[Any, Any, str]:
+            async with maker() as session:
+                submission = await session.get(Submission, world.submission_ids["due"])
+                claim_status = await session.scalar(
+                    select(AssignmentClaim.status).where(
+                        AssignmentClaim.id == world.claim_id
+                    )
+                )
+                assert submission is not None and claim_status is not None
+                return (
+                    submission.cleanup_claimed_at,
+                    submission.deleted_at,
+                    claim_status,
+                )
+
+        claimed_at, deleted_at, claim_status = asyncio.run(_state())
+        assert claimed_at is None
+        assert deleted_at is None
+        assert claim_status == "UNDER_REVIEW"  # the protection won
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+# --- pass 5a, P0-2: crash convergence via lease takeover (no manual SQL) --------------
+
+
+@pytest.mark.integration
+def test_crash_after_claim_converges_via_lease_takeover() -> None:
+    """Crash shape 1: the worker's claim LEASE commits, then it dies
+    (no provider call, no mark). While the lease lives the scan must not
+    steal the claim; once it expires the row re-enters the candidate
+    set, the takeover resets BOTH timestamps under the guarded boundary,
+    and the deletion completes — convergence purely through scan reruns."""
+    from app.modules.submissions.models import Submission
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+    storage = FakeObjectStorage()
+
+    async def _state() -> tuple[Any, Any, Any]:
+        async with maker() as session:
+            submission = await session.get(Submission, world.submission_ids["due"])
+            assert submission is not None
+            return (
+                submission.cleanup_claimed_at,
+                submission.cleanup_lease_expires_at,
+                submission.deleted_at,
+            )
+
+    try:
+        record = _scan_snapshot(maker, world)
+        _hold(storage, record.object_key)
+
+        # The claim commits; the worker dies right after (its session
+        # closed with the commit — an honest death, nothing staged).
+        assert asyncio.run(repository.claim_for_cleanup(record, now=NOW)) is True
+        claimed_at, lease_at, deleted_at = asyncio.run(_state())
+        assert claimed_at == NOW
+        assert lease_at == NOW + LEASE
+        assert deleted_at is None
+
+        # Live lease: not a candidate, not stealable, object untouched.
+        within = NOW + timedelta(seconds=10)
+        assert asyncio.run(repository.collect_due_files(within)) == []
+        assert asyncio.run(cleanup_expired_files(within, repository, storage)) == (
+            CleanupSummary()
+        )
+        assert storage.deleted_keys == []
+
+        # Lease expired: takeover resets both timestamps and completes.
+        later = NOW + LEASE + timedelta(seconds=1)
+        summary = asyncio.run(cleanup_expired_files(later, repository, storage))
+        assert summary == CleanupSummary(scanned=1, deleted=1)
+        assert storage.deleted_keys == [record.object_key]
+        claimed_at, lease_at, deleted_at = asyncio.run(_state())
+        assert claimed_at == later  # the takeover reset the lease start
+        assert lease_at == later + LEASE
+        assert deleted_at == later
+
+        # Converged: a further scan finds nothing to do.
+        assert asyncio.run(cleanup_expired_files(later, repository, storage)) == (
+            CleanupSummary()
+        )
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+@pytest.mark.integration
+def test_crash_after_delete_before_mark_converges_via_missing_object(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Crash shape 2 (§27 branch 2): the S3 delete SUCCEEDS, the worker
+    dies before the DB mark. The next scan (post-lease) takes over, the
+    delete 404s, and the reconcile branch fixes the state with exactly
+    one warning — idempotent convergence, object-first ordering paying
+    off."""
+    import logging as _logging
+
+    from app.modules.submissions.models import Submission
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+    storage = FakeObjectStorage()
+
+    try:
+        record = _scan_snapshot(maker, world)
+        _hold(storage, record.object_key)
+
+        assert asyncio.run(repository.claim_for_cleanup(record, now=NOW)) is True
+        # The provider call completed; the worker dies before mark_deleted.
+        storage.delete_object(object_key=record.object_key)
+        assert storage.head_object(object_key=record.object_key) is None
+
+        later = NOW + LEASE + timedelta(seconds=1)
+        with caplog.at_level(
+            _logging.WARNING, logger="app.modules.files.cleanup_service"
+        ):
+            summary = asyncio.run(cleanup_expired_files(later, repository, storage))
+        assert summary == CleanupSummary(scanned=1, reconciled=1)
+        # Exactly the one provider call this test made itself: the
+        # takeover's own delete found the object already gone (a 404 the
+        # fake records nothing for) and the reconcile branch fixed the
+        # row with one warning.
+        assert storage.deleted_keys == [record.object_key]
+        warnings = [
+            record_
+            for record_ in caplog.records
+            if record_.message == "file_cleanup.reconcile_missing_object"
+        ]
+        assert len(warnings) == 1
+
+        async def _state() -> Any:
+            async with maker() as session:
+                submission = await session.get(Submission, world.submission_ids["due"])
+                assert submission is not None
+                return submission.deleted_at
+
+        assert asyncio.run(_state()) == later
+        # Converged.
+        assert asyncio.run(cleanup_expired_files(later, repository, storage)) == (
+            CleanupSummary()
+        )
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+@pytest.mark.integration
+def test_crash_after_intent_claim_converges_via_lease_takeover() -> None:
+    """Crash shape 3, intent side (P0-2's upload-intents half): a
+    claimed intent whose worker died stays claimed-but-not-done; the
+    live lease is not stolen, the expired lease re-candidates the row,
+    the takeover resets the lease columns and the done marker records
+    the completion — the pass-4b combined column would have leaked the
+    object forever."""
+    from app.modules.submissions.models import UploadIntent
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(
+        _seed_world(
+            maker,
+            run,
+            intents=(IntentSpec(name="stuck", expires_at=NOW - timedelta(hours=1)),),
+        )
+    )
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+    storage = FakeObjectStorage()
+
+    async def _state() -> tuple[Any, Any, Any]:
+        async with maker() as session:
+            intent = await session.get(UploadIntent, world.intent_ids["stuck"])
+            assert intent is not None
+            return (
+                intent.cleanup_claimed_at,
+                intent.cleanup_lease_expires_at,
+                intent.cleanup_deleted_at,
+            )
+
+    try:
+        key = asyncio.run(_intent_key(maker, world, "stuck"))
+        _hold(storage, key)
+        stuck_id = world.intent_ids["stuck"]
+        intent_record = IntentRecord(intent_id=stuck_id, object_key=key)
+
+        # The claim commits (lease columns set, done marker NULL); the
+        # worker dies before the provider call.
+        assert asyncio.run(repository.claim_intent(intent_record, now=NOW)) is True
+        claimed_at, lease_at, done_at = asyncio.run(_state())
+        assert claimed_at == NOW
+        assert lease_at == NOW + LEASE
+        assert done_at is None  # the pass-4b marker would already be set
+
+        # Live lease: the scan finds nothing to steal.
+        within = NOW + timedelta(seconds=10)
+        assert asyncio.run(cleanup_orphaned_intents(within, repository, storage)) == (
+            OrphanIntentSummary()
+        )
+        assert storage.deleted_keys == []
+
+        # Lease expired: takeover converges — reset lease + done mark.
+        later = NOW + LEASE + timedelta(seconds=1)
+        summary = asyncio.run(cleanup_orphaned_intents(later, repository, storage))
+        assert summary == OrphanIntentSummary(scanned=1, deleted=1)
+        assert storage.deleted_keys == [key]
+        claimed_at, lease_at, done_at = asyncio.run(_state())
+        assert claimed_at == later
+        assert lease_at == later + LEASE
+        assert done_at == later
+
+        # Converged.
+        assert asyncio.run(cleanup_orphaned_intents(later, repository, storage)) == (
+            OrphanIntentSummary()
+        )
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+# --- pass 5a: the lease-aware protection guard ----------------------------------------
+
+
+@pytest.mark.integration
+def test_protection_guard_is_lease_aware() -> None:
+    """The protection-side guard (ensure_no_active_cleanup_claim)
+    follows the lease: a LIVE claim (taken through the real claim path)
+    still refuses with the typed 409; an EXPIRED lease is a stale crash
+    survivor that no longer blocks protection (protection wins over a
+    stale lease); a claimed row with a NULL lease is treated as LIVE —
+    the fail-safe reading. Timestamp moves are plain column updates
+    (clock simulation the brief allows); no state is hand-fixed."""
+    from app.modules.submissions.cleanup_claim import (
+        CleanupClaimConflictError,
+        ensure_no_active_cleanup_claim,
+    )
+    from app.modules.submissions.models import Submission
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+
+    async def _guard(now: datetime) -> None:
+        async with maker() as session:
+            await ensure_no_active_cleanup_claim(session, world.claim_id, now=now)
+
+    async def _set_lease(lease: datetime | None, *, claimed: datetime) -> None:
+        async with maker() as session:
+            await session.execute(
+                update(Submission)
+                .where(Submission.id == world.submission_ids["due"])
+                .values(cleanup_claimed_at=claimed, cleanup_lease_expires_at=lease)
+            )
+            await session.commit()
+
+    try:
+        record = _scan_snapshot(maker, world)
+
+        # LIVE lease (the real claim path): typed 409.
+        assert asyncio.run(repository.claim_for_cleanup(record, now=NOW)) is True
+        with pytest.raises(CleanupClaimConflictError):
+            asyncio.run(_guard(NOW))
+
+        # EXPIRED lease at the boundary instant (>= now means expired,
+        # matching the takeover predicate): protection may proceed.
+        asyncio.run(_set_lease(NOW, claimed=NOW - LEASE))
+        asyncio.run(_guard(NOW))
+
+        # A live lease one second ahead still refuses.
+        asyncio.run(_set_lease(NOW + timedelta(seconds=1), claimed=NOW))
+        with pytest.raises(CleanupClaimConflictError):
+            asyncio.run(_guard(NOW))
+
+        # NULL lease while claimed: fail-safe live.
+        asyncio.run(_set_lease(None, claimed=NOW))
+        with pytest.raises(CleanupClaimConflictError):
+            asyncio.run(_guard(NOW))
+    finally:
+        asyncio.run(_cleanup_world(maker, world))

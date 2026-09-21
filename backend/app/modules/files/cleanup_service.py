@@ -1,35 +1,46 @@
 # backend/app/modules/files/cleanup_service.py
 """File-retention cleanup service (plan 07 T7; spec §13, §27;
-backend-engineering §12; hardening pass 4b deletion-claim ruling).
+backend-engineering §12; hardening pass 4b deletion-claim ruling; pass
+5a leases + unified serialization boundary).
 
 Worker owns orchestration, service owns judgement: the Celery shell
 (``app/workers/jobs/cleanup_files.py``) samples the clock, constructs
 the repository and the object-storage adapter, and calls
 ``cleanup_expired_files``. Every delete / retain decision lives here.
 
-Deletion is CLAIMED, not snapshot-judged (pass 4b): the §13/§27 retain
-guards are re-evaluated by a single conditional UPDATE against CURRENT
-committed state, which claims the deletion right
-(``cleanup_claimed_at``) in the same statement — guards and claim are
-atomic, so a legal_hold or review-pipeline entry that lands between the
-scan and the claim makes the claim FAIL and the object survive (the
-TOCTOU the boolean-snapshot pipeline had). Only a claimed record
-reaches the provider delete; the service-level snapshot guards remain
-as the stale-listing defense in front. The protection writers carry
-the other half of the ruling (a typed 409 while a claim is in flight —
-``app.modules.submissions.cleanup_claim``): protection must win,
-deletion is retryable.
+Deletion is CLAIMED under a LEASE (pass 4b claim; pass 5a P0-1/P0-2),
+not snapshot-judged: the repository's claim is a short transaction that
+locks the submission row and then the claim row — the SAME lock order
+the protection writers take — re-evaluates every §13/§27 retain guard
+against CURRENT committed state under both locks, and writes
+``cleanup_claimed_at`` + ``cleanup_lease_expires_at`` before committing;
+the provider delete runs OUTSIDE the transaction. The protection writers
+(``app.modules.submissions.cleanup_claim``) check for a live claim under
+the claim row lock they already hold, so protection and claim serialize
+on the same row locks in the same order — whichever side commits first
+wins, the other side's guard sees the committed outcome (protection
+must win; deletion is the retryable side). The claim window is bounded
+by the lease: a worker that dies between its claim commit and the
+provider delete leaves an EXPIRED lease, the scan re-candidates the
+row, and the next run takes over — re-claiming under the same guarded
+boundary — so no crash can strand an object or block a protection
+writer forever (P0-2). The service-level snapshot guards remain as the
+stale-listing defense in front.
 
 Pass 4b also adds the orphan-intent cleanup (``cleanup_orphaned_intents``):
 expired intents that never finalized hold stored objects nobody else
-will ever remove. Same claim primitive over
-``upload_intents.cleanup_deleted_at`` (which doubles as the done
-marker), only ever claimed AFTER ``expires_at`` — the presigned URL TTL
-is deployed shorter than the intent TTL, so no legal PUT can land after
-the intent expired (a deployment invariant this cleanup depends on;
-both TTLs are injectable, wired from Settings). Finalized intents are
-never touched: their object belongs to the Submission row and the
-retention pipeline above.
+will ever remove. Same claim primitive over the intent's lease columns
+(pass 5a splits ``cleanup_claimed_at`` / ``cleanup_lease_expires_at``
+from the ``cleanup_deleted_at`` DONE marker), only ever claimed AFTER
+``expires_at`` — the presigned URL TTL is deployed shorter than the
+intent TTL, so no legal PUT can land after the intent expired (a
+deployment invariant this cleanup depends on; both TTLs are injectable,
+wired from Settings). Intents carry no protection semantics — finalize
+refuses expired intents under the intent-row lock it already takes — so
+their claim stays one conditional UPDATE and an expired lease converges
+by takeover + idempotent delete. Finalized intents are never touched:
+their object belongs to the Submission row and the retention pipeline
+above.
 
 The worker consumes file state through two seams:
 
@@ -38,14 +49,15 @@ The worker consumes file state through two seams:
   permanent retention is a real marker, never a "very large date"), the
   ``legal_hold`` and under-review ``protected`` flags, and
   ``deleted_at`` (None while the database believes the object present).
-- ``CleanupRepository`` — due-candidate discovery, the conditional
-  claim/release pair that owns the deletion right, and the idempotent
-  ``mark_deleted`` compare-and-set. The real query excludes permanent,
-  legal-hold, protected (claims in review states, §27 不得误删尚在审核
-  中的文件), not-yet-due, and already-deleted rows BY CONSTRUCTION; the
-  service re-validates every guard per record anyway, and the claim
-  re-evaluates them atomically, so a stale or buggy listing can never
-  reach the provider delete.
+- ``CleanupRepository`` — due-candidate discovery, the lock-ordered
+  leased claim/release pair that owns the deletion right (with crash
+  takeover once a lease expires), and the idempotent ``mark_deleted``
+  compare-and-set. The real query excludes permanent, legal-hold,
+  protected (claims in review states, §27 不得误删尚在审核中的文件),
+  not-yet-due, already-deleted, and live-leased rows BY CONSTRUCTION;
+  the service re-validates every guard per record anyway, and the claim
+  re-evaluates them under the row locks, so a stale or buggy listing
+  can never reach the provider delete.
 
 Ordering (§13): the object is deleted FIRST, then the database state is
 updated. Business metadata, validation reports, and audit records are
@@ -58,9 +70,9 @@ Idempotency (§27), absorbed at three layers:
 1. By construction — already-deleted rows leave the candidate set, so a
    re-run over the same state issues zero provider delete calls.
 2. Claim exclusivity — a redelivered job holding a STALE snapshot
-   cannot claim a row the first delivery already claimed, so it issues
-   no provider call at all (SKIPPED_CLAIM_LOST); the compare-and-set
-   below stays as the belt-and-braces backstop.
+   cannot claim a row whose lease is live, so it issues no provider
+   call at all (SKIPPED_CLAIM_LOST); the compare-and-set below stays as
+   the belt-and-braces backstop.
 3. Compare-and-set — a claimed record whose object is already gone and
    whose row is already marked answers ALREADY_DELETED: a plain
    success, no warning; believed present, the state is fixed and a
@@ -72,17 +84,18 @@ retryable by the NEXT run (object-first ordering makes the retry safe
 either way — a delete that actually happened surfaces as reconcile or
 ALREADY_DELETED), permanent rejections are terminal for the record.
 None of them retry in-process; each counts exactly one failure with its
-reason, the CLAIM IS RELEASED (so the next scan can retry and the
-protection writers are not blocked on a dead claim), and the record
-stays otherwise untouched.
+reason, the CLAIM IS RELEASED (so the next scan can retry immediately
+and the protection writers are not blocked on a dead claim), and the
+record stays otherwise untouched.
 
 Unexpected exceptions (a repository/DB failure or a storage bug outside
 the taxonomy) are NOT swallowed: they propagate so redelivery and
 operators see them, mirroring the claim-expiry jobs' loud-bug rule. A
-crash between claim and release can strand a claim: the row stays
-claimed (never re-claimed, protection 409s) until an operator clears
-``cleanup_claimed_at`` — deliberate fail-safe over auto-takeover, which
-would re-open exactly the race the claim exists to close.
+crash between claim and release strands the claim only until its LEASE
+EXPIRES (pass 5a): the next scan takes the row over, re-evaluates every
+guard under the protection paths' own row locks, and converges — the
+deliberate fail-safe of pass 4b (manual claim clearing) is now the
+bounded-window path the lease automates.
 """
 
 from __future__ import annotations
@@ -172,33 +185,42 @@ class CleanupRepository(Protocol):
         The real query yields ONLY rows eligible for deletion: retention
         snapshot due (``retention_until <= now``), not ``permanent``,
         not under ``legal_hold``, not protected by an active review
-        (claims in review states), and not already marked deleted.
-        Exclusion by construction is the first idempotency layer; the
-        claim re-evaluates every guard atomically regardless.
+        (claims in review states), not already marked deleted, and not
+        under a live cleanup lease — a claimed row whose lease EXPIRED
+        is included (the crashed-claim takeover, pass 5a). Exclusion by
+        construction is the first idempotency layer; the claim
+        re-evaluates every guard under the row locks regardless.
         """
         ...
 
     async def claim_for_cleanup(self, record: FileRecord, *, now: datetime) -> bool:
-        """Claim the deletion right over one record.
+        """Claim the deletion right over one record (pass 5a unified
+        serialization boundary).
 
-        ONE conditional UPDATE: the WHERE clause re-evaluates EVERY
-        §13/§27 guard against current committed state — not permanent,
-        no legal hold, retention still due, not already deleted, the
-        claim's status still outside the review pipeline, and no claim
-        already held — and the same statement sets
-        ``cleanup_claimed_at = now``. ``RETURNING`` decides the answer:
-        True only for the winner. Single statement = guards and claim
-        are atomic, so a protection that landed since the scan makes
-        the claim fail and the object survive.
+        ONE short transaction locked in the protection paths' own order
+        — submission row FOR UPDATE first, then the claim row FOR
+        UPDATE. Under BOTH locks every §13/§27 guard is re-evaluated
+        against current committed state — not permanent, no legal hold,
+        retention still due, not already deleted, the claim's status
+        still outside the review pipeline, and no live lease held — and
+        the same transaction writes the lease
+        (``cleanup_claimed_at = now``,
+        ``cleanup_lease_expires_at = now + lease``) and commits. True
+        only for the winner; a takeover (the previous lease expired)
+        resets both timestamps. Because the protection writers check for
+        a live claim under the claim row lock, the two sides serialize
+        on the same locks: a protection committing between this scan
+        and the claim makes the claim fail and the object survive, and
+        a protection arriving mid-claim waits, then sees the committed
+        live lease. No lock is carried across the provider call.
         """
         ...
 
     async def release_cleanup_claim(self, record: FileRecord) -> None:
-        """Release the claim after a provider failure: clear
-        ``cleanup_claimed_at`` so the next scan re-claims (and the
-        protection writers are not blocked on a dead claim). The object
-        is NOT marked deleted.
-        """
+        """Release the claim after a provider failure: clear BOTH lease
+        columns so the next scan re-claims (and the protection writers
+        are not blocked on a dead claim). The object is NOT marked
+        deleted."""
         ...
 
     async def mark_deleted(
@@ -217,8 +239,9 @@ class CleanupRepository(Protocol):
 
 class OrphanIntentRepository(Protocol):
     """Port for the orphan-intent cleanup (pass 4b): candidate
-    discovery plus the same conditional claim/release primitive over
-    ``upload_intents``.
+    discovery plus the same leased claim/release primitive over
+    ``upload_intents`` (pass 5a splits the claim columns from the done
+    marker).
 
     The production implementation is the same
     ``SubmissionCleanupRepository`` (one repository, two tables), kept
@@ -231,26 +254,43 @@ class OrphanIntentRepository(Protocol):
     ) -> list[IntentRecord]:
         """Expired intents that never finalized, oldest expiry first.
 
-        The real query yields ONLY unclaimed rows with
+        The real query yields ONLY not-yet-done rows with
         ``expires_at <= now`` and ``finalized_submission_id IS NULL`` —
-        open-expired and burned intents alike; a finalized intent's
-        object belongs to its Submission and the retention pipeline.
+        open-expired and burned intents alike — that are not under a
+        LIVE cleanup lease; a claimed row whose lease expired is
+        included (crash takeover, pass 5a). A finalized intent's object
+        belongs to its Submission and the retention pipeline.
         """
         ...
 
     async def claim_intent(self, intent: IntentRecord, *, now: datetime) -> bool:
         """Claim one intent for deletion: a single conditional UPDATE
         re-evaluating every guard (``expires_at <= now``, never
-        finalized, unclaimed) and setting ``cleanup_deleted_at = now``
-        in the same statement; ``RETURNING`` decides. Finalize can never
-        lose to this claim: it holds the intent-row lock before its own
-        expiry check, so the two serialize on the row.
+        finalized, not done, no live lease) and setting the lease
+        columns (``cleanup_claimed_at = now`` plus
+        ``cleanup_lease_expires_at = now + lease``; pass 5a splits them
+        from the ``cleanup_deleted_at`` done marker, which
+        ``mark_intent_deleted`` sets only after the delete settled). A
+        takeover (expired lease) resets the timestamps. Finalize can
+        never lose to this claim: it holds the intent-row lock before
+        its own expiry check, so the two serialize on the row; intents
+        have no protection transition, so the single statement is their
+        whole serialization boundary.
         """
         ...
 
+    async def mark_intent_deleted(
+        self, intent: IntentRecord, *, deleted_at: datetime
+    ) -> None:
+        """Record the deletion's completion: set the done marker
+        (``cleanup_deleted_at``) only while NULL — idempotent, so the
+        crash-takeover path and a redelivered job converge on at most
+        one instant."""
+        ...
+
     async def release_intent(self, intent: IntentRecord) -> None:
-        """Release the claim after a provider failure (clear
-        ``cleanup_deleted_at``); the next scan retries."""
+        """Release the claim after a provider failure (clear both lease
+        columns); the next scan retries."""
         ...
 
 
@@ -363,14 +403,14 @@ async def cleanup_expired_file(
     """Decide and act on ONE due-file snapshot (object first, §13).
 
     Snapshot guards first (a stale listing deletes nothing), then the
-    CLAIM — the conditional UPDATE that re-evaluates every guard
-    atomically against current state; losing the claim (a protection
-    landed since the scan, or another delivery holds the row) retains
-    the object with SKIPPED_CLAIM_LOST and no provider call. A missing
-    object splits on the repository's compare-and-set: already marked
-    = idempotent success (§27 branch 1); believed present = reconcile
-    with a warning (§27 branch 2). Provider failures release the claim
-    so the next scan retries.
+    CLAIM — the lock-ordered short transaction that re-evaluates every
+    guard against current state and writes the lease; losing the claim
+    (a protection landed since the scan, or another delivery holds a
+    live lease) retains the object with SKIPPED_CLAIM_LOST and no
+    provider call. A missing object splits on the repository's
+    compare-and-set: already marked = idempotent success (§27 branch
+    1); believed present = reconcile with a warning (§27 branch 2).
+    Provider failures release the claim so the next scan retries.
     """
     skipped = _guard(record, now)
     if skipped is not None:
@@ -470,15 +510,18 @@ async def cleanup_orphaned_intent(
     storage: ObjectStorage,
     now: datetime,
 ) -> OrphanIntentOutcome:
-    """Decide and act on ONE orphan-intent candidate: claim (the guards
-    live entirely inside the conditional claim — there is no boolean
-    snapshot to trust), then delete, with the claim column doubling as
-    the done marker.
+    """Decide and act on ONE orphan-intent candidate: claim the lease
+    (the guards live entirely inside the conditional claim — there is
+    no boolean snapshot to trust), then delete the object, then record
+    the done marker (pass 5a: the claim columns no longer double as
+    it).
 
     A missing object is the idempotent SUCCESS shape (§27): most
     expired intents were never uploaded, and a re-run over a cleaned
-    intent re-claims nothing. Provider failures release the claim for
-    the next scan.
+    intent re-claims nothing. An expired lease makes the row a
+    candidate again, so a worker that died between claim and delete is
+    taken over here and converges. Provider failures release the lease
+    for the next scan.
     """
     if not await repo.claim_intent(intent, now=now):
         return OrphanIntentOutcome.SKIPPED_CLAIM_LOST
@@ -486,6 +529,7 @@ async def cleanup_orphaned_intent(
     try:
         storage.delete_object(object_key=intent.object_key)
     except FileNotFoundError:
+        await repo.mark_intent_deleted(intent, deleted_at=now)
         return OrphanIntentOutcome.MISSING_OBJECT
     except TemporaryProviderError:
         await repo.release_intent(intent)
@@ -496,6 +540,7 @@ async def cleanup_orphaned_intent(
     except UnknownOutcomeError:
         await repo.release_intent(intent)
         return OrphanIntentOutcome.FAILED_STORAGE_UNKNOWN
+    await repo.mark_intent_deleted(intent, deleted_at=now)
     return OrphanIntentOutcome.DELETED
 
 

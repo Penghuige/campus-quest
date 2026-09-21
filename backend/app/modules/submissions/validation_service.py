@@ -313,15 +313,22 @@ class ValidationService:
             claim is not None
             and ClaimStatus(claim.status) in _CLAIM_ACTIONABLE_STATUSES
         ):
-            # Deletion-claim guard (hardening pass 4b, spec §27): this
-            # transition moves EVERY submission under the claim into the
-            # protected set, so an in-flight cleanup claim (an overdue
-            # old version being deleted right now) must refuse it with
-            # a typed 409 — protection must win, deletion is retryable
-            # (the job's bounded autoretry covers the seconds-level
-            # claim window). Nothing is written: raising here rolls the
-            # whole tx1 back.
-            await ensure_no_active_cleanup_claim(db, claim.id)
+            # Deletion-claim guard (hardening pass 4b, lease-aware since
+            # pass 5a, spec §27): this transition moves EVERY submission
+            # under the claim into the protected set, so a cleanup claim
+            # with a LIVE lease (an overdue old version being deleted
+            # right now) must refuse it with a typed 409 — protection
+            # must win, deletion is retryable (the job's bounded
+            # autoretry covers the seconds-level claim window; an
+            # expired lease is a crashed worker and no longer blocks).
+            # ``started_at`` is the tx1 instant — judging the lease
+            # against an earlier sample can only err toward the
+            # retryable 409, never onto a being-deleted object. The
+            # claim transaction locks this same submission -> claim row
+            # pair, so the two sides serialize (pass 5a's unified
+            # serialization boundary). Nothing is written: raising here
+            # rolls the whole tx1 back.
+            await ensure_no_active_cleanup_claim(db, claim.id, now=started_at)
             claim.status = ClaimStatus.VALIDATING.value
         run = SubmissionValidation(
             submission_id=submission.id,

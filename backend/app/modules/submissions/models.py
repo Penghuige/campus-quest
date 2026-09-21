@@ -189,19 +189,39 @@ class Submission(Base):
     cleanup_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         comment=(
-            "Cleanup-worker deletion claim (hardening pass 4b): the single "
-            "conditional UPDATE that re-evaluates every §13/§27 guard "
-            "against CURRENT state sets this before the object delete — "
-            "single statement, so guards and claim are atomic and the "
-            "pre-claim scan snapshot is never raced against. NULL while "
+            "Cleanup-worker deletion claim, lease START (hardening pass 4b, "
+            "re-based by pass 5a): set together with cleanup_lease_expires_at "
+            "by the claim transaction, which locks this row and then the "
+            "claim row (the SAME order the protection paths lock them) and "
+            "re-evaluates every §13/§27 guard under both locks before "
+            "writing — the unified serialization boundary: a protection "
+            "transaction cannot commit a guarded state between this claim's "
+            "guard check and its commit, and vice versa. NULL while "
             "unclaimed; cleared to release after a provider failure so the "
-            "next scan retries; stays set after a completed deletion "
-            "(deleted_at records the completion). Protection writers "
-            "(legal_hold, claim -> VALIDATING/UNDER_REVIEW) must reject "
-            "with a typed 409 while this is set with deleted_at NULL: "
-            "protection must win, deletion is the retryable side. legal_hold "
-            "itself has NO service write point today (operator/DBA action) "
-            "— whoever sets it retries on that 409 the same way."
+            "next scan retries; reset (with the lease) by the next scan's "
+            "TAKEOVER once the lease expired (a crashed worker); stays set "
+            "after a completed deletion (deleted_at records the completion). "
+            "Protection writers (legal_hold, claim -> VALIDATING/UNDER_REVIEW) "
+            "must reject with a typed 409 while this is set with deleted_at "
+            "NULL AND the lease live — protection wins over a stale lease. "
+            "legal_hold itself has NO service write point today "
+            "(operator/DBA action) — whoever sets it retries on that 409 the "
+            "same way."
+        ),
+    )
+    cleanup_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "Cleanup deletion-claim lease deadline (hardening pass 5a, "
+            "P0-2): pinned to claim instant + the "
+            "cleanup_claim_lease_seconds setting when the claim is taken. "
+            "The claim is exclusive only while the lease lives (a claim "
+            "carrying NULL expiry here is treated as LIVE — fail-safe: an "
+            "unknown lease never becomes a takeover reason); once expired, "
+            "the row is a crash survivor that re-enters the scan's "
+            "candidate set, and the takeover re-evaluates every guard "
+            "under the submission->claim row locks before resetting both "
+            "timestamps."
         ),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -260,21 +280,46 @@ class UploadIntent(Base):
     finalized_submission_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("submissions.id")
     )
+    cleanup_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "Orphan-intent cleanup claim, lease START (hardening pass 5a, "
+            "splitting pass 4b's combined column): set together with "
+            "cleanup_lease_expires_at by the conditional UPDATE claiming "
+            "the intent (expires_at past, never finalized, not done, no "
+            "live lease); cleanup_deleted_at is now the DONE marker only. "
+            "Once the lease expires (a worker that died between claim and "
+            "delete), the row re-enters the candidate set and the next "
+            "scan takes over — resets both timestamps — and converges "
+            "(§27); no protection transition exists for intents (finalize "
+            "refuses expired intents under the intent-row FOR UPDATE it "
+            "already takes, so a claim and a finalize serialize on the "
+            "row). Cleared to release after a provider failure."
+        ),
+    )
+    cleanup_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment=(
+            "Orphan-intent cleanup claim lease deadline (hardening pass "
+            "5a): pinned to claim instant + the "
+            "cleanup_claim_lease_seconds setting; the claim is exclusive "
+            "only while it lives. NULL while unclaimed; a claimed row "
+            "with NULL expiry is treated as LIVE (fail-safe)."
+        ),
+    )
     cleanup_deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         comment=(
-            "Orphan-intent cleanup claim + done marker (hardening pass 4b): "
-            "the conditional UPDATE claiming the intent (expires_at past, "
-            "never finalized, unclaimed) sets this, and the same column "
-            "doubles as the deletion record — an intent has no separate "
-            "fact row, and no protection transition races it (finalize "
-            "refuses expired intents under the intent-row FOR UPDATE it "
-            "already takes, so a claim and a finalize serialize on the "
-            "row). Cleared to release after a provider failure; kept on "
-            "FileNotFoundError (idempotent success). Cleanup only ever "
-            "claims intents past expires_at: the presigned URL TTL is "
-            "configured shorter than the intent TTL, so no legal PUT can "
-            "land after expires_at."
+            "Orphan-intent cleanup DONE marker (hardening pass 4b, "
+            "claim-half split off to cleanup_claimed_at by pass 5a): set "
+            "after the object delete settled — including the "
+            "FileNotFoundError idempotent-success shape (most expired "
+            "intents were never uploaded) — and never re-cleared. NULL "
+            "means the intent's object is still believed present or its "
+            "deletion never settled. Cleanup only ever claims intents "
+            "past expires_at: the presigned URL TTL is configured shorter "
+            "than the intent TTL, so no legal PUT can land after "
+            "expires_at."
         ),
     )
 
