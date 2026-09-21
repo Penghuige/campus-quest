@@ -353,6 +353,8 @@ Durable audit (PR #2 hardening step 7, migration 0014): `audit_logs` is append-o
 
 Report closure (PR #2 hardening step 10): `POST /api/v1/tasks/{task_id}/reports/{report_id}/dismiss` (reason mandatory) and `/handle` (optional note) move a report OPEN -> DISMISSED/HANDLED exactly once under the moderation standing of `list_task_reports`; same-terminal replays are idempotent and write no second audit row. Audit actions `REPORT_DISMISSED` (reason) / `REPORT_HANDLED` (note in details), target_type `comment_report`. Typed errors on frozen codes: 403 standing, 400 blank dismiss reason, 404 unknown/cross-task report, 409 other-terminal.
 
+System settings (PR #2 hardening step 8, migration 0015): `system_settings` is a current-value store (key pk, value, updated_by without FK — UPDATE is legal here, unlike append-only `audit_logs`); `SystemSettingService.set` writes a `SYSTEM_SETTING_UPDATED` audit row (target_type `system_setting`, target_id the key, details carry value and old_value) in the same transaction. V1 key: CURRENT_ACADEMIC_TERM via `GET/PUT /api/v1/admin/settings/current-academic-term` (Admin-only, typed validation). `SystemAcademicTermProvider` gives the settings row priority over the `Settings.current_academic_term` env seed (G7: the row is the fact, the env only bootstraps) and fails loud on a corrupt row; redemption keeps its creation-time term snapshot.
+
 Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
 
 ## Adapter Ports
