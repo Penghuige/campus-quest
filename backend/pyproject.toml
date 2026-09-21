@@ -83,3 +83,10 @@ files = ["app"]
 # the XLSX validator (plan 04 task 5) drives it through `Any` boundaries.
 module = "openpyxl.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# boto3/botocore ship no py.typed either (see the tests-exclusion comment
+# above); the S3 object-storage adapter (hardening P0-1) drives the client
+# through the same `Any` boundary pattern.
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
