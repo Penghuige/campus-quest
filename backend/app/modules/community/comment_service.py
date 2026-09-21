@@ -163,6 +163,7 @@ from app.modules.community.gates import (
     CommenterNotStudentError,
     CommentNotFoundError,
     require_student_writer,
+    require_task_moderation_site,
 )
 from app.modules.community.models import Comment, CommentRevision
 from app.modules.community.schemas import CommentPublic, CreateComment
@@ -170,16 +171,14 @@ from app.modules.community.serializers import (
     serialize_public_comment,
     serialize_tombstone_comment,
 )
-from app.modules.identity.enums import Role
 from app.modules.identity.events import (
     Actor,
     DomainEvent,
     DomainEventPublisher,
     LoggingEventPublisher,
 )
-from app.modules.tasks.collaborator_service import CollaboratorPermission
 from app.modules.tasks.enums import TaskStatus
-from app.modules.tasks.models import Task, TaskCollaborator
+from app.modules.tasks.models import Task
 from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
@@ -738,29 +737,19 @@ class CommentService:
         """Spec §4.2/§21.4: the task's owner Teacher, or a collaborator
         holding MODERATE_COMMUNITY. Students are never moderators and
         Admin's removal tool is the hard hide — both are typed denials
-        here. Deliberately NOT gated on task visibility (see the module
-        docstring): governance reaches paused/closed history too."""
-        if actor.role is not Role.TEACHER:
-            raise CommentModerationDeniedError(task_id)
-        owner_id = await db.scalar(
-            select(Task.owner_teacher_id).where(Task.id == task_id)
+        here (the T3 ruling: ``admit_admin=False``). Deliberately NOT
+        gated on task visibility (see the module docstring): governance
+        reaches paused/closed history too. The predicate lives in
+        ``gates.require_task_moderation_site`` since the final review
+        (fix I1); the comment's task FK keeps its unknown-task branch
+        unreachable in practice."""
+        await require_task_moderation_site(
+            db,
+            actor,
+            task_id,
+            admit_admin=False,
+            error_factory=CommentModerationDeniedError,
         )
-        if owner_id is None:
-            # The comment's task FK guarantees existence; unreachable in
-            # practice, kept as the shared aggregate error for symmetry.
-            raise TaskNotFoundError(task_id)
-        if owner_id == actor.user_id:
-            return
-        permissions = await db.scalar(
-            select(TaskCollaborator.permissions).where(
-                TaskCollaborator.task_id == task_id,
-                TaskCollaborator.teacher_id == actor.user_id,
-            )
-        )
-        if permissions is None or CollaboratorPermission.MODERATE_COMMUNITY not in (
-            permissions or []
-        ):
-            raise CommentModerationDeniedError(task_id)
 
     @staticmethod
     async def _require_visible_task(db: AsyncSession, task_id: UUID) -> Task:

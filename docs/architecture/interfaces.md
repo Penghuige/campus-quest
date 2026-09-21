@@ -323,7 +323,7 @@ Canonical service/use-case names (spec §36). Business rules live in these servi
 - Community: `create_comment`, `edit_comment`, `delete_comment`, `vote_comment`, `react_comment`, `report_comment`, `rate_task`
 - Notification: `schedule_due_notifications`, `dispatch_notification`
 
-Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs.
+Plan-sanctioned refinements (keep the §36 name as the use-case verb; the service class may expose a due-guarded variant): Plan 07 exposes `ClaimService.expire_claim_if_due(claim_id, now)`; Plan 03 additionally exposes `resume_task` / `close_task` / `archive_task` (the CLOSED→ARCHIVED edge of the §6.2 table) / `update_task` (the published-task edit rule) alongside the §36 task verbs. Plan 06 exposes `set_vote` / `toggle_reaction` (the toggle semantics under the §22 `vote_comment` / `react_comment` verbs) and `delete_own_comment` + `moderate_delete_comment` (the §21.3 `delete_comment` verb split by authority: owner soft delete vs the reason-mandatory moderation path) alongside the §36 community verbs.
 
 Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
 

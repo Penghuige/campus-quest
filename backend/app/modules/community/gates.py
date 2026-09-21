@@ -24,6 +24,25 @@ and fourth. They live here now, once:
   publish-immediately semantics — a write that commits while the comment
   is concurrently removed simply survives as a row on a tombstone;
   removing it is moderation's business, not the writer's.
+- ``require_task_moderation_site`` — the moderation-site standing gate
+  (final-review fix I1): the owner/MODERATE_COMMUNITY predicate that
+  three surfaces grew privately (comment_service's moderate-delete,
+  report_service's report queue, the router's moderation listing).
+  Standing: the task's owner Teacher or a collaborator holding
+  MODERATE_COMMUNITY (spec §4.2/§21.4/§23). The two documented
+  policies differ only on Admin, and ``admit_admin`` selects between
+  them: the destructive moderate-delete REFUSES Admin (the T3 ruling —
+  Admin's community-removal power is the separately audited hard
+  hide), the two read surfaces ADMIT Admin (review hides nothing and
+  duplicates nothing). ``error_factory`` keeps each surface's own
+  typed denial (CommentModerationDeniedError / ReportViewDeniedError)
+  so the §29 envelopes stay put. Check order travels with the policy
+  and is load-bearing: the write variant denies non-Teachers BEFORE
+  the task read (authorization before validation — an unauthorized
+  caller learns nothing about the task), the read variants answer
+  existence first (unknown task -> the shared 404 for anyone) before
+  the Admin admission. Like every moderation path, NOT gated on
+  PUBLISHED — governance reaches paused/closed history.
 
 The shared typed-error family lives here with them (same classes, same
 messages — the move is rehoming, not renaming): comment_service
@@ -38,6 +57,7 @@ status for the gate, nickname for the display. If the
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import String, Uuid, column, select, table
@@ -45,10 +65,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.core.rbac import is_admin
 from app.modules.community.models import Comment
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.events import Actor
+from app.modules.tasks.collaborator_service import CollaboratorPermission
 from app.modules.tasks.enums import TaskStatus
-from app.modules.tasks.models import Task
+from app.modules.tasks.models import Task, TaskCollaborator
 from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
@@ -58,6 +81,7 @@ __all__ = [
     "CommenterNotFoundError",
     "CommenterNotStudentError",
     "require_student_writer",
+    "require_task_moderation_site",
     "require_visible_comment",
 ]
 
@@ -195,3 +219,68 @@ async def require_visible_comment(db: AsyncSession, comment_id: UUID) -> Comment
     if published is None:
         raise TaskNotFoundError(comment.task_id)
     return comment
+
+
+async def require_task_moderation_site(
+    db: AsyncSession,
+    actor: Actor,
+    task_id: UUID,
+    *,
+    admit_admin: bool,
+    error_factory: Callable[[UUID], BusinessError],
+) -> None:
+    """The moderation-site standing gate (see module docstring): the
+    task's owner Teacher or a collaborator holding MODERATE_COMMUNITY —
+    one predicate behind the three surfaces that grew it privately
+    (comment_service's moderate-delete, report_service's report queue,
+    the router's moderation listing; final-review fix I1).
+
+    ``admit_admin`` selects the documented policy, and with it the
+    check ORDER, which is load-bearing:
+
+    - ``False`` (moderate-delete): Admin is refused — the T3 ruling
+      keeps Admin's community-removal power on the separately audited
+      hard-hide path — and a non-Teacher is denied BEFORE the task
+      read (the collaborator-service precedent: authorization before
+      validation, so an unauthorized caller learns nothing about the
+      task).
+    - ``True`` (the report queue and the moderation listing): Admin is
+      admitted — review hides nothing and duplicates nothing — and
+      existence answers first: an unknown task is the shared
+      ``TaskNotFoundError`` (404) for any caller before standing is
+      judged.
+
+    ``error_factory`` builds the caller's typed denial (same envelope
+    the private copy raised: ``CommentModerationDeniedError`` on the
+    two comment surfaces, ``ReportViewDeniedError`` on the report
+    queue), so each surface keeps its §29 codes and details unchanged.
+
+    Standing is judged on the Actor's server-resolved role (never
+    client-supplied). Like every moderation path this is deliberately
+    NOT gated on PUBLISHED — governance reaches paused/closed history
+    too.
+    """
+    if not admit_admin and actor.role is not Role.TEACHER:
+        # Write-variant order: the denial precedes the task read.
+        raise error_factory(task_id)
+    owner_id = await db.scalar(select(Task.owner_teacher_id).where(Task.id == task_id))
+    if owner_id is None:
+        raise TaskNotFoundError(task_id)
+    if admit_admin and is_admin(actor.role):
+        return
+    if actor.role is not Role.TEACHER:
+        # Read-variant order: existence has already answered; the
+        # non-Teacher (Admin included when unadmitted) is denied now.
+        raise error_factory(task_id)
+    if owner_id == actor.user_id:
+        return
+    permissions = await db.scalar(
+        select(TaskCollaborator.permissions).where(
+            TaskCollaborator.task_id == task_id,
+            TaskCollaborator.teacher_id == actor.user_id,
+        )
+    )
+    if permissions is None or CollaboratorPermission.MODERATE_COMMUNITY not in (
+        permissions or []
+    ):
+        raise error_factory(task_id)

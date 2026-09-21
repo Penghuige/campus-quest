@@ -158,6 +158,7 @@ from app.modules.community.comment_service import (
     CommentModerationDeniedError,
     CommentService,
 )
+from app.modules.community.gates import require_task_moderation_site
 from app.modules.community.models import (
     Comment,
     CommentReaction,
@@ -184,15 +185,11 @@ from app.modules.identity.dependencies import (
     require_active_student_actor,
     require_staff_management_actor,
 )
-from app.modules.identity.enums import Role
 from app.modules.identity.events import (
     Actor,
     DomainEventPublisher,
     LoggingEventPublisher,
 )
-from app.modules.tasks.collaborator_service import CollaboratorPermission
-from app.modules.tasks.models import Task, TaskCollaborator
-from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
     "compute_hot_score",
@@ -1074,27 +1071,16 @@ async def _require_comment_moderation_viewer(
 ) -> None:
     """The moderation listing's standing (the report-queue ruling): the
     task's owner Teacher, a collaborator holding MODERATE_COMMUNITY, or
-    Admin — a read that hides nothing. Existence answers first (unknown
-    task -> the shared 404, the moderate-delete order); the destructive
-    moderation powers stay behind their own service checks."""
-    owner_id = await db.scalar(
-        select(Task.owner_teacher_id).where(Task.id == task_id)
+    Admin — a read that hides nothing (the read-surface policy:
+    ``admit_admin=True`` in the shared gate). Existence answers first
+    (unknown task -> the shared 404); the destructive moderation powers
+    stay behind their own service checks. The predicate lives in
+    ``gates.require_task_moderation_site`` since the final review (fix
+    I1)."""
+    await require_task_moderation_site(
+        db,
+        actor,
+        task_id,
+        admit_admin=True,
+        error_factory=CommentModerationDeniedError,
     )
-    if owner_id is None:
-        raise TaskNotFoundError(task_id)
-    if rbac.is_admin(actor.role):
-        return
-    if actor.role is not Role.TEACHER:
-        raise CommentModerationDeniedError(task_id)
-    if owner_id == actor.user_id:
-        return
-    permissions = await db.scalar(
-        select(TaskCollaborator.permissions).where(
-            TaskCollaborator.task_id == task_id,
-            TaskCollaborator.teacher_id == actor.user_id,
-        )
-    )
-    if permissions is None or CollaboratorPermission.MODERATE_COMMUNITY not in (
-        permissions or []
-    ):
-        raise CommentModerationDeniedError(task_id)

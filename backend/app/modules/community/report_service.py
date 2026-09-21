@@ -103,17 +103,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.core.rbac import is_admin
 from app.modules.community.enums import ReportCategory
-from app.modules.community.gates import require_student_writer, require_visible_comment
+from app.modules.community.gates import (
+    require_student_writer,
+    require_task_moderation_site,
+    require_visible_comment,
+)
 from app.modules.community.models import Comment, CommentReport, CommentRevision
 from app.modules.community.schemas import CommentReportView
 from app.modules.community.serializers import serialize_moderation_comment
-from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
-from app.modules.tasks.collaborator_service import CollaboratorPermission
-from app.modules.tasks.models import Task, TaskCollaborator
-from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
     "DEFAULT_REPORT_NOTE_MAX_LENGTH",
@@ -410,29 +409,18 @@ class ReportService:
         db: AsyncSession, actor: Actor, task_id: UUID
     ) -> None:
         """Spec §4.2/§23: the task's owner Teacher, a collaborator
-        holding MODERATE_COMMUNITY, or Admin. Existence answers first
-        (unknown task -> the shared 404, the moderate-delete order);
-        standing is judged on the Actor's server-resolved role; NOT
-        gated on task visibility — governance reaches paused/closed
-        history too."""
-        owner_id = await db.scalar(
-            select(Task.owner_teacher_id).where(Task.id == task_id)
+        holding MODERATE_COMMUNITY, or Admin (the read-surface policy:
+        ``admit_admin=True`` — review hides nothing, unlike
+        comment_service's moderate-DELETE). Existence answers first
+        (unknown task -> the shared 404); standing is judged on the
+        Actor's server-resolved role; NOT gated on task visibility —
+        governance reaches paused/closed history too. The predicate
+        lives in ``gates.require_task_moderation_site`` since the final
+        review (fix I1)."""
+        await require_task_moderation_site(
+            db,
+            actor,
+            task_id,
+            admit_admin=True,
+            error_factory=ReportViewDeniedError,
         )
-        if owner_id is None:
-            raise TaskNotFoundError(task_id)
-        if is_admin(actor.role):
-            return
-        if actor.role is not Role.TEACHER:
-            raise ReportViewDeniedError(task_id)
-        if owner_id == actor.user_id:
-            return
-        permissions = await db.scalar(
-            select(TaskCollaborator.permissions).where(
-                TaskCollaborator.task_id == task_id,
-                TaskCollaborator.teacher_id == actor.user_id,
-            )
-        )
-        if permissions is None or CollaboratorPermission.MODERATE_COMMUNITY not in (
-            permissions or []
-        ):
-            raise ReportViewDeniedError(task_id)
