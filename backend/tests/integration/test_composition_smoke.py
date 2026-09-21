@@ -32,15 +32,20 @@ committed DELETEs in FK order in ``finally``; the S3 objects are deleted
 through the real adapter and the published broker messages are purged,
 so nothing leaks into later runs.
 
-Composition gap recorded (brief step c): ``UploadIntentResponse``
-carries exactly ``{intent_id, upload_url, expires_at}`` — the signed
-headers the client MUST send with its PUT (``If-None-Match: *``, the
-pinned Content-Type, the declared Content-Length) are NOT returned by
-the API. A client can only reconstruct them from documentation
-(interfaces.md's upload-PUT client contract plus the server-side
-``DECLARED_TYPE_CONTENT_TYPES`` mapping). This test reconstructs them
-the way a documented client must; changing the response contract is the
-controller's call, not this suite's.
+Signing-contract closure (hardening P4c; the step-13 composition-gap
+follow-up): ``UploadIntentResponse`` carries the adapter-owned signing
+contract — ``headers`` (exactly ``{If-None-Match: *, Content-Type}``,
+the presigned PUT's echo headers) plus ``pinned_content_length`` (the
+signed byte count). Content-Length is deliberately NOT in ``headers``:
+a browser cannot set it programmatically (a forbidden request header,
+MDN) — a browser satisfies the pin with a Blob of exactly that size and
+lets the browser frame the header itself. This suite's PUT client is
+Python, which CAN set the header, so it sets Content-Length to the
+pinned value explicitly — the byte-level stand-in for the browser's
+automatic framing. The headers/length are an ADAPTER passthrough
+(``S3ObjectStorage`` derives them from its own signing params); the
+service no longer reconstructs them, so the public contract cannot
+desync from the real signature.
 
 Skipped unless ``CQ_COMPOSITION_SMOKE=1`` (CI sets it; the default
 local run must stay green without the full stack). Needs the MinIO,
@@ -127,26 +132,29 @@ _CSV_SCHEMA = {
     ]
 }
 
-# The public wire shape of the intent response (controller ruling on the
-# composition-gap finding): the signed PUT headers travel WITH the grant.
-_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at", "headers"}
+# The public wire shape of the intent response (adapter-owned signing
+# contract, hardening P4c): the echo headers travel WITH the grant, and
+# the signed byte count travels as its own scalar field.
+_INTENT_FIELDS = {
+    "intent_id",
+    "upload_url",
+    "expires_at",
+    "headers",
+    "pinned_content_length",
+}
 
-# The expected signed-header set for a CSV intent of this body size: the
-# write-once condition, the pinned MIME, and the declared byte length.
-_SIGNED_HEADERS = {
+# The expected client-echo header set for a CSV intent (what the real
+# adapter signs and returns): the write-once condition and the pinned
+# MIME. Content-Length is NOT here — a browser-forbidden header; the
+# byte pin is `pinned_content_length`.
+_CLIENT_HEADERS = {
     "If-None-Match": "*",
     "Content-Type": "text/csv",
-    "Content-Length": "",  # filled at runtime with len(_CSV_BODY)
 }
 
 # Celery's default queue name (no custom routing is configured): the
 # finalize's real .delay publish lands here on the configured broker.
 _BROKER_QUEUE_KEY = "celery"
-
-# The client-side reconstruction of the signed PUT headers (interfaces.md
-# upload-PUT client contract): the pinned MIME for the declared CSV type
-# and the write-once condition. Content-Length is the body length.
-_CSV_CONTENT_TYPE = "text/csv"
 
 
 @pytest_asyncio.fixture
@@ -160,16 +168,22 @@ async def factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     await engine.dispose()
 
 
-def _put(url: str, body: bytes, signed_headers: dict[str, str]) -> int:
+def _put(
+    url: str, body: bytes, client_headers: dict[str, str], pinned_content_length: int
+) -> int:
     """Real HTTP PUT through the presigned URL exactly like a compliant
-    client: the headers echoed by the intent response, verbatim — the
-    pinned Content-Type, the signed Content-Length, and the write-once
-    If-None-Match condition."""
+    client: the adapter-returned echo headers verbatim, plus
+    Content-Length set explicitly to the pinned byte count. A Python
+    client can set that header; a browser cannot (forbidden header) and
+    instead satisfies the same pin automatically by sending a Blob
+    whose declared size equals it — the explicit set here is the
+    byte-level stand-in for the browser's automatic framing."""
+    headers = {**client_headers, "Content-Length": str(pinned_content_length)}
     request = urllib.request.Request(
         url,
         data=body,
         method="PUT",
-        headers=signed_headers,
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -403,10 +417,11 @@ async def test_presign_put_finalize_validate_approve_composition(
 
                 # (c) upload intent through the real route: the storage
                 # provider is the REAL S3ObjectStorage, so the response's
-                # URL is a real presigned write-once PUT, and the signed
-                # PUT headers travel WITH the grant (the controller
-                # ruling on this suite's gap finding — the client echoes
-                # them verbatim instead of reconstructing from docs).
+                # URL is a real presigned write-once PUT, and the
+                # adapter-owned signing contract travels WITH the grant
+                # (hardening P4c): the echo headers are the adapter's
+                # client_headers (no Content-Length — browser-forbidden)
+                # and the pinned byte count equals the declared size.
                 intent_response = await client.post(
                     "/api/v1/submissions/upload-intent",
                     headers=world["student_headers"],
@@ -420,23 +435,32 @@ async def test_presign_put_finalize_validate_approve_composition(
                 assert intent_response.status_code == 201, intent_response.text
                 intent = intent_response.json()
                 assert set(intent) == _INTENT_FIELDS
-                expected_headers = dict(_SIGNED_HEADERS)
-                expected_headers["Content-Length"] = str(len(_CSV_BODY))
-                assert intent["headers"] == expected_headers
+                assert intent["headers"] == _CLIENT_HEADERS, intent["headers"]
+                assert "Content-Length" not in intent["headers"]
+                assert intent["pinned_content_length"] == len(_CSV_BODY)
                 assert intent["upload_url"].startswith(
                     f"{settings.s3_endpoint_url}/{settings.s3_bucket}/"
                 )
 
-                # (d) the real HTTP PUT with the ECHOED signed headers,
-                # then the write-once re-proof at the composition layer:
-                # the SAME business-issued URL admits exactly one
-                # successful PUT.
+                # (d) the real HTTP PUT echoing the adapter contract
+                # (Content-Length framed to the pin — see _put), then
+                # the write-once re-proof at the composition layer: the
+                # SAME business-issued URL admits exactly one successful
+                # PUT.
                 put_status = await asyncio.to_thread(
-                    _put, intent["upload_url"], _CSV_BODY, intent["headers"]
+                    _put,
+                    intent["upload_url"],
+                    _CSV_BODY,
+                    intent["headers"],
+                    intent["pinned_content_length"],
                 )
                 assert put_status == 200
                 replay_status = await asyncio.to_thread(
-                    _put, intent["upload_url"], _CSV_BODY, intent["headers"]
+                    _put,
+                    intent["upload_url"],
+                    _CSV_BODY,
+                    intent["headers"],
+                    intent["pinned_content_length"],
                 )
                 assert replay_status == 412
 

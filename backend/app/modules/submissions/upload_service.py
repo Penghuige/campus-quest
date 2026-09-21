@@ -127,7 +127,13 @@ Design decisions:
   inside or past the URL TTL, so a finalized object is immutable from
   the client side and ``submitted_at``/audit stay authoritative
   without trusting DB ``consumed_at`` to revoke a signed URL. The
-  client must send the pinned headers with its PUT. Finalize re-checks
+  client sends the adapter's ``client_headers`` with its PUT and a body
+  of exactly ``pinned_content_length`` bytes (browsers cannot set
+  Content-Length — a forbidden header — and satisfy the pin with a Blob
+  of the declared size); both are passed through from the adapter's
+  ``UploadUrl`` verbatim, never rebuilt here (hardening P4c: the
+  adapter owns the signing policy; the application echoes).
+  Finalize re-checks
   the stored object's content type and size as defense in depth. Type
   and size decisions never read the filename. A client whose first PUT
   failed mid-flight after the object landed gets 412 on retry of the
@@ -621,8 +627,14 @@ class ValidationDispatcher(Protocol):
 @dataclass(frozen=True, slots=True)
 class IssuedUploadIntent:
     """What ``create_upload_intent`` hands back: the persisted intent's
-    id, the short-lived presigned URL for the client, and both expiries
-    (URL and grant) plus the server-generated key for internal callers.
+    id, the short-lived presigned URL for the client, both expiries
+    (URL and grant), and the signing contract PASSED THROUGH from the
+    storage adapter — ``signed_headers`` is the adapter's
+    ``UploadUrl.client_headers`` verbatim (the headers the client must
+    echo; Content-Length is browser-forbidden and is not among them),
+    plus ``pinned_content_length``, the exact byte count the PUT body
+    must carry. The service never reconstructs these (hardening P4c:
+    the adapter owns the signing policy; the application echoes).
 
     The PUBLIC wire shape (``UploadIntentResponse``) is built explicitly
     in ``schemas.py`` and never carries the object key (spec §40).
@@ -635,6 +647,7 @@ class IssuedUploadIntent:
     url_expires_at: datetime
     intent_expires_at: datetime
     signed_headers: dict[str, str]
+    pinned_content_length: int
 
 
 class UploadService:
@@ -752,12 +765,23 @@ class UploadService:
         db.add(intent)
         await db.flush()
         await db.commit()
-        # The signed PUT headers travel WITH the grant (the composition
-        # smoke's gap finding, controller ruling): the client echoes
-        # exactly what was signed — write-once condition, pinned
-        # content type, declared byte length — instead of reconstructing
-        # them from documentation.
-        pinned_content_type = DECLARED_TYPE_CONTENT_TYPES[FileType(declared_type)]
+        # The signing contract travels WITH the grant as an ADAPTER
+        # PASSTHROUGH (hardening P4c): what was signed is exactly what
+        # the client is told to send. This service no longer rebuilds
+        # the header set from its own DECLARED_TYPE_CONTENT_TYPES view —
+        # an independent reconstruction would desync from the real
+        # signature the moment the adapter's signing policy changes.
+        # Content-Length is not among the echoed headers (browser
+        # forbidden header): it rides as the pinned byte count.
+        if url.pinned_content_length is None:
+            # Unreachable in this flow: the service always pins the
+            # declared size above; an unsigned length back from the
+            # adapter is a port-contract violation, not a client
+            # outcome. Fail loud instead of echoing an untyped None.
+            raise RuntimeError(
+                "storage adapter returned an unsigned content length for "
+                "a pinned upload intent"
+            )
         return IssuedUploadIntent(
             intent_id=intent.id,
             claim_id=claim.id,
@@ -765,11 +789,8 @@ class UploadService:
             upload_url=url.url,
             url_expires_at=url.expires_at,
             intent_expires_at=intent.expires_at,
-            signed_headers={
-                "If-None-Match": "*",
-                "Content-Type": pinned_content_type,
-                "Content-Length": str(size),
-            },
+            signed_headers=dict(url.client_headers),
+            pinned_content_length=url.pinned_content_length,
         )
 
     async def finalize_upload(

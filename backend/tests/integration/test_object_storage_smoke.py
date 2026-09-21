@@ -15,6 +15,12 @@ signature path the contract lives on):
   different Content-Type is rejected (403); a PUT whose body length
   differs from the signed Content-Length is rejected (403); a PUT
   omitting the signed If-None-Match header is rejected;
+- the signing contract returned by ``create_upload_url`` (hardening
+  P4c) is proven, not just asserted on the dataclass: a PUT that echoes
+  the adapter's ``client_headers`` verbatim and frames Content-Length
+  to ``pinned_content_length`` succeeds against the real signature
+  (a browser satisfies the same pin with a size-declared Blob — it
+  cannot set the forbidden header itself);
 - write-once: the FIRST PUT onto the fresh server-generated key
   succeeds, and any second PUT over the same URL/key — same
   Content-Type, same byte length, before or after finalize's HEAD —
@@ -44,7 +50,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import get_settings
-from app.integrations.object_storage import ObjectStorage
+from app.integrations.object_storage import ObjectStorage, UploadUrl
 from app.integrations.object_storage_s3 import S3ObjectStorage
 
 pytestmark = pytest.mark.integration
@@ -64,15 +70,20 @@ def storage() -> ObjectStorage:
     return S3ObjectStorage(get_settings())
 
 
-def _put(url: str, body: bytes, *, content_type: str) -> int:
-    """Real HTTP PUT through the presigned URL, as the browser client
-    would: Content-Type + Content-Length from the body + the mandatory
-    If-None-Match:* (every port-issued upload URL signs it)."""
+def _put(upload: UploadUrl, body: bytes) -> int:
+    """Real HTTP PUT through the presigned URL exactly as the returned
+    contract describes (P4c): echo the adapter's ``client_headers``
+    verbatim, and frame Content-Length to ``pinned_content_length``
+    when the URL pins one — a Python client CAN set that header; a
+    browser cannot (forbidden header) and satisfies the same pin with a
+    Blob of that declared size. A URL issued without a length pin
+    leaves the header to urllib's automatic framing. Proving this path
+    proves the echoed contract satisfies the real signature."""
+    headers = dict(upload.client_headers)
+    if upload.pinned_content_length is not None:
+        headers["Content-Length"] = str(upload.pinned_content_length)
     request = urllib.request.Request(
-        url,
-        data=body,
-        method="PUT",
-        headers={"Content-Type": content_type, "If-None-Match": "*"},
+        upload.url, data=body, method="PUT", headers=headers
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.status
@@ -117,7 +128,14 @@ def test_roundtrip_upload_head_download_delete(
     now = datetime.now(UTC)
     assert now + _TTL - timedelta(seconds=30) <= upload.expires_at <= now + _TTL
 
-    assert _put(upload.url, body, content_type="text/csv") == 200
+    # The signing contract rides on the grant (P4c): the echo headers
+    # are exactly what was signed, Content-Length is NOT among them
+    # (browser-forbidden header), and the pin is the scalar byte count.
+    assert upload.client_headers == {"If-None-Match": "*", "Content-Type": "text/csv"}
+    assert "Content-Length" not in upload.client_headers
+    assert upload.pinned_content_length == len(body)
+
+    assert _put(upload, body) == 200
 
     head = storage.head_object(object_key=upload.object_key)
     assert head is not None
@@ -152,6 +170,7 @@ def test_upload_url_pins_content_type(storage: ObjectStorage) -> None:
         expires_in=_TTL,
         content_length=6,
     )
+    assert upload.client_headers["Content-Type"] == "text/csv"
     assert _rejected_put(upload.url, b"a,b\n1,", content_type="text/plain") == 403, (
         "a PUT with an unsigned Content-Type must be rejected"
     )
@@ -172,9 +191,11 @@ def test_write_once_url_first_put_wins_and_replay_is_rejected(
         expires_in=_TTL,
         content_length=len(body),
     )
+    assert upload.pinned_content_length == len(body)
 
-    # First PUT onto the fresh key succeeds.
-    assert _put(upload.url, body, content_type="text/csv") == 200
+    # First PUT onto the fresh key succeeds (echoing the returned
+    # contract: client_headers + the framed pinned length).
+    assert _put(upload, body) == 200
 
     # Same URL, same Content-Type, same byte length, different bytes:
     # rejected (412 PreconditionFailed on this provider).
@@ -216,14 +237,15 @@ def test_upload_url_pins_content_length(storage: ObjectStorage) -> None:
     """The P1 size gate at the entry: the declared size is signed as the
     PUT's Content-Length, so an over- or under-length body breaks the
     signature and the provider rejects the PUT (403)."""
-    # Exact declared length succeeds.
+    # Exact declared length succeeds (the pin echoes on the grant).
     upload = storage.create_upload_url(
         claim_id=uuid.uuid4(),
         content_type="text/csv",
         expires_in=_TTL,
         content_length=10,
     )
-    assert _put(upload.url, b"0123456789", content_type="text/csv") == 200
+    assert upload.pinned_content_length == 10
+    assert _put(upload, b"0123456789") == 200
     storage.delete_object(object_key=upload.object_key)
 
     # Eleven bytes through a URL signed for ten: rejected.
@@ -257,11 +279,14 @@ def test_binary_boundary_payload_roundtrip(
         content_type="application/octet-stream",
         expires_in=_TTL,
     )
+    # A URL issued without a length pin (legacy/test callers): the
+    # scalar pin is None and the PUT frames Content-Length itself.
+    assert upload.pinned_content_length is None
     # Deterministic non-UTF-8, non-ASCII-aligned bytes: every byte value
     # appears; byte fidelity must survive presigned PUT, provider
     # storage, and the streamed server-side download.
     body = bytes(range(256)) * 4096  # 1 MiB
-    assert _put(upload.url, body, content_type="application/octet-stream") == 200
+    assert _put(upload, body) == 200
 
     head = storage.head_object(object_key=upload.object_key)
     assert head is not None
@@ -280,7 +305,8 @@ def test_empty_payload_is_a_stored_object(storage: ObjectStorage) -> None:
         expires_in=_TTL,
         content_length=0,
     )
-    assert _put(upload.url, b"", content_type="application/octet-stream") == 200
+    assert upload.pinned_content_length == 0
+    assert _put(upload, b"") == 200
     head = storage.head_object(object_key=upload.object_key)
     assert head is not None
     assert head.size == 0

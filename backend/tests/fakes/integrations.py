@@ -147,9 +147,11 @@ class FakeEmailSender(_FailureProgrammable):
 class FakeObjectStorage(_FailureProgrammable):
     """In-memory `ObjectStorage`.
 
-    `create_upload_url` issues server-generated keys and pins the declared
-    content type (and records the declared content length in
-    `pinned_content_lengths` for call-site assertions); `put_object`
+    `create_upload_url` issues server-generated keys, pins the declared
+    content type, and returns the SAME signing-contract fields as the
+    real adapter (`client_headers` + `pinned_content_length`, hardening
+    P4c) while recording the declared content length in
+    `pinned_content_lengths` for call-site assertions; `put_object`
     simulates the client completing the presigned PUT; `head_object` then
     reports the pinned metadata; `download_to_file` replays the PUT
     content for worker-side reads (a missing key is `FileNotFoundError`,
@@ -195,6 +197,14 @@ class FakeObjectStorage(_FailureProgrammable):
             object_key=object_key,
             url=f"{_FAKE_HOST}/upload/{object_key}",
             expires_at=self._clock.now() + expires_in,
+            # Mirrors the S3 adapter's signing contract (hardening P4c):
+            # the headers a client must echo verbatim (Content-Length is
+            # browser-forbidden and travels as pinned_content_length).
+            client_headers={
+                "If-None-Match": "*",
+                "Content-Type": content_type,
+            },
+            pinned_content_length=content_length,
         )
         self.upload_urls.append(url)
         self._pinned_content_types[url.object_key] = content_type
