@@ -380,10 +380,12 @@ class SmsSender(Protocol):
         template: str,
         variables: Mapping[str, Any],
         idempotency_key: str | None = None,
-    ) -> None: ...
+    ) -> str | None: ...
 ```
 
 `idempotency_key` (optional) lets a provider collapse repeated sends onto one message: notification delivery always passes `"{event_key}:{channel}:{user_id}"` (spec §25.3) so an `UnknownOutcomeError` retry — whose first attempt may have succeeded — cannot double-send; single-shot callers (identity OTP) omit it.
+
+The optional `str` return (PR #2 hardening step 5) is the provider receipt: adapters that surface one land it on the delivery row's `provider_message_id`; the development-only logging adapters return a `"logging:"`-prefixed id so a recorded SENT from a simulated send is distinguishable at a glance. Provider selection is typed settings (`sms_provider`/`email_provider`, `Literal["logging"]` in V1); the production sentinel validator refuses a logging provider under `environment="production"` — unconfigured real providers fail startup, never fake success (G4/G5).
 
 Fake: `FakeSmsSender` records `SentSms(to, template, variables, idempotency_key=None)` for exact-delivery assertions.
 
@@ -398,10 +400,10 @@ class EmailSender(Protocol):
         template: str,
         variables: Mapping[str, Any],
         idempotency_key: str | None = None,
-    ) -> None: ...
+    ) -> str | None: ...
 ```
 
-Fake: `FakeEmailSender`, same recording contract as SMS (including `idempotency_key`).
+Same receipt contract as SMS above (PR #2 hardening step 5). Fake: `FakeEmailSender`, same recording contract as SMS (including `idempotency_key`).
 
 ### Ranking projection
 
