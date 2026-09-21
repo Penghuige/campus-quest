@@ -58,6 +58,15 @@ GET          ``/teacher/tasks/{task_id}/comments/moderation`` — the
              Teacher-safe comment listing (spec §21.4 shape).
 GET          ``/teacher/tasks/{task_id}/reports`` — the report queue
              (task 6's ``list_task_reports``).
+POST         ``/tasks/{task_id}/reports/{report_id}/dismiss`` —
+             close one report as DISMISSED, reason mandatory (PR #2
+             hardening step 10; the interfaces.md closure ruling's
+             URL shape — under ``/tasks`` beside the queue it closes,
+             same standing as the listing, ``admit_admin=True``).
+POST         ``/tasks/{task_id}/reports/{report_id}/handle`` —
+             close one report as HANDLED, note optional (registers
+             the moderation conclusion; the comment itself is acted
+             on through the existing audited paths).
 DELETE       ``/teacher/comments/{comment_id}`` — moderation soft
              delete, reason mandatory (spec §21.4).
 POST         ``/teacher/comments/{comment_id}/hard-hide`` — Admin-only
@@ -174,6 +183,7 @@ from app.modules.community.gates import require_task_moderation_site
 from app.modules.community.models import (
     Comment,
     CommentReaction,
+    CommentReport,
     CommentRevision,
     CommentVote,
 )
@@ -343,8 +353,11 @@ def get_reaction_service() -> ReactionService:
 
 def get_report_service() -> ReportService:
     # moderation_key_secret defaults to Settings.token_secret inside the
-    # service (the serializers' keyed-material contract).
-    return ReportService()
+    # service (the serializers' keyed-material contract); the audit
+    # writer is wired explicitly so the composition root shows the
+    # closures' side effects (the get_moderation_service pattern) —
+    # stateless, flush-only, same transaction as the closure.
+    return ReportService(audit=AuditLogWriter())
 
 
 def get_rating_service() -> RatingService:
@@ -621,6 +634,42 @@ class CommentReportListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ReportDismissRequest(BaseModel):
+    """Dismissal body (PR #2 hardening step 10): ``reason`` is a
+    mandatory part of the governance decision — absent here is the 422
+    parse refusal, blank-after-trim is the service's typed rejection,
+    and ``extra="forbid"`` keeps a reason all a caller can send (the
+    ModerationDeleteRequest shape)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+
+class ReportHandleRequest(BaseModel):
+    """Handling body: the optional governor note, normalized by the
+    service with the filing-note rules (blank is no note)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    note: str | None = None
+
+
+class ReportClosureResponse(BaseModel):
+    """The closed report row's facts back to the moderator: identity of
+    the decision target, the terminal status, and the closure stamps
+    (the actor is the caller themself, so ``handled_by`` is no
+    disclosure). The queue listing beside it renders the same fields
+    in the full row shape."""
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    comment_id: uuid.UUID
+    status: str
+    handled_by: uuid.UUID
+    handled_at: datetime
 
 
 class ModerationDeleteRequest(BaseModel):
@@ -932,6 +981,55 @@ async def list_task_reports(
     )
 
 
+@router.post(
+    "/tasks/{task_id}/reports/{report_id}/dismiss",
+    response_model=ReportClosureResponse,
+)
+async def dismiss_task_report(
+    task_id: uuid.UUID,
+    report_id: uuid.UUID,
+    body: ReportDismissRequest,
+    actor: StaffActor,
+    db: DbSession,
+    reports: ReportServiceDep,
+) -> ReportClosureResponse:
+    """Close one report as DISMISSED (PR #2 hardening step 10): the
+    moderator judged no action warranted — the mandatory reason records
+    why, one ``REPORT_DISMISSED`` audit row lands in the same
+    transaction, and the comment is untouched (§23 不自动删除评论
+    reaches closure). A same-state replay echoes the closed row; the
+    other terminal state is the typed 409. Standing is the queue
+    listing's (owner / MODERATE_COMMUNITY / Admin), so the queue's
+    reader is its closer. No rate bucket — the moderation write
+    surfaces (moderate-delete, hard hide, reveal) carry none: the
+    state machine makes every replay single-shot."""
+    report = await reports.dismiss_report(db, actor, task_id, report_id, body.reason)
+    return _closure_response(task_id, report)
+
+
+@router.post(
+    "/tasks/{task_id}/reports/{report_id}/handle",
+    response_model=ReportClosureResponse,
+)
+async def handle_task_report(
+    task_id: uuid.UUID,
+    report_id: uuid.UUID,
+    body: ReportHandleRequest,
+    actor: StaffActor,
+    db: DbSession,
+    reports: ReportServiceDep,
+) -> ReportClosureResponse:
+    """Close one report as HANDLED (PR #2 hardening step 10): registers
+    that the moderator acted on the reported comment (through the
+    existing audited removal paths or otherwise) — this endpoint books
+    the conclusion and its ``REPORT_HANDLED`` audit row; the comment
+    row is never touched here. Optional note, same-state replay
+    idempotent, other terminal state the typed 409, standing as the
+    dismiss surface above."""
+    report = await reports.handle_report(db, actor, task_id, report_id, body.note)
+    return _closure_response(task_id, report)
+
+
 @router.delete("/teacher/comments/{comment_id}", status_code=204)
 async def moderate_delete_comment(
     comment_id: uuid.UUID,
@@ -988,6 +1086,26 @@ async def reveal_comment_identity(
 
 
 # --- internals ---------------------------------------------------------------------
+
+
+def _closure_response(
+    task_id: uuid.UUID, report: CommentReport
+) -> ReportClosureResponse:
+    """Render one closed report row (both closure routes share the
+    shape). The asserts are the state machine's own contract: every
+    return path of ``dismiss_report``/``handle_report`` carries the
+    closure stamps — a fresh transition writes them, a same-state
+    replay returns a row that already has them."""
+    assert report.handled_by is not None and report.handled_at is not None
+    return ReportClosureResponse(
+        id=report.id,
+        task_id=task_id,
+        comment_id=report.comment_id,
+        status=report.status,
+        handled_by=report.handled_by,
+        handled_at=report.handled_at,
+    )
+
 
 # Identity seam (the gates/service precedent): a typed Core-level light
 # users table, NOT the identity ORM model — nickname for the moderation

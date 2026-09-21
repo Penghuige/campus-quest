@@ -185,8 +185,9 @@ class CommentReportView:
     renders on, and ``ReportService.list_task_reports`` gates it to the
     owner/MODERATE_COMMUNITY/Admin surface — route layers must never
     compose it into a student-facing response. ``status`` is the raw
-    OPEN/HANDLED/DISMISSED string (task 8 owns the transitions; V1 files
-    land OPEN).
+    OPEN/HANDLED/DISMISSED string (files land OPEN; the PR #2
+    hardening closure endpoints — ``ReportService.dismiss_report`` /
+    ``handle_report`` — own the terminal transitions).
     """
 
     id: UUID
