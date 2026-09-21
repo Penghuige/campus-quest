@@ -412,30 +412,41 @@ async def _await_row_lock_waiter(
     count: int = 1,
     timeout: float = 5.0,
 ) -> None:
-    """Poll pg_stat_activity until ``count`` backends sit in an active
-    Lock wait in this database — deterministic proof the waiters PARKED
-    on the row lock, never that they are merely slow to arrive.
+    """Poll until ``count`` distinct backends hold an UNGRANTED lock
+    request in this database (``pg_locks.granted = false``) —
+    deterministic proof the waiters PARKED on the row lock, never that
+    they are merely slow to arrive, and state-independent by
+    construction (the handoff's original pg_locks mechanism).
 
-    The wait-signature level (not the query text, not the specific
-    wait_event) is the predicate: asyncpg prepares and caches statements
-    per connection, and a Bind/Execute against an already-parsed
-    statement leaves ``query`` showing a stale earlier statement
-    (observed: a backend blocked mid-``FOR UPDATE`` reporting ``query =
-    'SELECT 1'``); and with three racers on one row PostgreSQL parks the
-    first follower on the holder's ``transactionid`` and the second on
-    the tuple itself (``wait_event = 'tuple'``, multi-xact). The system
-    backends (autovacuum, wal writer, ...) wait on Activity, never Lock.
+    Two ``pg_stat_activity`` columns proved unreliable as the predicate
+    and are deliberately not used: ``query`` (asyncpg prepares and caches
+    statements per connection, and a Bind/Execute against an
+    already-parsed statement leaves ``query`` showing a stale earlier
+    statement — a backend blocked mid-``FOR UPDATE`` was observed
+    reporting ``query = 'SELECT 1'``) and ``state`` (on a warm pooled
+    asyncpg connection the extended-protocol execution of a cached
+    prepared statement can run while the backend reports ``idle in
+    transaction`` — a verified false-negative of a ``state = 'active'``
+    conjunct found in review, ~5/22 runs on the finalize-first
+    inspector variant). An ungranted lock request is exactly "this
+    backend is blocked waiting for a lock another transaction holds";
+    the system backends (autovacuum, wal writer, ...) hold none. No
+    locktype filter either: with three racers on one row PostgreSQL
+    parks the first follower on the holder's transactionid and the
+    second on the tuple itself (multi-xact), so waiters surface with
+    different locktypes.
     """
     deadline = time.monotonic() + timeout
     async with factory() as session:
         while True:
             blocked = await session.scalar(
                 text(
-                    "SELECT count(*) FROM pg_stat_activity "
-                    "WHERE wait_event_type = 'Lock' "
-                    "AND state = 'active' "
-                    "AND datname = current_database() "
-                    "AND pid <> pg_backend_pid()"
+                    "SELECT count(DISTINCT locks.pid) "
+                    "FROM pg_locks locks "
+                    "JOIN pg_stat_activity activity ON activity.pid = locks.pid "
+                    "WHERE locks.granted = false "
+                    "AND activity.datname = current_database() "
+                    "AND locks.pid <> pg_backend_pid()"
                 )
             )
             if (blocked or 0) >= count:

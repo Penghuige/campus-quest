@@ -857,6 +857,13 @@ class ClaimService:
         merged branch wires the VALIDATED-reading inspector at the
         constructors (build_expire_service is the production site).
 
+        Non-EXPIRED outcomes write nothing yet still HOLD the
+        claim-row lock until the caller's session ends (the return
+        skips the commit, so the FOR UPDATE survives): harmless for
+        the worker's one-session-per-job pattern, which releases it
+        at task exit, and the tests that reuse one session across
+        outcomes do so intentionally.
+
         No payout (spec §11.4): reward-lock fields, locked points, and
         every claim-time snapshot are untouched — expiry pays nothing,
         and reversals own the ledger.
