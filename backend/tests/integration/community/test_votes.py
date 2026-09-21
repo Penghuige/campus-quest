@@ -57,7 +57,7 @@ from app.modules.community.comment_service import (
     CommentDeletedError,
     CommenterAccountNotActiveError,
     CommenterNotFoundError,
-    CommenterNotStudentError,
+    CommenterNotParticipantError,
     CommentNotFoundError,
 )
 from app.modules.community.models import Comment, CommentVote
@@ -534,21 +534,26 @@ async def test_counts_span_users_and_same_value_vote_is_idempotent(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
-async def test_vote_is_a_student_surface(db_session: AsyncSession, role: Role) -> None:
-    """The T2 writer rule: community writes (votes included) are a Student
-    surface; staff reach comments through the moderation surfaces, and
-    the refusal is the shared typed error with the shared code."""
+async def test_vote_admits_teachers_refuses_admin(db_session: AsyncSession) -> None:
+    """The PR #2 hardening participant ruling (spec §4.2 "普通社区能力"):
+    a Teacher votes like any Student — same toggle, same counts; Admin
+    is refused with the typed participant error (its community powers
+    are the governance surfaces), and nothing is written for it."""
     task, _, student, _ = await _thread_fixture(db_session)
     comment = await _root_comment(db_session, task, student)
-    staff = _user(username=f"staff-{role.value.lower()}", role=role)
-    await _persist(db_session, staff)
+    teacher = _user(username="teacher-voter@pku.edu.cn", role=Role.TEACHER)
+    admin = _user(username="admin-voter@pku.edu.cn", role=Role.ADMIN)
+    await _persist(db_session, teacher, admin)
 
-    with pytest.raises(CommenterNotStudentError) as raised:
-        await VoteService().set_vote(db_session, staff.id, comment.id, 1)
+    voted = await VoteService().set_vote(db_session, teacher.id, comment.id, 1)
+    assert voted == VoteResult(current_value=1, likes=1, dislikes=0)
+    assert len(await _votes(db_session, comment.id)) == 1
+
+    with pytest.raises(CommenterNotParticipantError) as raised:
+        await VoteService().set_vote(db_session, admin.id, comment.id, 1)
     assert raised.value.code == ErrorCode.PERMISSION_DENIED
     assert raised.value.status_code == 403
-    assert await _votes(db_session, comment.id) == []
+    assert len(await _votes(db_session, comment.id)) == 1
 
 
 @pytest.mark.integration

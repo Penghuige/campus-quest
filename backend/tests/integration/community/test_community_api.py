@@ -832,6 +832,127 @@ async def test_report_queue_shows_reporter_to_teacher_not_students(
     assert _envelope(denied)["code"] == "PERMISSION_DENIED"
 
 
+# --- the participant ruling (PR #2 hardening: Student + Teacher; Admin governs only) --
+
+
+@pytest.mark.integration
+async def test_teacher_participates_admin_is_refused_on_ordinary_surfaces(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """Spec §4.2 "除普通社区能力外，可：" — a Teacher participates in the
+    ORDINARY community over HTTP exactly like a Student (comment with
+    named display, vote, reaction, report, list read), and community
+    participation demands NO TOTP (the teacher here holds a plain
+    session — §33.4's 2FA gate guards management surfaces only). Admin
+    is NOT a participant: every ordinary surface answers
+    PERMISSION_DENIED, while Admin's governance surface (the moderation
+    listing) stays open. A suspended account is still refused by the
+    state gate."""
+    teacher = _user(
+        username=_TEACHER_EMAIL, role=Role.TEACHER, nickname="发帖教师"
+    )
+    _, admin_tokens = await _staff_account(
+        db_session, api_clock, username=_ADMIN_EMAIL, role=Role.ADMIN
+    )
+    student = _user(username="20250961001", role=Role.STUDENT, nickname="普通同学")
+    suspended = _user(
+        username="20250961002",
+        role=Role.STUDENT,
+        nickname="被封同学",
+        status=UserStatus.SUSPENDED,
+    )
+    await _seed(db_session, teacher, student, suspended)
+    teacher_tokens = await _tokens(db_session, api_clock, teacher)
+    task = _published_task(teacher)
+    await _seed(db_session, task)
+    student_tokens = await _tokens(db_session, api_clock, student)
+    suspended_tokens = await _tokens(db_session, api_clock, suspended)
+
+    # A student seed comment anchors the teacher's engagement actions.
+    anchored = await client.post(
+        f"/api/v1/tasks/{task.id}/comments",
+        json={"content": "楼主求助：数据格式有要求吗？"},
+        headers=_bearer(student_tokens),
+    )
+    assert anchored.status_code == 201, anchored.text
+    comment_id = anchored.json()["id"]
+
+    # The Teacher participates as an ordinary community member: same
+    # named-display semantics as a Student (spec §21.4 role-blind).
+    teacher_comment = await client.post(
+        f"/api/v1/tasks/{task.id}/comments",
+        json={"content": "CSV 两列：标题与点赞数。"},
+        headers=_bearer(teacher_tokens),
+    )
+    assert teacher_comment.status_code == 201, teacher_comment.text
+    assert teacher_comment.json()["author_display"] == teacher.nickname
+
+    voted = await client.post(
+        f"/api/v1/comments/{comment_id}/vote",
+        json={"value": 1},
+        headers=_bearer(teacher_tokens),
+    )
+    assert voted.status_code == 200, voted.text
+    assert voted.json() == {"current_value": 1, "likes": 1, "dislikes": 0}
+
+    reacted = await client.post(
+        f"/api/v1/comments/{comment_id}/reactions",
+        json={"emoji": "🔥"},
+        headers=_bearer(teacher_tokens),
+    )
+    assert reacted.status_code == 200, reacted.text
+    assert reacted.json()["added"] is True
+
+    reported = await client.post(
+        f"/api/v1/comments/{comment_id}/reports",
+        json={"category": "OTHER", "note": "教师测试举报通道"},
+        headers=_bearer(teacher_tokens),
+    )
+    assert reported.status_code == 201, reported.text
+
+    listed = await client.get(
+        f"/api/v1/tasks/{task.id}/comments", headers=_bearer(teacher_tokens)
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 2  # student anchor + teacher comment
+
+    # Admin is NOT a participant: every ordinary surface (read included)
+    # refuses with PERMISSION_DENIED, and the rating face too (its
+    # Student gate stands regardless).
+    for method, path, payload in (
+        ("GET", f"/api/v1/tasks/{task.id}/comments", None),
+        ("POST", f"/api/v1/tasks/{task.id}/comments", {"content": "管理员插楼"}),
+        ("POST", f"/api/v1/comments/{comment_id}/vote", {"value": 1}),
+        ("POST", f"/api/v1/comments/{comment_id}/reactions", {"emoji": "🔥"}),
+        ("POST", f"/api/v1/comments/{comment_id}/reports", {"category": "OTHER"}),
+        ("PUT", f"/api/v1/tasks/{task.id}/rating", {"rating": 5}),
+    ):
+        denied = await client.request(
+            method, path, json=payload, headers=_bearer(admin_tokens)
+        )
+        assert denied.status_code == 403, (method, path, denied.text)
+        assert _envelope(denied)["code"] == "PERMISSION_DENIED"
+
+    # Admin's governance surface stays open (the read-admits-admin
+    # ruling): the moderation listing answers for the Admin token.
+    moderation = await client.get(
+        f"/api/v1/teacher/tasks/{task.id}/comments/moderation",
+        headers=_bearer(admin_tokens),
+    )
+    assert moderation.status_code == 200, moderation.text
+    assert moderation.json()["total"] == 2
+
+    # The state gate survives the widening: a suspended account — any
+    # role — never participates (spec §5.7).
+    suspended_denied = await client.get(
+        f"/api/v1/tasks/{task.id}/comments", headers=_bearer(suspended_tokens)
+    )
+    assert suspended_denied.status_code == 403
+    assert _envelope(suspended_denied)["code"] == "ACCOUNT_NOT_ACTIVE"
+
+
 # --- admin reveal and hard hide (spec §21.3/§21.4) ----------------------------------
 
 

@@ -14,9 +14,11 @@ genuinely transport.
 Endpoints
 ---------
 
-Student surfaces (``require_active_student_actor`` — community reads and
-writes are the Student surface, spec §4.1; staff govern through the
-moderation surfaces below):
+Community participant surfaces (``require_active_community_actor`` —
+spec §4.1/§4.2: §4.2's "除普通社区能力外，可：" grants Teacher the
+ordinary community capabilities listed for Student; the PR #2
+hardening ruling keeps Admin OUT of ordinary participation — Admin's
+community powers are the governance surfaces below):
 
 ===========  =========================================================
 Method path  Purpose
@@ -33,12 +35,21 @@ POST         ``/comments/{comment_id}/reactions`` — emoji toggle
              (spec §22).
 POST         ``/comments/{comment_id}/reports`` — file into the
              moderation queue (spec §23); 201.
-PUT          ``/tasks/{task_id}/rating`` — completer rating upsert
-             (spec §20).
 ===========  =========================================================
 
-Staff surfaces (``require_staff_management_actor``, spec §33.4; ownership
-and capability checks live in the services):
+Student-only surfaces (``require_active_student_actor``):
+
+===========  =========================================================
+Method path  Purpose
+===========  =========================================================
+PUT          ``/tasks/{task_id}/rating`` — completer rating upsert
+             (spec §20: eligibility is the completed-claim
+             predicate, which only Students hold; deliberately NOT
+             widened with the participant surface).
+===========  =========================================================
+
+Staff/moderation surfaces (``require_staff_management_actor``, spec
+§33.4; ownership and capability checks live in the services):
 
 ===========  =========================================================
 Method path  Purpose
@@ -182,6 +193,7 @@ from app.modules.community.serializers import serialize_moderation_comment
 from app.modules.community.vote_service import VoteService
 from app.modules.identity.dependencies import (
     get_business_clock,
+    require_active_community_actor,
     require_active_student_actor,
     require_staff_management_actor,
 )
@@ -345,6 +357,7 @@ def get_moderation_service(
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+CommunityActor = Annotated[Actor, Depends(require_active_community_actor)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
@@ -636,7 +649,7 @@ class RevealIdentityResponse(BaseModel):
     username: str
 
 
-# --- student surfaces (spec §21-§23, §28) -------------------------------------------
+# --- community participant surfaces (spec §21-§23, §28) ------------------------------
 
 router = APIRouter()
 
@@ -644,7 +657,7 @@ router = APIRouter()
 @router.get("/tasks/{task_id}/comments", response_model=CommentListResponse)
 async def list_task_comments(
     task_id: uuid.UUID,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     comments: CommentServiceDep,
     clock: ClockDep,
@@ -683,7 +696,7 @@ async def list_task_comments(
 async def create_task_comment(
     task_id: uuid.UUID,
     body: CommentCreateRequest,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     comments: CommentServiceDep,
     limiter: LimiterDep,
@@ -710,7 +723,7 @@ async def create_task_comment(
 async def edit_comment(
     comment_id: uuid.UUID,
     body: CommentEditRequest,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     comments: CommentServiceDep,
     limiter: LimiterDep,
@@ -727,7 +740,7 @@ async def edit_comment(
 @router.delete("/comments/{comment_id}", status_code=204)
 async def delete_own_comment(
     comment_id: uuid.UUID,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     comments: CommentServiceDep,
 ) -> None:
@@ -741,7 +754,7 @@ async def delete_own_comment(
 async def cast_comment_vote(
     comment_id: uuid.UUID,
     body: VoteRequest,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     votes: VoteServiceDep,
     limiter: LimiterDep,
@@ -762,7 +775,7 @@ async def cast_comment_vote(
 async def toggle_comment_reaction(
     comment_id: uuid.UUID,
     body: ReactionRequest,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     reactions: ReactionServiceDep,
     limiter: LimiterDep,
@@ -783,7 +796,7 @@ async def toggle_comment_reaction(
 async def file_comment_report(
     comment_id: uuid.UUID,
     body: ReportRequest,
-    actor: StudentActor,
+    actor: CommunityActor,
     db: DbSession,
     reports: ReportServiceDep,
     limiter: LimiterDep,

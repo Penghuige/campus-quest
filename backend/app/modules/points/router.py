@@ -28,22 +28,27 @@ POST         ``/rewards/{reward_id}/redeem`` — the atomic freeze
              the frozen typed-error envelopes (409 family).
 ===========  =========================================================
 
-Teacher/Admin review surfaces (``require_staff_management_actor`` —
-spec §4.2-§4.3, §33.4; the tasks/submissions staff-surface precedent,
-so the ``/teacher`` prefix is the module's management namespace):
+Review surfaces (spec §4.2-§4.3, §33.4; the ``/teacher`` prefix is the
+module's management namespace):
 
 ===========  =========================================================
 GET          ``/teacher/rewards/redemptions`` — the review queue:
              pending (REQUESTED/UNDER_REVIEW) oldest first,
              offset-paginated, enriched with the requester nickname
              (through the identity directory port) and the item name.
+             Staff-guarded (TEACHER/ADMIN): a read that decides nothing.
 POST         ``/teacher/rewards/redemptions/{id}/approve`` — consume
              the freeze into one negative REWARD_REDEMPTION entry.
+             Admin-only until scoped delegation (PR #2 hardening
+             ruling).
 POST         ``/teacher/rewards/redemptions/{id}/reject`` — release
              the freeze; ``reason`` is mandatory at the transport.
+             Admin-only until scoped delegation (PR #2 hardening
+             ruling).
 POST         ``/teacher/rewards/redemptions/{id}/fulfill`` — record
              the physical delivery (optional note) of an APPROVED
-             redemption.
+             redemption. Admin-only until scoped delegation (PR #2
+             hardening ruling).
 ===========  =========================================================
 
 Other transport decisions
@@ -66,12 +71,24 @@ Other transport decisions
   knows (it IS the requester); the staff queue enriches with the
   nickname through ``UserDirectory`` — never identity ORM models —
   and carries no contact field because the DTO has none.
-- **The academic-term provider is the documented V1 stand-in.** The
-  redemption service requires an ``AcademicTermProvider``; until Plan
-  08 wires the audited CURRENT_ACADEMIC_TERM setting, this
-  composition root binds ``StaticAcademicTermProvider`` with the
-  module constant below (validated at construction, so a bad value
-  fails at wiring time — the service's own ruling).
+- **The wallet display clamps at the DTO, never below (PR #2
+  hardening, the migration-0012 overdraft ruling's user side).** The
+  internal wallet/ledger keeps TRUE negative balances (PostgreSQL is
+  the fact, the ledger==wallet invariant is rebuildable), but a user
+  never reads a raw negative: ``available_points`` and
+  ``spendable_points`` are clamped at 0 and the overdraft is carried
+  explicitly as ``point_debt`` (= ``max(-raw_balance, 0)``). The clamp
+  lives HERE in the serializer only — ``LedgerService`` and the wallet
+  row stay untouched, so the internal figures remain auditable and the
+  redemption gate keeps deciding on the raw spendable.
+- **The academic-term provider is settings-driven.**
+  ``SettingsAcademicTermProvider`` reads ``Settings
+  .current_academic_term`` (the dev default "2026-fall"; Plan 08 moves
+  it to the audited admin-configurable CURRENT_ACADEMIC_TERM system
+  setting). The key is validated at construction (a misconfigured
+  deployment fails at wiring time — the service's own ruling), and the
+  redemption snapshot at creation time is unchanged: history keeps the
+  term it was created under.
 """
 
 from __future__ import annotations
@@ -85,10 +102,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
+    require_admin_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
@@ -96,11 +115,12 @@ from app.modules.identity.events import Actor
 from app.modules.points.ledger_service import (
     LedgerService,
     RankingProjectionDispatcher,
+    WalletSummary,
 )
 from app.modules.points.models import RewardItem, RewardRedemption
 from app.modules.points.redemption_service import (
     RedemptionService,
-    StaticAcademicTermProvider,
+    SettingsAcademicTermProvider,
     window_open,
 )
 
@@ -109,22 +129,21 @@ from app.modules.points.redemption_service import (
 DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 50
 
-# Spec §16.1's example key; the documented V1 stand-in the composition
-# root binds until Plan 08's audited CURRENT_ACADEMIC_TERM setting.
-DEFAULT_TERM_KEY = "2026-fall"
-
 # --- transport DTOs (explicit field sets) ---------------------------------------------
 
 
 class WalletResponse(BaseModel):
     """The wallet strip (spec §15.1/§16.2): the projection's figures
-    plus the spendable derivation."""
+    plus the spendable derivation, CLAMPED for display (see the module
+    docstring): available/spendable never render below 0 and the
+    overdraft rides as the explicit ``point_debt``."""
 
     model_config = ConfigDict(extra="forbid")
 
     available_points: int
     earned_points: int
     spendable_points: int
+    point_debt: int
 
 
 class RewardItemResponse(BaseModel):
@@ -229,16 +248,19 @@ def get_ledger_service() -> LedgerService:
     return LedgerService(ranking_dispatcher=get_ranking_dispatcher())
 
 
-def get_academic_term_provider() -> StaticAcademicTermProvider:
-    """The V1 term binding (see the module docstring): one static key,
-    validated at construction so a misconfiguration fails at wiring
-    time rather than at the first redemption."""
-    return StaticAcademicTermProvider(DEFAULT_TERM_KEY)
+def get_academic_term_provider() -> SettingsAcademicTermProvider:
+    """The settings-driven term binding (see the module docstring): the
+    key is read from ``Settings.current_academic_term`` and validated at
+    construction so a misconfiguration fails at wiring time rather than
+    at the first redemption."""
+    return SettingsAcademicTermProvider(get_settings())
 
 
 def get_redemption_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
-    terms: Annotated[StaticAcademicTermProvider, Depends(get_academic_term_provider)],
+    terms: Annotated[
+        SettingsAcademicTermProvider, Depends(get_academic_term_provider)
+    ],
 ) -> RedemptionService:
     # The ledger is the dispatcher-bound production construction (the
     # get_ledger_service ruling): today's redemption entries are all
@@ -256,6 +278,7 @@ ClockDep = Annotated[Clock, Depends(get_business_clock)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
+AdminActor = Annotated[Actor, Depends(require_admin_actor)]
 LedgerServiceDep = Annotated[LedgerService, Depends(get_ledger_service)]
 RedemptionServiceDep = Annotated[RedemptionService, Depends(get_redemption_service)]
 DirectoryDep = Annotated[SqlAlchemyUserDirectory, Depends(get_user_directory)]
@@ -279,12 +302,29 @@ async def my_wallet(
     """The caller's wallet strip: available (spendable-balance
     projection), earned (cumulative task contribution — spending never
     touches it, spec §17.1), and spendable (available minus ACTIVE
-    freezes, spec §16.2)."""
+    freezes, spec §16.2). Display-clamped here only (see the module
+    docstring): a reward reversal can overdraft the raw wallet negative
+    (migration 0012), and the user-facing answer to that is 0/0 plus the
+    explicit ``point_debt`` — never a raw negative — while the wallet
+    row and the ledger keep the true figure.
+    """
     summary = await ledger.get_wallet_summary(db, actor.user_id)
+    return _wallet_response(summary)
+
+
+def _wallet_response(summary: WalletSummary) -> WalletResponse:
+    """Serialize one wallet summary into the clamped display DTO.
+
+    The clamp is a pure display decision (max(..., 0) on the two
+    balance figures, the overdraft surfaced as ``point_debt``); the
+    summary itself stays raw so direct service callers keep auditing
+    the true balance.
+    """
     return WalletResponse(
-        available_points=summary.available_points,
+        available_points=max(summary.available_points, 0),
         earned_points=summary.earned_points,
-        spendable_points=summary.spendable_points,
+        spendable_points=max(summary.spendable_points, 0),
+        point_debt=max(-summary.available_points, 0),
     )
 
 
@@ -398,14 +438,16 @@ async def list_redemption_queue(
 )
 async def approve_redemption(
     redemption_id: UUID,
-    actor: StaffActor,
+    actor: AdminActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
 ) -> RedemptionReviewResponse:
     """Approve: the freeze becomes one negative REWARD_REDEMPTION entry
     and the status flips to APPROVED (spec §16.2); a replay on an
-    already-approved row is the idempotent no-op that returns it."""
+    already-approved row is the idempotent no-op that returns it.
+
+    Admin-only until scoped delegation (PR #2 hardening ruling)."""
     redemption = await redemptions.approve_redemption(db, actor, redemption_id)
     return await _review_response(db, redemptions, directory, redemption)
 
@@ -417,13 +459,15 @@ async def approve_redemption(
 async def reject_redemption(
     redemption_id: UUID,
     body: RedemptionRejectRequest,
-    actor: StaffActor,
+    actor: AdminActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
 ) -> RedemptionReviewResponse:
     """Reject with a mandatory reason: the freeze is released and NO
-    consumption entry is written (spec §16.2)."""
+    consumption entry is written (spec §16.2).
+
+    Admin-only until scoped delegation (PR #2 hardening ruling)."""
     redemption = await redemptions.reject_redemption(
         db, actor, redemption_id, body.reason
     )
@@ -437,13 +481,15 @@ async def reject_redemption(
 async def fulfill_redemption(
     redemption_id: UUID,
     body: RedemptionFulfillRequest,
-    actor: StaffActor,
+    actor: AdminActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
 ) -> RedemptionReviewResponse:
     """Record the physical delivery of an APPROVED redemption (spec
-    §16.2: approval and delivery are separate transitions)."""
+    §16.2: approval and delivery are separate transitions).
+
+    Admin-only until scoped delegation (PR #2 hardening ruling)."""
     redemption = await redemptions.fulfill_redemption(
         db, actor, redemption_id, body.note
     )

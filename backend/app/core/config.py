@@ -123,6 +123,14 @@ class Settings(BaseSettings):
     # Consumed by `CommentService`, which receives the scalar at the
     # composition root.
     comment_max_length: int = 2000
+    # The current academic term key snapshotted onto new reward
+    # redemptions (spec §16.1). The committed value is the development
+    # default; deployments set CURRENT_ACADEMIC_TERM per term. Plan 08
+    # moves this to the audited, admin-configurable CURRENT_ACADEMIC_TERM
+    # system setting; until then this settings field is the single
+    # non-code place a deployment turns the term. Consumed by
+    # `SettingsAcademicTermProvider` (points/redemption_service.py).
+    current_academic_term: str = "2026-fall"
     # Due-delivery dispatcher (plan 07 T8; spec §25.4: bounded retries must
     # stay observable): one scan batch's enqueue ceiling, and how long a
     # SENDING claim may sit before the scan re-enqueues the row. The same

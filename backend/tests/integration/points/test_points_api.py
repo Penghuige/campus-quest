@@ -20,14 +20,20 @@ Drives the real app (``create_app()`` — the points router mounted under
   database constraints (one reservation per redemption, wallet-row lock)
   are the duplicate-side-effect protection, so two requests carrying
   the same key are two redemptions;
-- the staff review surface (``require_staff_management_actor``): the
-  pending queue (oldest first, offset-paginated, requester nickname +
-  item name enrichment), approve (one negative REWARD_REDEMPTION ledger
-  row, wallet available drops, idempotent replay), reject (reason
-  mandatory at the transport, reservation released, no consumption
-  row), fulfill with a note (APPROVED -> FULFILLED);
-- the role boundary: student surfaces reject staff roles, staff
-  surfaces reject students, both with PERMISSION_DENIED.
+- the wallet display clamp (PR #2 hardening): a reward reversal can
+  overdraft the raw wallet negative (migration 0012; the ledger keeps
+  the true figure), and the user-facing DTO answers that with 0/0 plus
+  the explicit ``point_debt`` — driven here through the REAL ledger
+  path (grant + redemption + full reversal -> raw -150);
+- the review surface: the queue stays staff-guarded (a read that
+  decides nothing), while the DECISION endpoints (approve / reject /
+  fulfill) are Admin-only until scoped delegation (PR #2 hardening
+  ruling) — an ACTIVE+TOTP Teacher is 403, an Admin passes — with the
+  approve consumption entry, reject freeze release, and fulfill note
+  assertions the review flow always had;
+- the role boundary: student surfaces reject staff roles, review
+  surfaces reject students and (for decisions) teachers, all with
+  PERMISSION_DENIED.
 """
 
 from __future__ import annotations
@@ -53,9 +59,11 @@ from app.modules.identity.dependencies import (
     get_business_clock,
 )
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.events import Actor
 from app.modules.identity.models import TotpCredential, User
 from app.modules.identity.session_service import SessionService
 from app.modules.points.enums import LedgerType, RedemptionStatus, ReservationStatus
+from app.modules.points.ledger_service import LedgerService, PostLedgerEntry
 from app.modules.points.models import (
     PointReservation,
     PointsLedger,
@@ -68,7 +76,7 @@ _T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
 _TERM = "2026-fall"
 
-_WALLET_FIELDS = {"available_points", "earned_points", "spendable_points"}
+_WALLET_FIELDS = {"available_points", "earned_points", "spendable_points", "point_debt"}
 _REWARD_FIELDS = {
     "id",
     "name",
@@ -151,11 +159,12 @@ async def _headers(db: AsyncSession, clock: FrozenClock, user: User) -> dict[str
 
 
 async def _management_teacher(
-    db: AsyncSession, clock: FrozenClock, *, username: str
+    db: AsyncSession, clock: FrozenClock, *, username: str, role: Role = Role.TEACHER
 ) -> tuple[User, dict[str, str]]:
-    """A TEACHER able to pass ``require_staff_management_actor`` (role +
-    ACTIVE + a confirmed TOTP credential row)."""
-    user = await _seed_user(db, username=username, role=Role.TEACHER)
+    """A staff account able to pass ``require_staff_management_actor``
+    (role + ACTIVE + a confirmed TOTP credential row). ``role=ADMIN``
+    yields an account that also passes ``require_admin_actor``."""
+    user = await _seed_user(db, username=username, role=role)
     db.add(
         TotpCredential(
             user_id=user.id,
@@ -218,6 +227,9 @@ async def points_world(
     teacher, teacher_headers = await _management_teacher(
         db_session, api_clock, username="points-teacher-0001"
     )
+    admin, admin_headers = await _management_teacher(
+        db_session, api_clock, username="points-admin-0004", role=Role.ADMIN
+    )
     student = await _seed_user(
         db_session, username="points-student-0002", role=Role.STUDENT
     )
@@ -242,6 +254,8 @@ async def points_world(
         "db": db_session,
         "teacher": teacher,
         "teacher_headers": teacher_headers,
+        "admin": admin,
+        "admin_headers": admin_headers,
         "student": student,
         "student_headers": student_headers,
         "newcomer": newcomer,
@@ -272,6 +286,7 @@ async def test_points_me_reports_wallet_and_spendable(
         "available_points": 1000,
         "earned_points": 1000,
         "spendable_points": 900,
+        "point_debt": 0,
     }
 
 
@@ -286,6 +301,67 @@ async def test_points_me_reads_zeros_without_a_wallet(
         "available_points": 0,
         "earned_points": 0,
         "spendable_points": 0,
+        "point_debt": 0,
+    }
+
+
+async def test_points_me_clamps_the_overdrawn_wallet_into_point_debt(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    """The wallet display clamp (PR #2 hardening): through the REAL
+    ledger path (the S1 T5 negative-projection asset) the raw wallet
+    lands at -150 — grant 200, redemption spends 150, full reversal
+    posts -200 — and the user-facing DTO answers 0 available / 0
+    spendable / earned 200 / point_debt 150, never a raw negative. The
+    wallet ROW keeps the true -150 (the internal projection is the
+    fact; the clamp is display-only)."""
+    student = await _seed_user(
+        db_session, username="points-overdrawn-0005", role=Role.STUDENT
+    )
+    student_headers = await _headers(db_session, api_clock, student)
+    admin = await _seed_user(
+        db_session, username="points-reverser-0006", role=Role.ADMIN
+    )
+    ledger = LedgerService()
+    original = await ledger.grant_assignment_reward(
+        db_session,
+        claim_id=UUID(int=7),
+        user_id=student.id,
+        amount=200,
+        ranking_effective_at=_T0 - timedelta(days=30),
+    )
+    await ledger.post_entry(
+        db_session,
+        PostLedgerEntry(
+            user_id=student.id,
+            ledger_type=LedgerType.REWARD_REDEMPTION,
+            amount=-150,
+            source_type="REWARD_REDEMPTION",
+            source_id=UUID(int=8),
+            affects_balance=True,
+            affects_ranking=False,
+        ),
+    )
+    await db_session.commit()
+    await ledger.reverse_assignment_reward(
+        db_session,
+        actor=Actor(user_id=admin.id, role=Role.ADMIN),
+        ledger_id=original.id,
+        reason="测试冲销：奖励撤销",
+    )
+    await db_session.commit()
+    wallet_row = await db_session.get(PointWallet, student.id)
+    assert wallet_row is not None
+    assert wallet_row.available_points == -150  # the raw fact survives
+
+    response = await client.get("/api/v1/points/me", headers=student_headers)
+    assert response.status_code == 200
+    assert set(response.json()) == _WALLET_FIELDS
+    assert response.json() == {
+        "available_points": 0,  # max(-150, 0)
+        "earned_points": 200,
+        "spendable_points": 0,  # max(-150 - reservations, 0)
+        "point_debt": 150,  # max(150, 0)
     }
 
 
@@ -351,6 +427,7 @@ async def test_redeem_freezes_points_atomically(
         "available_points": 1000,
         "earned_points": 1000,
         "spendable_points": 600,
+        "point_debt": 0,
     }
 
 
@@ -463,8 +540,16 @@ async def test_staff_lists_pending_redemptions_oldest_first(
     assert paged.json()["items"][0]["id"] == str(newer.id)
     assert paged.json()["total"] == 2
 
+    # The queue is a staff READ (it decides nothing): an Admin passes
+    # the staff guard too.
+    as_admin = await client.get(
+        "/api/v1/teacher/rewards/redemptions", headers=world["admin_headers"]
+    )
+    assert as_admin.status_code == 200
+    assert as_admin.json()["total"] == 2
 
-async def test_staff_approve_then_fulfill_the_redemption(
+
+async def test_admin_approves_then_fulfills_the_redemption(
     client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
 ) -> None:
     world = points_world
@@ -474,7 +559,7 @@ async def test_staff_approve_then_fulfill_the_redemption(
 
     approve = await client.post(
         f"/api/v1/teacher/rewards/redemptions/{redemption.id}/approve",
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert approve.status_code == 200
     body = approve.json()
@@ -501,12 +586,13 @@ async def test_staff_approve_then_fulfill_the_redemption(
         "available_points": 600,
         "earned_points": 1000,
         "spendable_points": 600,
+        "point_debt": 0,
     }
 
     # Approve replay is idempotent: still 200, no second entry.
     replay = await client.post(
         f"/api/v1/teacher/rewards/redemptions/{redemption.id}/approve",
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert replay.status_code == 200
     assert replay.json()["status"] == "APPROVED"
@@ -525,7 +611,7 @@ async def test_staff_approve_then_fulfill_the_redemption(
     fulfill = await client.post(
         f"/api/v1/teacher/rewards/redemptions/{redemption.id}/fulfill",
         json={"note": "已录入第九周平时分"},
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert fulfill.status_code == 200
     assert fulfill.json()["status"] == "FULFILLED"
@@ -533,7 +619,7 @@ async def test_staff_approve_then_fulfill_the_redemption(
     assert fulfill.json()["fulfilled_at"] is not None
 
 
-async def test_staff_reject_requires_reason_and_releases_the_freeze(
+async def test_admin_reject_requires_reason_and_releases_the_freeze(
     client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
 ) -> None:
     world = points_world
@@ -544,7 +630,7 @@ async def test_staff_reject_requires_reason_and_releases_the_freeze(
     blank = await client.post(
         f"/api/v1/teacher/rewards/redemptions/{redemption.id}/reject",
         json={"reason": "   "},
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert blank.status_code == 422
     assert blank.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -552,7 +638,7 @@ async def test_staff_reject_requires_reason_and_releases_the_freeze(
     reject = await client.post(
         f"/api/v1/teacher/rewards/redemptions/{redemption.id}/reject",
         json={"reason": "库存调拨给线下活动"},
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert reject.status_code == 200
     assert reject.json()["status"] == "REJECTED"
@@ -574,7 +660,59 @@ async def test_staff_reject_requires_reason_and_releases_the_freeze(
     assert consumption == 0
 
 
-async def test_staff_review_rejects_student_roles(
+async def test_review_decisions_reject_teachers_until_scoped_delegation(
+    client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
+) -> None:
+    """The PR #2 hardening ruling (P0-4): until scoped delegation lands,
+    an ACTIVE+TOTP Teacher cannot decide ANY redemption — the approve/
+    reject/fulfill surfaces answer Admin-only PERMISSION_DENIED and
+    nothing is written (the freeze stays, no entry lands)."""
+    world = points_world
+    redemption = await _frozen_redemption(
+        db_session, user=world["student"], item=world["open_item"], points=400
+    )
+
+    for path, payload in (
+        (f"/api/v1/teacher/rewards/redemptions/{redemption.id}/approve", None),
+        (
+            f"/api/v1/teacher/rewards/redemptions/{redemption.id}/reject",
+            {"reason": "教师尝试审核"},
+        ),
+        (
+            f"/api/v1/teacher/rewards/redemptions/{redemption.id}/fulfill",
+            {"note": "教师尝试发放"},
+        ),
+    ):
+        response = await client.post(
+            path, json=payload, headers=world["teacher_headers"]
+        )
+        assert response.status_code == 403, path
+        assert response.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    await db_session.refresh(redemption)
+    assert redemption.status == RedemptionStatus.REQUESTED.value
+    consumption = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PointsLedger)
+            .where(
+                PointsLedger.source_id == redemption.id,
+                PointsLedger.ledger_type == LedgerType.REWARD_REDEMPTION.value,
+            )
+        )
+    ).scalar_one()
+    assert consumption == 0
+    # The freeze survives untouched.
+    reservation = await db_session.scalar(
+        select(PointReservation).where(
+            PointReservation.redemption_id == redemption.id
+        )
+    )
+    assert reservation is not None
+    assert reservation.status == ReservationStatus.ACTIVE.value
+
+
+async def test_review_surfaces_reject_student_roles(
     client: httpx.AsyncClient, points_world: dict[str, Any]
 ) -> None:
     world = points_world

@@ -560,14 +560,14 @@ async def test_term_limit_counts_snapshot_releases_on_reject_and_switches(
     term switch opens an independent quota without rewriting history."""
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
-    teacher = _teacher(f"t{run}001")
+    admin = _admin(f"a{run}001")
     item = _reward_item(point_cost=100, per_user_term_limit=1)
-    await _flush(db_session, student, teacher, item)
-    student_id, teacher_id, item_id = student.id, teacher.id, item.id
+    await _flush(db_session, student, admin, item)
+    student_id, admin_id, item_id = student.id, admin.id, item.id
     await _fund(db_session, student_id, 1000)
     await db_session.commit()
     fall = _service("2026-fall")
-    staff_actor = _actor(teacher_id, Role.TEACHER)
+    staff_actor = _actor(admin_id, Role.ADMIN)
 
     first = await fall.request_redemption(db_session, student_id, item_id)
     first_id = first.id  # the limit-gate rollback below expires instances
@@ -670,27 +670,27 @@ async def test_approve_consumes_reservation_posts_entry_and_holds_stock(
     idempotent."""
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
-    teacher = _teacher(f"t{run}001")
+    admin = _admin(f"a{run}001")
     other = _student(f"2025{run}002")
     item = _reward_item(point_cost=200, stock=1)
-    await _flush(db_session, student, teacher, other, item)
-    student_id, teacher_id, other_id, item_id = (
+    await _flush(db_session, student, admin, other, item)
+    student_id, admin_id, other_id, item_id = (
         student.id,
-        teacher.id,
+        admin.id,
         other.id,
         item.id,
     )
     await _fund(db_session, student_id, 500)
     await db_session.commit()
     service = _service()
-    actor = _actor(teacher_id, Role.TEACHER)
+    actor = _actor(admin_id, Role.ADMIN)
 
     redemption = await service.request_redemption(db_session, student_id, item_id)
     redemption_id = redemption.id  # rollbacks expire instances
     approved = await service.approve_redemption(db_session, actor, redemption_id)
 
     assert approved.status == "APPROVED"
-    assert approved.decided_by == teacher_id
+    assert approved.decided_by == admin_id
     assert approved.decided_at == _NOW
 
     entries = (
@@ -709,7 +709,7 @@ async def test_approve_consumes_reservation_posts_entry_and_holds_stock(
     assert entry.affects_balance is True
     assert entry.affects_ranking is False  # spec §17.1: spending never ranks
     assert entry.ranking_effective_at is None
-    assert entry.operator_id == teacher_id
+    assert entry.operator_id == admin_id
 
     wallet = await db_session.get(PointWallet, student_id)
     assert wallet is not None
@@ -771,18 +771,18 @@ async def test_concurrent_double_approve_posts_one_consumption_entry(
     try:
         async with factory() as session:
             student = _student(f"2025{run}001")
-            teacher = _teacher(f"t{run}001")
+            admin = _admin(f"a{run}001")
             item = _reward_item(point_cost=200)
-            session.add_all([student, teacher, item])
+            session.add_all([student, admin, item])
             await session.flush()
-            user_ids.extend([student.id, teacher.id])
+            user_ids.extend([student.id, admin.id])
             item_ids.append(item.id)
             await _fund(session, student.id, 500)
             await session.commit()
             redemption = await service.request_redemption(session, student.id, item.id)
             redemption_id = redemption.id
 
-        actor = _actor(user_ids[1], Role.TEACHER)
+        actor = _actor(user_ids[1], Role.ADMIN)
 
         async def approve_once(start: asyncio.Event) -> Any:
             async with factory() as session:
@@ -837,14 +837,14 @@ async def test_reject_releases_points_and_stock_without_consumption_entry(
 ) -> None:
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
-    teacher = _teacher(f"t{run}001")
+    admin = _admin(f"a{run}001")
     item = _reward_item(point_cost=200, stock=1)
-    await _flush(db_session, student, teacher, item)
-    student_id, teacher_id, item_id = student.id, teacher.id, item.id
+    await _flush(db_session, student, admin, item)
+    student_id, admin_id, item_id = student.id, admin.id, item.id
     await _fund(db_session, student_id, 500)
     await db_session.commit()
     service = _service()
-    actor = _actor(teacher_id, Role.TEACHER)
+    actor = _actor(admin_id, Role.ADMIN)
 
     redemption = await service.request_redemption(db_session, student_id, item_id)
 
@@ -857,7 +857,7 @@ async def test_reject_releases_points_and_stock_without_consumption_entry(
         db_session, actor, redemption.id, "库存渠道异常"
     )
     assert rejected.status == "REJECTED"
-    assert rejected.decided_by == teacher_id
+    assert rejected.decided_by == admin_id
     assert rejected.decided_at == _NOW
 
     reservation = (
@@ -900,13 +900,11 @@ async def test_fulfill_is_idempotent_and_records_metadata(
 ) -> None:
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
-    teacher = _teacher(f"t{run}001")
     admin = _admin(f"a{run}001")
     item = _reward_item(point_cost=200)
-    await _flush(db_session, student, teacher, admin, item)
-    student_id, teacher_id, admin_id, item_id = (
+    await _flush(db_session, student, admin, item)
+    student_id, admin_id, item_id = (
         student.id,
-        teacher.id,
         admin.id,
         item.id,
     )
@@ -916,7 +914,7 @@ async def test_fulfill_is_idempotent_and_records_metadata(
 
     redemption = await service.request_redemption(db_session, student_id, item_id)
     await service.approve_redemption(
-        db_session, _actor(teacher_id, Role.TEACHER), redemption.id
+        db_session, _actor(admin_id, Role.ADMIN), redemption.id
     )
 
     admin_actor = _actor(admin_id, Role.ADMIN)
@@ -942,25 +940,31 @@ async def test_fulfill_is_idempotent_and_records_metadata(
         await service.fulfill_redemption(db_session, admin_actor, fresh.id)
 
 
-# --- the V1 staff guard ---------------------------------------------------------------
+# --- the review guard (Admin-only until scoped delegation) ----------------------------
 
 
 @pytest.mark.integration
-async def test_staff_guard_rejects_student_actors(db_session: AsyncSession) -> None:
+async def test_review_guard_rejects_student_and_teacher_actors(
+    db_session: AsyncSession,
+) -> None:
     """Spec §16.1 routes review through the Admin-授权-Teacher channel;
-    V1's stand-in is the staff family (TEACHER/ADMIN — RewardItem has no
-    owner to check, and Plan 08 owns the authorization model). A student
-    actor gets PERMISSION_DENIED and nothing changes."""
+    the PR #2 hardening ruling narrows the interim guard to ADMIN only
+    (any ACTIVE+TOTP teacher deciding ANY redemption was P0-4 — RewardItem
+    has no owner to scope by, and Plan 08 owns the delegation model). A
+    student AND a teacher actor get PERMISSION_DENIED and nothing
+    changes."""
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
+    teacher = _teacher(f"t{run}001")
     item = _reward_item(point_cost=200)
-    await _flush(db_session, student, item)
+    await _flush(db_session, student, teacher, item)
     student_id, item_id = student.id, item.id
     await _fund(db_session, student_id, 500)
     await db_session.commit()
     service = _service()
     redemption = await service.request_redemption(db_session, student_id, item_id)
     student_actor = _actor(student_id, Role.STUDENT)
+    teacher_actor = _actor(teacher.id, Role.TEACHER)
 
     with pytest.raises(RedemptionPermissionDeniedError) as approve_denied:
         await service.approve_redemption(db_session, student_actor, redemption.id)
@@ -972,6 +976,18 @@ async def test_staff_guard_rejects_student_actors(db_session: AsyncSession) -> N
         await service.fulfill_redemption(db_session, student_actor, redemption.id)
     assert approve_denied.value.code == ErrorCode.PERMISSION_DENIED
     assert approve_denied.value.status_code == 403
+
+    # The hardening flip: the TEACHER actor is refused on all three
+    # decision paths too — Admin-only until scoped delegation lands.
+    with pytest.raises(RedemptionPermissionDeniedError) as teacher_denied:
+        await service.approve_redemption(db_session, teacher_actor, redemption.id)
+    with pytest.raises(RedemptionPermissionDeniedError):
+        await service.reject_redemption(
+            db_session, teacher_actor, redemption.id, "越权"
+        )
+    with pytest.raises(RedemptionPermissionDeniedError):
+        await service.fulfill_redemption(db_session, teacher_actor, redemption.id)
+    assert teacher_denied.value.code == ErrorCode.PERMISSION_DENIED
 
     row = (
         await db_session.scalars(

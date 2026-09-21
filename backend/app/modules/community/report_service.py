@@ -41,11 +41,12 @@ Design decisions:
   re-raises untouched. A different category, or a different reporter,
   files its own row — the anchor is per triple.
 - **Writer and visibility gates: the shared community gates
-  (gates.py).** Reporting is a community write: Student role and ACTIVE
-  status on the users row, then the public-surface comment rule (exists
-  -> not a tombstone -> PUBLISHED task). The same typed errors as
-  comments, votes, and reactions — this service is WHY the gates were
-  extracted (it would have been the third private copy).
+  (gates.py).** Reporting is a community write: the spec §4.2
+  participant family (Student or Teacher role) and ACTIVE status on
+  the users row, then the public-surface comment rule (exists -> not a
+  tombstone -> PUBLISHED task). The same typed errors as comments,
+  votes, and reactions — this service is WHY the gates were extracted
+  (it would have been the third private copy).
 - **Moderation listing: owner / MODERATE_COMMUNITY / Admin
   (spec §4.2, §23).** ``list_task_reports`` reads the queue for ONE
   task. Admin is admitted BY DESIGN, unlike comment_service's
@@ -105,7 +106,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.community.enums import ReportCategory
 from app.modules.community.gates import (
-    require_student_writer,
+    require_community_writer,
     require_task_moderation_site,
     require_visible_comment,
 )
@@ -268,7 +269,7 @@ class ReportService:
         never deleted, hidden, or edited."""
         category_value = _require_category(category)
         stored_note = normalize_report_note(note, self._note_max_length)
-        await require_student_writer(db, user_id)
+        await require_community_writer(db, user_id)
         await require_visible_comment(db, comment_id)
 
         existing = await self._find(db, comment_id, user_id, category_value)

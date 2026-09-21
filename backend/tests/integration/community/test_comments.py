@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.modules.community.comment_service import (
+    CommenterNotParticipantError,
     CommentService,
     ParentCommentCrossTaskError,
     ParentCommentDeletedError,
@@ -222,26 +223,41 @@ async def test_student_creates_comment_and_public_list_shows_nickname(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
-async def test_community_writes_are_student_only(
-    db_session: AsyncSession, role: Role
+async def test_teacher_participates_admin_is_refused(
+    db_session: AsyncSession,
 ) -> None:
-    """Spec §4.1 surface split: students write community content;
-    Teacher/Admin govern through the moderation surfaces (task 3/8)."""
+    """The PR #2 hardening participant ruling: spec §4.2's "除普通社区
+    能力外，可：" grants Teacher the ordinary community capabilities, so a
+    Teacher comments like any Student (same named display semantics);
+    Admin is NOT a participant — its community powers are the governance
+    surfaces — and the refusal is the typed participant error with the
+    shared PERMISSION_DENIED code."""
     task, _, _ = await _published_task(db_session)
-    staff = _user(username=f"staff-{role.value.lower()}@pku.edu.cn", role=role)
-    await _seed(db_session, staff)
+    teacher = _user(
+        username="teacher-participant@pku.edu.cn", role=Role.TEACHER, nickname="王老师"
+    )
+    admin = _user(username="admin-nonparticipant@pku.edu.cn", role=Role.ADMIN)
+    await _seed(db_session, teacher, admin)
     service = CommentService()
 
-    with pytest.raises(Exception) as raised:
+    public = await service.create_comment(
+        db_session,
+        _actor(teacher),
+        CreateComment(task_id=task.id, content="教师也来补充说明"),
+    )
+    assert public.author_display == "王老师"  # the same named-display path
+    assert public.is_anonymous is False
+    assert await _comment_count(db_session, task) == 1
+
+    with pytest.raises(CommenterNotParticipantError) as raised:
         await service.create_comment(
             db_session,
-            _actor(staff),
-            CreateComment(task_id=task.id, content="教师也来评论"),
+            _actor(admin),
+            CreateComment(task_id=task.id, content="管理员不普通参与"),
         )
-    assert getattr(raised.value, "code", None) == ErrorCode.PERMISSION_DENIED
+    assert raised.value.code == ErrorCode.PERMISSION_DENIED
     assert raised.value.status_code == 403
-    assert await _comment_count(db_session, task) == 0
+    assert await _comment_count(db_session, task) == 1
 
 
 @pytest.mark.integration

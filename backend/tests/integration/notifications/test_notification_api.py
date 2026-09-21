@@ -22,8 +22,9 @@ Pinned per the plan's steps:
   (pinned with a clock the test advances between the two calls).
 - the staff failure surface (spec §25.4 "后台可查询失败原因"):
   FAILED deliveries with last_error + attempts, newest first, behind
-  the management guard (a student and a TOTP-unconfirmed teacher are
-  both 403).
+  the Admin guard (PR #2 hardening ruling: Admin-only until scoped
+  delegation — a student, a confirmed TOTP teacher, and a
+  TOTP-unconfirmed admin are all 403).
 
 Seams are dependency overrides, not route fakes: the rollback-harness
 session and a mutable step clock (business time), the same pattern as
@@ -135,13 +136,20 @@ async def _session_tokens(
     return {"Authorization": f"Bearer {tokens.access_token}"}
 
 
-async def _seed_management_teacher(
-    db: AsyncSession, clock: StepClock, *, username: str, confirmed: bool = True
+async def _seed_management_account(
+    db: AsyncSession,
+    clock: StepClock,
+    *,
+    username: str,
+    role: Role = Role.ADMIN,
+    confirmed: bool = True,
 ) -> tuple[User, dict[str, str]]:
-    """A TEACHER meant to pass (or, with confirmed=False, fail) the
-    staff management guard: role + ACTIVE + a CONFIRMED credential row.
-    The bytes are opaque to the guard (only confirmed_at is read)."""
-    user = await _seed_user(db, username=username, role=Role.TEACHER)
+    """A staff account meant to pass (or, with confirmed=False, fail)
+    the guards: role + ACTIVE + a CONFIRMED credential row — the staff
+    management guard for TEACHER/ADMIN, and (role=ADMIN, the failure
+    surface's Admin-only ruling) the admin guard. The bytes are opaque
+    to the guards (only confirmed_at is read)."""
+    user = await _seed_user(db, username=username, role=role)
     if confirmed:
         db.add(
             TotpCredential(
@@ -407,15 +415,17 @@ async def test_mark_read_rejects_foreign_and_missing_ids(
     assert _envelope(missing)["code"] == "NOT_FOUND"
 
 
-# --- staff failure surface (spec 25.4; the admin guard) -------------------------------
+# --- admin failure surface (spec 25.4; Admin-only until scoped delegation) ------------
 
 
-async def test_staff_failure_surface_lists_failed_deliveries(
+async def test_admin_failure_surface_lists_failed_deliveries(
     client: httpx.AsyncClient, db_session: AsyncSession, api_clock: StepClock
 ) -> None:
     """FAILED deliveries with last_error + attempts, newest failure
-    first; SENT/PENDING rows are absent; the student guard rejects a
-    student, the management guard rejects a TOTP-unconfirmed teacher."""
+    first; SENT/PENDING rows are absent; the Admin-only guard rejects a
+    student, a CONFIRMED TOTP teacher (the PR #2 hardening flip), and a
+    TOTP-unconfirmed admin (the setup-forcing error, not the role
+    error)."""
     student = await _seed_user(db_session, username=f"stu-{uuid4().hex[:10]}")
     failed_old = _seed_notification(
         student,
@@ -459,11 +469,11 @@ async def test_staff_failure_surface_lists_failed_deliveries(
     db_session.add_all(deliveries)
     await db_session.flush()
 
-    _, staff_headers = await _seed_management_teacher(
-        db_session, api_clock, username=f"tea-{uuid4().hex[:10]}"
+    _, admin_headers = await _seed_management_account(
+        db_session, api_clock, username=f"adm-{uuid4().hex[:10]}"
     )
     response = await client.get(
-        "/api/v1/admin/notification-failures", headers=staff_headers
+        "/api/v1/admin/notification-failures", headers=admin_headers
     )
     assert response.status_code == 200
     body = response.json()
@@ -499,11 +509,23 @@ async def test_staff_failure_surface_lists_failed_deliveries(
     assert denied.status_code == 403
     assert _envelope(denied)["code"] == "PERMISSION_DENIED"
 
-    # The management guard's own contract: an invited teacher before
-    # TOTP confirmation gets the setup-required code, not the role
+    # The hardening flip: an ACTIVE teacher WITH a confirmed TOTP
+    # credential is still refused the failure surface — Admin-only
+    # until scoped delegation (PR #2 hardening ruling).
+    _, teacher_headers = await _seed_management_account(
+        db_session, api_clock, username=f"tea-{uuid4().hex[:10]}", role=Role.TEACHER
+    )
+    teacher_denied = await client.get(
+        "/api/v1/admin/notification-failures", headers=teacher_headers
+    )
+    assert teacher_denied.status_code == 403
+    assert _envelope(teacher_denied)["code"] == "PERMISSION_DENIED"
+
+    # The admin guard's own contract: an invited admin before TOTP
+    # confirmation gets the setup-required code, not the role
     # permission code (capability-then-state precedence).
-    _, unconfirmed_headers = await _seed_management_teacher(
-        db_session, api_clock, username=f"tea-{uuid4().hex[:10]}", confirmed=False
+    _, unconfirmed_headers = await _seed_management_account(
+        db_session, api_clock, username=f"adm-{uuid4().hex[:10]}", confirmed=False
     )
     unconfirmed = await client.get(
         "/api/v1/admin/notification-failures", headers=unconfirmed_headers

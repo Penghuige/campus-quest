@@ -23,10 +23,11 @@ inbox and the staff failure query.
   precedent), a missing id NOT_FOUND.
 - **`GET /api/v1/admin/notification-failures`** — spec §25.4
   "后台可查询失败原因": FAILED deliveries with last_error +
-  attempts, newest first, behind `require_staff_management_actor`
-  (the V1 staff guard; Plan 08 builds the full admin operations
-  surface on this seam). Delivery data is operational state, so it is
-  exposed HERE — staff-guarded — and never on the student inbox.
+  attempts, newest first, behind `require_admin_actor` (Admin-only
+  until scoped delegation — PR #2 hardening ruling; Plan 08 builds the
+  full admin operations surface on this seam). Delivery data is
+  operational state, so it is exposed HERE — admin-guarded — and never
+  on the student inbox.
 
 Every typed exception these handlers raise subclasses BusinessError
 with its frozen code/status, so the core envelope handler renders them;
@@ -51,7 +52,7 @@ from app.db.session import get_db_session
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
-    require_staff_management_actor,
+    require_admin_actor,
 )
 from app.modules.identity.events import Actor
 from app.modules.notifications.inbox_service import InboxService
@@ -126,7 +127,7 @@ def get_inbox_service(
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
-StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
+AdminActor = Annotated[Actor, Depends(require_admin_actor)]
 InboxServiceDep = Annotated[InboxService, Depends(get_inbox_service)]
 PageLimit = Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)]
 PageOffset = Annotated[int, Query(ge=0)]
@@ -194,7 +195,7 @@ async def mark_notification_read(
     )
 
 
-# --- staff surface (spec §25.4; Plan 08 consumes) -------------------------------
+# --- admin surface (spec §25.4; Plan 08 consumes) -----------------------------------
 
 
 @router.get(
@@ -202,15 +203,16 @@ async def mark_notification_read(
     response_model=NotificationFailuresResponse,
 )
 async def list_notification_failures(
-    actor: StaffActor,
+    actor: AdminActor,
     service: InboxServiceDep,
     db: DbSession,
     limit: PageLimit = DEFAULT_PAGE_LIMIT,
     offset: PageOffset = 0,
 ) -> NotificationFailuresResponse:
     """FAILED deliveries with last_error + attempts, newest first (the
-    spec §25.4 staff failure query; V1 staff guard: the management
-    actor check)."""
+    spec §25.4 failure query). Admin-only until scoped delegation (PR
+    #2 hardening ruling): any ACTIVE+TOTP teacher reading every user's
+    delivery errors was judged too broad for V1."""
     deliveries, total = await service.list_failures(db, limit=limit, offset=offset)
     return NotificationFailuresResponse(
         items=[

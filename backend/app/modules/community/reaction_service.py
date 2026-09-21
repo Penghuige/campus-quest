@@ -17,8 +17,9 @@ Design decisions:
   touch.
 - **Writer gate / comment visibility: the shared community gates
   (gates.py, task 6).** Reacting is a community write:
-  ``gates.require_student_writer`` (Student role and ACTIVE status,
-  judged on the users ROW, role-first then status) and
+  ``gates.require_community_writer`` (Student or Teacher role — the
+  spec §4.2 participant family — and ACTIVE status, judged on the
+  users ROW, role-first then status) and
   ``gates.require_visible_comment`` (exists -> not a tombstone -> task
   PUBLISHED) — the same typed errors and rulings as comments, votes,
   and reports, extracted when the report service would have become the
@@ -70,7 +71,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.gates import require_student_writer, require_visible_comment
+from app.modules.community.gates import (
+    require_community_writer,
+    require_visible_comment,
+)
 from app.modules.community.models import CommentReaction
 
 __all__ = [
@@ -186,7 +190,7 @@ class ReactionService:
         to decide add-vs-remove; ``judge=False`` (the retry) forces the
         add intent — the only branch whose INSERT can violate the §31.9
         triple, re-entered exactly once after that violation."""
-        await require_student_writer(db, user_id)
+        await require_community_writer(db, user_id)
         await require_visible_comment(db, comment_id)
 
         reaction = await db.scalar(
