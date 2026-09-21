@@ -37,6 +37,16 @@ class DeliveryStatus(StrEnum):
     FAILED = "FAILED"
 
 
+#: Prefix of the last_error marker a POLICY skip records on a row it
+#: resolves SENT (delivery_service, spec §25.1/§25.2 skips — not
+#: failures): "skipped:<token>", e.g. "skipped:email_not_verified" or
+#: "skipped:deadline_claim_status:UNDER_REVIEW". Lives beside the frozen
+#: status set because it is part of the SENT semantics: the inbox
+#: visibility gate (inbox_service) reads it back to tell a policy skip
+#: from a real provider send on the same terminal status.
+SKIPPED_LAST_ERROR_PREFIX = "skipped:"
+
+
 class NotificationEventType(StrEnum):
     """Canonical domain event names (spec §25 list plus the
     SUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md)."""

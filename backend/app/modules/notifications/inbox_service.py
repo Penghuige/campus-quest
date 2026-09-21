@@ -6,11 +6,22 @@ Three queries, one write — all scoped so the transport layer can never
 leak another user's data:
 
 - **Inbox listing** reads ONLY the caller's own `Notification` rows
-  (the logical per-user messages, newest first). Provider and delivery
-  state (`NotificationDelivery` rows: channels, attempts, errors,
-  provider message ids) is invisible here by construction — it is
-  operational data, not inbox content; the staff failures surface
-  below is its only API projection.
+  (the logical per-user messages, newest first) that have actually been
+  DELIVERED in-app: the row lists iff its IN_APP `NotificationDelivery`
+  reached terminal SENT through a real send — status SENT without a
+  "skipped:" last_error marker. This is spec §25.2's timing and
+  cancellation semantics enforced on the read side: a deadline reminder
+  scheduled for a future instant stays invisible before dispatch (a
+  Notification row commits with the claim transaction, but the message
+  only enters the inbox when its IN_APP delivery completes — the
+  delivery_service module contract), and a policy skip (e.g. the claim
+  moved to UNDER_REVIEW, "未发送的普通 DDL 提醒必须取消/跳过") resolves
+  the delivery SENT WITH the marker, so the cancelled message never
+  lists. Rows with no IN_APP delivery at all (the task's channel set
+  dropped IN_APP, or the account cannot receive) are not inbox
+  messages. Provider and delivery state stays invisible here by
+  construction — it is operational data, not inbox content; the staff
+  failures surface below is its only API projection.
 - **Mark-read** is idempotent per message: read state is a property of
   the logical Notification (models.py), so re-marking returns the row
   with its FIRST read_at unchanged rather than bumping the timestamp.
@@ -31,17 +42,50 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.notifications.enums import DeliveryStatus
+from app.modules.notifications.enums import (
+    SKIPPED_LAST_ERROR_PREFIX,
+    DeliveryStatus,
+    NotificationChannel,
+)
 from app.modules.notifications.models import Notification, NotificationDelivery
 
 _NOTIFICATION_NOT_FOUND_MESSAGE = "通知不存在"
 _NOTIFICATION_NOT_OWNED_MESSAGE = "不能操作他人的通知"
+
+
+def _in_app_delivery_completed() -> Exists:
+    """EXISTS criterion: the notification's IN_APP delivery completed a
+    REAL send — terminal SENT WITHOUT a policy-skip "skipped:" marker.
+
+    This is the §25.2 visibility gate (see module docstring): PENDING /
+    RETRYABLE / SENDING rows (not yet dispatched — a future-scheduled
+    reminder) and SENT-by-skip rows (a cancelled reminder) fail it, as
+    does a notification with no IN_APP delivery at all. Correlated
+    against `Notification.id`, so it drops into both the page query and
+    the count; the delivery-side `ix_notification_deliveries_
+    notification_id` index carries the probe.
+    """
+
+    skip_marker = f"{SKIPPED_LAST_ERROR_PREFIX}%"
+    return (
+        select(NotificationDelivery.id)
+        .where(
+            NotificationDelivery.notification_id == Notification.id,
+            NotificationDelivery.channel == NotificationChannel.IN_APP.value,
+            NotificationDelivery.status == DeliveryStatus.SENT.value,
+            or_(
+                NotificationDelivery.last_error.is_(None),
+                ~NotificationDelivery.last_error.like(skip_marker),
+            ),
+        )
+        .exists()
+    )
 
 
 class NotificationNotFoundError(BusinessError):
@@ -89,14 +133,20 @@ class InboxService:
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[Notification], int]:
-        """The user's own notifications, newest first, plus the total
-        matching the filter (the page metadata).
+        """The user's own delivered notifications, newest first, plus
+        the total matching the filter (the page metadata).
 
-        `unread_only` adds the `read_at IS NULL` predicate (the V1
-        ?unread=true filter); ordering stays newest-first either way.
+        Only rows whose IN_APP delivery completed a real send list
+        (`_in_app_delivery_completed`, the §25.2 timing/cancellation
+        gate); the same predicate bounds `total` and the `unread_only`
+        variant, so counts and pages can never disagree about what an
+        inbox message is.
         """
 
-        conditions = [Notification.user_id == user_id]
+        conditions = [
+            Notification.user_id == user_id,
+            _in_app_delivery_completed(),
+        ]
         if unread_only:
             conditions.append(Notification.read_at.is_(None))
         rows = (
