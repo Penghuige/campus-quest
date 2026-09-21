@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from redis.asyncio import Redis
-    from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.modules.rankings.redis_projection import RankingRedisProjection
 
@@ -45,30 +44,17 @@ logger = logging.getLogger(__name__)
 
 
 def _default_session_source(settings: Settings) -> Any:
-    """A ``() -> async context manager`` yielding one ``AsyncSession``.
-
-    A fresh engine per job invocation, disposed afterward: each job's
+    """The shared per-job session source (`app.workers.session_source`):
+    a fresh engine per job invocation, disposed afterward — each job's
     ``asyncio.run`` uses a fresh event loop, and pooled asyncpg
-    connections bound to a dead loop are unusable.
+    connections bound to a dead loop are unusable. Thin local seam over
+    the shared factory (the G6 unification); the callable-shape contract
+    (the shell enters ``async with session_source() as session``) lives
+    in that module's docstring.
     """
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.workers.session_source import job_session_source
 
-    from app.db.session import create_db_engine
-
-    @asynccontextmanager
-    async def _session() -> AsyncIterator[AsyncSession]:
-        engine = create_db_engine(settings)
-        try:
-            maker = async_sessionmaker(engine, expire_on_commit=False)
-            async with maker() as session:
-                yield session
-        finally:
-            await engine.dispose()
-
-    # The callable itself (not a context-manager instance): the shell
-    # enters `async with session_source() as session`, so the source
-    # must be callable and return the context manager.
-    return _session
+    return job_session_source(settings)
 
 
 def _default_redis_source(settings: Settings) -> Any:

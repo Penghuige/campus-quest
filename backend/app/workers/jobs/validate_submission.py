@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from celery import shared_task  # type: ignore[import-untyped]
@@ -67,7 +66,6 @@ from app.modules.submissions.validation_runner import SandboxLimits, ValidatorSa
 from app.modules.submissions.validators.common import PreviewSpec
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,34 +100,21 @@ def _default_storage() -> ObjectStorage:
 
 
 def _default_session_source() -> Any:
-    """One engine + session per job invocation, disposed afterward.
-
-    A fresh event loop per ``asyncio.run`` cannot safely reuse a
-    process-wide engine's pooled connections, so the default source
-    builds a private engine and tears it down in a finally. Returns the
-    session-source CALLABLE (the same shape an injected factory has —
-    see ``_session_ctx`` in the integration tests): the job invokes
-    ``session_source()`` inside its ``asyncio.run``, so returning the
-    context-manager instance itself would crash that production-only
-    call path while injected-fake tests never notice.
+    """The shared per-job session source (`app.workers.session_source`):
+    one engine + session per job invocation, disposed afterward — a
+    fresh event loop per ``asyncio.run`` cannot safely reuse a
+    process-wide engine's pooled connections. Returns the CALLABLE
+    (the same shape an injected factory has — see ``_session_ctx`` in
+    the integration tests): the job invokes ``session_source()`` inside
+    its ``asyncio.run``, so returning the context-manager instance
+    itself would crash that production-only call path while
+    injected-fake tests never notice. Kept as a thin local seam over
+    the shared factory (the G6 unification the closure table asked
+    for); the callable-shape discussion lives in that module.
     """
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.workers.session_source import job_session_source
 
-    from app.db.session import create_db_engine
-
-    settings = get_settings()
-
-    @asynccontextmanager
-    async def _session() -> AsyncIterator[AsyncSession]:
-        engine = create_db_engine(settings)
-        try:
-            maker = async_sessionmaker(engine, expire_on_commit=False)
-            async with maker() as session:
-                yield session
-        finally:
-            await engine.dispose()
-
-    return _session
+    return job_session_source()
 
 
 def _sandbox_from_settings(settings: Settings) -> ValidatorSandbox:
