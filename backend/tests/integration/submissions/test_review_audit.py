@@ -487,13 +487,15 @@ async def test_http_review_actions_carry_request_id_and_ip(
     _assert_no_pii(row)
 
 
-async def test_http_without_request_id_header_keeps_null_request_id(
+async def test_http_without_request_id_header_still_correlates(
     db_session: AsyncSession,
     api_clock: FrozenClock,
     client: httpx.AsyncClient,
 ) -> None:
-    """No propagated id means NULL — the middleware-resolved id (a
-    fabricated UUID the client never sent) must not land on the row."""
+    """No client header still correlates: the audit row carries the
+    middleware-generated request id — the SAME id the response's
+    X-Request-ID returns (round-5 P1: the server's identifier for the
+    actual request, not a fabrication of one the client never made)."""
     world = await _reviewable_world(db_session)
     submission = world["submission"]
     headers = await _owner_headers(db_session, api_clock, world["owner"])
@@ -504,11 +506,12 @@ async def test_http_without_request_id_header_keeps_null_request_id(
         headers=headers,
     )
     assert response.status_code == 200, response.text
+    resolved_request_id = response.headers["X-Request-ID"]
 
     rows = await _audit_rows(db_session, submission.id)
     assert len(rows) == 1
     assert rows[0].action == AUDIT_ACTION_SUBMISSION_REVISION_REQUIRED
-    assert rows[0].request_id is None
+    assert rows[0].request_id == resolved_request_id
     assert rows[0].ip_address == "127.0.0.1"
 
 
