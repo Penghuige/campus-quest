@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Generate the project-owned PWA install icons (Plan 09 Task 7, brief
-step 2).
+step 2) and the app favicon (Plan 09 Task 8 fold).
 
-What this produces under frontend/public/icons/:
-  icon-192.png           192x192, purpose "any"   (rounded-square mark)
-  icon-512.png           512x512, purpose "any"
-  icon-maskable-512.png  512x512, purpose "maskable" (full-bleed, art
-                         inside the 80% safe zone)
+What this produces:
+  frontend/public/icons/icon-192.png          192x192, purpose "any"
+  frontend/public/icons/icon-512.png          512x512, purpose "any"
+  frontend/public/icons/icon-maskable-512.png 512x512, purpose "maskable"
+                                             (full-bleed, art inside the
+                                             80% safe zone)
+  frontend/src/app/icon.png                   64x64 favicon — the Next.js
+                                             app-icon file convention
+                                             (auto <link rel="icon">; kills
+                                             the browser's /favicon.ico
+                                             404 noted in the T7 report)
 
 Recipe (deliberately dependency-light and deterministic):
 - the mark is drawn at 4x supersampling and LANCZOS-downsampled: a
@@ -19,7 +25,9 @@ Recipe (deliberately dependency-light and deterministic):
   src/lib/designTokens.ts (oklch(52% 0.15 258) -> #2a67bd), so icons,
   manifest theme_color, and app chrome stay one color;
 - "maskable" art keeps everything inside the central 80% safe zone on a
-  full-bleed square (the launcher mask crops the corners).
+  full-bleed square (the launcher mask crops the corners);
+- the favicon is the SAME rounded-square mark as the "any" icons (no
+  maskable full-bleed), small enough to stay crisp at 16/32px display.
 
 Re-run from frontend/:  python3 scripts/generate-pwa-icons.py
 Committed PNGs are build inputs — rerunning must be byte-stable (same
@@ -38,7 +46,9 @@ PRIMARY_TOKEN = "oklch(52% 0.15 258)"
 MARK_COLOR = (255, 255, 255, 255)
 
 SUPERSCALE = 4
-OUT_DIR = Path(__file__).resolve().parent.parent / "public" / "icons"
+FRONTEND_DIR = Path(__file__).resolve().parent.parent
+OUT_DIR = FRONTEND_DIR / "public" / "icons"
+APP_ICON_PATH = FRONTEND_DIR / "src" / "app" / "icon.png"
 
 
 def oklch_to_rgb(token: str) -> tuple[int, int, int]:
@@ -112,13 +122,16 @@ def render(size: int, maskable: bool) -> Image.Image:
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    APP_ICON_PATH.parent.mkdir(parents=True, exist_ok=True)
     targets = [
-        ("icon-192.png", 192, False),
-        ("icon-512.png", 512, False),
-        ("icon-maskable-512.png", 512, True),
+        (OUT_DIR / "icon-192.png", 192, False),
+        (OUT_DIR / "icon-512.png", 512, False),
+        (OUT_DIR / "icon-maskable-512.png", 512, True),
+        # The favicon (T8 fold): same rounded-square mark, 64x64 — sharp
+        # at the 16/32px sizes browsers actually request.
+        (APP_ICON_PATH, 64, False),
     ]
-    for name, size, maskable in targets:
-        path = OUT_DIR / name
+    for path, size, maskable in targets:
         render(size, maskable).save(path, format="PNG", optimize=True)
         print(f"wrote {path} ({size}x{size}, maskable={maskable})")
 

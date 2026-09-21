@@ -61,6 +61,9 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // FOLD (T7 review): a failed load-more used to vanish silently; the
+  // inline message + retry below keep the failure observable.
+  const [moreError, setMoreError] = useState<unknown>(null);
   const [markErrors, setMarkErrors] = useState<Record<string, SectionErrorView>>(
     {},
   );
@@ -114,6 +117,7 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
       return;
     }
     setLoadingMore(true);
+    setMoreError(null);
     try {
       const page = await listNotifications({
         unread: filter === "unread",
@@ -125,8 +129,10 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
       const fresh = page.items.filter((item) => !seen.has(item.id));
       setItems([...items, ...fresh]);
       setTotal(page.total);
-    } catch {
-      // Load-more failures stay non-fatal; the button re-arms for a retry.
+    } catch (cause) {
+      // Non-fatal (the loaded rows stay usable), but no longer SILENT:
+      // the mapped inline message + retry render below the button (T8 fold).
+      setMoreError(cause);
     } finally {
       setLoadingMore(false);
     }
@@ -276,6 +282,9 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
                   加载更多通知（{items.length}/{total}）
                 </span>
               </button>
+              {moreError !== null ? (
+                <SectionError error={moreError} onRetry={() => void loadMore()} />
+              ) : null}
             </div>
           ) : null}
         </>

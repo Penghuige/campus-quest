@@ -392,6 +392,96 @@ body {
   }
 }
 
+/* --- staff 2FA setup (Plan 09 Task 8; design-system §9 Forms, §2 serious) ----- */
+
+/* One-time secrets are displayable text, not masked inputs: monospace,
+   wrap-anywhere (base32 secrets and otpauth URIs have no break chars),
+   surface-2 step above the card. */
+.secret-box {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.secret-line {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.secret-label {
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+}
+
+.secret-box .mono {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* Copy affordances under a secret block: label left, status right. */
+.copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.copy-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.copy-status {
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+  min-width: 4rem;
+}
+
+/* Recovery codes: the one-time list — two tidy monospace columns on the
+   auth card, one on narrow viewports. Text IS the content; no copy of the
+   codes is hidden in attributes. */
+.recovery-codes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.recovery-codes li {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.recovery-codes .mono {
+  font-size: var(--text-md);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 26rem) {
+  .recovery-codes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Vertical rhythm between the setup steps and the page's other blocks. */
+.totp-step,
+.invite-flow {
+  display: grid;
+  gap: var(--space-4);
+}
+
 /* --- student app shell (design-system §8 Student; patterns §8) -------------- */
 
 .app-shell {

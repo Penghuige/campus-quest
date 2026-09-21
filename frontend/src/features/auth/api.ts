@@ -101,6 +101,68 @@ export function confirmPasswordReset(
   });
 }
 
+// --- staff surface (spec §5.8; backend identity/staff_router.py) -----------------
+//
+// Auth model on these four endpoints:
+// - `invitations/accept` and `staff/login` behave like the student login:
+//   the refresh token rides the HttpOnly cookie; the SHORT-LIVED access
+//   token + CSRF mirror sit in the body;
+// - the pending staff session's access token is the SANCTIONED body-token
+//   exception (backend `PendingStaffSession`): the server confines it to
+//   `/staff/totp/*`, so the two setup calls below present it as an
+//   `Authorization: Bearer` header (the guard reads the bearer scheme —
+//   identity/dependencies.py). Callers keep it in React state ONLY:
+//   never localStorage/sessionStorage, never logged.
+
+/** `TotpSetupResponse` — secret + otpauth URI, displayed exactly once. */
+export type StaffTotpSetup = Schemas["TotpSetupResponse"];
+
+/** `TotpConfirmResponse` — plaintext recovery codes, shown exactly once. */
+export type StaffTotpConfirm = Schemas["TotpConfirmResponse"];
+
+/** Trade the single-use invitation token for a pending staff session. */
+export function acceptStaffInvitation(
+  token: string,
+  password: string,
+): Promise<LoginTokens> {
+  return apiRequest<LoginTokens>(`${BASE}/staff/invitations/accept`, {
+    method: "POST",
+    body: { token, password },
+  });
+}
+
+/** Staff login: verified email + password + TOTP-or-recovery code. */
+export function loginStaff(
+  email: string,
+  password: string,
+  totpCode: string,
+): Promise<LoginTokens> {
+  return apiRequest<LoginTokens>(`${BASE}/staff/login`, {
+    method: "POST",
+    body: { email, password, totp_code: totpCode },
+  });
+}
+
+/** Generate (or rotate) the unconfirmed TOTP secret; shown once (§5.8). */
+export function beginTotpSetup(accessToken: string): Promise<StaffTotpSetup> {
+  return apiRequest<StaffTotpSetup>("/api/v1/staff/totp/begin", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+/** Confirm with one valid code; recovery codes return exactly once. */
+export function confirmTotpSetup(
+  accessToken: string,
+  code: string,
+): Promise<StaffTotpConfirm> {
+  return apiRequest<StaffTotpConfirm>("/api/v1/staff/totp/confirm", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: { code },
+  });
+}
+
 // --- own-account profile endpoints (spec §5.4-§5.5, §40; profile_router) --------
 
 /**

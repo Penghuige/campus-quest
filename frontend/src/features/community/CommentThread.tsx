@@ -61,6 +61,9 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // FOLD (T7 review): a failed load-more used to vanish silently; the
+  // inline message + retry below keep the failure observable.
+  const [moreError, setMoreError] = useState<unknown>(null);
   const [replyTo, setReplyTo] = useState<CommentRowView | null>(null);
   const [reportTarget, setReportTarget] = useState<CommentRowView | null>(null);
   const [reloadSeed, setReloadSeed] = useState(0);
@@ -102,6 +105,7 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
       return;
     }
     setLoadingMore(true);
+    setMoreError(null);
     try {
       const page = await listTaskComments(taskId, {
         sort,
@@ -113,9 +117,10 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
       const fresh = page.items.filter((item) => !seen.has(item.id));
       setItems([...items, ...fresh]);
       setTotal(page.total);
-    } catch {
-      // Load-more failures stay non-fatal: the loaded thread remains
-      // usable; the button re-arms so the attempt can be repeated.
+    } catch (cause) {
+      // Non-fatal (the loaded thread stays usable), but no longer SILENT:
+      // the mapped inline message + retry render below the button (T8 fold).
+      setMoreError(cause);
     } finally {
       setLoadingMore(false);
     }
@@ -216,6 +221,9 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
                   加载更多评论（{items.length}/{total}）
                 </span>
               </button>
+              {moreError !== null ? (
+                <SectionError error={moreError} onRetry={() => void loadMore()} />
+              ) : null}
             </div>
           ) : null}
         </>

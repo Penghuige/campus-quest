@@ -35,7 +35,10 @@ export type AuthFieldName =
   | "email"
   | "token"
   | "current_password"
-  | "new_password";
+  | "new_password"
+  // Staff 2FA fields (T8): `totp_code` is the pydantic field name on
+  // StaffLoginRequest/TotpConfirmRequest (identity/staff_router.py).
+  | "totp_code";
 
 /** Presentation-ready view of one failed auth mutation. */
 export interface AuthErrorView {
@@ -88,6 +91,8 @@ const VALIDATION_FIELD_TEXT: Partial<Record<AuthFieldName, string>> = {
   email: "请输入正确的邮箱地址",
   token: "请输入邮件中的验证码",
   new_password: `密码长度需为 10-128 个字符`,
+  // Staff 2FA (T8): login accepts a 6-digit TOTP code or a recovery code.
+  totp_code: "请输入 6 位数字动态验证码或恢复代码",
 };
 
 /**
