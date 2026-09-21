@@ -6,9 +6,9 @@ idempotency, §40 privacy; interfaces.md "Ranking projection").
 PostgreSQL is authoritative: every Redis sorted-set score must equal the
 ``SUM(amount)`` of ``affects_ranking`` ledger rows bucketed by
 ``ranking_effective_at`` in BUSINESS_TIMEZONE natural periods. Redis runs
-on the dedicated test database from REDIS_URL (db 2 for this stream),
-flushed around every test; the projection never ``ZINCRBY``s, so retries
-converge and a flush is recoverable through ``rebuild_all``.
+on the local test Redis from REDIS_URL (db 0 in the integration env
+defaults), flushed around every test; the projection never ``ZINCRBY``s,
+so retries converge and a flush is recoverable through ``rebuild_all``.
 
 Privacy pin (spec §17/§40): the public entry carries EXACTLY nickname /
 display_honor / score / rank — never the student number, phone, email, or

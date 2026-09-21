@@ -52,6 +52,7 @@ session-level commit releases only a savepoint — rows never leak).
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -131,16 +132,35 @@ def _snapshot(entry: PointsLedger) -> dict[str, Any]:
     return {field: getattr(entry, field) for field in _LEDGER_FIELDS}
 
 
+@dataclass(frozen=True, slots=True)
+class _EnqueuedRankingUpdate:
+    """One captured ranking-projection trigger (the rankings
+    ``RankingUpdateDispatcher`` payload shape)."""
+
+    user_id: UUID
+    ranking_effective_at: datetime
+    request_id: str | None
+
+
 class _RecordingRankingDispatcher:
-    """Test fake for the T6 ranking-projection port: a sync enqueue that
-    records the affected user (the production adapter is a job publish
-    wired at merge by the S1b stream)."""
+    """Test fake for the ranking-projection port: a sync enqueue that
+    records the FULL payload — the user, the changed entry's period
+    attribution, and the correlation id — so the tests can pin that a
+    September-posted reversal enqueues AUGUST's effective time, never
+    the decision instant (spec §17.2)."""
 
     def __init__(self) -> None:
-        self.users: list[UUID] = []
+        self.updates: list[_EnqueuedRankingUpdate] = []
 
-    def enqueue_ranking_update(self, user_id: UUID) -> None:
-        self.users.append(user_id)
+    def enqueue_ranking_update(
+        self,
+        user_id: UUID,
+        ranking_effective_at: datetime,
+        request_id: str | None = None,
+    ) -> None:
+        self.updates.append(
+            _EnqueuedRankingUpdate(user_id, ranking_effective_at, request_id)
+        )
 
 
 async def _flush(db_session: AsyncSession, *objects: Any) -> None:
@@ -222,7 +242,8 @@ async def test_reverse_posts_negative_entry_linked_to_untouched_original(
     period; the original row is byte-for-byte unchanged; the wallet
     available drops to 0 while earned stays 200 (ranking repair belongs
     to the ledger aggregation); the ranking-projection trigger fires on
-    the CALLER's commit — never before it — with the affected user."""
+    the CALLER's commit — never before it — carrying the affected user
+    and the ORIGINAL's period attribution (the §17.2 payload)."""
     service = LedgerService()
     student = _user("2025s", Role.STUDENT)
     admin = _user("admr", Role.ADMIN)
@@ -239,7 +260,7 @@ async def test_reverse_posts_negative_entry_linked_to_untouched_original(
         original.id,
         ranking_dispatcher=ranking,
     )
-    assert ranking.users == []  # pre-commit: the row is not visible yet
+    assert ranking.updates == []  # pre-commit: the row is not visible yet
 
     assert reversal.user_id == student.id
     assert reversal.ledger_type == LedgerType.ASSIGNMENT_REWARD_REVERSAL
@@ -258,7 +279,15 @@ async def test_reverse_posts_negative_entry_linked_to_untouched_original(
     assert reversal.ranking_effective_at != _SEPTEMBER_NOW
 
     await db_session.commit()
-    assert ranking.users == [student.id]  # the post-commit seam fired once
+    # The post-commit seam fired ONCE with the full §17.2 payload: the
+    # affected user, the ORIGINAL reward's August attribution (a
+    # September decision repairs August's boards, never September's),
+    # and no caller correlation id (the dispatcher generates one).
+    assert ranking.updates == [
+        _EnqueuedRankingUpdate(
+            user_id=student.id, ranking_effective_at=_AUGUST_LOCK, request_id=None
+        )
+    ]
 
     # The ORIGINAL row is untouched: no field moved (spec §15 append-only).
     reread = await db_session.get(PointsLedger, original.id)

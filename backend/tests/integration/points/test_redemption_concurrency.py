@@ -76,6 +76,7 @@ from app.modules.points.models import (
 from app.modules.points.redemption_service import (
     AcademicTermConfigurationError,
     AcademicTermProvider,
+    InsufficientPointsError,
     RedemptionLimitReachedError,
     RedemptionNotFulfillableError,
     RedemptionPermissionDeniedError,
@@ -512,6 +513,41 @@ async def test_window_exact_start_accepted_exact_end_rejected(
     assert rejected_rows == []
 
 
+# --- spec §16.1: the exact-sufficiency boundary ---------------------------------------
+
+
+@pytest.mark.integration
+async def test_wallet_funded_exactly_the_cost_redeems(
+    db_session: AsyncSession,
+) -> None:
+    """Final-review minor (the ``spendable < point_cost`` boundary): a
+    wallet funded EXACTLY the cost succeeds — 200 spendable against a
+    200-cost item freezes cleanly and leaves spendable 0; only a further
+    request is the typed INSUFFICIENT_POINTS."""
+    run = uuid4().hex[:8]
+    student = _student(f"2025{run}001")
+    exact = _reward_item(name="正好 200 分", point_cost=200)
+    again = _reward_item(name="又一个 200 分", point_cost=200)
+    await _flush(db_session, student, exact, again)
+    student_id, exact_id, again_id = student.id, exact.id, again.id
+    await _fund(db_session, student_id, 200)
+    await db_session.commit()
+    service = _service()
+
+    redemption = await service.request_redemption(db_session, student_id, exact_id)
+    assert redemption.status == "REQUESTED"
+    assert redemption.points == 200
+    assert await LedgerService().get_spendable_points(db_session, student_id) == 0
+    wallet = await db_session.get(PointWallet, student_id)
+    assert wallet is not None
+    assert wallet.available_points == 200  # the freeze holds, the wallet holds
+
+    with pytest.raises(InsufficientPointsError) as exc_info:
+        await service.request_redemption(db_session, student_id, again_id)
+    assert exc_info.value.code == ErrorCode.INSUFFICIENT_POINTS
+    assert exc_info.value.details == {"required": 200, "spendable": 0}
+
+
 # --- spec §16.1: the per-user term limit ---------------------------------------------
 
 
@@ -711,6 +747,85 @@ async def test_approve_consumes_reservation_posts_entry_and_holds_stock(
     replay_wallet = await db_session.get(PointWallet, student_id)
     assert replay_wallet is not None
     assert replay_wallet.available_points == 300
+
+
+# --- spec §16.2: the concurrent double approve ----------------------------------------
+
+
+@pytest.mark.integration
+async def test_concurrent_double_approve_posts_one_consumption_entry(
+    db_engine: AsyncEngine,
+) -> None:
+    """Final-review minor (spec §16.2/§31.6): two staff approve the same
+    REQUESTED redemption concurrently (independent sessions, one
+    barrier). The redemption row lock serializes them — the winner
+    posts the ONE negative REWARD_REDEMPTION entry and flips the
+    reservation CONSUMED and the status APPROVED; the loser re-reads the
+    APPROVED row under the lock and returns it untouched (the idempotent
+    replay). Never a second entry, never a double decrement."""
+    factory = _factory(db_engine)
+    service = _service()
+    run = uuid4().hex[:8]
+    user_ids: list[UUID] = []
+    item_ids: list[UUID] = []
+    try:
+        async with factory() as session:
+            student = _student(f"2025{run}001")
+            teacher = _teacher(f"t{run}001")
+            item = _reward_item(point_cost=200)
+            session.add_all([student, teacher, item])
+            await session.flush()
+            user_ids.extend([student.id, teacher.id])
+            item_ids.append(item.id)
+            await _fund(session, student.id, 500)
+            await session.commit()
+            redemption = await service.request_redemption(session, student.id, item.id)
+            redemption_id = redemption.id
+
+        actor = _actor(user_ids[1], Role.TEACHER)
+
+        async def approve_once(start: asyncio.Event) -> Any:
+            async with factory() as session:
+                await session.execute(text("SELECT 1"))  # warm the connection
+                await start.wait()
+                return await service.approve_redemption(session, actor, redemption_id)
+
+        results = await _run_behind_barrier(
+            [lambda start: approve_once(start), lambda start: approve_once(start)]
+        )
+        # Both callers answer with the SAME approved row: one writer, one
+        # idempotent replay — no typed error, no exception.
+        assert all(
+            isinstance(result, RewardRedemption) and result.status == "APPROVED"
+            for result in results
+        )
+        assert {result.id for result in results} == {redemption_id}
+
+        async with factory() as check:
+            entries = (
+                await check.scalars(
+                    select(PointsLedger).where(
+                        PointsLedger.user_id == user_ids[0],
+                        PointsLedger.ledger_type == LedgerType.REWARD_REDEMPTION,
+                    )
+                )
+            ).all()
+            assert len(entries) == 1  # exactly one consumption entry
+            assert entries[0].amount == -200
+            assert entries[0].source_id == redemption_id
+            reservation = (
+                await check.scalars(
+                    select(PointReservation).where(
+                        PointReservation.redemption_id == redemption_id
+                    )
+                )
+            ).one()
+            assert reservation.status == ReservationStatus.CONSUMED.value
+            wallet = await check.get(PointWallet, user_ids[0])
+            assert wallet is not None
+            assert wallet.available_points == 300  # 500 - 200, decremented ONCE
+    finally:
+        await _committed_cleanup(factory, user_ids=user_ids, item_ids=item_ids)
 
 
 # --- spec §16.2: reject ---------------------------------------------------------------

@@ -46,21 +46,28 @@ from __future__ import annotations
 
 import asyncio
 import random
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import pytest
+import pytest_asyncio
+import redis.asyncio as aioredis
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.clock import FrozenClock
+from app.core.config import get_settings
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor, InMemoryEventCollector
 from app.modules.identity.models import User
 from app.modules.points.enums import LedgerType
 from app.modules.points.ledger_service import LedgerService, PointsRewardPortAdapter
 from app.modules.points.models import PointsLedger, PointWallet
+from app.modules.rankings.redis_projection import RankingRedisProjection
 from app.modules.submissions.enums import ValidationStatus
 from app.modules.submissions.models import (
     RewardLockHistory,
@@ -536,5 +543,152 @@ async def test_approve_maps_port_call_to_ledger_source_triple_and_projects_walle
             "locked_reward_points": _LOCKED_POINTS,
             "terminal_at": _NOW.isoformat(),
         }
+    finally:
+        await _committed_cleanup(factory, user_ids=user_ids, task_ids=task_ids)
+
+
+# --- the ranking-projection trigger (final-review C1) ---------------------------------
+
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+@pytest_asyncio.fixture
+async def projection_redis() -> AsyncIterator[aioredis.Redis]:
+    """Redis on the integration-test database (the rankings-suite
+    fixture shape), flushed around the test: the projection's whole
+    state lives in keys."""
+    url = get_settings().redis_url
+    parts = urlsplit(url)
+    if parts.hostname not in _LOCAL_HOSTS:
+        pytest.fail(f"Ranking integration tests refuse non-local Redis: {url!r}")
+    client = aioredis.from_url(url, decode_responses=True)
+    try:
+        await client.flushdb()
+        yield client
+        await client.flushdb()
+    finally:
+        await client.aclose()
+
+
+@dataclass(frozen=True, slots=True)
+class _EnqueuedRankingUpdate:
+    """One captured ranking-projection trigger (the rankings
+    ``RankingUpdateDispatcher`` payload shape)."""
+
+    user_id: UUID
+    ranking_effective_at: datetime
+    request_id: str | None
+
+
+class _CapturingRankingDispatcher:
+    """Test fake for the ranking-projection port (the seam the
+    composition root binds to ``CeleryRankingDispatcher`` in
+    production): records the full post-commit payload."""
+
+    def __init__(self) -> None:
+        self.updates: list[_EnqueuedRankingUpdate] = []
+
+    def enqueue_ranking_update(
+        self,
+        user_id: UUID,
+        ranking_effective_at: datetime,
+        request_id: str | None = None,
+    ) -> None:
+        self.updates.append(
+            _EnqueuedRankingUpdate(user_id, ranking_effective_at, request_id)
+        )
+
+
+@pytest.mark.integration
+async def test_approve_grant_enqueues_ranking_projection_and_boards_converge(
+    db_engine: AsyncEngine,
+    projection_redis: aioredis.Redis,
+) -> None:
+    """Final-review C1, end to end: the approve -> grant path must
+    ENQUEUE the ranking-projection trigger after commit — the user, the
+    entry's ``ranking_effective_at`` (the claim's lock time, so the
+    recompute addresses the period the reward was credited to), and the
+    grant's idempotency key as the correlation id — and RUNNING the
+    real projection with that payload converges the Redis boards to the
+    PostgreSQL aggregate (spec §17.2/§17.3). The idempotent replay
+    approve enqueues NOTHING (nothing changed)."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    run = uuid4().hex[:8]
+    user_ids: list[UUID] = []
+    task_ids: list[UUID] = []
+    try:
+        world = await _seed(factory, run)
+        owner = world["owner"]
+        student = world["student"]
+        claim = world["claim"]
+        submission = world["submission"]
+        user_ids.extend(user.id for user in (owner, student, world["reviewer"]))
+        task_ids.append(world["task"].id)
+        dispatcher = _CapturingRankingDispatcher()
+
+        async with factory() as session:
+            service = ReviewService(
+                clock=FrozenClock(_NOW),
+                events=InMemoryEventCollector(),
+                points=PointsRewardPortAdapter(
+                    ledger=LedgerService(), db=session, ranking_dispatcher=dispatcher
+                ),
+            )
+            result = await service.approve_submission(
+                session,
+                Actor(user_id=owner.id, role=Role(owner.role)),
+                submission.id,
+            )
+        assert result.already_reviewed is False
+        assert dispatcher.updates == [
+            _EnqueuedRankingUpdate(
+                user_id=student.id,
+                ranking_effective_at=_LOCK_TIME,
+                request_id=f"assignment_reward:{claim.id}",
+            )
+        ]
+
+        # The production worker's payload, run against the REAL
+        # projection: the boards land at the PostgreSQL aggregate for
+        # the lock-time business day/month and all-time.
+        projection = RankingRedisProjection()
+        async with factory() as session:
+            summary = await projection.apply_ranking_update(
+                session, projection_redis, student.id, _LOCK_TIME
+            )
+        assert summary["updated_keys"] == [
+            "ranking:all",
+            "ranking:daily:2026-09-01",
+            "ranking:monthly:2026-09",
+        ]
+        member = str(student.id)
+        for key in (
+            "ranking:daily:2026-09-01",
+            "ranking:monthly:2026-09",
+            "ranking:all",
+        ):
+            assert await projection_redis.zscore(key, member) == _LOCKED_POINTS
+
+        # The sequential replay approve answers ALREADY_REVIEWED and
+        # enqueues NOTHING: the projection already reflects the grant.
+        replay_dispatcher = _CapturingRankingDispatcher()
+        async with factory() as session:
+            replay_service = ReviewService(
+                clock=FrozenClock(_NOW),
+                events=InMemoryEventCollector(),
+                points=PointsRewardPortAdapter(
+                    ledger=LedgerService(),
+                    db=session,
+                    ranking_dispatcher=replay_dispatcher,
+                ),
+            )
+            replay = await replay_service.approve_submission(
+                session,
+                Actor(user_id=owner.id, role=Role(owner.role)),
+                submission.id,
+            )
+        assert replay.already_reviewed is True
+        assert replay_dispatcher.updates == []
     finally:
         await _committed_cleanup(factory, user_ids=user_ids, task_ids=task_ids)

@@ -84,30 +84,41 @@ Design decisions:
   so returning an existing row would hide that THIS request's reason
   was never recorded.
 - **The ranking-projection seam is a post-commit port (task 6).** The
-  reversal may hand the affected user to a ``RankingProjection-
-  Dispatcher`` — task 6's recompute-from-PostgreSQL channel (ZADD the
-  absolute aggregate, never ZINCRBY). Because this service owns no
+  grant AND the reversal hand the changed entry to the rankings
+  module's ``RankingUpdateDispatcher`` — task 6's recompute-from-
+  PostgreSQL channel (ZADD the absolute aggregate, never ZINCRBY) —
+  carrying the user, the entry's ``ranking_effective_at`` (so the
+  recompute addresses the period the entry was credited to: a
+  September decision repairs August and all-time), and the caller's
+  optional correlation ``request_id``. Because this service owns no
   transactions (the rule above), the enqueue is registered on the
-  CALLER's session ``after_commit`` hook: a rollback never enqueues a
-  user whose reversal never landed, and the flush-only contract stays
-  intact. Production wiring (the real job publish) belongs to the S1b
-  stream at merge; tests inject a recording fake.
+  CALLER's session ``after_commit`` hook: a rollback never enqueues an
+  entry that never landed, and the flush-only contract stays intact.
+  The composition roots bind the workers' ``CeleryRankingDispatcher``
+  (the real job publish) as the default dispatcher; tests inject a
+  recording fake. The grant arms the hook only on the path that WROTE
+  a new row — an idempotent replay changed nothing, so it enqueues
+  nothing. Rank HONORS (DAILY_RANK/MONTHLY_RANK) are not this seam's
+  business: their rank+period facts exist only at period close, whose
+  producer is Plan 07/08's scheduled beat (honor_service's ruling).
 - **The frozen port adapter.** ``PointsRewardPortAdapter`` implements
   the interfaces.md ``PointsRewardPort`` signature over this service
   for the Plan-04 review-approve caller: it grants ``locked_points``
   (the fraction-adjusted basis, §31.1), attributes the ranking period
   to the claim's ``reward_locked_at`` (the submit instant the reward
-  lock froze; ``terminal_at`` as a defensive fallback), and accepts
+  lock froze; ``terminal_at`` as a defensive fallback), accepts
   ``idempotency_key`` without parsing it — the UNIQUE source triple
   over ``claim_id`` IS the mechanism, so the points module never
-  couples to the review service's key grammar.
+  couples to the review service's key grammar — and threads that key
+  through as the projection job's ``request_id`` while handing the
+  composition root's dispatcher to the grant (final-review C1).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import Select, event, func, select
@@ -122,6 +133,7 @@ from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, ReservationStatus
 from app.modules.points.models import PointReservation, PointsLedger, PointWallet
+from app.modules.rankings.redis_projection import RankingUpdateDispatcher
 from app.modules.submissions.review_service import GrantResult
 from app.modules.tasks.models import AssignmentClaim
 
@@ -226,26 +238,16 @@ def _validate(command: PostLedgerEntry) -> None:
         )
 
 
-# --- reward reversal: the task-6 port and typed errors (plan 05 task 5) ---------------
+# --- reward reversal: the ranking port and typed errors (task 5) ----------------------
 
 
-class RankingProjectionDispatcher(Protocol):
-    """Hand a user whose ranking projection is stale to task 6's
-    recompute channel (plan 05 task 6: recompute the user's authoritative
-    period scores from PostgreSQL and ZADD the ABSOLUTE aggregate —
-    never ZINCRBY — so a repeated trigger converges).
-
-    ``enqueue_ranking_update`` is a SYNC publish (a job ``.delay`` call,
-    the ``ValidationDispatcher`` shape): the broker round trip is the
-    implementation's business, and keeping it sync means the test fake
-    is a plain list append. The trigger needs only the user: the worker
-    re-derives every ranking-affecting period from the ledger, so the
-    August repair and the all-time repair both happen without the
-    caller naming periods. Production wiring (the real publish) is the
-    S1b stream's at merge; until then callers may omit the dispatcher.
-    """
-
-    def enqueue_ranking_update(self, user_id: UUID) -> None: ...
+# SINGLE DEFINITION (final-review C1): the ranking-projection port is
+# owned by the rankings module (``RankingUpdateDispatcher``, frozen in
+# redis_projection.py; the workers-side binding is
+# ``CeleryRankingDispatcher``). The historical points-side name stays
+# exported as an alias so existing imports keep working — there is no
+# second, divergent protocol shape to drift again.
+RankingProjectionDispatcher = RankingUpdateDispatcher
 
 
 class RewardReversalPermissionDeniedError(BusinessError):
@@ -332,19 +334,26 @@ def _enqueue_ranking_update_after_commit(
     db: AsyncSession,
     dispatcher: RankingProjectionDispatcher,
     user_id: UUID,
+    ranking_effective_at: datetime,
+    request_id: str | None = None,
 ) -> None:
     """Register the ranking-projection trigger on the CALLER's commit.
 
     This service owns no transactions, so the only correct moment it can
     observe is the caller's ``after_commit`` session hook: a rollback
-    leaves the listener unfired (no phantom enqueue for a reversal that
+    leaves the listener unfired (no phantom enqueue for an entry that
     never landed) and ``once=True`` keeps the listener from leaking
     across later commits. The port itself stays a sync publish, so the
-    production adapter (the S1b stream's wiring) decides durability.
+    production adapter (the workers' ``CeleryRankingDispatcher``) decides
+    durability. The payload is the full worker contract: the user, the
+    CHANGED ENTRY's ``ranking_effective_at`` (the worker recomputes
+    exactly that instant's business day, its business month, and
+    all-time — never every period), and the caller's correlation id
+    (None means the dispatcher generates one).
     """
 
     def _fire(session: OrmSession) -> None:
-        dispatcher.enqueue_ranking_update(user_id)
+        dispatcher.enqueue_ranking_update(user_id, ranking_effective_at, request_id)
 
     event.listen(db.sync_session, "after_commit", _fire, once=True)
 
@@ -354,7 +363,27 @@ def _enqueue_ranking_update_after_commit(
 
 class LedgerService:
     """Posts immutable ledger entries and maintains the wallet
-    projection in the caller's transaction (see module docstring)."""
+    projection in the caller's transaction (see module docstring).
+
+    ``ranking_dispatcher`` is the DEFAULT ranking-projection trigger the
+    composition root binds (the workers' ``CeleryRankingDispatcher``):
+    ranking-affecting writes enqueue the recompute job on the caller's
+    commit unless the call site passes its own dispatcher. ``None``
+    (tests, or a caller that only posts ranking-neutral rows) simply
+    never enqueues.
+    """
+
+    def __init__(
+        self,
+        ranking_dispatcher: RankingProjectionDispatcher | None = None,
+    ) -> None:
+        self._ranking_dispatcher = ranking_dispatcher
+
+    def _resolve_dispatcher(
+        self, override: RankingProjectionDispatcher | None
+    ) -> RankingProjectionDispatcher | None:
+        """Call-site dispatcher wins; else the constructor default."""
+        return override if override is not None else self._ranking_dispatcher
 
     async def post_entry(
         self, db: AsyncSession, command: PostLedgerEntry
@@ -465,6 +494,8 @@ class LedgerService:
         user_id: UUID,
         amount: int,
         ranking_effective_at: datetime,
+        ranking_dispatcher: RankingProjectionDispatcher | None = None,
+        request_id: str | None = None,
     ) -> PointsLedger:
         """Post the claim's ASSIGNMENT_REWARD exactly once (spec §31.6).
 
@@ -473,6 +504,13 @@ class LedgerService:
         written. The entry affects both the balance and the ranking and
         carries the caller-supplied lock time as its period attribution
         (spec §17.2).
+
+        The ranking-projection trigger (final-review C1): a provided or
+        constructor-default dispatcher is armed on the CALLER's commit
+        with the NEWLY written entry's attribution — the review approve
+        that lands this grant makes the boards recompute. The idempotent
+        replay arms nothing: it wrote nothing, and the original grant's
+        own trigger already fired on its commit.
         """
         if amount <= 0:
             raise InvalidLedgerEntryError("amount", "任务奖励必须为正数积分")
@@ -481,6 +519,7 @@ class LedgerService:
                 "ranking_effective_at",
                 "任务奖励必须携带排名生效时间（认领的奖励锁时间）",
             )
+        dispatcher = self._resolve_dispatcher(ranking_dispatcher)
 
         existing = cast(
             "PointsLedger | None",
@@ -494,7 +533,7 @@ class LedgerService:
             # violation aborts only this insert, leaving the caller's
             # transaction usable for the recovery read below.
             async with db.begin_nested():
-                return await self.post_entry(
+                entry = await self.post_entry(
                     db,
                     PostLedgerEntry(
                         user_id=user_id,
@@ -522,6 +561,19 @@ class LedgerService:
             if existing is None:
                 raise
             return existing
+        if dispatcher is not None:
+            # Armed only on the success path: this call wrote the entry,
+            # so its period needs the recompute. The validated command
+            # argument IS the entry's attribution (post_entry stores it
+            # verbatim).
+            _enqueue_ranking_update_after_commit(
+                db,
+                dispatcher,
+                user_id,
+                ranking_effective_at,
+                request_id,
+            )
+        return entry
 
     async def reverse_assignment_reward(
         self,
@@ -531,6 +583,7 @@ class LedgerService:
         reason: str | None,
         *,
         ranking_dispatcher: RankingProjectionDispatcher | None = None,
+        request_id: str | None = None,
     ) -> PointsLedger:
         """Post the admin reversal of one ASSIGNMENT_REWARD (spec §17.2).
 
@@ -545,7 +598,10 @@ class LedgerService:
         serializes concurrent reversals; an already-spent reward
         overdrafts ``available_points`` negative (migration 0012 ruling,
         models.py). Flush only — the caller owns the transaction, and a
-        provided ``ranking_dispatcher`` fires on that commit.
+        provided or constructor-default ``ranking_dispatcher`` fires on
+        that commit carrying the ORIGINAL's attribution (the §17.2
+        payload: the boards repaired are the period the reward was
+        credited to, never the decision's period).
 
         Raises the typed gates in order — reason, actor, target row,
         target type, already-reversed — before anything is written; the
@@ -571,6 +627,12 @@ class LedgerService:
         source_type = original.source_type
         source_id = original.source_id
         user_id = original.user_id
+        ranking_effective_at = original.ranking_effective_at
+        # An ASSIGNMENT_REWARD is always ranking-affecting, so the
+        # ledger's coherence CHECK (ranking_effective_at NOT NULL exactly
+        # when affects_ranking, models.py) makes this non-None; the
+        # assert documents the invariant the enqueue relies on.
+        assert ranking_effective_at is not None
 
         existing = await db.scalar(self._claim_reversal_filter(source_type, source_id))
         if existing is not None:
@@ -595,7 +657,7 @@ class LedgerService:
                         source_id=source_id,
                         affects_balance=True,
                         affects_ranking=True,
-                        ranking_effective_at=original.ranking_effective_at,
+                        ranking_effective_at=ranking_effective_at,
                         reversal_of_id=ledger_id,
                         operator_id=actor.user_id,
                         reason=reason_text,
@@ -620,10 +682,19 @@ class LedgerService:
                 reversal_ledger_id=winner.id,
             ) from exc
         # The post-commit seam, armed only on the success path: a typed
-        # rejection or a caller rollback never enqueues a user whose
-        # reversal never landed.
-        if ranking_dispatcher is not None:
-            _enqueue_ranking_update_after_commit(db, ranking_dispatcher, user_id)
+        # rejection or a caller rollback never enqueues an entry that
+        # never landed. The payload carries the ORIGINAL's attribution —
+        # the captured local is expiry-proof and the closure evaluates
+        # it now, before commit.
+        dispatcher = self._resolve_dispatcher(ranking_dispatcher)
+        if dispatcher is not None:
+            _enqueue_ranking_update_after_commit(
+                db,
+                dispatcher,
+                user_id,
+                ranking_effective_at,
+                request_id,
+            )
         return reversal
 
     async def locked_or_created_wallet(
@@ -684,16 +755,29 @@ class PointsRewardPortAdapter:
     claim's base snapshot carried for the record. ``idempotency_key``
     is accepted and deliberately NOT parsed — the UNIQUE source triple
     over ``claim_id`` is the idempotency mechanism, so this module never
-    couples to the review service's key grammar.
+    couples to the review service's key grammar. It IS threaded through
+    as the ranking-projection job's ``request_id`` (final-review C1):
+    the approve's stable key becomes the recompute job's correlation id
+    in the logs, at zero new surface.
 
     Constructed per request with the session the caller's transaction
     runs on: the grant joins that transaction (§14 step 8) and the
-    caller commits.
+    caller commits. ``ranking_dispatcher`` (final-review C1) is the
+    post-commit trigger the composition root binds — the workers'
+    ``CeleryRankingDispatcher`` in production, a recording fake in
+    tests; ``None`` never enqueues.
     """
 
-    def __init__(self, *, ledger: LedgerService, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        *,
+        ledger: LedgerService,
+        db: AsyncSession,
+        ranking_dispatcher: RankingProjectionDispatcher | None = None,
+    ) -> None:
         self._ledger = ledger
         self._db = db
+        self._ranking_dispatcher = ranking_dispatcher
 
     async def grant_assignment_reward(
         self,
@@ -711,6 +795,8 @@ class PointsRewardPortAdapter:
             user_id=user_id,
             amount=locked_points,
             ranking_effective_at=effective_at,
+            ranking_dispatcher=self._ranking_dispatcher,
+            request_id=idempotency_key,
         )
         # The persisted row's amount is the truth: on an idempotent
         # replay the ORIGINAL grant is what the user received.

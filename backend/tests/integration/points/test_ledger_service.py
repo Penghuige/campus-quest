@@ -54,12 +54,14 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.points.enums import LedgerType, ReservationStatus
@@ -76,6 +78,8 @@ from app.modules.points.models import (
     RewardItem,
     RewardRedemption,
 )
+from app.modules.rankings.periods import business_day, day_bounds, month_bounds
+from app.modules.rankings.repository import RankingRepository
 from app.modules.submissions.review_service import GrantResult, PointsRewardPort
 from app.modules.tasks.claim_service import REWARD_POLICY_SNAPSHOT_V1
 from app.modules.tasks.enums import (
@@ -614,6 +618,65 @@ async def test_post_entry_projects_wallet_columns(
     assert len(admin_rows) == 1
     assert admin_rows[0].source_id is not None  # service-generated source
     assert admin_rows[0].reason == "更正此前多发的积分"
+
+
+# --- admin adjustments are ranking-neutral (spec §18) ---------------------------------
+
+
+@pytest.mark.integration
+async def test_admin_adjustment_is_ranking_neutral_in_the_postgres_aggregate(
+    db_session: AsyncSession,
+) -> None:
+    """Final-review minor (spec §18: 不允许自动篡改排行榜积分 — the
+    aggregate side): an ADMIN_ADJUSTMENT moves the wallet's available
+    figure but leaves the PostgreSQL ranking aggregate unchanged in
+    EVERY period range. The ranking reads only ``affects_ranking`` rows,
+    so an adjustment can never launder itself onto a board."""
+    service = LedgerService()
+    student = _student(f"2025{uuid4().hex[:8]}001")
+    await _flush(db_session, student)
+    await _grant(service, db_session, student.id, amount=100)  # ranking +100
+    await db_session.commit()
+
+    tz = ZoneInfo(get_settings().business_timezone)
+    day_start, day_end = day_bounds(business_day(_LOCK_TIME, tz), tz)
+    month_start, month_end = month_bounds(business_day(_LOCK_TIME, tz), tz)
+    ranges: list[tuple[datetime | None, datetime | None]] = [
+        (None, None),  # all-time
+        (day_start, day_end),
+        (month_start, month_end),
+    ]
+    repository = RankingRepository()
+    before = [
+        await repository.user_score(db_session, student.id, starts, ends)
+        for starts, ends in ranges
+    ]
+    assert before == [100, 100, 100]
+
+    adjustment = await service.post_entry(
+        db_session,
+        PostLedgerEntry(
+            user_id=student.id,
+            ledger_type=LedgerType.ADMIN_ADJUSTMENT,
+            amount=60,
+            source_type="ADMIN_ADJUSTMENT",
+            affects_balance=True,
+            affects_ranking=False,
+            reason="开学活动补偿",
+        ),
+    )
+    assert adjustment.affects_ranking is False
+    await db_session.commit()
+
+    after = [
+        await repository.user_score(db_session, student.id, starts, ends)
+        for starts, ends in ranges
+    ]
+    assert after == before == [100, 100, 100]  # the aggregate never moved
+    wallet = await db_session.get(PointWallet, student.id)
+    assert wallet is not None
+    assert wallet.available_points == 160  # the balance DID move
+    assert wallet.earned_points == 100
 
 
 # --- friendly service gates + the 0011 database CHECK ---------------------------------

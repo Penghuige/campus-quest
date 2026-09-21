@@ -84,6 +84,14 @@ key; the UNIQUE(claim) ledger semantics are Plan 05's concrete
 adapter; (9) Assignment -> COMPLETED (permanently unallocatable);
 (10) the SUBMISSION_APPROVED audit event.
 
+AFTER the ten-step transaction commits, the approve path runs the
+post-commit honor trigger (spec §18; plan 05 final review I3): the
+completed user's LIFETIME honors are evaluated through the
+``ClaimCompletedHonorsPort`` seam in their own transaction, wrapped so
+a honor failure can never fail the already-committed approval (the
+projection-dispatcher pattern; see the port's docstring for the
+Plan 07/08 rank-honor producer ruling).
+
 Events follow the outbox direction (interfaces.md Core Primitives):
 publication goes through the ``DomainEventPublisher`` port after the
 flush and before the commit — the interim logging adapter — and never
@@ -102,6 +110,7 @@ root wires (backend-engineering §11/§17/§13).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
@@ -137,8 +146,11 @@ from app.modules.tasks.models import (
     TaskCollaborator,
 )
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "ApprovalResult",
+    "ClaimCompletedHonorsPort",
     "ClaimNotReviewableError",
     "InvalidationReasonRequiredError",
     "LockNotInvalidatableError",
@@ -215,6 +227,25 @@ class PointsRewardPort(Protocol):
         locked_points: int,
         idempotency_key: str,
     ) -> GrantResult: ...
+
+
+@runtime_checkable
+class ClaimCompletedHonorsPort(Protocol):
+    """Rankings module boundary (spec §18; plan 05 final review I3):
+    the approve path hands the completed user to honor evaluation AFTER
+    the approve transaction committed — never inside it.
+
+    The binding is FAILURE-TOLERANT BY CONTRACT in the caller: the
+    approve has already committed by the time this runs, so an
+    exception must be swallowed by the caller's defensive wrapper (an
+    honor can never fail an approval; a lost evaluation self-heals on
+    any later claim completion because the honor rules recompute facts).
+    Production wires the rankings module's ``ClaimCompletedHonorsTrigger``
+    (lifetime rules only — the DAILY_RANK/MONTHLY_RANK producers are
+    Plan 07/08's scheduled beat, honor_service's ruling).
+    """
+
+    async def on_claim_completed(self, session: AsyncSession, user_id: UUID) -> Any: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +371,10 @@ class ReviewService:
     ``points`` is the frozen cross-module port (fake in this plan's
     tests, the Plan 05 points module in production); clock and event
     publisher follow the reward-lock service's injection shape.
+    ``honors`` (final review I3) is the post-commit honor trigger —
+    ``None`` disables the evaluation (Plan-04 shape, unchanged tests);
+    production binds the rankings module's binding, and the wrapper
+    below makes its failure irrelevant to the approval.
     """
 
     def __init__(
@@ -348,10 +383,12 @@ class ReviewService:
         clock: Clock,
         events: DomainEventPublisher,
         points: PointsRewardPort,
+        honors: ClaimCompletedHonorsPort | None = None,
     ) -> None:
         self._clock = clock
         self._events = events
         self._points = points
+        self._honors = honors
 
     # -- require_revision (§11.3 REVISION_REQUIRED, §11.4 window) -------------------
 
@@ -650,8 +687,42 @@ class ReviewService:
                 payload=payload,
             )
         )
+        # Captured before the commit: the honor trigger runs on the
+        # other side of it, and instance expiry must not matter.
+        student_id = claim.user_id
         await db.commit()
+        # Post-commit honor trigger (final review I3): the approval is
+        # already durable; the evaluation is a separate, best-effort
+        # transaction that must never fail it. Only the path that
+        # GRANTED evaluates — the idempotent replay returned earlier
+        # and changed no honor fact.
+        if self._honors is not None:
+            await self._evaluate_honors_defensively(db, student_id)
         return ApprovalResult(claim=claim, grant=grant, already_reviewed=False)
+
+    async def _evaluate_honors_defensively(
+        self, db: AsyncSession, user_id: UUID
+    ) -> None:
+        """Run the honor evaluation in its OWN transaction and swallow
+        any failure (the projection-dispatcher pattern: a post-commit
+        side effect is repaired by later triggers, never by failing the
+        business write it follows — a lost evaluation self-heals on any
+        later claim completion because the honor rules recompute facts).
+        The rollback keeps the session usable for the caller's teardown;
+        the approve that reached here is already durable."""
+        honors = self._honors
+        if honors is None:
+            return
+        try:
+            await honors.on_claim_completed(db, user_id)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.warning(
+                "review_approve.honor_evaluation_failed",
+                extra={"user_id": str(user_id)},
+                exc_info=True,
+            )
 
     # -- shared preamble --------------------------------------------------------------
 

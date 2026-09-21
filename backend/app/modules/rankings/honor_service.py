@@ -64,6 +64,18 @@ Admin commemorative honors (spec §18: Admin 可以人工创建纪念 Honor,
 touch ONLY ``honors`` / ``user_honors`` — by construction no code path
 here writes ``points_ledger`` or Redis, so a commemorative grant cannot
 alter ranking points (the integration test pins the ledger row count).
+
+Trigger producers (plan 05 final review I3): LIFETIME rules
+(TOTAL_COMPLETED / ON_TIME_STREAK / TOTAL_EARNED_POINTS) are triggered
+by the submissions approve path through ``ClaimCompletedHonorsTrigger``
+below — claim completion is the moment every lifetime fact may have
+moved. The RANK rules (DAILY_RANK / MONTHLY_RANK) deliberately have NO
+producer in this plan: their rank+period facts exist only once a
+business day/month CLOSES, which is a scheduled-beat concern owned by
+Plan 07/08 (final-review recommendation 3) — nothing here guesses at
+"today's final ranking" before the period ends. Until that producer
+lands, periodic honors are grantable only through explicit evaluation
+events (tests, future admin tooling).
 """
 
 from __future__ import annotations
@@ -88,6 +100,7 @@ from app.modules.tasks.enums import ClaimStatus
 from app.modules.tasks.models import AssignmentClaim
 
 __all__ = [
+    "ClaimCompletedHonorsTrigger",
     "CommemorativeAdminOnlyError",
     "CommemorativeHonorRequiredError",
     "FIXED_HONOR_DEFINITIONS",
@@ -464,6 +477,40 @@ class OwnedHonor:
     honor_type: str
     period: str | None
     granted_at: datetime
+
+
+# --- the submissions-approve trigger binding (final review I3) ------------------------
+
+
+class ClaimCompletedHonorsTrigger:
+    """The rankings-side binding of the review-approve seam: one claim
+    completion -> one ``CLAIM_COMPLETED`` evaluation (every lifetime
+    fact rule is judged from recomputed facts, so a missed or replayed
+    trigger converges).
+
+    The CALLER (ReviewService) owns the failure-tolerance wrapper: it
+    invokes this AFTER the approve transaction committed and swallows
+    any exception, so a honor failure never fails an approval. This
+    class stays a thin event constructor — the honor rules, the
+    definition-row lifecycle, and the grant idempotency all belong to
+    ``HonorService.evaluate_honors``. Rank honors are NOT produced here
+    (see the module docstring's trigger-producer ruling: the period
+    close beat is Plan 07/08's)."""
+
+    def __init__(self, honors: HonorService | None = None) -> None:
+        self._honors = honors if honors is not None else HonorService()
+
+    async def on_claim_completed(
+        self, session: AsyncSession, user_id: UUID
+    ) -> list[UserHonor]:
+        """Evaluate every lifetime rule for the user on the given
+        session; returns only the NEWLY granted rows (a replay yields
+        []). The caller decides commit/rollback."""
+        return await self._honors.evaluate_honors(
+            session,
+            user_id,
+            HonorEvaluationEvent(trigger=HonorTrigger.CLAIM_COMPLETED),
+        )
 
 
 # --- the service ----------------------------------------------------------------------

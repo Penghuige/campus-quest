@@ -93,7 +93,10 @@ from app.modules.identity.dependencies import (
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
 from app.modules.identity.events import Actor
-from app.modules.points.ledger_service import LedgerService
+from app.modules.points.ledger_service import (
+    LedgerService,
+    RankingProjectionDispatcher,
+)
 from app.modules.points.models import RewardItem, RewardRedemption
 from app.modules.points.redemption_service import (
     RedemptionService,
@@ -205,8 +208,25 @@ class RedemptionFulfillRequest(BaseModel):
 # --- provider dependencies (module composition root) ---------------------------------
 
 
+def get_ranking_dispatcher() -> RankingProjectionDispatcher:
+    """The production ranking-projection trigger (final-review C1): the
+    workers' ``CeleryRankingDispatcher`` over
+    ``project_ranking_update_job.delay``. The job-module import stays
+    INSIDE the provider (the submissions-router dispatcher discipline):
+    importing it at module load would register Celery tasks in every API
+    process start for a dispatch that may never fire. Tests override
+    this provider with a recording fake."""
+    from app.workers.jobs.project_ranking_update import CeleryRankingDispatcher
+
+    return CeleryRankingDispatcher()
+
+
 def get_ledger_service() -> LedgerService:
-    return LedgerService()
+    """The module's ledger service with the default ranking-projection
+    trigger bound (final-review C1): any ranking-affecting write through
+    this service — the grant, the reversal — enqueues the recompute job
+    on the caller's commit."""
+    return LedgerService(ranking_dispatcher=get_ranking_dispatcher())
 
 
 def get_academic_term_provider() -> StaticAcademicTermProvider:
@@ -220,7 +240,12 @@ def get_redemption_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
     terms: Annotated[StaticAcademicTermProvider, Depends(get_academic_term_provider)],
 ) -> RedemptionService:
-    return RedemptionService(clock=clock, terms=terms)
+    # The ledger is the dispatcher-bound production construction (the
+    # get_ledger_service ruling): today's redemption entries are all
+    # ranking-neutral (spec §17.1), so the trigger stays dormant — it is
+    # wired so a future ranking-affecting entry type cannot silently
+    # miss the projection.
+    return RedemptionService(clock=clock, terms=terms, ledger=get_ledger_service())
 
 
 def get_user_directory() -> SqlAlchemyUserDirectory:

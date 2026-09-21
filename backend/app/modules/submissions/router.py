@@ -136,7 +136,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     LoggingEventPublisher,
 )
-from app.modules.points.ledger_service import LedgerService, PointsRewardPortAdapter
+from app.modules.points.ledger_service import PointsRewardPortAdapter
 from app.modules.submissions.query_service import (
     ReviewQueueItem,
     SubmissionQueryService,
@@ -266,9 +266,16 @@ def get_points_port(
     THIS request's session, constructed per request. The adapter uses
     the caller's session and never commits, so the grant joins the
     approve transaction and the route's commit/rollback decides its
-    fate (the task-2 verified contract). Service-level tests keep the
-    in-memory fake through this provider override."""
-    return PointsRewardPortAdapter(ledger=LedgerService(), db=db)
+    fate (the task-2 verified contract). The ledger arrives from the
+    POINTS composition root with the default ranking-projection trigger
+    bound (final-review C1: the workers' ``CeleryRankingDispatcher`) —
+    the committed grant enqueues the board recompute through the
+    ledger's constructor default, and the adapter threads the approve's
+    idempotency key as the job's request_id. Service-level tests keep
+    the in-memory fake through this provider override."""
+    from app.modules.points.router import get_ledger_service
+
+    return PointsRewardPortAdapter(ledger=get_ledger_service(), db=db)
 
 
 def get_upload_service(
@@ -290,7 +297,16 @@ def get_review_service(
     events: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
     points: Annotated[PointsRewardPort, Depends(get_points_port)],
 ) -> ReviewService:
-    return ReviewService(clock=clock, events=events, points=points)
+    # The honor trigger binding (final review I3): the rankings module's
+    # ClaimCompletedHonorsTrigger over the real HonorService. The
+    # service's wrapper makes it failure-tolerant, so production binds
+    # the real evaluation unconditionally; service-level tests inject
+    # fakes or None through ReviewService directly.
+    from app.modules.rankings.honor_service import ClaimCompletedHonorsTrigger
+
+    return ReviewService(
+        clock=clock, events=events, points=points, honors=ClaimCompletedHonorsTrigger()
+    )
 
 
 def get_query_service() -> SubmissionQueryService:
