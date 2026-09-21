@@ -692,3 +692,94 @@ async def test_approve_grant_enqueues_ranking_projection_and_boards_converge(
         assert replay_dispatcher.updates == []
     finally:
         await _committed_cleanup(factory, user_ids=user_ids, task_ids=task_ids)
+
+
+class _ExplodingRankingDispatcher:
+    """A ranking-projection port whose publish always fails — the
+    broker-outage shape (kombu OperationalError / Redis unreachable)
+    behind final-review N1."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def enqueue_ranking_update(
+        self,
+        user_id: UUID,
+        ranking_effective_at: datetime,
+        request_id: str | None = None,
+    ) -> None:
+        self.calls += 1
+        raise RuntimeError("injected broker outage")
+
+
+class _RecordingHonors:
+    """A ClaimCompletedHonorsPort that records the completed user —
+    proves the honors trigger still runs when the enqueue fails."""
+
+    def __init__(self) -> None:
+        self.users: list[UUID] = []
+
+    async def on_claim_completed(self, session: AsyncSession, user_id: UUID) -> None:
+        self.users.append(user_id)
+
+
+@pytest.mark.integration
+async def test_approve_survives_ranking_dispatcher_failure_after_commit(
+    db_engine: AsyncEngine,
+) -> None:
+    """Final-review N1: the after-commit enqueue is BEST-EFFORT. The
+    listener fires INSIDE ``AsyncSession.commit()`` — the transaction is
+    already durable at that point — so a dispatcher failure (broker
+    outage) must be swallowed with a log instead of surfacing as a 500
+    out of commit(). With the dispatcher raising: the approve still
+    answers success, the grant row and wallet projection landed, and
+    the honors trigger — a separate post-commit call that runs after
+    commit() RETURNS, not part of the listener chain — still
+    executed."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    run = uuid4().hex[:8]
+    user_ids: list[UUID] = []
+    task_ids: list[UUID] = []
+    try:
+        world = await _seed(factory, run)
+        owner = world["owner"]
+        student = world["student"]
+        claim = world["claim"]
+        submission = world["submission"]
+        user_ids.extend(user.id for user in (owner, student, world["reviewer"]))
+        task_ids.append(world["task"].id)
+        dispatcher = _ExplodingRankingDispatcher()
+        honors = _RecordingHonors()
+
+        async with factory() as session:
+            service = ReviewService(
+                clock=FrozenClock(_NOW),
+                events=InMemoryEventCollector(),
+                points=PointsRewardPortAdapter(
+                    ledger=LedgerService(), db=session, ranking_dispatcher=dispatcher
+                ),
+                honors=honors,
+            )
+            # The commit (and the failing listener inside it) must not
+            # raise: the approve answers its normal success result.
+            result = await service.approve_submission(
+                session,
+                Actor(user_id=owner.id, role=Role(owner.role)),
+                submission.id,
+            )
+        assert result.already_reviewed is False
+        assert result.grant is not None
+        assert result.grant.points_granted == _LOCKED_POINTS
+        assert dispatcher.calls == 1  # the trigger RAN and failed once
+        assert honors.users == [student.id]  # the honors trigger still ran
+
+        # The business write is durable: one reward row, wallet at 80.
+        entries = await _reward_rows(factory, claim.id)
+        assert len(entries) == 1
+        async with factory() as check:
+            wallet = await check.get(PointWallet, student.id)
+            assert wallet is not None
+            assert wallet.available_points == _LOCKED_POINTS
+            assert wallet.earned_points == _LOCKED_POINTS
+    finally:
+        await _committed_cleanup(factory, user_ids=user_ids, task_ids=task_ids)

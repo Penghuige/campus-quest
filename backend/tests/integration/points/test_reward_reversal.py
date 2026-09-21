@@ -622,3 +622,68 @@ async def test_concurrent_double_reversal_yields_exactly_one_reversal(
             assert wallet.earned_points == 200
     finally:
         await _committed_cleanup(factory, user_ids=user_ids)
+
+
+# --- the enqueue is best-effort (final-review N1) -------------------------------------
+
+
+class _ExplodingRankingDispatcher:
+    """A ranking-projection port whose publish always fails — the
+    broker-outage shape behind final-review N1."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def enqueue_ranking_update(
+        self,
+        user_id: UUID,
+        ranking_effective_at: datetime,
+        request_id: str | None = None,
+    ) -> None:
+        self.calls += 1
+        raise RuntimeError("injected broker outage")
+
+
+@pytest.mark.integration
+async def test_reversal_survives_ranking_dispatcher_failure_after_commit(
+    db_session: AsyncSession,
+) -> None:
+    """Final-review N1 on the reversal path: the after-commit listener
+    fires inside the caller's ``commit()`` with the transaction already
+    durable, so a dispatcher failure must not surface out of the
+    commit — the reversal row and the wallet repair stand, the typed
+    answer is returned, and the missed projection heals at the next
+    rebuild (spec §32: a failed enqueue is never compensated by
+    failing the business write)."""
+    service = LedgerService()
+    student = _user("2025s", Role.STUDENT)
+    admin = _user("admr", Role.ADMIN)
+    await _flush(db_session, student, admin)
+    student_id = student.id
+    original = await _grant_reward(service, db_session, student_id)
+    await db_session.commit()
+
+    dispatcher = _ExplodingRankingDispatcher()
+    reversal = await _reverse(
+        service,
+        db_session,
+        _actor(admin),
+        original.id,
+        ranking_dispatcher=dispatcher,
+    )
+    assert dispatcher.calls == 0  # pre-commit: the listener has not fired
+    # The commit — with the failing listener inside it — returns instead
+    # of raising; nothing about the typed flow changed.
+    await db_session.commit()
+    assert dispatcher.calls == 1  # the trigger ran (and failed) exactly once
+    assert reversal.amount == -200
+
+    entries = (
+        await db_session.scalars(
+            select(PointsLedger).where(PointsLedger.user_id == student_id)
+        )
+    ).all()
+    assert len(entries) == 2  # original + reversal: durable despite the outage
+    wallet = await db_session.get(PointWallet, student_id)
+    assert wallet is not None
+    assert wallet.available_points == 0  # the repair stands

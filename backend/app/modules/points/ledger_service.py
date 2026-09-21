@@ -98,9 +98,14 @@ Design decisions:
   (the real job publish) as the default dispatcher; tests inject a
   recording fake. The grant arms the hook only on the path that WROTE
   a new row — an idempotent replay changed nothing, so it enqueues
-  nothing. Rank HONORS (DAILY_RANK/MONTHLY_RANK) are not this seam's
-  business: their rank+period facts exist only at period close, whose
-  producer is Plan 07/08's scheduled beat (honor_service's ruling).
+  nothing. The listener is BEST-EFFORT (final-review N1): it fires
+  inside the caller's already-durable commit, so a publish failure
+  (broker outage) logs and never surfaces out of the commit — a
+  missed enqueue heals at the next rebuild, exactly like the honors
+  seam's failure tolerance. Rank HONORS (DAILY_RANK/MONTHLY_RANK) are
+  not this seam's business: their rank+period facts exist only at
+  period close, whose producer is Plan 07/08's scheduled beat
+  (honor_service's ruling).
 - **The frozen port adapter.** ``PointsRewardPortAdapter`` implements
   the interfaces.md ``PointsRewardPort`` signature over this service
   for the Plan-04 review-approve caller: it grants ``locked_points``
@@ -116,6 +121,7 @@ Design decisions:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
@@ -136,6 +142,8 @@ from app.modules.points.models import PointReservation, PointsLedger, PointWalle
 from app.modules.rankings.redis_projection import RankingUpdateDispatcher
 from app.modules.submissions.review_service import GrantResult
 from app.modules.tasks.models import AssignmentClaim
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "InvalidLedgerEntryError",
@@ -350,10 +358,30 @@ def _enqueue_ranking_update_after_commit(
     exactly that instant's business day, its business month, and
     all-time — never every period), and the caller's correlation id
     (None means the dispatcher generates one).
+
+    The listener is BEST-EFFORT (final-review N1): it fires INSIDE the
+    caller's ``commit()``, at which point the business write is already
+    durable, so a publish failure (broker outage) is swallowed with a
+    warning instead of surfacing out of the commit as a 500 — and on
+    the approve path, instead of skipping the honors trigger that runs
+    after commit() returns. A missed enqueue heals at the next rebuild
+    or any later trigger (spec §32; the outbox rule the honors seam
+    follows too).
     """
 
     def _fire(session: OrmSession) -> None:
-        dispatcher.enqueue_ranking_update(user_id, ranking_effective_at, request_id)
+        try:
+            dispatcher.enqueue_ranking_update(user_id, ranking_effective_at, request_id)
+        except Exception:
+            logger.warning(
+                "ranking_projection.enqueue_failed",
+                extra={
+                    "user_id": str(user_id),
+                    "ranking_effective_at": ranking_effective_at.isoformat(),
+                    "request_id": request_id,
+                },
+                exc_info=True,
+            )
 
     event.listen(db.sync_session, "after_commit", _fire, once=True)
 
