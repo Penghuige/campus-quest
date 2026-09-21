@@ -46,11 +46,13 @@ Payload conventions (the port passes the caller's mapping through):
   ``task_policy`` (the Task row or a `TaskNotificationPolicy`) is
   REQUIRED whenever planning runs.
 
-The claim-side emitters on the plans branch (submissions validation,
-review, points redemption, identity security) call the port with these
-conventions at merge (MERGE_CARRIES.md item 2); on main the claim path
-(tasks.claim_service) is
-wired, and every other producer is exercised with synthetic events.
+The producers are wired (MERGE_CARRIES item 2 closed at the PR #2
+hardening merge): the claim path (``tasks.claim_service`` → CLAIM_CREATED),
+the submissions validation service (SUBMISSION_VALIDATION_FAILED with
+the re-arm pair), the review flow (REVISION_REQUIRED /
+SUBMISSION_APPROVED), points redemption (both result events), and the
+identity security producer (ACCOUNT_SECURITY on TOTP enable) — each
+through the constructor-injected port at its composition root.
 """
 
 from __future__ import annotations

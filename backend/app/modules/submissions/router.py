@@ -301,10 +301,23 @@ def get_review_service(
     # service's wrapper makes it failure-tolerant, so production binds
     # the real evaluation unconditionally; service-level tests inject
     # fakes or None through ReviewService directly.
+    #
+    # The notification recorder is the MERGE_CARRIES item 2 production
+    # wiring: NotificationPort joins each review transaction so the
+    # REVISION_REQUIRED / SUBMISSION_APPROVED intent commits with the
+    # decision or not at all (the outbox rule). THE SAME clock instance
+    # stamps the review decision and the notification registration
+    # instants, and the import lives at this composition root — the one
+    # layer allowed to see both modules (the tasks-router precedent).
+    from app.modules.notifications.port import NotificationPort
     from app.modules.rankings.honor_service import ClaimCompletedHonorsTrigger
 
     return ReviewService(
-        clock=clock, events=events, points=points, honors=ClaimCompletedHonorsTrigger()
+        clock=clock,
+        events=events,
+        points=points,
+        honors=ClaimCompletedHonorsTrigger(),
+        notification_recorder=NotificationPort(clock=clock),
     )
 
 

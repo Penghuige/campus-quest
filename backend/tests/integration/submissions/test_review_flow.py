@@ -48,6 +48,7 @@ import asyncio
 import random
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -385,6 +386,19 @@ async def _cleanup(
                 delete(Assignment).where(Assignment.task_id.in_(task_ids))
             )
             await session.execute(delete(Task).where(Task.id.in_(task_ids)))
+        # The notification rows the producer tests commit (deliveries
+        # first — they reference notifications, which reference users).
+        from app.modules.notifications.models import Notification, NotificationDelivery
+
+        seeded_users = select(User.id).where(User.username.endswith(run))
+        await session.execute(
+            delete(NotificationDelivery).where(
+                NotificationDelivery.user_id.in_(seeded_users)
+            )
+        )
+        await session.execute(
+            delete(Notification).where(Notification.user_id.in_(seeded_users))
+        )
         # ALL seeded users go by the run token: every username this
         # module mints ends with it (prefix + run), so the six-role cast
         # (and anything a future seed adds) is cleaned by construction
@@ -1396,5 +1410,176 @@ def test_review_actions_reject_terminal_claims_and_unvalidated_submissions() -> 
         assert isinstance(excinfo.value, SubmissionNotValidatedError)
         claim, _assignment, _submission = asyncio.run(_reload(factory, seed.claim.id))
         assert claim.status == ClaimStatus.UNDER_REVIEW.value
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
+
+
+# --- notification producers (MERGE_CARRIES item 2) -----------------------------------
+
+
+def _recording_review_service(
+    now: datetime,
+) -> tuple[ReviewService, InMemoryEventCollector, FakePointsRewardPort]:
+    """ReviewService with the REAL NotificationPort injected (the
+    production wiring shape from the submissions router)."""
+    from app.modules.notifications.port import NotificationPort
+
+    collector = InMemoryEventCollector()
+    points = FakePointsRewardPort()
+    service = ReviewService(
+        clock=FrozenClock(now),
+        events=collector,
+        points=points,
+        notification_recorder=NotificationPort(clock=FrozenClock(now)),
+    )
+    return service, collector, points
+
+
+async def _notification_with_deliveries(
+    factory: async_sessionmaker[AsyncSession], event_key: str, user_id: UUID
+) -> tuple[Any, list[tuple[str, str, datetime]]]:
+    """The committed Notification for the key plus its per-channel
+    delivery rows as (channel, status, scheduled_at) tuples."""
+    from sqlalchemy import select
+
+    from app.modules.notifications.models import Notification, NotificationDelivery
+
+    async with factory() as session:
+        notification = await session.scalar(
+            select(Notification).where(
+                Notification.event_key == event_key,
+                Notification.user_id == user_id,
+            )
+        )
+        assert notification is not None, f"no committed notification for {event_key}"
+        deliveries = (
+            await session.execute(
+                select(
+                    NotificationDelivery.channel,
+                    NotificationDelivery.status,
+                    NotificationDelivery.scheduled_at,
+                ).where(NotificationDelivery.notification_id == notification.id)
+            )
+        ).all()
+        return notification, [tuple(row) for row in deliveries]
+
+
+@pytest.mark.integration
+def test_require_revision_records_notification_with_the_decision() -> None:
+    """The review producer (MERGE_CARRIES item 2): require_revision
+    records the §25 REVISION_REQUIRED event INSIDE the review
+    transaction — the logical Notification plus its IN_APP delivery row
+    commit with the claim's REVISION_REQUIRED flip (the outbox rule),
+    keyed per-occurrence by the append-only review row."""
+    from sqlalchemy import select
+
+    from app.modules.notifications.enums import (
+        DeliveryStatus,
+        NotificationChannel,
+        NotificationEventType,
+    )
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(_seed(factory, run))
+        task_ids.append(seed.task.id)
+        service, _collector, _points = _recording_review_service(_REVIEWED_AT)
+
+        def _call_require_revision(session: AsyncSession) -> object:
+            return service.require_revision(
+                session, seed.actor(seed.owner), seed.submissions[1].id, "缺少来源列"
+            )
+
+        _call(factory, _call_require_revision)
+
+        async def _review_id() -> UUID:
+            async with factory() as session:
+                review = await session.scalar(
+                    select(SubmissionReview).where(
+                        SubmissionReview.submission_id == seed.submissions[1].id
+                    )
+                )
+                assert review is not None
+                return review.id
+
+        # The business state committed: the claim flipped.
+        claim, _assignment, _submission = asyncio.run(_reload(factory, seed.claim.id))
+        assert claim.status == ClaimStatus.REVISION_REQUIRED.value
+
+        notification, deliveries = asyncio.run(
+            _notification_with_deliveries(
+                factory,
+                f"submission_review:{asyncio.run(_review_id())}:revision_required",
+                seed.student.id,
+            )
+        )
+        assert notification.event_type == NotificationEventType.REVISION_REQUIRED.value
+        assert "小红书考研经验帖数据采集" in notification.body
+        assert "缺少来源列" in notification.body  # the frozen review_comment variable
+        expected_delivery = [
+            (
+                NotificationChannel.IN_APP.value,
+                DeliveryStatus.PENDING.value,
+                _REVIEWED_AT,
+            )
+        ]
+        assert deliveries == expected_delivery
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
+
+
+@pytest.mark.integration
+def test_approve_records_notification_with_the_grant() -> None:
+    """The approve producer: SUBMISSION_APPROVED commits inside the
+    ten-step transaction (claim COMPLETED, lock CONFIRMED, grant), with
+    the frozen reward_points variable rendered from the locked points."""
+    from app.modules.notifications.enums import (
+        DeliveryStatus,
+        NotificationChannel,
+        NotificationEventType,
+    )
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(_seed(factory, run))
+        task_ids.append(seed.task.id)
+        service, _collector, points = _recording_review_service(_REVIEWED_AT)
+
+        def _call_approve(session: AsyncSession) -> object:
+            return service.approve_submission(
+                session, seed.actor(seed.owner), seed.submissions[1].id
+            )
+
+        result = _call(factory, _call_approve)
+        assert isinstance(result, ApprovalResult)
+        assert result.already_reviewed is False
+
+        claim, _assignment, _submission = asyncio.run(_reload(factory, seed.claim.id))
+        assert claim.status == ClaimStatus.COMPLETED.value
+
+        notification, deliveries = asyncio.run(
+            _notification_with_deliveries(
+                factory,
+                f"claim:{seed.claim.id}:submission_approved",
+                seed.student.id,
+            )
+        )
+        assert (
+            notification.event_type == NotificationEventType.SUBMISSION_APPROVED.value
+        )
+        assert "100积分" in notification.body  # the locked points the grant paid
+        expected_delivery = [
+            (
+                NotificationChannel.IN_APP.value,
+                DeliveryStatus.PENDING.value,
+                _REVIEWED_AT,
+            )
+        ]
+        assert deliveries == expected_delivery
+        assert points.calls[0].locked_points == 100
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))

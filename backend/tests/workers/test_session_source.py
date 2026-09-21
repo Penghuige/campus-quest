@@ -301,18 +301,14 @@ def test_consecutive_real_job_entries_survive_per_task_event_loops(
 
         # 2. Notification chain: the scan discovers the due IN_APP
         #    delivery and the inline send job resolves it SENT.
-        dispatch_one = dispatch_due_notifications.delay("req-loop-2").get(
-            timeout=30
-        )
+        dispatch_one = dispatch_due_notifications.delay("req-loop-2").get(timeout=30)
         assert dispatch_one["enqueued"] == 1
         assert dispatch_one["due"] == 1
         assert dispatch_one["delivery_ids"] == [str(delivery.id)]
 
         # 3. Direct per-id replays (at-least-once redelivery shape):
         #    idempotent no-ops, not errors.
-        expire_replay = expire_claim.delay(str(claim.id), "req-loop-3").get(
-            timeout=30
-        )
+        expire_replay = expire_claim.delay(str(claim.id), "req-loop-3").get(timeout=30)
         assert expire_replay["outcome"] == "ALREADY_TERMINAL"
 
         send_replay = send_notification_delivery.delay(
@@ -324,9 +320,7 @@ def test_consecutive_real_job_entries_survive_per_task_event_loops(
         #    discover (terminal rows left both candidate sets).
         scan_two = expire_claims_scan.delay("req-loop-5").get(timeout=30)
         assert scan_two["discovered"] == 0
-        dispatch_two = dispatch_due_notifications.delay("req-loop-6").get(
-            timeout=30
-        )
+        dispatch_two = dispatch_due_notifications.delay("req-loop-6").get(timeout=30)
         assert dispatch_two["enqueued"] == 0
     finally:
         asyncio.run(cleanup())
@@ -374,8 +368,7 @@ def test_db_jobs_compose_through_the_shared_session_source() -> None:
         if "from app.workers.session_source import" not in source:
             missing.append(module_name)
     assert not missing, (
-        f"these job modules must compose through "
-        f"app.workers.session_source: {missing}"
+        f"these job modules must compose through app.workers.session_source: {missing}"
     )
 
 

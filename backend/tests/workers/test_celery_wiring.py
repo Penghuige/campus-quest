@@ -163,11 +163,75 @@ def test_worker_cli_style_load_registers_health_job(
     # worker startup.
     assert (
         completed.stdout.strip().splitlines()[-1]
-        == "TASKS=workers.dispatch_due_notifications,workers.expire_claim,"
+        == "TASKS=workers.cleanup_expired_files,"
+        "workers.dispatch_due_notifications,workers.expire_claim,"
         "workers.expire_claims_scan,workers.health_job,"
         "workers.project_ranking_update,workers.rebuild_all_rankings,"
-        "workers.send_notification_delivery,workers.validate_submission"
+        "workers.requeue_stale_validating,workers.send_notification_delivery,"
+        "workers.validate_submission"
     )
+
+
+def test_beat_schedule_covers_every_planned_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # MERGE_CARRIES item 4: every scheduled scan has exactly one beat
+    # entry, keyed by its task name, with the cadence from settings (a
+    # deployment tunes the interval; the batch limits stay the burst
+    # bound). The stable per-schedule request_id tag identifies the beat
+    # schedule as the correlation source (§15: explicit argument, never
+    # re-derived).
+    _set_required_env(monkeypatch)
+    settings = Settings()
+    app = create_celery_app(settings)
+    schedule = app.conf.beat_schedule
+    expected = {
+        "workers.cleanup_expired_files": settings.file_cleanup_scan_interval_seconds,
+        "workers.dispatch_due_notifications": (
+            settings.notification_dispatch_scan_interval_seconds
+        ),
+        "workers.expire_claims_scan": settings.claim_expiry_scan_interval_seconds,
+        "workers.requeue_stale_validating": (
+            settings.stale_validating_scan_interval_seconds
+        ),
+    }
+    assert set(schedule) == set(expected)  # no stale or half-wired entries
+    for task_name, seconds in expected.items():
+        entry = schedule[task_name]
+        assert entry["task"] == task_name
+        assert entry["schedule"] == float(seconds)
+        assert entry["args"] == (f"beat.{task_name}",)
+
+
+def test_scan_tasks_autoretry_transient_db_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Hardening (autoretry audit gap #1): the SCAN tasks cover transient
+    # database failures with bounded retries; the per-id jobs keep their
+    # own doctrines (expire_claim self-heals at the next scan;
+    # send_notification_delivery has the service-side retry ladder as
+    # its single retry home).
+    from sqlalchemy.exc import DBAPIError, OperationalError
+
+    from app.workers.jobs.cleanup_files import cleanup_files_scan
+    from app.workers.jobs.dispatch_due_notifications import (
+        dispatch_due_notifications,
+    )
+    from app.workers.jobs.expire_claims import expire_claims_scan
+    from app.workers.jobs.requeue_stale_validating import requeue_stale_validating
+
+    for task in (
+        cleanup_files_scan,
+        dispatch_due_notifications,
+        expire_claims_scan,
+        requeue_stale_validating,
+    ):
+        assert set(task.autoretry_for) == {OperationalError, DBAPIError}, (
+            f"{task.name} must autoretry transient DB failures"
+        )
+        assert task.max_retries == 5
+        assert task.retry_backoff is True
+        assert task.retry_jitter is True
 
 
 def test_eager_execution_needs_no_live_broker(

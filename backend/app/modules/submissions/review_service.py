@@ -111,6 +111,7 @@ root wires (backend-engineering §11/§17/§13).
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
@@ -189,6 +190,32 @@ _REASON_REQUIRED_MESSAGE = "判无效操作必须填写原因"
 _LOCK_NOT_PROVISIONAL_MESSAGE = "奖励锁尚未处于待确认状态，无法通过验收"
 
 _CONFIRM_LOCK_REASON = "人工验收通过，确认奖励锁。"
+
+
+# --- the notification seam (MERGE_CARRIES item 2; the claim-service pattern) --------
+
+
+class NotificationEventRecorder(Protocol):
+    """The duck-typed ``NotificationPort.record_event`` seam.
+
+    submissions must not import the notifications module, so the review
+    flow declares the callable it needs and the composition root (the
+    submissions router) injects the concrete
+    ``app.modules.notifications.port.NotificationPort``. Emission joins
+    the caller's transaction (the outbox rule): the REVISION_REQUIRED /
+    SUBMISSION_APPROVED rows commit with the review decision or not at
+    all.
+    """
+
+    async def record_event(
+        self,
+        db: AsyncSession,
+        event_key: str,
+        event_type: str,
+        user_id: UUID,
+        payload: Mapping[str, Any],
+        task_policy: Any = None,
+    ) -> None: ...
 
 
 # --- the frozen points port (interfaces.md, cross-module ports) ----------------------
@@ -375,6 +402,10 @@ class ReviewService:
     ``None`` disables the evaluation (Plan-04 shape, unchanged tests);
     production binds the rankings module's binding, and the wrapper
     below makes its failure irrelevant to the approval.
+    ``notification_recorder`` (optional, default None; MERGE_CARRIES
+    item 2) records the §25 REVISION_REQUIRED / SUBMISSION_APPROVED
+    events INSIDE the review transactions (the outbox rule); None
+    keeps the service notification-free.
     """
 
     def __init__(
@@ -384,11 +415,13 @@ class ReviewService:
         events: DomainEventPublisher,
         points: PointsRewardPort,
         honors: ClaimCompletedHonorsPort | None = None,
+        notification_recorder: NotificationEventRecorder | None = None,
     ) -> None:
         self._clock = clock
         self._events = events
         self._points = points
         self._honors = honors
+        self._notification_recorder = notification_recorder
 
     # -- require_revision (§11.3 REVISION_REQUIRED, §11.4 window) -------------------
 
@@ -415,14 +448,13 @@ class ReviewService:
         submission.review_note = note_text
         claim.status = ClaimStatus.REVISION_REQUIRED.value
         claim.revision_deadline_at = deadline
-        db.add(
-            SubmissionReview(
-                submission_id=submission.id,
-                reviewer_id=actor.user_id,
-                action=ReviewAction.REQUIRE_REVISION.value,
-                note=note_text,
-            )
+        review = SubmissionReview(
+            submission_id=submission.id,
+            reviewer_id=actor.user_id,
+            action=ReviewAction.REQUIRE_REVISION.value,
+            note=note_text,
         )
+        db.add(review)
         await db.flush()
         self._events.publish(
             DomainEvent(
@@ -440,6 +472,7 @@ class ReviewService:
                 },
             )
         )
+        await self._record_revision_required(db, claim, review, deadline, note_text)
         await db.commit()
         return claim
 
@@ -498,14 +531,13 @@ class ReviewService:
                 reason=reason_text,
             )
         )
-        db.add(
-            SubmissionReview(
-                submission_id=submission.id,
-                reviewer_id=actor.user_id,
-                action=ReviewAction.INVALIDATE_LOCK.value,
-                note=reason_text,
-            )
+        invalidation_review = SubmissionReview(
+            submission_id=submission.id,
+            reviewer_id=actor.user_id,
+            action=ReviewAction.INVALIDATE_LOCK.value,
+            note=reason_text,
         )
+        db.add(invalidation_review)
         await db.flush()
         self._events.publish(
             DomainEvent(
@@ -530,6 +562,9 @@ class ReviewService:
                     ),
                 },
             )
+        )
+        await self._record_revision_required(
+            db, claim, invalidation_review, deadline, reason_text
         )
         await db.commit()
         return claim
@@ -687,6 +722,7 @@ class ReviewService:
                 payload=payload,
             )
         )
+        await self._record_submission_approved(db, claim, points_value)
         # Captured before the commit: the honor trigger runs on the
         # other side of it, and instance expiry must not matter.
         student_id = claim.user_id
@@ -699,6 +735,78 @@ class ReviewService:
         if self._honors is not None:
             await self._evaluate_honors_defensively(db, student_id)
         return ApprovalResult(claim=claim, grant=grant, already_reviewed=False)
+
+    # -- notification emitters (MERGE_CARRIES item 2; §25 critical events) --------
+
+    async def _task_title(self, db: AsyncSession, claim: AssignmentClaim) -> str:
+        """The task title the notification copy renders (the FK
+        guarantees the row)."""
+        title = await db.scalar(select(Task.title).where(Task.id == claim.task_id))
+        assert title is not None  # claims.task_id FK
+        return title
+
+    async def _record_revision_required(
+        self,
+        db: AsyncSession,
+        claim: AssignmentClaim,
+        review: SubmissionReview,
+        deadline: datetime,
+        comment: str | None,
+    ) -> None:
+        """Record REVISION_REQUIRED inside the caller's transaction
+        (spec §25; MERGE_CARRIES item 2).
+
+        The event key is per-occurrence by the append-only
+        SubmissionReview row (the N8 convention: review decisions are
+        repeatable — a re-退回 is a NEW notification under a new row's
+        key, and a replay of the SAME decision cannot exist because the
+        claim-row lock serializes it). Both revision-returning paths
+        (require_revision, invalidate_reward_lock) land the student in
+        the same "fix and resubmit by ``deadline``" state, so both
+        emit it. The template's ``review_comment`` variable always has
+        a value: invalidate carries its mandatory reason, require
+        falls back to an explicit "no note" text (a blank is not a
+        renderable note).
+        """
+        if self._notification_recorder is None:
+            return
+        await self._notification_recorder.record_event(
+            db,
+            event_key=f"submission_review:{review.id}:revision_required",
+            event_type="REVISION_REQUIRED",
+            user_id=claim.user_id,
+            payload={
+                "task_title": await self._task_title(db, claim),
+                "revision_deadline_at": deadline,
+                "review_comment": comment if comment else "（审核未填写意见）",
+            },
+        )
+
+    async def _record_submission_approved(
+        self,
+        db: AsyncSession,
+        claim: AssignmentClaim,
+        reward_points: int,
+    ) -> None:
+        """Record SUBMISSION_APPROVED inside the approve transaction
+        (spec §25; MERGE_CARRIES item 2).
+
+        Claim-scoped key: approve is once-per-claim by the state
+        machine (the idempotent replay path returns before this), and
+        the port's dedupe collapses any racing duplicate anyway.
+        """
+        if self._notification_recorder is None:
+            return
+        await self._notification_recorder.record_event(
+            db,
+            event_key=f"claim:{claim.id}:submission_approved",
+            event_type="SUBMISSION_APPROVED",
+            user_id=claim.user_id,
+            payload={
+                "task_title": await self._task_title(db, claim),
+                "reward_points": reward_points,
+            },
+        )
 
     async def _evaluate_honors_defensively(
         self, db: AsyncSession, user_id: UUID

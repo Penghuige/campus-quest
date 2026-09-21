@@ -3,14 +3,11 @@
 backend-engineering §12).
 
 Worker owns orchestration, service owns judgement: the Celery shell
-(wired at the plan-07 merge; see ``app/workers/jobs/cleanup_files.py``)
-samples the clock, constructs the repository and the object-storage
-adapter, and calls ``cleanup_expired_files``. Every delete / retain
-decision lives here.
+(``app/workers/jobs/cleanup_files.py``) samples the clock, constructs
+the repository and the object-storage adapter, and calls
+``cleanup_expired_files``. Every delete / retain decision lives here.
 
-The Submission model lives on the plans branch, so this branch consumes
-file state through two seams the merge wires to the real Submission
-query:
+The worker consumes file state through two seams:
 
 - ``FileRecord`` — the retention snapshot of ONE stored object: the
   ``retention_until`` snapshot XOR the explicit ``permanent`` flag (§13:
@@ -110,9 +107,9 @@ class MarkOutcome(StrEnum):
 class CleanupRepository(Protocol):
     """Port for due-file discovery and deletion-state updates.
 
-    The merge wires the real implementation over the Submission model;
-    the default on this branch is the placeholder in
-    ``app/workers/jobs/cleanup_files.py`` (reads nothing).
+    The production implementation is ``SubmissionCleanupRepository`` in
+    ``app/workers/jobs/cleanup_files.py`` (MERGE_CARRIES item 3, wired
+    at the merge); tests drive the service with in-memory fakes.
     """
 
     async def collect_due_files(

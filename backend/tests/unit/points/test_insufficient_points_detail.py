@@ -5,7 +5,6 @@ comparison keeps the RAW value — a reward reversal can overdraft the
 wallet negative — while the error envelope clamps at 0 like every other
 user-facing surface."""
 
-
 from app.modules.points.redemption_service import InsufficientPointsError
 
 

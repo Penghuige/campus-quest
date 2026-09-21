@@ -98,9 +98,7 @@ def build_delivery_service(
             return cast(
                 "str | None",
                 await session.scalar(
-                    select(AssignmentClaim.status).where(
-                        AssignmentClaim.id == claim_id
-                    )
+                    select(AssignmentClaim.status).where(AssignmentClaim.id == claim_id)
                 ),
             )
 

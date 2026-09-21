@@ -77,9 +77,10 @@ Design decisions:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
-from typing import Final, Protocol, cast
+from typing import Any, Final, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -103,6 +104,7 @@ __all__ = [
     "AcademicTermConfigurationError",
     "AcademicTermProvider",
     "InsufficientPointsError",
+    "NotificationEventRecorder",
     "RedemptionLimitReachedError",
     "RedemptionNotFulfillableError",
     "RedemptionNotReviewableError",
@@ -374,6 +376,31 @@ class RedemptionNotFulfillableError(BusinessError):
         )
 
 
+# --- the notification seam (MERGE_CARRIES item 2; the claim-service pattern) --------
+
+
+class NotificationEventRecorder(Protocol):
+    """The duck-typed ``NotificationPort.record_event`` seam.
+
+    points must not import the notifications module, so the redemption
+    flow declares the callable it needs and the composition root (the
+    points router) injects the concrete
+    ``app.modules.notifications.port.NotificationPort``. Emission joins
+    the caller's transaction (the outbox rule): the
+    REWARD_REDEMPTION_* rows commit with the decision or not at all.
+    """
+
+    async def record_event(
+        self,
+        db: AsyncSession,
+        event_key: str,
+        event_type: str,
+        user_id: UUID,
+        payload: Mapping[str, Any],
+        task_policy: Any = None,
+    ) -> None: ...
+
+
 def window_open(item: RewardItem, now: datetime) -> bool:
     """The half-open window available_from <= now < available_until;
     either bound NULL = unbounded in that direction (spec §16.1).
@@ -397,7 +424,9 @@ class RedemptionService:
     ``clock`` is the only time source (backend-engineering §11);
     ``terms`` supplies the snapshotted term key; ``ledger`` defaults
     to a fresh ``LedgerService`` (stateless) and exists for tests and
-    future wiring symmetry.
+    future wiring symmetry; ``notification_recorder`` (optional,
+    default None; MERGE_CARRIES item 2) records the §25 redemption
+    result events INSIDE the decision transactions (the outbox rule).
     """
 
     def __init__(
@@ -406,10 +435,12 @@ class RedemptionService:
         clock: Clock,
         terms: AcademicTermProvider,
         ledger: LedgerService | None = None,
+        notification_recorder: NotificationEventRecorder | None = None,
     ) -> None:
         self._clock = clock
         self._terms = terms
         self._ledger = ledger if ledger is not None else LedgerService()
+        self._notification_recorder = notification_recorder
 
     # -- request: the atomic reservation (§16.1 申请时 checklist) -------------------
 
@@ -596,8 +627,59 @@ class RedemptionService:
         redemption.decided_at = now
         redemption.decided_by = actor.user_id
         await db.flush()
+        await self._record_redemption_decided(db, redemption, approved=True)
         await db.commit()
         return redemption
+
+    # -- notification emitter (MERGE_CARRIES item 2; §25 critical events) --------
+
+    async def _record_redemption_decided(
+        self,
+        db: AsyncSession,
+        redemption: RewardRedemption,
+        *,
+        approved: bool,
+        rejection_reason: str | None = None,
+    ) -> None:
+        """Record REWARD_REDEMPTION_APPROVED / _REJECTED inside the
+        decision transaction (spec §25; the outbox rule).
+
+        Redemption-scoped event keys: each decision lands once per
+        redemption by the state machine (the idempotent replays return
+        before this), and the port's UNIQUE(event_key, user_id) dedupe
+        collapses any racing duplicate. The item NAME (not id) rides
+        the payload — it is the frozen template variable.
+        """
+        if self._notification_recorder is None:
+            return
+        item_name = await db.scalar(
+            select(RewardItem.name).where(RewardItem.id == redemption.reward_item_id)
+        )
+        assert item_name is not None  # reward_redemptions.reward_item_id FK
+        if approved:
+            await self._notification_recorder.record_event(
+                db,
+                event_key=f"redemption:{redemption.id}:approved",
+                event_type="REWARD_REDEMPTION_APPROVED",
+                user_id=redemption.user_id,
+                payload={
+                    "item_name": item_name,
+                    "points_spent": redemption.points,
+                },
+            )
+        else:
+            assert rejection_reason is not None  # the reject gate validated it
+            await self._notification_recorder.record_event(
+                db,
+                event_key=f"redemption:{redemption.id}:rejected",
+                event_type="REWARD_REDEMPTION_REJECTED",
+                user_id=redemption.user_id,
+                payload={
+                    "item_name": item_name,
+                    "rejection_reason": rejection_reason,
+                    "points_refunded": redemption.points,
+                },
+            )
 
     # -- reject (§16.2 审核拒绝) ----------------------------------------------------
 
@@ -638,6 +720,9 @@ class RedemptionService:
         redemption.decided_at = now
         redemption.decided_by = actor.user_id
         await db.flush()
+        await self._record_redemption_decided(
+            db, redemption, approved=False, rejection_reason=reason_text
+        )
         await db.commit()
         return redemption
 

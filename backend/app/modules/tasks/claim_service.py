@@ -587,13 +587,11 @@ class ValidSubmissionInspector(Protocol):
 
     Amendment-2 seam (plan-04 final review, §11.5/§26 ruling): ONLY a
     machine-VALIDATED submission finalized in-window protects a due
-    claim. This branch has no submissions table, so the default
-    implementation below answers False and a due claim whose in-window
-    submission is not yet VALIDATED expires; the stream that owns
-    submission validation wires the real VALIDATED-reading inspector at
-    the ClaimService constructor (the expiry worker's
-    build_expire_service is the production call site; the concentrated
-    merge checklist is app/workers/MERGE_CARRIES.md item 1).
+    claim. The production VALIDATED-reading inspector lives at the
+    worker composition site (``app.workers.jobs.expire_claims`` —
+    MERGE_CARRIES item 1, wired); this Protocol keeps the tasks module
+    free of submissions imports while the expiry transaction consults
+    the real reader under the claim-row lock.
     """
 
     async def has_valid_submission(self, db: AsyncSession, claim_id: UUID) -> bool: ...
@@ -602,10 +600,14 @@ class ValidSubmissionInspector(Protocol):
 class NoValidSubmissionsInspector:
     """The default inspector: no submission protects (answers False).
 
-    Correct on this branch (there is no submission state to read) and
-    the pin for the strict amendment-2 reading; replaced — not
-    subclassed — by the VALIDATED reader once the submissions module
-    exists.
+    The strict amendment-2 pin for callers that inject no inspector
+    (service-level tests; a composition that deliberately wants
+    expiry-only semantics). The production expiry worker does NOT run
+    this default — ``build_expire_service`` passes the real
+    VALIDATED-reading inspector — so an in-window-but-unvalidated
+    submission expires there only when the real reader also answers
+    False (see this inspector's users before reading its answer as
+    production behavior).
     """
 
     async def has_valid_submission(self, db: AsyncSession, claim_id: UUID) -> bool:
@@ -853,10 +855,13 @@ class ClaimService:
 
         Amendment-2 strict reading (§11.5/§26, plan-04 final review):
         only a machine-VALIDATED submission protects; the inspector is
-        the seam and its default answers False, so an in-window
-        submission that is not yet VALIDATED does NOT block expiry. The
-        merged branch wires the VALIDATED-reading inspector at the
-        constructors (build_expire_service is the production site).
+        the seam. The production expiry worker wires the real
+        VALIDATED-reading inspector at its constructor
+        (``app.workers.jobs.expire_claims.build_expire_service``), so
+        there an in-window submission that is not yet VALIDATED does
+        NOT block expiry while a VALIDATED one still awaiting review
+        does; the default (no inspector injected) answers False for
+        direct service callers.
 
         Non-EXPIRED outcomes write nothing yet still HOLD the
         claim-row lock until the caller's session ends (the return

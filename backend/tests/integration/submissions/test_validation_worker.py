@@ -267,6 +267,21 @@ async def _cleanup(
             )
             await session.execute(delete(Task).where(Task.id.in_(task_ids)))
         if user_ids:
+            # The notification rows the producer test commits (deliveries
+            # first — they reference notifications, which reference users).
+            from app.modules.notifications.models import (
+                Notification,
+                NotificationDelivery,
+            )
+
+            await session.execute(
+                delete(NotificationDelivery).where(
+                    NotificationDelivery.user_id.in_(user_ids)
+                )
+            )
+            await session.execute(
+                delete(Notification).where(Notification.user_id.in_(user_ids))
+            )
             await session.execute(delete(User).where(User.id.in_(user_ids)))
         await session.commit()
 
@@ -1466,3 +1481,232 @@ def _eager_celery_app():
             celery_state._tls.current_app = previous_current
 
     return _eager()
+
+
+# --- notification producer wiring (MERGE_CARRIES item 2) ------------------------------
+
+
+def _recording_service(storage: FakeObjectStorage):
+    """ValidationService with the REAL NotificationPort injected (the
+    production wiring shape from run_submission_validation): the same
+    frozen clock stamps the validation instants and the notification
+    registration instants."""
+    from app.modules.notifications.port import NotificationPort
+    from app.modules.submissions.validation_runner import (
+        SandboxLimits,
+        ValidatorSandbox,
+    )
+    from app.modules.submissions.validation_service import ValidationService
+    from app.modules.submissions.validators.common import PreviewSpec
+
+    clock = FrozenClock(_NOW)
+    return ValidationService(
+        clock=clock,
+        storage=storage,
+        sandbox=ValidatorSandbox(
+            limits=SandboxLimits(
+                wall_timeout_seconds=60.0,
+                memory_limit_bytes=1024 * 1024 * 1024,
+                cpu_seconds=60,
+            )
+        ),
+        preview=PreviewSpec(max_rows=10, max_value_length=200),
+        notification_recorder=NotificationPort(clock=clock),
+    )
+
+
+@pytest.mark.integration
+def test_validation_failure_records_notification_and_re_arms_reminders() -> None:
+    """The submissions-validation producer (MERGE_CARRIES item 2): a
+    terminal VALIDATION_FAILED run records the SUBMISSION_VALIDATION_
+    FAILED event INSIDE tx2 — the logical Notification plus its IN_APP
+    delivery row commit with the failure state and the claim back-edge
+    (the outbox rule) — and the payload's claim facts re-arm the §25.2
+    still-future deadline reminder under its deterministic key."""
+    from app.modules.notifications.enums import (
+        DeliveryStatus,
+        NotificationChannel,
+        NotificationEventType,
+    )
+    from app.modules.notifications.models import Notification, NotificationDelivery
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        # Content missing the required 'title' column: a deterministic
+        # content-level VALIDATION_FAILED (never an exception).
+        bad_csv = b"url\nhttps://a.com\nhttps://b.com\n"
+        seed = asyncio.run(_seed(factory, run, content=bad_csv))
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, bad_csv))
+
+        # Make the 4h reminder still plannable at the frozen now: the
+        # re-arm measures windows against claim.deadline_at, and the
+        # task's channel list must admit IN_APP for the reminder to
+        # have an eligible channel.
+        async def _arm_windows() -> None:
+            async with factory() as session:
+                claim_row = await session.get(AssignmentClaim, seed.claim.id)
+                assert claim_row is not None
+                claim_row.deadline_at = _NOW + timedelta(hours=10)
+                task_row = await session.get(Task, seed.task.id)
+                assert task_row is not None
+                task_row.notification_channels = ["IN_APP"]
+                await session.commit()
+
+        asyncio.run(_arm_windows())
+
+        service = _recording_service(storage)
+        result = _validate(service, factory, seed.submission.id)
+
+        assert result.status is ValidationStatus.VALIDATION_FAILED
+        assert result.report.passed is False
+
+        async def _inspect() -> None:
+            async with factory() as session:
+                # The business state committed: terminal status + the
+                # claim back-edge (VALIDATING -> CLAIMED, no revision
+                # window open on this seed).
+                submission = await session.get(Submission, seed.submission.id)
+                assert submission is not None
+                assert (
+                    submission.validation_status
+                    == ValidationStatus.VALIDATION_FAILED.value
+                )
+                claim_row = await session.get(AssignmentClaim, seed.claim.id)
+                assert claim_row is not None
+                assert claim_row.status == ClaimStatus.CLAIMED.value
+
+                # The failure notification committed with it.
+                failed_notification = await session.scalar(
+                    select(Notification).where(
+                        Notification.event_key
+                        == f"submission:{seed.submission.id}:validation_failed",
+                        Notification.user_id == seed.student.id,
+                    )
+                )
+                assert failed_notification is not None
+                assert (
+                    failed_notification.event_type
+                    == NotificationEventType.SUBMISSION_VALIDATION_FAILED.value
+                )
+                assert "小红书考研经验帖数据采集" in failed_notification.body
+                delivery = await session.scalar(
+                    select(NotificationDelivery).where(
+                        NotificationDelivery.notification_id == failed_notification.id,
+                        NotificationDelivery.channel
+                        == NotificationChannel.IN_APP.value,
+                    )
+                )
+                assert delivery is not None
+                assert delivery.status == DeliveryStatus.PENDING.value
+                assert delivery.scheduled_at == _NOW  # critical events are due now
+
+                # The §25.2 re-arm: the still-future 4h reminder came
+                # back under its deterministic claim key.
+                reminder = await session.scalar(
+                    select(Notification).where(
+                        Notification.event_key == f"claim:{seed.claim.id}:deadline_4h",
+                        Notification.user_id == seed.student.id,
+                    )
+                )
+                assert reminder is not None
+                assert (
+                    reminder.event_type
+                    == NotificationEventType.ASSIGNMENT_DEADLINE_4H.value
+                )
+                reminder_delivery = await session.scalar(
+                    select(NotificationDelivery).where(
+                        NotificationDelivery.notification_id == reminder.id,
+                        NotificationDelivery.channel
+                        == NotificationChannel.IN_APP.value,
+                    )
+                )
+                assert reminder_delivery is not None
+                assert reminder_delivery.scheduled_at == _NOW + timedelta(hours=6)
+                # The past-window 24h reminder never back-fills.
+                late = await session.scalar(
+                    select(Notification).where(
+                        Notification.event_key == f"claim:{seed.claim.id}:deadline_24h",
+                    )
+                )
+                assert late is None
+
+        asyncio.run(_inspect())
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+# --- Gate-1 (MERGE_CARRIES item 6): tightened allowed_file_types ----------------------
+
+
+@pytest.mark.integration
+def test_tightened_allowed_file_types_fail_revalidation() -> None:
+    """Gate-1: a submission created while the task accepted CSV, then
+    validated AFTER the teacher narrowed ``allowed_file_types`` to XLSX,
+    fails the re-checked upload-time gate with the single stable code
+    FILE_TYPE_NOT_ALLOWED — the declared type is judged against the
+    task's CURRENT policy, not the intent-time one (the upload-intent
+    race the defense-in-depth gate exists for)."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                content=_valid_csv(),
+                allowed_types=["CSV", "XLSX"],
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, _valid_csv()))
+
+        # The teacher tightens the task after the submission exists.
+        async def _tighten() -> None:
+            async with factory() as session:
+                task_row = await session.get(Task, seed.task.id)
+                assert task_row is not None
+                task_row.allowed_file_types = ["XLSX"]
+                await session.commit()
+
+        asyncio.run(_tighten())
+
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+
+        from app.modules.submissions.validators.common import ValidationCode
+
+        assert result.status is ValidationStatus.VALIDATION_FAILED
+        assert [error.code for error in result.report.errors] == [
+            ValidationCode.FILE_TYPE_NOT_ALLOWED
+        ]
+        # The gate fires before the parse: no content sniff happened.
+        assert result.detected_type is None
+
+        async def _inspect() -> None:
+            async with factory() as session:
+                submission = await session.get(Submission, seed.submission.id)
+                assert submission is not None
+                assert (
+                    submission.validation_status
+                    == ValidationStatus.VALIDATION_FAILED.value
+                )
+                report = submission.validation_report
+                assert report is not None
+                assert [finding["code"] for finding in report["errors"]] == [
+                    "FILE_TYPE_NOT_ALLOWED"
+                ]
+                claim_row = await session.get(AssignmentClaim, seed.claim.id)
+                assert claim_row is not None
+                assert claim_row.status == ClaimStatus.CLAIMED.value
+
+        asyncio.run(_inspect())
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))

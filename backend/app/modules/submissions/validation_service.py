@@ -40,8 +40,11 @@ because a multi-second parse must never hold the row lock:
   finished_at / duration_ms. On the FAILURE side tx2 also owns the
   claim back-edge (see ``_restore_actionable_claim``): the claim tx1
   moved to VALIDATING is rolled back to an actionable status, so the
-  first ordinary bad file costs a resubmission, never the claim. On
-  the SUCCESS side nothing claim-side happens here — the reward-lock
+  first ordinary bad file costs a resubmission, never the claim — and,
+  when a notification recorder is injected, records the
+  SUBMISSION_VALIDATION_FAILED event with its §25.2 deadline re-arm
+  in the SAME transaction (MERGE_CARRIES item 2; the outbox rule).
+  On the SUCCESS side nothing claim-side happens here — the reward-lock
   service owns VALIDATING -> UNDER_REVIEW. Commit.
 
 Type detection is CONTENT truth (spec §12: fake .csv/.sqlite must
@@ -92,8 +95,10 @@ into refresh round trips or detached-instance failures.
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -124,6 +129,7 @@ from app.modules.tasks.models import AssignmentClaim, Task
 __all__ = [
     "DETECTION_PARSER_VERSION",
     "RUN_STARTED_PARSER_VERSION",
+    "NotificationEventRecorder",
     "SubmissionNotFoundError",
     "ValidationRunResult",
     "ValidationService",
@@ -151,6 +157,29 @@ _CLAIM_ACTIONABLE_STATUSES: tuple[ClaimStatus, ...] = (
 _SUBMISSION_NOT_FOUND_MESSAGE = "提交记录不存在"
 
 _TERMINAL_STATUSES = (ValidationStatus.VALIDATED, ValidationStatus.VALIDATION_FAILED)
+
+
+class NotificationEventRecorder(Protocol):
+    """The duck-typed ``NotificationPort.record_event`` seam (the
+    claim-service pattern; MERGE_CARRIES item 2).
+
+    submissions must not import the notifications module, so the
+    service declares the callable it needs and the composition root
+    (the validation worker job) injects the concrete
+    ``app.modules.notifications.port.NotificationPort``. Emission joins
+    the caller's transaction (the outbox rule): the notification rows
+    commit with the terminal VALIDATION_FAILED state or not at all.
+    """
+
+    async def record_event(
+        self,
+        db: AsyncSession,
+        event_key: str,
+        event_type: str,
+        user_id: UUID,
+        payload: Mapping[str, Any],
+        task_policy: Any = None,
+    ) -> None: ...
 
 
 class SubmissionNotFoundError(BusinessError):
@@ -203,7 +232,15 @@ def _synthetic_report(
 
 
 class ValidationService:
-    """Owns the machine validation state machine and report persistence."""
+    """Owns the machine validation state machine and report persistence.
+
+    ``notification_recorder`` (optional, default None) records the
+    SUBMISSION_VALIDATION_FAILED event inside tx2 on the failure path
+    (MERGE_CARRIES item 2): the notification and its §25.2 deadline
+    re-arm planning commit with the terminal state or not at all.
+    None keeps the service notification-free (existing callers and
+    fakes unchanged).
+    """
 
     def __init__(
         self,
@@ -212,11 +249,13 @@ class ValidationService:
         storage: ObjectStorage,
         sandbox: ValidatorSandbox,
         preview: PreviewSpec | None = None,
+        notification_recorder: NotificationEventRecorder | None = None,
     ) -> None:
         self._clock = clock
         self._storage = storage
         self._sandbox = sandbox
         self._preview = preview
+        self._notification_recorder = notification_recorder
 
     async def validate_submission(
         self, db: AsyncSession, submission_id: UUID
@@ -309,7 +348,9 @@ class ValidationService:
             # assignment forever (SUBMITTABLE_STATUSES, the abandon
             # gates, and the teacher review gates all exclude
             # VALIDATING). See _restore_actionable_claim.
-            await self._restore_actionable_claim(db, submission)
+            claim = await self._restore_actionable_claim(db, submission)
+            if self._notification_recorder is not None:
+                await self._record_validation_failed(db, submission, claim, report)
         finished_run = await db.get(
             SubmissionValidation,
             run.id,
@@ -336,10 +377,14 @@ class ValidationService:
 
     async def _restore_actionable_claim(
         self, db: AsyncSession, submission: Submission
-    ) -> None:
+    ) -> AssignmentClaim | None:
         """tx2 failure back-edge: VALIDATING -> REVISION_REQUIRED when a
         revision window is already open (``revision_deadline_at`` set),
         else CLAIMED.
+
+        Returns the claim row it judged (None only in the unreachable
+        FK-broken shape) — the failure notification below reads its
+        facts off the same locked row.
 
         Narrow on purpose — only the claim this submission still leads
         (the ``latest_submission_id`` pointer) and that is still
@@ -366,15 +411,64 @@ class ValidationService:
         )
         if claim is None:
             # The FK guarantees the row exists; nothing to restore.
-            return
+            return None
         if claim.latest_submission_id != submission.id:
-            return
+            return claim
         if ClaimStatus(claim.status) is not ClaimStatus.VALIDATING:
-            return
+            return claim
         claim.status = (
             ClaimStatus.REVISION_REQUIRED.value
             if claim.revision_deadline_at is not None
             else ClaimStatus.CLAIMED.value
+        )
+        return claim
+
+    async def _record_validation_failed(
+        self,
+        db: AsyncSession,
+        submission: Submission,
+        claim: AssignmentClaim | None,
+        report: ValidationReport,
+    ) -> None:
+        """Record SUBMISSION_VALIDATION_FAILED inside tx2 (spec §25.2;
+        MERGE_CARRIES item 2).
+
+        The payload carries the frozen whitelist variables plus the
+        §25.2 re-arm pair (``claim_id`` + ``deadline_at``) and the Task
+        row as ``task_policy`` — the notifications planner then
+        re-judges the still-future deadline reminders in THIS
+        transaction (a validation failure just returned the claim to an
+        actionable status). Event key is per-occurrence by submission:
+        a submission fails terminally exactly once, and the twin-run
+        shape collapses onto the same row through the port's
+        UNIQUE(event_key, user_id) dedupe.
+        """
+        assert self._notification_recorder is not None  # caller checked
+        if claim is None:
+            return  # unreachable FK-broken shape; nothing to notify about
+        task = await db.scalar(select(Task).where(Task.id == claim.task_id))
+        assert task is not None  # claims.task_id FK
+        error_count = len(report.errors)
+        summary = f"共 {error_count} 个校验错误" + (
+            f"：{report.errors[0].code.value} {report.errors[0].message}"
+            if error_count
+            else ""
+        )
+        await self._notification_recorder.record_event(
+            db,
+            event_key=f"submission:{submission.id}:validation_failed",
+            event_type="SUBMISSION_VALIDATION_FAILED",
+            user_id=claim.user_id,
+            payload={
+                "task_title": task.title,
+                "validation_summary": summary,
+                # The §25.2 re-arm pair (event_handlers payload
+                # convention): claim facts + task policy select the
+                # deadline-replanning path.
+                "claim_id": claim.id,
+                "deadline_at": claim.deadline_at,
+            },
+            task_policy=task,
         )
 
     async def _execute(

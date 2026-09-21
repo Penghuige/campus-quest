@@ -48,9 +48,25 @@ disposed inside this task's ``asyncio.run``, so no pooled connection
 ever crosses the loop boundary the next task invocation closes (see
 that module's docstring for the WHY).
 
+Retry policy (PR #2 hardening, autoretry audit gap #1): transient
+database failures (``OperationalError`` / ``DBAPIError``) retry with
+bounded backoff — the scan only reads and enqueues, so a retry after a
+connection blip re-discovers exactly what is still unresolved. The
+per-id ``send_notification_delivery`` still never autoretries: its
+single retry home stays the service's RETRYABLE ladder plus this scan
+(a Celery-side autoretry would be a second home racing the scan and
+can double-send). Under ``task_acks_late=True`` an autoretried
+exception is re-delivered rather than failure-acked, and
+``task_reject_on_worker_lost`` already covers process death — together
+they close the audit's "instance silently dropped" shape for the scan
+side.
+
 Imports of sqlalchemy / app.db / app.modules stay INSIDE the functions
 (the celery_app lazy-construction contract: importing this module never
-requires a configured environment).
+requires a configured environment). The one module-level sqlalchemy
+import is ``sqlalchemy.exc`` — the exception CLASSES the autoretry
+tuple names, an env-free import exactly like project_ranking_update's
+``redis.exceptions`` precedent.
 """
 
 from __future__ import annotations
@@ -62,6 +78,10 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from celery import shared_task  # type: ignore[import-untyped]
+from sqlalchemy.exc import (  # env-free: see module docstring
+    DBAPIError,
+    OperationalError,
+)
 
 # The per-id unit of work this scan feeds. Imported at module scope:
 # importing it stays environment-free (it binds a shared_task proxy and
@@ -75,6 +95,11 @@ logger = logging.getLogger(__name__)
 #: Scan reasons, in the JSON summary and the logs.
 REASON_DUE = "due"
 REASON_STUCK_SENDING = "stuck_sending"
+
+#: Transient database failures the scan's bounded autoretry covers.
+_RETRYABLE_DB_TRANSIENTS = (OperationalError, DBAPIError)
+
+_MAX_RETRIES = 5
 
 
 class DueDelivery(NamedTuple):
@@ -139,7 +164,12 @@ async def collect_due_deliveries(
 
 
 @shared_task(  # type: ignore[untyped-decorator]
-    bind=True, name="workers.dispatch_due_notifications"
+    bind=True,
+    name="workers.dispatch_due_notifications",
+    autoretry_for=_RETRYABLE_DB_TRANSIENTS,
+    retry_backoff=True,
+    retry_jitter=True,
+    max_retries=_MAX_RETRIES,
 )
 def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
     """Discovery only: enqueue one ``workers.send_notification_delivery``
@@ -149,6 +179,8 @@ def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
     idempotent by the same argument as the expiry scan: a re-scan
     re-discovers only rows the sends have not yet resolved, and the
     per-id job absorbs the duplicate enqueue through its claim gate.
+    Transient DB failures retry with bounded backoff (the module
+    docstring's retry-policy paragraph).
     """
 
     from app.core.clock import SystemClock

@@ -150,12 +150,23 @@ def get_staff_service(
     settings: Annotated[Settings, Depends(get_settings)],
     events: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
 ) -> StaffService:
+    # The notification recorder is the MERGE_CARRIES item 2 production
+    # wiring for the identity-security producer: NotificationPort joins
+    # the confirm-totp transaction so the ACCOUNT_SECURITY intent
+    # commits with the credential flip or not at all (the outbox rule).
+    # This composition root is the one identity layer allowed to see
+    # the notifications module (the tasks-router precedent — the
+    # dependency direction notifications -> identity holds for services,
+    # not for the DI wiring).
+    from app.modules.notifications.port import NotificationPort
+
     return StaffService(
         clock=clock,
         sessions=sessions,
         fernet=Fernet(settings.totp_encryption_key),
         events=events,
         invitation_ttl_hours=settings.staff_invitation_ttl_hours,
+        notification_recorder=NotificationPort(clock=clock),
     )
 
 

@@ -140,6 +140,28 @@ class Settings(BaseSettings):
     # are this timestamp heuristic over `updated_at`, not a lease column.
     notification_dispatch_batch_limit: int = 500
     notification_dispatch_stale_sending_seconds: int = 900
+    # Beat cadences (PR #2 hardening, MERGE_CARRIES item 4): how often the
+    # Celery beat fires each scheduled scan. The dispatch scan keeps the
+    # §25.4 ~1-minute retry rung honest; the expiry scan judges hour-scale
+    # deadlines; file retention is day-scale, so its scan runs cold. Batch
+    # limits (the *_batch_limit / scan LIMIT constants) stay the burst
+    # bound — a slower cadence only delays work, never enlarges it.
+    notification_dispatch_scan_interval_seconds: int = 60
+    claim_expiry_scan_interval_seconds: int = 60
+    file_cleanup_scan_interval_seconds: int = 900
+    # Stale-VALIDATING recovery (PR #2 hardening sub-F2): a submission
+    # whose validation job exhausted its bounded retries (or lost its
+    # instances) stays VALIDATING forever with its claim riding along in
+    # VALIDATING. The requeue scan re-dispatches rows whose newest run
+    # row started longer ago than this threshold — sized above the
+    # validation job's worst legitimate window (6 attempts x
+    # download+sandbox up to ~2 min each + backoff ≈ 13 min), so an
+    # in-flight retry ladder is never re-dispatched underneath itself;
+    # a re-dispatch is always safe anyway (the service's terminal and
+    # stale-rerun gates replay idempotently).
+    stale_validating_requeue_seconds: int = 1800
+    # How often the stale-VALIDATING scan looks for wedged rows.
+    stale_validating_scan_interval_seconds: int = 300
 
     @field_validator("business_timezone")
     @classmethod
@@ -198,6 +220,33 @@ class Settings(BaseSettings):
         if value < 1:
             raise ValueError(
                 f"notification_dispatch_stale_sending_seconds must be >= 1, got {value}"
+            )
+        return value
+
+    @field_validator(
+        "notification_dispatch_scan_interval_seconds",
+        "claim_expiry_scan_interval_seconds",
+        "file_cleanup_scan_interval_seconds",
+        "stale_validating_scan_interval_seconds",
+    )
+    @classmethod
+    def _validate_scan_interval_seconds(cls, value: int) -> int:
+        # A sub-second interval would spin the beat loop; a deployment
+        # wanting a scan off should not schedule it, not configure a
+        # cadence the broker cannot absorb.
+        if value < 1:
+            raise ValueError(f"beat scan intervals must be >= 1 second, got {value}")
+        return value
+
+    @field_validator("stale_validating_requeue_seconds")
+    @classmethod
+    def _validate_stale_validating_requeue_seconds(cls, value: int) -> int:
+        # A threshold below the job's own retry window would re-dispatch
+        # healthy in-flight work on every scan; keep it at least as long
+        # as one validation attempt's sandbox wall timeout.
+        if value < 1:
+            raise ValueError(
+                f"stale_validating_requeue_seconds must be >= 1, got {value}"
             )
         return value
 

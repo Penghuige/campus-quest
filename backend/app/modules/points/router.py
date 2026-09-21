@@ -264,7 +264,22 @@ def get_redemption_service(
     # ranking-neutral (spec §17.1), so the trigger stays dormant — it is
     # wired so a future ranking-affecting entry type cannot silently
     # miss the projection.
-    return RedemptionService(clock=clock, terms=terms, ledger=get_ledger_service())
+    #
+    # The notification recorder is the MERGE_CARRIES item 2 production
+    # wiring: NotificationPort joins each decision transaction so the
+    # REWARD_REDEMPTION_* intent commits with the decision or not at
+    # all (the outbox rule); the same clock instance stamps the
+    # decision and the registration instants. The import lives at this
+    # composition root — the one layer allowed to see both modules (the
+    # tasks-router precedent).
+    from app.modules.notifications.port import NotificationPort
+
+    return RedemptionService(
+        clock=clock,
+        terms=terms,
+        ledger=get_ledger_service(),
+        notification_recorder=NotificationPort(clock=clock),
+    )
 
 
 def get_user_directory() -> SqlAlchemyUserDirectory:

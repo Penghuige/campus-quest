@@ -39,7 +39,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from celery import Celery
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -51,6 +51,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings, get_settings
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
+from app.modules.submissions.enums import ReviewStatus
+from app.modules.submissions.models import Submission
 from app.modules.tasks.enums import (
     AssignmentAvailability,
     ClaimStatus,
@@ -214,10 +216,17 @@ async def _cleanup(
     task_ids: list[UUID],
     user_ids: list[UUID],
 ) -> None:
-    """Explicit committed cleanup in FK order (claims -> assignments ->
-    tasks -> users); real commits leave no outer rollback to trust."""
+    """Explicit committed cleanup in FK order (submissions -> claims ->
+    assignments -> tasks -> users); real commits leave no outer rollback
+    to trust."""
     async with maker() as session:
         if task_ids:
+            claim_ids = select(AssignmentClaim.id).where(
+                AssignmentClaim.task_id.in_(task_ids)
+            )
+            await session.execute(
+                delete(Submission).where(Submission.claim_id.in_(claim_ids))
+            )
             await session.execute(
                 delete(AssignmentClaim).where(AssignmentClaim.task_id.in_(task_ids))
             )
@@ -287,12 +296,12 @@ def test_eager_scan_expires_due_claims_end_to_end(
     engine = create_async_engine(_database_url(), poolclass=NullPool)
     maker = async_sessionmaker(engine, expire_on_commit=False)
     # The REAL task code runs un-substituted (build_expire_service
-    # included — SystemClock + LoggingEventPublisher + the default
-    # inspector): each task body builds its own per-invocation engine
-    # through the shared session source against this same test
-    # DATABASE_URL. The settings cache is cleared around the run so the
-    # per-job engines cannot resolve a stale process-wide snapshot
-    # (same pattern as test_submission_validation_job.py).
+    # included — SystemClock + LoggingEventPublisher + the real
+    # VALIDATED-reading inspector): each task body builds its own
+    # per-invocation engine through the shared session source against
+    # this same test DATABASE_URL. The settings cache is cleared around
+    # the run so the per-job engines cannot resolve a stale process-wide
+    # snapshot (same pattern as test_submission_validation_job.py).
     get_settings.cache_clear()
 
     run = uuid4().hex[:8]
@@ -388,6 +397,186 @@ def test_eager_scan_expires_due_claims_end_to_end(
         again = expire_claims_scan.delay("req-scan-2").get(timeout=30)
         assert again["discovered"] == 0
         assert again["claim_ids"] == []
+    finally:
+        asyncio.run(_cleanup(maker, task_ids=task_ids, user_ids=user_ids))
+        get_settings.cache_clear()
+    asyncio.run(engine.dispose())
+
+
+# --- the real VALIDATED inspector (MERGE_CARRIES item 1) ------------------------------
+
+
+def _validated_submission(
+    claim: AssignmentClaim, *, review_status: ReviewStatus, submitted_at: datetime
+) -> Submission:
+    """A machine-VALIDATED current submission for the claim (the claim's
+    latest pointer is set by the seeder after the flush)."""
+    return Submission(
+        claim_id=claim.id,
+        version=1,
+        object_key=f"submissions/{claim.id}/{uuid4()}",
+        original_filename="数据.csv",
+        declared_type="CSV",
+        file_size=1024,
+        submitted_at=submitted_at,
+        validation_status="VALIDATED",
+        review_status=review_status.value,
+        retention_until=submitted_at + timedelta(days=180),
+    )
+
+
+def test_eager_expiry_protects_claim_with_validated_current_submission(
+    celery_app: Celery,
+) -> None:
+    """End to end through the REAL worker wiring: a due, actionable
+    claim whose current submission is machine-VALIDATED and still
+    awaits review answers VALID_SUBMISSION — nothing moves, no event,
+    the assignment stays OCCUPIED (spec §11.5/§26; MERGE_CARRIES item
+    1). This is the final-review blast-radius shape: the submission's
+    VALIDATED commit landed while the chained UNDER_REVIEW transition
+    was lost."""
+    engine = create_async_engine(_database_url(), poolclass=NullPool)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    get_settings.cache_clear()
+
+    run = uuid4().hex[:8]
+    real_now = datetime.now(UTC)
+
+    async def seed() -> tuple[AssignmentClaim, Assignment, list[UUID], list[UUID]]:
+        async with maker() as session:
+            teacher = _user(username=f"t{run}", role=Role.TEACHER)
+            student = _user(username=f"2025{run}001")
+            await _persist(session, teacher, student)
+            task = _task(teacher)
+            await _persist(session, task)
+            assignment = _assignment(task, keyword="考研政治")
+            assignment.availability_status = AssignmentAvailability.OCCUPIED
+            await _persist(session, assignment)
+            claim = _claim(
+                assignment,
+                student,
+                status=ClaimStatus.CLAIMED,
+                claimed_at=real_now - timedelta(days=5),
+                grace_deadline_at=real_now - timedelta(hours=1),
+            )
+            await _persist(session, claim)
+            submission = _validated_submission(
+                claim,
+                review_status=ReviewStatus.PENDING_REVIEW,
+                # In-window: submitted before the (already due) grace.
+                submitted_at=real_now - timedelta(hours=2),
+            )
+            await _persist(session, submission)
+            claim.latest_submission_id = submission.id
+            await session.commit()
+            return (
+                claim,
+                assignment,
+                [task.id],
+                [teacher.id, student.id],
+            )
+
+    claim, assignment, task_ids, user_ids = asyncio.run(seed())
+    try:
+        result = expire_claim.delay(str(claim.id), "req-inspector-1").get(timeout=30)
+
+        assert result["outcome"] == "VALID_SUBMISSION"
+
+        async def inspect() -> tuple[AssignmentClaim, Assignment]:
+            async with maker() as session:
+                row = await session.get(AssignmentClaim, claim.id)
+                unit = await session.get(Assignment, assignment.id)
+                assert row is not None and unit is not None
+                return row, unit
+
+        row, unit = asyncio.run(inspect())
+        assert ClaimStatus(row.status) is ClaimStatus.CLAIMED
+        assert row.terminal_at is None
+        assert (
+            AssignmentAvailability(unit.availability_status)
+            is AssignmentAvailability.OCCUPIED
+        )
+
+        # The due claim is still actionable: a replayed per-id delivery
+        # answers the same VALID_SUBMISSION fact, not an error.
+        replay = expire_claim.delay(str(claim.id), "req-inspector-2").get(timeout=30)
+        assert replay["outcome"] == "VALID_SUBMISSION"
+    finally:
+        asyncio.run(_cleanup(maker, task_ids=task_ids, user_ids=user_ids))
+        get_settings.cache_clear()
+    asyncio.run(engine.dispose())
+
+
+def test_validated_but_teacher_returned_submission_still_expires(
+    celery_app: Celery,
+) -> None:
+    """The inspector's review-status refinement (G13): a VALIDATED
+    submission a teacher already returned (review_status
+    REVISION_REQUIRED — the require-revision / lock-invalidation
+    outcome) does NOT protect, or §11.4 revision deadlines could never
+    expire anything. The due claim expires and the assignment is
+    released."""
+    engine = create_async_engine(_database_url(), poolclass=NullPool)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    get_settings.cache_clear()
+
+    run = uuid4().hex[:8]
+    real_now = datetime.now(UTC)
+
+    async def seed() -> tuple[AssignmentClaim, Assignment, list[UUID], list[UUID]]:
+        async with maker() as session:
+            teacher = _user(username=f"t{run}", role=Role.TEACHER)
+            student = _user(username=f"2025{run}001")
+            await _persist(session, teacher, student)
+            task = _task(teacher)
+            await _persist(session, task)
+            assignment = _assignment(task, keyword="考研政治")
+            assignment.availability_status = AssignmentAvailability.OCCUPIED
+            await _persist(session, assignment)
+            claim = _claim(
+                assignment,
+                student,
+                status=ClaimStatus.REVISION_REQUIRED,
+                claimed_at=real_now - timedelta(days=5),
+                grace_deadline_at=real_now - timedelta(days=2),
+            )
+            claim.revision_deadline_at = real_now - timedelta(hours=1)
+            await _persist(session, claim)
+            submission = _validated_submission(
+                claim,
+                review_status=ReviewStatus.REVISION_REQUIRED,
+                submitted_at=real_now - timedelta(days=3),
+            )
+            await _persist(session, submission)
+            claim.latest_submission_id = submission.id
+            await session.commit()
+            return (
+                claim,
+                assignment,
+                [task.id],
+                [teacher.id, student.id],
+            )
+
+    claim, assignment, task_ids, user_ids = asyncio.run(seed())
+    try:
+        result = expire_claim.delay(str(claim.id), "req-inspector-3").get(timeout=30)
+
+        assert result["outcome"] == "EXPIRED"
+
+        async def inspect() -> tuple[AssignmentClaim, Assignment]:
+            async with maker() as session:
+                row = await session.get(AssignmentClaim, claim.id)
+                unit = await session.get(Assignment, assignment.id)
+                assert row is not None and unit is not None
+                return row, unit
+
+        row, unit = asyncio.run(inspect())
+        assert ClaimStatus(row.status) is ClaimStatus.EXPIRED
+        assert row.terminal_at is not None
+        assert (
+            AssignmentAvailability(unit.availability_status)
+            is AssignmentAvailability.AVAILABLE
+        )
     finally:
         asyncio.run(_cleanup(maker, task_ids=task_ids, user_ids=user_ids))
         get_settings.cache_clear()

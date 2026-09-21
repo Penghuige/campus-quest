@@ -105,6 +105,23 @@ _ACTIVE_CLAIM_STATUS_LIST = ", ".join(
 )
 _WHERE_CLAIM_IS_ACTIVE = text(f"status IN ({_ACTIVE_CLAIM_STATUS_LIST})")
 
+# The expiry worker's actionable set (claim_service
+# EXPIRY_ACTIONABLE_STATUSES) as a partial-index predicate: the due scan
+# reads exactly this slice ordered by (grace_deadline_at, id) —
+# migration 0013 (MERGE_CARRIES item 4 / final-review N5). The
+# predicate deliberately stops at the status set: the originally
+# deferred ``AND revision <= grace`` would have excluded the rows a
+# review extended past grace, which are among the scan's most frequent
+# hits.
+_ACTIONABLE_CLAIM_STATUSES: tuple[ClaimStatus, ...] = (
+    ClaimStatus.CLAIMED,
+    ClaimStatus.REVISION_REQUIRED,
+)
+_ACTIONABLE_CLAIM_STATUS_LIST = ", ".join(
+    f"'{status.value}'" for status in _ACTIONABLE_CLAIM_STATUSES
+)
+_WHERE_CLAIM_IS_ACTIONABLE = text(f"status IN ({_ACTIONABLE_CLAIM_STATUS_LIST})")
+
 # Closed capability and value sets guarded at the database boundary.
 _COLLABORATOR_CAPABILITIES = (
     "VIEW_TASK",
@@ -324,6 +341,12 @@ class AssignmentClaim(Base):
             "task_id",
             unique=True,
             postgresql_where=_WHERE_CLAIM_IS_ACTIVE,
+        ),
+        Index(
+            "ix_assignment_claims_expiry_due",
+            "grace_deadline_at",
+            "id",
+            postgresql_where=_WHERE_CLAIM_IS_ACTIONABLE,
         ),
     )
 

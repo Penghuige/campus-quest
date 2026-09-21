@@ -1,18 +1,17 @@
 # backend/tests/workers/test_file_cleanup.py
 """File-retention cleanup worker tests (plan 07 T7; spec §13, §27).
 
-Pure in-memory: the cleanup logic runs against an in-memory
-``CleanupRepository`` (mirroring the merge target's due predicate) and
-``FakeObjectStorage`` — exactly the two seams the merge-wired Celery
-job will compose. No PostgreSQL and no broker are touched, so this file
-carries no ``integration`` mark (unlike its siblings, which run against
-the real database).
+Two layers:
 
-The Submission model lives on the plans branch, not here; the branch
-contract pinned below: the placeholder production repository reads
-NOTHING (composition is a safe no-op until the merge wires the real
-Submission query), while the scan / guard / delete / reconcile /
-idempotency logic it will call is final.
+- The service logic (scan / guard / delete / reconcile / idempotency)
+  runs pure in-memory against an in-memory ``CleanupRepository``
+  (mirroring the real due predicate) and ``FakeObjectStorage`` — no
+  PostgreSQL, no broker.
+- The REAL repository (``SubmissionCleanupRepository``, wired at the
+  merge per MERGE_CARRIES item 3) runs against real PostgreSQL
+  (integration-marked): the due predicate's exclusion set is judged on
+  actual rows, and ``mark_deleted`` is the idempotent compare-and-set
+  the racing-redelivery path relies on.
 
 Coverage per the brief:
 - Retention matrix: expired 30/90/180-day objects deleted; future,
@@ -33,8 +32,10 @@ Coverage per the brief:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -42,6 +43,9 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.integrations.errors import (
     PermanentProviderError,
@@ -56,7 +60,6 @@ from app.modules.files.cleanup_service import (
     cleanup_expired_file,
     cleanup_expired_files,
 )
-from app.workers.jobs.cleanup_files import PlaceholderCleanupRepository
 from tests.fakes.integrations import FakeObjectStorage
 
 NOW = datetime(2026, 9, 19, 3, 0, tzinfo=UTC)
@@ -502,7 +505,7 @@ async def test_unknown_outcome_is_counted_and_self_heals_next_run() -> None:
     assert repo.row_for(key).deleted_at == NOW
 
 
-# --- summary consistency + branch placeholder -----------------------------------------
+# --- summary consistency + job-module wiring ------------------------------------------
 
 
 async def test_summary_counts_partition_the_scan() -> None:
@@ -549,19 +552,321 @@ async def test_summary_counts_partition_the_scan() -> None:
     assert accounted == summary.scanned
 
 
-async def test_placeholder_repository_reads_nothing() -> None:
-    """Branch contract: the default production repository yields no
-    candidates (safe no-op composition) and never claims a mark."""
-    storage = FakeObjectStorage()
-    summary = await cleanup_expired_files(NOW, PlaceholderCleanupRepository(), storage)
+def test_cleanup_job_module_registered_in_job_modules() -> None:
+    # A real worker process imports no test module: the cleanup job
+    # module must be named in JOB_MODULES or its task stays invisible
+    # to worker startup (the pinned task list in test_celery_wiring
+    # fails on drift from the other side).
+    from app.workers.celery_app import JOB_MODULES
 
-    assert summary == CleanupSummary()
-    assert storage.deleted_keys == []
+    assert "app.workers.jobs.cleanup_files" in JOB_MODULES
 
-    record = FileRecord(
-        submission_id=uuid.uuid4(),
-        object_key="submissions/claim/never",
-        retention_until=NOW - timedelta(days=30),
+
+# --- the real repository against real PostgreSQL (MERGE_CARRIES item 3) ---------------
+
+
+_TEST_DATABASE_MARKER = "campusquest_test"
+_DEFAULT_DATABASE_URL = (
+    "postgresql+asyncpg://test:test@localhost:15432/campusquest_test"
+)
+
+_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=1$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaaJObG"
+)
+
+
+def _database_url() -> str:
+    """The integration database URL, refusing non-test databases."""
+    from sqlalchemy.engine import make_url
+
+    url = os.environ.get("DATABASE_URL", _DEFAULT_DATABASE_URL)
+    database = make_url(url).database or ""
+    if _TEST_DATABASE_MARKER not in database:
+        pytest.fail(
+            f"Refusing cleanup-repository tests against non-test database "
+            f"{database!r} (DATABASE_URL={url!r}): the database name must "
+            f"contain {_TEST_DATABASE_MARKER!r}."
+        )
+    return url
+
+
+def _repo_factory() -> async_sessionmaker[AsyncSession]:
+    """NullPool session factory: fresh connection per checkout, so
+    asyncio.run phases on fresh loops never share a pooled connection
+    (the test_expire_claims convention)."""
+    engine = create_async_engine(_database_url(), poolclass=NullPool)
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@dataclass(slots=True)
+class _RepoSeed:
+    """One seeded world: a teacher/student pair, one task, one
+    assignment+claim per scenario, and one submission per claim."""
+
+    submission_ids: dict[str, UUID]
+    task_ids: list[UUID]
+    user_ids: list[UUID]
+
+
+async def _seed_repo_world(
+    maker: async_sessionmaker[AsyncSession], run: str
+) -> _RepoSeed:
+    """Seed the exclusion matrix: due / not-due / permanent / legal-hold
+    / already-deleted snapshots, plus claims in every status family
+    (actionable, review-pipeline, terminal) all with DUE snapshots —
+    only the review-pipeline ones must be excluded."""
+    from app.modules.identity.enums import Role, UserStatus
+    from app.modules.identity.models import User
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.enums import (
+        AssignmentAvailability,
+        ClaimStatus,
+        DeadlineMode,
+        RewardLockStatus,
+        TaskRarity,
+        TaskStatus,
+        TaskType,
     )
-    with pytest.raises(RuntimeError, match="PlaceholderCleanupRepository"):
-        await PlaceholderCleanupRepository().mark_deleted(record, deleted_at=NOW)
+    from app.modules.tasks.models import Assignment, AssignmentClaim, Task
+
+    async with maker() as session:
+        teacher = User(
+            username=f"t{run}",
+            password_hash=_PASSWORD_HASH,
+            nickname=f"老师{run[-4:]}",
+            phone_e164=None,
+            role=Role.TEACHER,
+            status=UserStatus.ACTIVE,
+        )
+        session.add(teacher)
+        await session.flush()
+
+        # scenario -> (claim status, retention flags); every claim below
+        # carries a DUE retention snapshot unless noted.
+        scenarios: dict[str, dict[str, Any]] = {
+            "due_claimed": {"claim": ClaimStatus.CLAIMED},
+            "due_revision": {"claim": ClaimStatus.REVISION_REQUIRED},
+            "due_completed": {"claim": ClaimStatus.COMPLETED},
+            "due_expired": {"claim": ClaimStatus.EXPIRED},
+            "due_abandoned": {"claim": ClaimStatus.ABANDONED},
+            "protected_validating": {"claim": ClaimStatus.VALIDATING},
+            "protected_under_review": {"claim": ClaimStatus.UNDER_REVIEW},
+            "not_due": {"claim": ClaimStatus.COMPLETED, "future": True},
+            "permanent": {"claim": ClaimStatus.COMPLETED, "permanent": True},
+            "legal_hold": {"claim": ClaimStatus.COMPLETED, "legal_hold": True},
+            "already_deleted": {
+                "claim": ClaimStatus.COMPLETED,
+                "already_deleted": True,
+            },
+        }
+        # One student per scenario: the ACTIVE-claim partial unique
+        # index (user_id, task_id) forbids two concurrent claims of one
+        # task by the same student.
+        students: dict[str, User] = {}
+        for index, name in enumerate(scenarios):
+            student = User(
+                username=f"2025{run}{index:02d}",
+                password_hash=_PASSWORD_HASH,
+                nickname=f"同学{run[-4:]}",
+                phone_e164=None,
+                role=Role.STUDENT,
+                status=UserStatus.ACTIVE,
+            )
+            session.add(student)
+            students[name] = student
+        await session.flush()
+        task = Task(
+            owner_teacher_id=teacher.id,
+            title="期末课程问卷数据采集",
+            description="采集问卷数据。",
+            task_type=TaskType.DATA_CRAWL,
+            rarity=TaskRarity.NORMAL,
+            base_reward_points=100,
+            status=TaskStatus.PUBLISHED,
+            deadline_mode=DeadlineMode.RELATIVE,
+            duration_minutes=4320,
+            submission_schema={"columns": [{"name": "note", "type": "string"}]},
+            submission_schema_version=1,
+            allowed_file_types=["CSV"],
+            max_file_size_bytes=10 * 1024 * 1024,
+            notification_channels=["SMS"],
+        )
+        session.add(task)
+        await session.flush()
+
+        submission_ids: dict[str, UUID] = {}
+        for index, (name, spec) in enumerate(scenarios.items()):
+            assignment = Assignment(
+                task_id=task.id,
+                platform="xiaohongshu",
+                keyword=f"问卷{index}",
+                availability_status=AssignmentAvailability.OCCUPIED,
+            )
+            session.add(assignment)
+            await session.flush()
+            claim = AssignmentClaim(
+                assignment_id=assignment.id,
+                task_id=task.id,
+                user_id=students[name].id,
+                status=spec["claim"].value,
+                claimed_at=NOW - timedelta(days=400),
+                deadline_at=NOW - timedelta(days=200),
+                grace_deadline_at=NOW - timedelta(days=199),
+                reward_policy_snapshot={"version": 1},
+                base_reward_points_snapshot=100,
+                submission_schema_version=1,
+                reward_lock_status=RewardLockStatus.NONE,
+                terminal_at=(
+                    NOW - timedelta(days=198)
+                    if spec["claim"]
+                    in (
+                        ClaimStatus.COMPLETED,
+                        ClaimStatus.ABANDONED,
+                        ClaimStatus.EXPIRED,
+                    )
+                    else None
+                ),
+            )
+            session.add(claim)
+            await session.flush()
+            offset = timedelta(days=30) if spec.get("future") else -timedelta(days=30)
+            submission = Submission(
+                claim_id=claim.id,
+                version=1,
+                object_key=f"submissions/{claim.id}/{uuid.uuid4()}",
+                original_filename="数据.csv",
+                declared_type="CSV",
+                file_size=1024,
+                submitted_at=NOW - timedelta(days=365),
+                validation_status="VALIDATED",
+                retention_until=None if spec.get("permanent") else NOW + offset,
+                retention_permanent=bool(spec.get("permanent")),
+                legal_hold=bool(spec.get("legal_hold")),
+                deleted_at=(
+                    NOW - timedelta(days=1) if spec.get("already_deleted") else None
+                ),
+            )
+            session.add(submission)
+            await session.flush()
+            claim.latest_submission_id = submission.id
+            submission_ids[name] = submission.id
+        await session.commit()
+        return _RepoSeed(
+            submission_ids=submission_ids,
+            task_ids=[task.id],
+            user_ids=[teacher.id, *(student.id for student in students.values())],
+        )
+
+
+async def _cleanup_repo_world(
+    maker: async_sessionmaker[AsyncSession], seed: _RepoSeed
+) -> None:
+    """Explicit committed cleanup in FK order (submissions -> claims ->
+    assignments -> tasks -> users)."""
+    from sqlalchemy import select
+
+    from app.modules.identity.models import User
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.models import Assignment, AssignmentClaim, Task
+
+    async with maker() as session:
+        claim_ids = (
+            (
+                await session.execute(
+                    select(AssignmentClaim.id).where(
+                        AssignmentClaim.task_id.in_(seed.task_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if claim_ids:
+            await session.execute(
+                delete(Submission).where(Submission.claim_id.in_(claim_ids))
+            )
+            await session.execute(
+                delete(AssignmentClaim).where(AssignmentClaim.id.in_(claim_ids))
+            )
+        await session.execute(
+            delete(Assignment).where(Assignment.task_id.in_(seed.task_ids))
+        )
+        await session.execute(delete(Task).where(Task.id.in_(seed.task_ids)))
+        await session.execute(delete(User).where(User.id.in_(seed.user_ids)))
+        await session.commit()
+
+
+@pytest.mark.integration
+def test_real_repository_due_predicate_excludes_protected_rows() -> None:
+    """The real SubmissionCleanupRepository over PostgreSQL yields
+    EXACTLY the due, deletable snapshots (§13/§27): retention due, not
+    permanent, no legal hold, not already marked, and the claim OUTSIDE
+    the review pipeline (VALIDATING / UNDER_REVIEW excluded; actionable
+    and terminal claims eligible — the file's retention is independent
+    of how the claim ended)."""
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _repo_factory()
+    run = uuid.uuid4().hex[:8]
+    seed = asyncio.run(_seed_repo_world(maker, run))
+    try:
+        repository = SubmissionCleanupRepository(maker)
+        records = asyncio.run(repository.collect_due_files(NOW))
+
+        expected = {
+            seed.submission_ids["due_claimed"],
+            seed.submission_ids["due_revision"],
+            seed.submission_ids["due_completed"],
+            seed.submission_ids["due_expired"],
+            seed.submission_ids["due_abandoned"],
+        }
+        assert {record.submission_id for record in records} == expected
+        # The snapshot shape the service consumes: candidate rows carry
+        # their due instant and no flags.
+        for record in records:
+            assert record.retention_until is not None
+            assert record.retention_until <= NOW
+            assert record.permanent is False
+            assert record.legal_hold is False
+            assert record.protected is False
+            assert record.deleted_at is None
+    finally:
+        asyncio.run(_cleanup_repo_world(maker, seed))
+
+
+@pytest.mark.integration
+def test_real_repository_mark_deleted_is_idempotent_compare_and_set() -> None:
+    """mark_deleted records the instant once (MARKED) and answers
+    ALREADY_DELETED on the second call without overwriting the earlier
+    instant — the racing-redelivery contract the §27 branches rely on."""
+    from app.modules.submissions.models import Submission
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    maker = _repo_factory()
+    run = uuid.uuid4().hex[:8]
+    seed = asyncio.run(_seed_repo_world(maker, run))
+    try:
+        repository = SubmissionCleanupRepository(maker)
+        target = seed.submission_ids["due_completed"]
+        record = FileRecord(
+            submission_id=target,
+            object_key="submissions/x/y",  # unused by mark_deleted
+            retention_until=NOW - timedelta(days=30),
+        )
+        first = asyncio.run(repository.mark_deleted(record, deleted_at=NOW))
+        assert first is MarkOutcome.MARKED
+        second = asyncio.run(
+            repository.mark_deleted(record, deleted_at=NOW + timedelta(minutes=5))
+        )
+        assert second is MarkOutcome.ALREADY_DELETED
+
+        async def _observe() -> datetime | None:
+            async with maker() as session:
+                row = await session.get(Submission, target)
+                assert row is not None
+                return row.deleted_at
+
+        # The earlier instant survived the racing second mark.
+        assert asyncio.run(_observe()) == NOW
+    finally:
+        asyncio.run(_cleanup_repo_world(maker, seed))

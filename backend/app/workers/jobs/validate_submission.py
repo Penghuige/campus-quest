@@ -176,6 +176,14 @@ def run_submission_validation(
         session_source = _default_session_source()
     if sandbox is None:
         sandbox = _sandbox_from_settings(settings)
+    # The MERGE_CARRIES item 2 production wiring: NotificationPort joins
+    # the validation service's tx2 so the SUBMISSION_VALIDATION_FAILED
+    # intent (with its §25.2 deadline re-arm) commits with the terminal
+    # state or not at all (the outbox rule). THE SAME clock instance
+    # stamps the validation instants and the notification registration
+    # instant. Lazy import keeps the module import dependency-light.
+    from app.modules.notifications.port import NotificationPort
+
     service = ValidationService(
         clock=clock,
         storage=storage,
@@ -184,6 +192,7 @@ def run_submission_validation(
             max_rows=settings.validation_preview_rows,
             max_value_length=settings.validation_preview_value_chars,
         ),
+        notification_recorder=NotificationPort(clock=clock),
     )
 
     async def _call() -> Any:
