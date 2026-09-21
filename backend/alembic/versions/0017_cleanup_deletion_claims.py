@@ -39,12 +39,12 @@ Indexing: none added. The claim is by primary key; the protection-side
 EXISTS scans one claim's few submissions through the existing
 ``submissions.claim_id`` index.
 
-Revision numbering: down_revision is 0015, NOT 0016 — 0016 is
-pre-allocated to the parallel audit stream; the controller reparents
-this revision onto 0016 at the merge.
+Revision numbering: reparented onto 0016 (the parallel audit stream's
+audit-log snapshots revision) at the stream merge, keeping the chain
+single-headed: 0015 -> 0016 -> 0017.
 
 Revision ID: 0017
-Revises: 0015
+Revises: 0016
 Create Date: 2026-09-22
 """
 
@@ -57,7 +57,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0017"
-down_revision: str | None = "0015"
+down_revision: str | None = "0016"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
