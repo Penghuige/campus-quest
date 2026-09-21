@@ -284,9 +284,17 @@ def get_upload_service(
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     dispatcher: Annotated[ValidationDispatcher, Depends(get_validation_dispatcher)],
 ) -> UploadService:
+    # Both TTLs come from Settings (PR #2 hardening pass 5c: the
+    # "wired from Settings" claim the cleanup-service doc makes is now
+    # literally true), and UploadService's constructor enforces the
+    # strict upload_url_ttl < intent_ttl ordering the orphan-intent
+    # cleanup depends on — a misconfigured pair fails the wiring
+    # loudly instead of deploying the violation.
     return UploadService(
         clock=clock,
         storage=storage,
+        upload_url_ttl=timedelta(seconds=settings.upload_url_ttl_seconds),
+        intent_ttl=timedelta(seconds=settings.upload_intent_ttl_seconds),
         max_upload_bytes=settings.max_upload_bytes_default,
         dispatcher=dispatcher,
     )

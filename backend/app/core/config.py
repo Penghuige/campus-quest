@@ -70,6 +70,19 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
     max_upload_bytes_default: int = 200 * 1024 * 1024
+    # Presigned upload grant lifetimes (spec §10: 短时): the presigned
+    # URL must expire STRICTLY BEFORE the single-use intent — the
+    # orphan-intent cleanup (files/cleanup_service) deletes expired
+    # intents' objects on the assumption that no legal PUT can land
+    # past expiry, which holds only under this ordering. Consumed by
+    # `get_upload_service` (submissions/router.py), which converts the
+    # seconds into the `UploadService` TTLs; the service's constructor
+    # raises on a violating pair, so a misconfigured deployment fails
+    # loudly at the wiring point instead of arming a cleanup that
+    # deletes objects a live URL can still write to. Defaults: 10m
+    # URL, 15m intent.
+    upload_url_ttl_seconds: int = 600
+    upload_intent_ttl_seconds: int = 900
 
     # Deployment profile: "production" turns insecure development defaults
     # into startup failures (the OTP HMAC, access-token, and TOTP-encryption

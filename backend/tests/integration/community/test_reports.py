@@ -56,15 +56,18 @@ surface:
   reaches history), and the queue listing renders the closed status
   with its stamps.
 
-Harness: the ordinary rollback suite — no concurrency tests here (the
-UNIQUE triple's both-create race is arbitrated by the database exactly
-as votes/reactions are, and the sequential idempotency contract is what
-this task pins), so every seed lives in the savepoint-wrapped
-``db_session`` and needs no manual cleanup.
+Harness: the ordinary rollback suite — the only concurrency test is
+the pass-5c closure race at the bottom (committed dual sessions,
+manual cleanup, the test_votes discipline); everything else seeds in
+the savepoint-wrapped ``db_session`` and needs no manual cleanup (the
+UNIQUE triple's both-create race is arbitrated by the database
+exactly as votes/reactions are, and the sequential idempotency
+contract is what those tests pin).
 """
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 from datetime import UTC, datetime, timedelta
@@ -72,8 +75,12 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from app.core.error_codes import ErrorCode
 from app.modules.audit.models import AuditLog
@@ -1210,3 +1217,179 @@ async def test_queue_renders_the_closed_status_and_stamps(
     assert by_id[handled.id].status == "HANDLED"
     assert by_id[handled.id].handled_by == teacher.id
     assert by_id[handled.id].handled_at is not None
+
+
+# --- closure serialization race (PR #2 hardening pass 5c) ------------------------
+
+
+@dataclasses.dataclass
+class _ClosureRaceOutcome:
+    """What one racing closure coroutine observed: the closed row on
+    success, the typed terminal conflict when it lost the row lock, or
+    an unexpected failure (the no-500 assertion's subject)."""
+
+    closed: CommentReport | None = None
+    conflict: ReportAlreadyClosedError | None = None
+    unexpected: BaseException | None = None
+
+
+async def _close_one(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    actor: Actor,
+    task_id: UUID,
+    report_id: UUID,
+    action: str,
+    start: asyncio.Event,
+) -> _ClosureRaceOutcome:
+    async with factory() as session:
+        # Warm the pooled connection BEFORE the barrier (asyncpg setup
+        # is ~10 ms of TCP + auth; without the warm-up the barrier
+        # releases into sequential-looking runs that hide the
+        # interleaving under test — the claim-concurrency lesson,
+        # verified by mutation there).
+        await session.execute(text("SELECT 1"))
+        await start.wait()  # park every transaction on one barrier
+        try:
+            if action == "dismiss":
+                closed = await ReportService().dismiss_report(
+                    session, actor, task_id, report_id, "并发场景下的驳回"
+                )
+            else:
+                closed = await ReportService().handle_report(
+                    session, actor, task_id, report_id, note="并发场景下的处理"
+                )
+        except ReportAlreadyClosedError as exc:
+            return _ClosureRaceOutcome(conflict=exc)
+        except Exception as exc:  # the "no 500" failure mode
+            return _ClosureRaceOutcome(unexpected=exc)
+        return _ClosureRaceOutcome(closed=closed)
+
+
+@pytest.mark.integration
+async def test_concurrent_opposing_closures_leave_one_transition_and_one_audit(
+    db_engine: AsyncEngine,
+) -> None:
+    """The owner-named dual-session race (PR #2 hardening pass 5c):
+    the task owner's DISMISSED races an Admin's HANDLED on ONE OPEN
+    report from two independent committed sessions. The closure's
+    locking read serializes them on the report row: exactly ONE
+    transition wins (the row carries the winner's terminal status and
+    handled_by), exactly ONE decision audit row lands (the loser
+    flushes nothing), and the loser answers the typed
+    ReportAlreadyClosedError 409 whose details name the winner's
+    terminal status — never a last-writer-wins row, never two audits
+    each claiming the decision."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    comment_ids: list[UUID] = []
+    report_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        async with factory() as session:
+            teacher = _user(username=f"t{run}", role=Role.TEACHER)
+            author = _user(username=f"2025{run}001", nickname="竞态帖作者")
+            reporter = _user(username=f"2025{run}002", nickname="竞态举报人")
+            admin = _user(username=f"admin{run}", role=Role.ADMIN)
+            await _persist(session, teacher, author, reporter, admin)
+            task = _task(teacher)
+            await _persist(session, task)
+            comment = await _root_comment(session, task, author)
+            report = await ReportService().report_comment(
+                session, reporter.id, comment.id, "SPAM"
+            )
+            await session.commit()
+            task_ids.append(task.id)
+            comment_ids.append(comment.id)
+            report_ids.append(report.id)
+            user_ids.extend((teacher.id, author.id, reporter.id, admin.id))
+
+        start = asyncio.Event()
+        tasks = [
+            asyncio.create_task(
+                _close_one(
+                    factory,
+                    actor=_actor(teacher),
+                    task_id=task_ids[0],
+                    report_id=report_ids[0],
+                    action="dismiss",
+                    start=start,
+                )
+            ),
+            asyncio.create_task(
+                _close_one(
+                    factory,
+                    actor=_actor(admin),
+                    task_id=task_ids[0],
+                    report_id=report_ids[0],
+                    action="handle",
+                    start=start,
+                )
+            ),
+        ]
+        await asyncio.sleep(0.05)  # let every coroutine reach the barrier
+        start.set()
+        outcomes = list(await asyncio.wait_for(asyncio.gather(*tasks), timeout=15))
+
+        assert not [o for o in outcomes if o.unexpected is not None], [
+            repr(o.unexpected) for o in outcomes if o.unexpected is not None
+        ]
+        winners = [o for o in outcomes if o.closed is not None]
+        losers = [o for o in outcomes if o.conflict is not None]
+        assert len(winners) == 1  # exactly one transition commits
+        assert len(losers) == 1
+
+        winner = winners[0].closed
+        assert winner is not None
+        winner_status = winner.status
+        assert winner_status in ("DISMISSED", "HANDLED")
+        winner_actor = teacher.id if winner_status == "DISMISSED" else admin.id
+        winner_action = (
+            REPORT_DISMISSED if winner_status == "DISMISSED" else REPORT_HANDLED
+        )
+
+        async with factory() as session:
+            row = await session.get(CommentReport, report_ids[0])
+            assert row is not None
+            assert row.status == winner_status  # never two transitions
+            assert row.handled_by == winner_actor
+            assert row.handled_at is not None
+
+            audits = await _audit_rows(session, winner)
+            assert len(audits) == 1  # exactly one DECISION audit row
+            assert audits[0].action == winner_action
+            assert audits[0].actor_user_id == winner_actor
+
+        # The loser's typed conflict names the winner's terminal state.
+        assert losers[0].conflict is not None
+        assert losers[0].conflict.code == ErrorCode.VALIDATION_ERROR
+        assert losers[0].conflict.status_code == 409
+        assert losers[0].conflict.details == {
+            "report_id": str(report_ids[0]),
+            "status": winner_status,
+        }
+    finally:
+        # Committed rows: explicit cleanup in FK order (audit_logs ->
+        # comment_reports -> comments -> tasks -> users), the
+        # test_votes discipline for committed race tests.
+        async with factory() as session:
+            if report_ids:
+                await session.execute(
+                    delete(AuditLog).where(
+                        AuditLog.target_id.in_([str(rid) for rid in report_ids])
+                    )
+                )
+                await session.execute(
+                    delete(CommentReport).where(CommentReport.id.in_(report_ids))
+                )
+            if comment_ids:
+                await session.execute(
+                    delete(Comment).where(Comment.id.in_(comment_ids))
+                )
+            if task_ids:
+                await session.execute(delete(Task).where(Task.id.in_(task_ids)))
+            if user_ids:
+                await session.execute(delete(User).where(User.id.in_(user_ids)))
+            await session.commit()

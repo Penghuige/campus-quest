@@ -264,7 +264,11 @@ DECLARED_TYPE_CONTENT_TYPES: dict[FileType, str] = {
 # Short-lived grants (spec §10: 短时 presigned URL). The URL expires
 # before the intent so a client that uploaded in time always has a live
 # finalize window; both are injectable for tests and wired by the
-# composition root.
+# composition root from Settings. The STRICT ordering is a
+# constructor-enforced invariant (PR #2 hardening pass 5c): the
+# orphan-intent cleanup (files/cleanup_service) deletes expired
+# intents' objects in the name of "no legal PUT can land past expiry" —
+# that claim only holds while the URL TTL stays below the intent TTL.
 DEFAULT_UPLOAD_URL_TTL = timedelta(minutes=10)
 DEFAULT_INTENT_TTL = timedelta(minutes=15)
 
@@ -660,6 +664,22 @@ class UploadService:
     (optional) receives the async-validation handoff on a successful
     finalize (see the module docstring's dispatch rule); ``None`` keeps
     the pre-pipeline behavior for direct service callers.
+
+    CONSTRUCTOR INVARIANT (PR #2 hardening pass 5c, fail-loud):
+    ``upload_url_ttl`` must be STRICTLY SHORTER than ``intent_ttl`` —
+    a violating construction raises ``ValueError`` before the service
+    exists. The ordering is a deployment invariant the orphan-intent
+    cleanup depends on (files/cleanup_service's
+    ``cleanup_orphaned_intents`` deletes objects of expired
+    unconsumed intents after ``expires_at``; that is legal only while
+    no presigned URL can still land a legal PUT, i.e. only while the
+    URL TTL stays below the intent TTL), and it also guarantees a
+    client that uploaded in time always has a live finalize window.
+    Because the composition root wires both from the Settings fields
+    (``upload_url_ttl_seconds`` / ``upload_intent_ttl_seconds``), the
+    same guard turns a misconfigured deployment pair into a loud
+    construction failure at the wiring point — never a cleanup that
+    deletes objects a live URL can still write to.
     """
 
     def __init__(
@@ -672,6 +692,15 @@ class UploadService:
         max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
         dispatcher: ValidationDispatcher | None = None,
     ) -> None:
+        if upload_url_ttl >= intent_ttl:
+            raise ValueError(
+                f"upload_url_ttl ({upload_url_ttl}) must be strictly shorter "
+                f"than intent_ttl ({intent_ttl}): the presigned URL has to "
+                "expire before the single-use intent, or a legal PUT could "
+                "still land after the orphan-intent cleanup deleted the "
+                "object (files/cleanup_service.cleanup_orphaned_intents "
+                "depends on this ordering)"
+            )
         self._clock = clock
         self._storage = storage
         self._upload_url_ttl = upload_url_ttl
