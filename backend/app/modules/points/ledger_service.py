@@ -639,9 +639,13 @@ class LedgerService:
         both effect flags true (正常作弊冲销), the ORIGINAL's
         ``ranking_effective_at`` (a September decision repairs August and
         all-time, never the current month), the admin as operator, and
-        the mandatory reason. The wallet lock (inside ``post_entry``)
-        serializes concurrent reversals; an already-spent reward
-        overdrafts ``available_points`` negative (migration 0012 ruling,
+        the mandatory reason. The wallet lock (taken by THIS method
+        ahead of the precheck, through the module's one
+        ``locked_or_created_wallet``; ``post_entry`` re-takes it
+        harmlessly) serializes concurrent reversals and concurrent
+        balance-changing posts, so the audited wallet migration is the
+        TRUE locked-row transition; an already-spent reward overdrafts
+        ``available_points`` negative (migration 0012 ruling,
         models.py). Flush only — the caller owns the transaction, and a
         provided or constructor-default ``ranking_dispatcher`` fires on
         that commit carrying the ORIGINAL's attribution (the §17.2
@@ -651,11 +655,13 @@ class LedgerService:
         The actual reversal also lands ONE durable ``REWARD_REVERSAL``
         audit row in the same transaction (§30 reward reversal; PR #2
         hardening pass 4a): before/after carry the wallet-balance
-        migration plus the reversal amount and the ORIGINAL's source
-        triple — business facts only, no PII (G11). A typed rejection
-        (already reversed, either sequential or UNIQUE-race) writes NO
-        audit row: the recorded decision stands, and this request never
-        became one.
+        migration — read under the wallet lock, so a concurrent ledger
+        post cannot slip a balance change between the before-read and
+        the mutation (round-5 P1) — plus the reversal amount and the
+        ORIGINAL's source triple — business facts only, no PII (G11).
+        A typed rejection (already reversed, either sequential or
+        UNIQUE-race) writes NO audit row: the recorded decision stands,
+        and this request never became one.
 
         Raises the typed gates in order — reason, actor, target row,
         target type, already-reversed — before anything is written; the
@@ -677,21 +683,31 @@ class LedgerService:
         # expires session state, and both the recovery read and the
         # typed error must not depend on refreshing the original to
         # answer (a lazy refresh outside the greenlet would raise
-        # MissingGreenlet — the grant path's discipline). The wallet's
-        # pre-reversal balance rides the same capture for the audit
-        # before-snapshot.
+        # MissingGreenlet — the grant path's discipline).
         source_type = original.source_type
         source_id = original.source_id
         user_id = original.user_id
         ranking_effective_at = original.ranking_effective_at
-        wallet_balance_before = await db.scalar(
-            select(PointWallet.available_points).where(PointWallet.user_id == user_id)
-        )
         # An ASSIGNMENT_REWARD is always ranking-affecting, so the
         # ledger's coherence CHECK (ranking_effective_at NOT NULL exactly
         # when affects_ranking, models.py) makes this non-None; the
         # assert documents the invariant the enqueue relies on.
         assert ranking_effective_at is not None
+        # The wallet row is locked BEFORE the balance is read (owner
+        # round-5 P1): ``locked_or_created_wallet`` is the module's ONE
+        # wallet lock — the same lock ``post_entry`` serializes the
+        # mutation under — so the audited before is the balance AT LOCK
+        # TIME, never a pre-lock read a concurrent balance-changing post
+        # could have outdated between read and lock (the §30 snapshot
+        # must be true under concurrency; quality-gates §16/G12). The
+        # pre-reversal balance is captured into a local immediately:
+        # the race recovery below expires session state, and the audit
+        # must not depend on the wallet instance (the same
+        # expiry-proof discipline as the locals above). ``post_entry``
+        # re-takes this lock inside its savepoint — a no-op
+        # re-acquisition by this already-holding transaction.
+        wallet = await self.locked_or_created_wallet(db, user_id)
+        wallet_balance_before = wallet.available_points
 
         existing = await db.scalar(self._claim_reversal_filter(source_type, source_id))
         if existing is not None:
@@ -742,13 +758,14 @@ class LedgerService:
             ) from exc
         # The §30 durable trace, armed only on the path that WROTE the
         # reversal (flush-only; the caller commits it with the entry):
-        # before/after carry the wallet-balance migration plus the
-        # amount and the ORIGINAL's source triple — amounts and ids,
-        # no PII (G11). The in-transaction re-read sees the wallet
-        # mutation post_entry just staged.
-        wallet_balance_after = await db.scalar(
-            select(PointWallet.available_points).where(PointWallet.user_id == user_id)
-        )
+        # before/after carry the wallet-balance migration — both ends
+        # read under the wallet lock, so the migration is the TRUE
+        # locked-row transition — plus the amount and the ORIGINAL's
+        # source triple: amounts and ids, no PII (G11). ``wallet`` is
+        # the same locked instance ``post_entry`` just mutated in this
+        # transaction (the identity map returns it), so this read sees
+        # the staged change.
+        wallet_balance_after = wallet.available_points
         await self._audit.append(
             db,
             actor=actor,
@@ -756,17 +773,9 @@ class LedgerService:
             target_type=_AUDIT_TARGET_TYPE,
             target_id=str(ledger_id),
             reason=reason_text,
-            before_snapshot={
-                "wallet_available_points": (
-                    int(wallet_balance_before)
-                    if wallet_balance_before is not None
-                    else 0
-                ),
-            },
+            before_snapshot={"wallet_available_points": wallet_balance_before},
             after_snapshot={
-                "wallet_available_points": (
-                    int(wallet_balance_after) if wallet_balance_after is not None else 0
-                ),
+                "wallet_available_points": wallet_balance_after,
                 "reversal_amount": reversal.amount,
                 "original_ledger_id": str(ledger_id),
                 "source_type": source_type,

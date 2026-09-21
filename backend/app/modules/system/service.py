@@ -8,15 +8,19 @@ the key (the admin settings router), not to this storage layer. What
 the service does own:
 
 - **``set`` writes the value and its audit row in ONE transaction**
-  (backend-engineering §5): the row lock (FOR UPDATE) serializes
-  concurrent writes of the same key, the flush-only
-  ``AuditLogWriter.append`` joins the caller's transaction, and the
-  service commits exactly once — value and trace commit or roll back
-  together, the RedemptionService discipline. The audit row carries
-  the value MIGRATION on the §30 snapshot pair (0016): the NEW value
-  in ``after_snapshot.value`` and the PREVIOUS value in
-  ``before_snapshot.value`` (``None`` on the first write), so the
-  audit trail answers "what was it before?" without a time machine.
+  (backend-engineering §5): the write path resolves first-write races
+  INSIDE the database (``INSERT ... ON CONFLICT DO NOTHING RETURNING``;
+  the loser then locks the winner's row ``FOR UPDATE`` — see ``set``),
+  the flush-only ``AuditLogWriter.append`` joins the caller's
+  transaction, and the service commits exactly once — value and trace
+  commit or roll back together, the RedemptionService discipline. The
+  audit row carries the value MIGRATION on the §30 snapshot pair
+  (0016): the NEW value in ``after_snapshot.value`` and the PREVIOUS
+  value in ``before_snapshot.value`` (``None`` on the first write), so
+  the audit trail answers "what was it before?" without a time
+  machine — and the chain stays CONNECTED under a lost first-write
+  race (round-5 P1): the loser reads the winner's committed value
+  under the row lock, never a pre-read stale ``None``.
 - **Keys and values are stored STRIPPED and never blank**: whitespace
   is not configuration state (the term-key semantics the
   ``AcademicTermProvider`` family applies at read time). A blank-after-
@@ -31,21 +35,14 @@ the service does own:
 Module boundaries: like ``audit``, this module imports nothing from
 the domain modules — the arrow points IN (points' composition reads
 the setting; the admin router writes it).
-
-One known narrow edge, closed by design (PR #2 closure review P2):
-two concurrent ``set`` calls for a brand-NEW key both miss the row and
-both write; the insert path is a PostgreSQL UPSERT, so the conflict
-resolves inside the database (serialization, never an INTERNAL_ERROR).
-A lost first-write race may still audit a stale ``before_snapshot``
-value — the row itself is correct (last write wins), and a settings
-key has one authoritative writer in practice.
 """
 
 from __future__ import annotations
 
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
@@ -146,58 +143,60 @@ class SystemSettingService:
     ) -> str:
         """Store ``value`` as the key's current value and write the
         ``SYSTEM_SETTING_UPDATED`` audit row in the SAME transaction —
-        row lock, insert-or-update, flush, audit, one commit (§5).
+        conflict-decided insert or locked update, flush, audit, one
+        commit (§5; see the write-path comment for the race pattern).
 
         Returns the stored (stripped) value. The value MIGRATION rides
         the §30 snapshot pair (0016): ``before_snapshot={"value": ...}``
         is the previous value (``None`` on the first write),
         ``after_snapshot={"value": ...}`` the stored one — configuration
-        facts, no PII (G11)."""
+        facts, no PII (G11). The ``before`` is TRUE under a lost
+        first-write race: the loser reads the winner's committed value
+        under the row lock, so the audit chain stays connected."""
         stored_key = _validated("key", key, _KEY_MAX_LENGTH)
         stored_value = _validated("value", value)
-        # First write upsert (PR #2 closure review P2): two concurrent
-        # writes of a brand-new key both miss the FOR UPDATE select and
-        # both INSERT — the pk loser surfaced IntegrityError as a 500.
-        # The insert path is now a PostgreSQL UPSERT: the constraint
-        # conflict resolves inside the database, so a concurrent admin
-        # write is serialization, never an INTERNAL_ERROR. The
-        # pre-read still supplies the audited old_value (a lost race
-        # may audit a stale old_value; the row itself stays correct —
-        # last write wins under the upsert, and a settings key has one
-        # authoritative writer in practice).
-        row = await db.scalar(
-            select(SystemSetting)
-            .where(SystemSetting.key == stored_key)
-            .with_for_update()
-            # Fresh values under the row lock even if this session's
-            # identity map already holds the instance (the redemption
-            # service's locked-select discipline).
-            .execution_options(populate_existing=True)
-        )
-        previous = row.value if row is not None else None
-        if row is None:
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-            statement = (
-                pg_insert(SystemSetting)
-                .values(
-                    key=stored_key,
-                    value=stored_value,
-                    updated_by_user_id=actor.user_id,
-                )
-                .on_conflict_do_update(
-                    index_elements=[SystemSetting.key],
-                    set_={
-                        "value": stored_value,
-                        "updated_by_user_id": actor.user_id,
-                        # The ORM-level onupdate does not fire for this
-                        # core upsert — stamp the touch explicitly.
-                        "updated_at": func.now(),
-                    },
-                )
+        # Chain-true first write (owner round-5 P1): the race decides
+        # INSIDE the database. INSERT ... ON CONFLICT DO NOTHING
+        # RETURNING — the winner (a row returned) created the key in
+        # THIS transaction, so previous is None by construction. The
+        # loser (no row returned: a concurrent transaction committed
+        # this key while this one waited on the conflict) then locks
+        # the winner's committed row FOR UPDATE and reads the TRUE
+        # previous before updating, so the audited chain stays
+        # connected (None→X, X→Y) even under a lost first-write race.
+        # The pass-4 UPSERT shape pre-read the old value and audited a
+        # stale None→Y for the loser — the owner ruled that
+        # unacceptable: under concurrency the audit migration must not
+        # be false (quality-gates §16/G12).
+        inserted = await db.execute(
+            pg_insert(SystemSetting)
+            .values(
+                key=stored_key,
+                value=stored_value,
+                updated_by_user_id=actor.user_id,
             )
-            await db.execute(statement)
+            .on_conflict_do_nothing(index_elements=[SystemSetting.key])
+            .returning(SystemSetting.key)
+        )
+        previous: str | None
+        if inserted.first() is not None:
+            previous = None  # this transaction created the key
         else:
+            row = await db.scalar(
+                select(SystemSetting)
+                .where(SystemSetting.key == stored_key)
+                .with_for_update()
+                # Fresh values under the row lock even if this
+                # session's identity map already holds the instance
+                # (the redemption service's locked-select discipline).
+                .execution_options(populate_existing=True)
+            )
+            # The conflict-proven row cannot vanish under the lock: the
+            # DO NOTHING insert returned nothing only because another
+            # transaction COMMITTED this key, and settings have no
+            # delete path.
+            assert row is not None
+            previous = row.value
             row.value = stored_value
             row.updated_by_user_id = actor.user_id
         await db.flush()

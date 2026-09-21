@@ -629,6 +629,104 @@ async def test_concurrent_double_reversal_yields_exactly_one_reversal(
         await _committed_cleanup(factory, user_ids=user_ids)
 
 
+# --- the audited before is the lock-time balance (round-5 P1) ------------------------
+
+
+@pytest.mark.integration
+async def test_reversal_before_snapshot_reads_the_lock_time_balance(
+    db_engine: AsyncEngine,
+) -> None:
+    """Round-5 P1: the audited ``wallet_available_points`` before is
+    the balance AT LOCK TIME, never a pre-lock read. A concurrent
+    balance-changing post (session B) holds the wallet lock with an
+    uncommitted -60 when the reversal (session A) starts: A parks on
+    the wallet FOR UPDATE, and once B commits, A's audited before is
+    B's committed 140 — the pre-lock read (the old shape) snapshotted
+    the stale 200 and audited a FALSE migration (200→-60) while the
+    wallet really moved 140→-60 under the lock (quality-gates §16/G12).
+    Deterministic interleave: B signals AFTER taking the lock, A starts
+    only then, and B commits only after A has had time to park."""
+    factory = _factory(db_engine)
+    service = LedgerService()
+    user_ids: list[UUID] = []
+    original_id: UUID | None = None
+    try:
+        student = _user("2025s", Role.STUDENT)
+        admin = _user("admr", Role.ADMIN)
+        async with factory() as session:
+            session.add_all((student, admin))
+            await session.flush()
+            user_ids.extend((student.id, admin.id))
+            original = await _grant_reward(service, session, student.id)
+            await session.commit()
+            original_id = original.id
+        assert original_id is not None
+
+        # B: an unrelated admin adjustment (-60) that HOLDS the wallet
+        # lock uncommitted while A starts its reversal.
+        b_locked = asyncio.Event()
+        release_b = asyncio.Event()
+
+        async def hold_lock_then_commit() -> None:
+            async with factory() as session:
+                await service.post_entry(
+                    session,
+                    PostLedgerEntry(
+                        user_id=student.id,
+                        ledger_type=LedgerType.ADMIN_ADJUSTMENT,
+                        amount=-60,
+                        source_type="ADMIN_ADJUSTMENT",
+                        affects_balance=True,
+                        affects_ranking=False,
+                        reason="并发穿插的余额变更",
+                    ),
+                )
+                b_locked.set()
+                await release_b.wait()
+                await session.commit()
+
+        async def reverse_under_the_held_lock() -> PointsLedger:
+            async with factory() as session:
+                # Warm the pooled connection BEFORE parking (the
+                # double-reversal test's discipline).
+                await session.execute(text("SELECT 1"))
+                await b_locked.wait()
+                entry = await _reverse(service, session, _actor(admin), original_id)
+                await session.commit()
+                return entry
+
+        b_task = asyncio.create_task(hold_lock_then_commit())
+        a_task = asyncio.create_task(reverse_under_the_held_lock())
+        await b_locked.wait()
+        # A now parks on the wallet FOR UPDATE — it cannot pass B's lock
+        # before B's commit, whichever end of the method blocks.
+        await asyncio.sleep(0.1)
+        release_b.set()
+        reversal = await a_task
+        await b_task
+
+        assert reversal.amount == -200
+        async with factory() as check:
+            wallet = await check.get(PointWallet, student.id)
+            assert wallet is not None
+            assert wallet.available_points == -60  # 200 - 60 - 200
+            audit = await check.scalar(
+                select(AuditLog).where(
+                    AuditLog.action == AUDIT_ACTION_REWARD_REVERSAL,
+                    AuditLog.target_id == str(original_id),
+                )
+            )
+            assert audit is not None
+            # THE round-5 assertion: before is the LOCK-TIME value B
+            # committed (140), never the stale pre-lock 200; the after
+            # and the committed wallet agree with the same migration.
+            assert audit.before_snapshot == {"wallet_available_points": 140}
+            assert audit.after_snapshot is not None
+            assert audit.after_snapshot["wallet_available_points"] == -60
+    finally:
+        await _committed_cleanup(factory, user_ids=user_ids)
+
+
 # --- the enqueue is best-effort (final-review N1) -------------------------------------
 
 

@@ -247,6 +247,61 @@ async def test_second_put_audits_the_previous_value(
     assert all(audit.actor_user_id == admin.id for audit in audits)
 
 
+# --- PUT: the request-id correlation (round-5 P1) -------------------------------------
+
+
+async def test_audit_request_id_is_the_servers_resolved_id(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+) -> None:
+    """Round-5 P1: the audit row's ``request_id`` is the middleware-
+    RESOLVED id — the same value the response's ``X-Request-ID``
+    carries. With no client header that is the server-GENERATED UUID
+    hex (the pass-4a raw-header read left NULL here, breaking the §30
+    correlation for the common request); a safe propagated id is kept
+    verbatim in both places; a hostile header is replaced everywhere
+    and never stored. Audits are matched by their written value — the
+    rollback harness's single outer transaction ties ``created_at``, so
+    row order is not observable."""
+    _, headers = await _admin(db_session, api_clock)
+
+    # No header: the generated id correlates the audit row.
+    response = await client.put(
+        _TERM_PATH, json={"value": "2027-spring"}, headers=headers
+    )
+    assert response.status_code == 200
+    generated = response.headers["X-Request-ID"]
+    assert generated  # the middleware always resolves one
+    assert generated != "2027-spring"  # a request id, not the payload
+
+    # A safe propagated id: kept verbatim in both places.
+    kept = await client.put(
+        _TERM_PATH,
+        json={"value": "2027-summer"},
+        headers={**headers, "X-Request-ID": "safe-correlate-0001"},
+    )
+    assert kept.headers["X-Request-ID"] == "safe-correlate-0001"
+
+    # A hostile header: replaced on the response, never stored.
+    hostile = "bad id <script>"
+    replaced_response = await client.put(
+        _TERM_PATH,
+        json={"value": "2028-spring"},
+        headers={**headers, "X-Request-ID": hostile},
+    )
+    replaced = replaced_response.headers["X-Request-ID"]
+    assert replaced != hostile
+
+    by_value = {
+        audit.after_snapshot["value"]: audit
+        for audit in await _term_audit_rows(db_session)
+    }
+    assert by_value["2027-spring"].request_id == generated
+    assert by_value["2027-summer"].request_id == "safe-correlate-0001"
+    assert by_value["2028-spring"].request_id == replaced
+
+
 # --- PUT: the shared validation semantics ---------------------------------------------
 
 

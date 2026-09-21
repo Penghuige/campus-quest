@@ -1,8 +1,11 @@
 # backend/tests/integration/system/test_setting_first_write_race.py
 """Two-session first-write race on a brand-new settings key (PR #2
-closure review P2): the insert path is a PostgreSQL UPSERT, so two
-concurrent ``set`` calls on the same fresh key serialize inside the
-database instead of racing the primary key into an IntegrityError 500.
+closure review P2; chain assertion added in round 5): the race decides
+INSIDE the database (INSERT ... ON CONFLICT DO NOTHING RETURNING), the
+loser locks the winner's committed row and reads the TRUE previous, so
+the audit chain is connected — None→X, X→Y — never two stale None→?
+rows (quality-gates §16/G12: under concurrency the audit migration
+must not be false).
 Committed sessions (the rollback harness cannot cross-transaction race).
 """
 
@@ -41,10 +44,14 @@ async def _seed_admin(session: AsyncSession, username: str) -> User:
 
 
 @pytest.mark.asyncio
-async def test_concurrent_first_writes_serialize_without_500(db_engine) -> None:
+async def test_concurrent_first_writes_audit_a_connected_chain(db_engine) -> None:
     """Two independent sessions set the SAME brand-new key at once: no
-    IntegrityError escapes, exactly one row survives, and both writes
-    land their audit rows (both decisions really happened)."""
+    IntegrityError escapes, exactly one row survives, and the two audit
+    rows form a CONNECTED chain — the winner's None→X (it created the
+    key), the loser's X→Y (it locked the winner's committed row and
+    read the true previous) — with the stored row's final value and
+    attribution matching the chain's tail. Both writes really happened
+    (two rows), and neither carries a stale before."""
     maker = async_sessionmaker(db_engine, expire_on_commit=False)
     async with maker() as seed_session:
         first_admin = await _seed_admin(seed_session, f"race-a-{uuid4().hex[:6]}")
@@ -70,8 +77,7 @@ async def test_concurrent_first_writes_serialize_without_500(db_engine) -> None:
     async with maker() as check:
         row = await check.scalar(select(SystemSetting).where(SystemSetting.key == key))
         assert row is not None
-        assert row.value in {"2027-spring", "2026-fall"}
-        audits = (
+        audits = sorted(
             (
                 await check.execute(
                     select(AuditLog).where(
@@ -81,6 +87,34 @@ async def test_concurrent_first_writes_serialize_without_500(db_engine) -> None:
                 )
             )
             .scalars()
-            .all()
+            .all(),
+            # The chain's head is the first write (no previous value);
+            # the tail is the loser's locked update. Order by the
+            # snapshot pair itself, not created_at (transaction-
+            # timestamp ties would make row order unobservable).
+            key=lambda audit: audit.before_snapshot["value"] is not None,
         )
         assert len(audits) == 2  # each committed write is a real decision
+        head, tail = audits
+        # Head: the winner created the key — no previous value exists.
+        assert head.before_snapshot == {"value": None}
+        first_value = head.after_snapshot["value"]
+        assert first_value in {"2027-spring", "2026-fall"}
+        # Tail: the loser serialized behind the winner's commit and
+        # audited the winner's committed value as its TRUE previous.
+        assert tail.before_snapshot == {"value": first_value}
+        second_value = tail.after_snapshot["value"]
+        assert second_value in {"2027-spring", "2026-fall"}
+        assert second_value != first_value
+        # The stored row agrees with the chain's tail — value AND the
+        # last writer's attribution.
+        assert row.value == second_value
+        assert row.updated_by_user_id == tail.actor_user_id
+        # Each audit names its own writer (both decisions happened).
+        by_value = {
+            audit.after_snapshot["value"]: audit.actor_user_id for audit in audits
+        }
+        assert by_value == {
+            "2027-spring": first_admin.id,
+            "2026-fall": second_admin.id,
+        }
