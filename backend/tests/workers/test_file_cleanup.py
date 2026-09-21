@@ -1,20 +1,20 @@
 # backend/tests/workers/test_file_cleanup.py
 """File-retention cleanup worker tests (plan 07 T7; spec §13, §27;
-hardening pass 4b deletion-claim ruling).
+hardening pass 4b deletion-claim ruling; pass 5a claim leases).
 
 Two layers:
 
 - The service logic (scan / guard / claim / delete / reconcile /
   idempotency) runs pure in-memory against an in-memory
   ``CleanupRepository`` (mirroring the real due predicate and the real
-  conditional claim) and ``FakeObjectStorage`` — no PostgreSQL, no
-  broker.
+  leased claim) and ``FakeObjectStorage`` — no PostgreSQL, no broker.
 - The REAL repository (``SubmissionCleanupRepository``, wired at the
   merge per MERGE_CARRIES item 3) runs against real PostgreSQL
   (integration-marked): the due predicate's exclusion set is judged on
   actual rows, ``mark_deleted`` is the idempotent compare-and-set the
-  racing-redelivery path relies on, and the pass-4b deletion claim plus
-  its races live in ``test_cleanup_deletion_claim.py``.
+  racing-redelivery path relies on, and the pass-4b deletion claim, its
+  races, the pass-5a lease/takeover semantics, and the unified
+  serialization boundary proofs live in ``test_cleanup_deletion_claim.py``.
 
 Coverage per the brief:
 - Retention matrix: expired 30/90/180-day objects deleted; future,
@@ -25,10 +25,11 @@ Coverage per the brief:
   with a warning and keeps its metadata; a row already marked deleted is
   an idempotent success with no warning.
 - Idempotency: a second run over the same state issues zero additional
-  provider delete calls (pinned by the fake's call recording); pass 4b
-  adds the claim-exclusivity layer — a redelivered job holding a stale
-  snapshot cannot claim a row the first delivery already claimed, so it
-  never reaches the provider at all.
+  provider delete calls (pinned by the fake's call recording); the
+  claim-exclusivity layer — a redelivered job holding a stale snapshot
+  cannot claim a row whose lease is live, so it never reaches the
+  provider at all — plus the pass-5a lease mirror: an EXPIRED lease
+  re-candidates the row and the takeover claim resets both timestamps.
 - Failure taxonomy: temporary / permanent / unknown provider errors
   release the claim, leave the record otherwise untouched, count
   exactly one failure, and never retry in-process — a single programmed
@@ -71,6 +72,10 @@ from tests.fakes.integrations import FakeObjectStorage
 NOW = datetime(2026, 9, 19, 3, 0, tzinfo=UTC)
 CLAIM_ID = UUID("12345678-1234-5678-1234-567812345678")
 TTL = timedelta(minutes=5)
+# The claim lease the real repository wires from Settings (the
+# cleanup_claim_lease_seconds default); the in-memory mirror must agree
+# so its exclusivity horizon matches the real one under test.
+LEASE = timedelta(seconds=300)
 
 
 # --- in-memory repository (the merge target's predicate, mirrored) -------------------
@@ -82,8 +87,9 @@ class Row:
 
     ``claim_protected`` mirrors the real claim predicate's join guard
     (the row's AssignmentClaim inside VALIDATING / UNDER_REVIEW) so the
-    in-memory claim can re-evaluate it; ``cleanup_claimed_at`` is the
-    deletion claim the real conditional UPDATE sets.
+    in-memory claim can re-evaluate it; ``cleanup_claimed_at`` /
+    ``cleanup_lease_expires_at`` are the deletion-claim lease the real
+    claim transaction sets (pass 5a).
     """
 
     submission_id: UUID
@@ -94,26 +100,30 @@ class Row:
     protected: bool = False
     deleted_at: datetime | None = None
     cleanup_claimed_at: datetime | None = None
+    cleanup_lease_expires_at: datetime | None = None
     claim_protected: bool = False
 
 
 class InMemoryCleanupRepository:
-    """Due-candidate discovery + the conditional deletion claim +
-    idempotent ``mark_deleted`` in memory.
+    """Due-candidate discovery + the leased deletion claim (with crash
+    takeover) + idempotent ``mark_deleted`` in memory.
 
     ``collect_due_files`` mirrors the real query's exclusion set (spec
     §13/§27): permanent rows, legal-hold rows, protected rows (claims in
-    review states), not-yet-due rows, rows already claimed, and rows
-    already marked deleted never become candidates. With
+    review states), not-yet-due rows, rows already marked deleted, and
+    rows under a LIVE lease never become candidates — a claimed row
+    whose lease EXPIRED does (the pass-5a crash takeover; a claimed row
+    with a NULL lease stays excluded, the fail-safe reading). With
     ``stale_listing=True`` it yields every row untouched — the
     stale/buggy-listing shape the service-level guards must survive on
     their own.
 
-    ``claim_for_cleanup`` mirrors the real single conditional UPDATE:
-    EVERY guard (including the claim-status join mirror and
-    ``cleanup_claimed_at IS NULL``) is re-evaluated against the row's
-    CURRENT state at claim time, and only the winner gets
-    ``cleanup_claimed_at`` — the pass-4b TOCTOU closure.
+    ``claim_for_cleanup`` mirrors the real claim's guarded lease: EVERY
+    guard (including the claim-status join mirror and the live-lease
+    conjunct) is re-evaluated against the row's CURRENT state at claim
+    time, and only the winner gets ``cleanup_claimed_at`` +
+    ``cleanup_lease_expires_at`` (a takeover resets both — the pass-5a
+    semantics the PostgreSQL proofs pin in test_cleanup_deletion_claim.py).
 
     ``mark_deleted`` is the idempotent compare-and-set the racing
     redelivery path needs: an already-marked row answers ALREADY_DELETED
@@ -141,13 +151,20 @@ class InMemoryCleanupRepository:
         return next(row for row in self.rows if row.object_key == object_key)
 
     def _claimable(self, row: Row, now: datetime) -> bool:
+        lease_live = (
+            row.cleanup_claimed_at is not None and row.cleanup_lease_expires_at is None
+        ) or (
+            row.cleanup_claimed_at is not None
+            and row.cleanup_lease_expires_at is not None
+            and row.cleanup_lease_expires_at > now
+        )
         return (
             not row.permanent
             and not row.legal_hold
             and not row.protected
             and not row.claim_protected
             and row.deleted_at is None
-            and row.cleanup_claimed_at is None
+            and not lease_live
             and row.retention_until is not None
             and row.retention_until <= now
         )
@@ -167,12 +184,14 @@ class InMemoryCleanupRepository:
         if not self._claimable(row, now):
             return False
         row.cleanup_claimed_at = now
+        row.cleanup_lease_expires_at = now + LEASE
         return True
 
     async def release_cleanup_claim(self, record: FileRecord) -> None:
         row = self.row_for(record.object_key)
         if row.cleanup_claimed_at is not None and row.deleted_at is None:
             row.cleanup_claimed_at = None
+            row.cleanup_lease_expires_at = None
 
     async def mark_deleted(
         self, record: FileRecord, *, deleted_at: datetime
@@ -648,6 +667,60 @@ async def test_successful_deletion_keeps_claim_as_the_held_marker() -> None:
     assert row.deleted_at == NOW
 
 
+# --- the claim lease (pass 5a) --------------------------------------------------------
+
+
+async def test_live_lease_is_exclusive_and_expired_lease_is_taken_over() -> None:
+    """The claim is a LEASE (pass 5a): while it lives, a redelivered job
+    sees claim-lost and issues no provider call, and the row leaves the
+    candidate set; once it EXPIRES (a crashed worker), the row
+    re-enters the candidate set and the takeover claim resets BOTH
+    timestamps and completes the deletion. A claimed row with a NULL
+    lease never re-candidates (the fail-safe reading)."""
+    storage = FakeObjectStorage()
+    key = _stored_object(storage)
+    row = _row(object_key=key, retention_until=NOW - timedelta(days=30))
+    repo = InMemoryCleanupRepository([row])
+    crashed = FileRecord(
+        submission_id=row.submission_id,
+        object_key=key,
+        retention_until=row.retention_until,
+    )
+
+    # The first delivery claims... then dies before the provider call.
+    assert await repo.claim_for_cleanup(crashed, now=NOW) is True
+    assert row.cleanup_claimed_at == NOW
+    assert row.cleanup_lease_expires_at == NOW + LEASE
+
+    # While the lease lives: not a candidate, and a redelivery holding
+    # the stale snapshot cannot re-claim.
+    assert await repo.collect_due_files(NOW + timedelta(seconds=1)) == []
+    assert await repo.claim_for_cleanup(crashed, now=NOW + timedelta(seconds=1)) is (
+        False
+    )
+
+    # After the lease expires: a candidate again, and the takeover
+    # resets both timestamps before deleting.
+    takeover_now = NOW + LEASE + timedelta(seconds=1)
+    healed = await cleanup_expired_files(takeover_now, repo, storage)
+    assert healed == CleanupSummary(scanned=1, deleted=1)
+    assert storage.deleted_keys == [key]
+    assert row.cleanup_claimed_at == takeover_now
+    assert row.cleanup_lease_expires_at == takeover_now + LEASE
+    assert row.deleted_at == takeover_now
+
+    # The NULL-lease fail-safe: a claimed row with an unknown lease
+    # never re-candidates, however far the clock advances.
+    null_lease_key = _stored_object(storage)
+    null_lease_row = _row(
+        object_key=null_lease_key, retention_until=NOW - timedelta(days=30)
+    )
+    null_lease_row.cleanup_claimed_at = NOW - timedelta(days=1)
+    null_lease_row.cleanup_lease_expires_at = None
+    repo.rows.append(null_lease_row)
+    assert await repo.collect_due_files(NOW + timedelta(days=2)) == []
+
+
 # --- summary consistency + job-module wiring ------------------------------------------
 
 
@@ -953,7 +1026,7 @@ def test_real_repository_due_predicate_excludes_protected_rows() -> None:
     run = uuid.uuid4().hex[:8]
     seed = asyncio.run(_seed_repo_world(maker, run))
     try:
-        repository = SubmissionCleanupRepository(maker)
+        repository = SubmissionCleanupRepository(maker, lease_seconds=300)
         records = asyncio.run(repository.collect_due_files(NOW))
 
         expected = {
@@ -989,7 +1062,7 @@ def test_real_repository_mark_deleted_is_idempotent_compare_and_set() -> None:
     run = uuid.uuid4().hex[:8]
     seed = asyncio.run(_seed_repo_world(maker, run))
     try:
-        repository = SubmissionCleanupRepository(maker)
+        repository = SubmissionCleanupRepository(maker, lease_seconds=300)
         target = seed.submission_ids["due_completed"]
         record = FileRecord(
             submission_id=target,

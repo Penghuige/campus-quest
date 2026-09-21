@@ -356,15 +356,19 @@ class RewardLockService:
             established = (from_status, tier, points)
 
         # (5) Claim transition + latest pointer. The UNDER_REVIEW entry
-        # carries the deletion-claim guard (hardening pass 4b, spec
-        # §27): entering the review pipeline protects EVERY submission
-        # under the claim, so an in-flight cleanup claim (an overdue old
-        # version being deleted right now) refuses the transition with
-        # a typed 409 — protection must win, deletion is retryable (the
-        # validation job's bounded autoretry covers the seconds-level
-        # claim window).
+        # carries the deletion-claim guard (hardening pass 4b, lease-aware
+        # since pass 5a, spec §27): entering the review pipeline protects
+        # EVERY submission under the claim, so a cleanup claim with a
+        # LIVE lease (an overdue old version being deleted right now)
+        # refuses the transition with a typed 409 — protection must win,
+        # deletion is retryable (the validation job's bounded autoretry
+        # covers the seconds-level claim window; an expired lease is a
+        # crashed worker and no longer blocks). The claim transaction
+        # locks the submission -> claim row pair; this service holds the
+        # claim row lock here, so the two sides serialize on it (pass
+        # 5a's unified serialization boundary).
         if status in _REVIEW_ENTRY_STATUSES:
-            await ensure_no_active_cleanup_claim(db, claim.id)
+            await ensure_no_active_cleanup_claim(db, claim.id, now=now)
             claim.status = ClaimStatus.UNDER_REVIEW.value
         await self._bump_latest(db, claim, submission)
 
