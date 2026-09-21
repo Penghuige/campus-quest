@@ -133,7 +133,7 @@ _CSV_SCHEMA = {
     ]
 }
 
-_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at"}
+_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at", "headers"}
 _SUBMISSION_FIELDS = {
     "id",
     "claim_id",

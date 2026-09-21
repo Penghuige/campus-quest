@@ -127,9 +127,17 @@ _CSV_SCHEMA = {
     ]
 }
 
-# The frozen public wire shape of the intent response — asserted below as
-# the composition-gap evidence: no signed-header field exists.
-_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at"}
+# The public wire shape of the intent response (controller ruling on the
+# composition-gap finding): the signed PUT headers travel WITH the grant.
+_INTENT_FIELDS = {"intent_id", "upload_url", "expires_at", "headers"}
+
+# The expected signed-header set for a CSV intent of this body size: the
+# write-once condition, the pinned MIME, and the declared byte length.
+_SIGNED_HEADERS = {
+    "If-None-Match": "*",
+    "Content-Type": "text/csv",
+    "Content-Length": "",  # filled at runtime with len(_CSV_BODY)
+}
 
 # Celery's default queue name (no custom routing is configured): the
 # finalize's real .delay publish lands here on the configured broker.
@@ -152,15 +160,16 @@ async def factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     await engine.dispose()
 
 
-def _put(url: str, body: bytes) -> int:
-    """Real HTTP PUT through the presigned URL exactly like the
-    documented browser client: the pinned Content-Type, the body-derived
-    Content-Length, and the mandatory signed If-None-Match:* header."""
+def _put(url: str, body: bytes, signed_headers: dict[str, str]) -> int:
+    """Real HTTP PUT through the presigned URL exactly like a compliant
+    client: the headers echoed by the intent response, verbatim — the
+    pinned Content-Type, the signed Content-Length, and the write-once
+    If-None-Match condition."""
     request = urllib.request.Request(
         url,
         data=body,
         method="PUT",
-        headers={"Content-Type": _CSV_CONTENT_TYPE, "If-None-Match": "*"},
+        headers=signed_headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -394,9 +403,10 @@ async def test_presign_put_finalize_validate_approve_composition(
 
                 # (c) upload intent through the real route: the storage
                 # provider is the REAL S3ObjectStorage, so the response's
-                # URL is a real presigned write-once PUT. The frozen
-                # response shape is also the composition-gap evidence:
-                # the signed PUT headers are NOT conveyed to the client.
+                # URL is a real presigned write-once PUT, and the signed
+                # PUT headers travel WITH the grant (the controller
+                # ruling on this suite's gap finding — the client echoes
+                # them verbatim instead of reconstructing from docs).
                 intent_response = await client.post(
                     "/api/v1/submissions/upload-intent",
                     headers=world["student_headers"],
@@ -410,20 +420,23 @@ async def test_presign_put_finalize_validate_approve_composition(
                 assert intent_response.status_code == 201, intent_response.text
                 intent = intent_response.json()
                 assert set(intent) == _INTENT_FIELDS
+                expected_headers = dict(_SIGNED_HEADERS)
+                expected_headers["Content-Length"] = str(len(_CSV_BODY))
+                assert intent["headers"] == expected_headers
                 assert intent["upload_url"].startswith(
                     f"{settings.s3_endpoint_url}/{settings.s3_bucket}/"
                 )
 
-                # (d) the real HTTP PUT with the client-reconstructed
-                # signed headers, then the write-once re-proof at the
-                # composition layer: the SAME business-issued URL admits
-                # exactly one successful PUT.
+                # (d) the real HTTP PUT with the ECHOED signed headers,
+                # then the write-once re-proof at the composition layer:
+                # the SAME business-issued URL admits exactly one
+                # successful PUT.
                 put_status = await asyncio.to_thread(
-                    _put, intent["upload_url"], _CSV_BODY
+                    _put, intent["upload_url"], _CSV_BODY, intent["headers"]
                 )
                 assert put_status == 200
                 replay_status = await asyncio.to_thread(
-                    _put, intent["upload_url"], _CSV_BODY
+                    _put, intent["upload_url"], _CSV_BODY, intent["headers"]
                 )
                 assert replay_status == 412
 
@@ -605,3 +618,12 @@ async def test_presign_put_finalize_validate_approve_composition(
             await get_async_engine().dispose()
         get_async_engine.cache_clear()
         get_async_session_maker.cache_clear()
+        # Same discipline for Celery's global app slots (the
+        # tests/workers/conftest.py guard): publishing through the real
+        # .delay resolved an app and made it current — leave nothing
+        # behind for whichever suite runs next in this process (the
+        # lifespan binding test reads current_app).
+        from celery import _state  # noqa: PLC2701  (test-only restore)
+
+        _state._tls.current_app = None
+        _state.default_app = None

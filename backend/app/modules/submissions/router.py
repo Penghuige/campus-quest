@@ -386,6 +386,7 @@ async def create_upload_intent(
         intent_id=intent.intent_id,
         upload_url=intent.upload_url,
         expires_at=intent.url_expires_at,
+        headers=intent.signed_headers,
     )
 
 

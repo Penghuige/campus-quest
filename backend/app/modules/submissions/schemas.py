@@ -75,11 +75,16 @@ class UploadIntentRequest(BaseModel):
 
 class UploadIntentResponse(BaseModel):
     """The issued grant: the intent id for the later finalize call, the
-    short-lived presigned upload URL, and its expiry instant."""
+    short-lived presigned upload URL, its expiry instant, and the exact
+    PUT headers the URL signed — the client echoes them verbatim on the
+    PUT (write-once condition, pinned content type, declared byte
+    length); reconstructing them from documentation is a contract gap
+    the composition smoke surfaced (PR #2 hardening step 13)."""
 
     intent_id: UUID
     upload_url: str
     expires_at: datetime
+    headers: dict[str, str]
 
 
 class UploadCompleteRequest(BaseModel):

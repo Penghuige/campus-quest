@@ -634,6 +634,7 @@ class IssuedUploadIntent:
     upload_url: str
     url_expires_at: datetime
     intent_expires_at: datetime
+    signed_headers: dict[str, str]
 
 
 class UploadService:
@@ -751,6 +752,12 @@ class UploadService:
         db.add(intent)
         await db.flush()
         await db.commit()
+        # The signed PUT headers travel WITH the grant (the composition
+        # smoke's gap finding, controller ruling): the client echoes
+        # exactly what was signed — write-once condition, pinned
+        # content type, declared byte length — instead of reconstructing
+        # them from documentation.
+        pinned_content_type = DECLARED_TYPE_CONTENT_TYPES[FileType(declared_type)]
         return IssuedUploadIntent(
             intent_id=intent.id,
             claim_id=claim.id,
@@ -758,6 +765,11 @@ class UploadService:
             upload_url=url.url,
             url_expires_at=url.expires_at,
             intent_expires_at=intent.expires_at,
+            signed_headers={
+                "If-None-Match": "*",
+                "Content-Type": pinned_content_type,
+                "Content-Length": str(size),
+            },
         )
 
     async def finalize_upload(

@@ -373,7 +373,7 @@ class ObjectStorage(Protocol):
 
 Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original filenames are display metadata only.
 
-Upload-PUT client contract (PR #2 hardening): every presigned upload URL signs `If-None-Match: *` (write-once: exactly one successful PUT per key; replay and post-finalize overwrites answer 412 — proven against the pinned MinIO), plus the declared `Content-Length` and `Content-Type` (mismatches answer 403). Clients MUST send the signed `If-None-Match` header on PUT; it is not CORS-safelisted, so provider CORS configuration must allow it and frontend upload code must attach it.
+Upload-PUT client contract (PR #2 hardening): every presigned upload URL signs `If-None-Match: *` (write-once: exactly one successful PUT per key; replay and post-finalize overwrites answer 412 — proven against the pinned MinIO), plus the declared `Content-Length` and `Content-Type` (mismatches answer 403). The intent response carries the signed headers under `headers` — clients echo them verbatim on the PUT. `If-None-Match` is not CORS-safelisted, so provider CORS configuration must allow it and frontend upload code must attach it.
 
 ### SMS
 
