@@ -14,10 +14,12 @@ Pinned first, against the app factory and the task objects only:
 The end-to-end scenarios then run the REAL eager chain against the
 real PostgreSQL test database — the scan samples SystemClock,
 discovers, and the enqueued `send_notification_delivery` jobs run
-inline with the production service composition — substituting only
-the session maker with a NullPool factory (one asyncio.run loop per
-task body must never share pooled connections across closed loops; the
-same substitution pattern as tests/workers/test_expire_claims.py). All
+inline with the production service composition. The task bodies
+compose through the shared per-job session source
+(`app.workers.session_source`): each execution builds and disposes its
+own engine inside its own `asyncio.run`, so no session substitution is
+needed — the fixture's engine only serves the test's own
+seed/inspect/cleanup loops. All
 seeded deliveries are IN_APP and non-deadline events, so the inline
 sends need no provider port and no claim-status resolution: the chain
 under test is exactly scan -> enqueue -> claim -> resolve.
@@ -47,7 +49,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.notifications.enums import (
@@ -321,7 +323,7 @@ def test_batch_ceiling_and_lease_threshold_come_from_settings(
 
 
 def test_eager_dispatch_enqueues_exactly_due_deliveries(
-    celery_app: Celery, monkeypatch: pytest.MonkeyPatch
+    celery_app: Celery,
 ) -> None:
     """The real chain, inline: the scan samples SystemClock, discovers
     exactly the two due PENDING deliveries (the future one is not due),
@@ -331,7 +333,13 @@ def test_eager_dispatch_enqueues_exactly_due_deliveries(
     idempotency; the scan owns discovery only)."""
     engine = create_async_engine(_database_url(), poolclass=NullPool)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    monkeypatch.setattr("app.db.session.get_async_session_maker", lambda: maker)
+    # The REAL task code runs un-substituted: each task body builds its
+    # own per-invocation engine through the shared session source
+    # against this same test DATABASE_URL. The settings cache is
+    # cleared around the run so the per-job engines cannot resolve a
+    # stale process-wide snapshot (same pattern as
+    # test_submission_validation_job.py).
+    get_settings.cache_clear()
 
     run = uuid4().hex[:8]
     real_now = datetime.now(UTC)
@@ -422,11 +430,12 @@ def test_eager_dispatch_enqueues_exactly_due_deliveries(
         )
     finally:
         asyncio.run(_cleanup(maker, seeded))
+        get_settings.cache_clear()
     asyncio.run(engine.dispose())
 
 
 def test_dispatch_re_enqueues_aged_sending_and_leaves_fresh_alone(
-    celery_app: Celery, monkeypatch: pytest.MonkeyPatch
+    celery_app: Celery,
 ) -> None:
     """The stuck-SENDING carry: an IN_FLIGHT claim older than the
     configured threshold (default 15 minutes) is presumed dead — the
@@ -435,7 +444,8 @@ def test_dispatch_re_enqueues_aged_sending_and_leaves_fresh_alone(
     alone entirely."""
     engine = create_async_engine(_database_url(), poolclass=NullPool)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    monkeypatch.setattr("app.db.session.get_async_session_maker", lambda: maker)
+    # Same un-substituted real composition as the eager test above.
+    get_settings.cache_clear()
 
     run = uuid4().hex[:8]
     real_now = datetime.now(UTC)
@@ -492,6 +502,7 @@ def test_dispatch_re_enqueues_aged_sending_and_leaves_fresh_alone(
         assert fresh_row.sent_at is None
     finally:
         asyncio.run(_cleanup(maker, seeded))
+        get_settings.cache_clear()
     asyncio.run(engine.dispose())
 
 

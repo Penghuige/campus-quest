@@ -16,10 +16,12 @@ Pinned first, against the app factory and the task objects only:
 The end-to-end scenario then runs the REAL eager chain against the real
 PostgreSQL test database — scan discovers, per-ID jobs expire with real
 commits, the LoggingEventPublisher wiring inside ``build_expire_service``
-stays exercised — substituting only the session maker with a NullPool
-factory (one ``asyncio.run`` loop per task body must never share pooled
-connections across closed loops; the same substitution pattern as
-tests/workers/test_notification_delivery.py). Real commits require real
+stays exercised. The task bodies compose through the shared per-job
+session source (``app.workers.session_source``): each execution builds
+and disposes its own engine inside its own ``asyncio.run``, so no
+session substitution is needed — the fixture's engine only serves the
+test's own seed/inspect/cleanup loops (NullPool for the same reason:
+they too span several one-shot loops). Real commits require real
 cleanup: every seeded row is deleted in FK order (claims -> assignments
 -> tasks -> users).
 """
@@ -46,7 +48,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.tasks.enums import (
@@ -274,7 +276,7 @@ def test_job_signatures_carry_ids_and_params_only() -> None:
 
 
 def test_eager_scan_expires_due_claims_end_to_end(
-    celery_app: Celery, monkeypatch: pytest.MonkeyPatch
+    celery_app: Celery,
 ) -> None:
     """The real chain, inline: the scan samples SystemClock, discovers
     only the due claim, enqueues one per-ID job per id (eager: they run
@@ -284,12 +286,14 @@ def test_eager_scan_expires_due_claims_end_to_end(
     answers ALREADY_TERMINAL without rewriting anything."""
     engine = create_async_engine(_database_url(), poolclass=NullPool)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    # The jobs import get_async_session_maker lazily from app.db.session
-    # at call time; substituting the module attribute routes the REAL
-    # task code (build_expire_service included — SystemClock +
-    # LoggingEventPublisher + the default inspector) onto this NullPool
-    # engine.
-    monkeypatch.setattr("app.db.session.get_async_session_maker", lambda: maker)
+    # The REAL task code runs un-substituted (build_expire_service
+    # included — SystemClock + LoggingEventPublisher + the default
+    # inspector): each task body builds its own per-invocation engine
+    # through the shared session source against this same test
+    # DATABASE_URL. The settings cache is cleared around the run so the
+    # per-job engines cannot resolve a stale process-wide snapshot
+    # (same pattern as test_submission_validation_job.py).
+    get_settings.cache_clear()
 
     run = uuid4().hex[:8]
     real_now = datetime.now(UTC)
@@ -386,4 +390,5 @@ def test_eager_scan_expires_due_claims_end_to_end(
         assert again["claim_ids"] == []
     finally:
         asyncio.run(_cleanup(maker, task_ids=task_ids, user_ids=user_ids))
+        get_settings.cache_clear()
     asyncio.run(engine.dispose())

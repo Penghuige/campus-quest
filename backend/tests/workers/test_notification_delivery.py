@@ -362,9 +362,10 @@ def test_duplicate_job_delivers_exactly_once(
     sms = FakeSmsSender()
     service = _service(engine, sms=sms, clock=StepClock(_T0))
     # The eager job runs inline in THIS process, so the test-side service
-    # (fake senders, frozen clock) stands in for the production wiring.
+    # (fake senders, frozen clock) stands in for the production wiring;
+    # the per-job session maker the shell now passes in is ignored.
     monkeypatch.setattr(
-        send_notification_job, "build_delivery_service", lambda: service
+        send_notification_job, "build_delivery_service", lambda **_: service
     )
     event_key = f"claim:{uuid4()}:deadline_4h"
 

@@ -40,10 +40,17 @@ behind is the next beat's work.
 
 Correlation (§15): ``request_id`` arrives as an explicit task argument,
 is threaded unchanged into every per-id enqueue, and is logged at both
-task boundaries — never re-derived. Imports of sqlalchemy / app.db /
-app.modules stay INSIDE the functions (the celery_app
-lazy-construction contract: importing this module never requires a
-configured environment).
+task boundaries — never re-derived.
+
+Session lifecycle: the scan's read runs through the shared per-job
+source (``app.workers.session_source``) — one fresh engine created and
+disposed inside this task's ``asyncio.run``, so no pooled connection
+ever crosses the loop boundary the next task invocation closes (see
+that module's docstring for the WHY).
+
+Imports of sqlalchemy / app.db / app.modules stay INSIDE the functions
+(the celery_app lazy-construction contract: importing this module never
+requires a configured environment).
 """
 
 from __future__ import annotations
@@ -61,6 +68,7 @@ from celery import shared_task  # type: ignore[import-untyped]
 # imports nothing configured), and naming the producer->consumer edge
 # here keeps the dispatch flow readable in one place.
 from app.workers.jobs.send_notification import send_notification_delivery
+from app.workers.session_source import run_with_session
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +153,6 @@ def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
 
     from app.core.clock import SystemClock
     from app.core.config import get_settings
-    from app.db.session import get_async_session_maker
 
     job_id = self.request.id
     settings = get_settings()
@@ -164,16 +171,15 @@ def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
         },
     )
 
-    async def _discover() -> list[DueDelivery]:
-        async with get_async_session_maker()() as session:
-            return await collect_due_deliveries(
-                session,
-                SystemClock().now(),
-                limit=settings.notification_dispatch_batch_limit,
-                stale_after=stale_after,
-            )
+    async def _discover(session: Any) -> list[DueDelivery]:
+        return await collect_due_deliveries(
+            session,
+            SystemClock().now(),
+            limit=settings.notification_dispatch_batch_limit,
+            stale_after=stale_after,
+        )
 
-    discovered = asyncio.run(_discover())
+    discovered = asyncio.run(run_with_session(_discover))
     for item in discovered:
         send_notification_delivery.delay(str(item.delivery_id), request_id)
     reasons = [item.reason for item in discovered]

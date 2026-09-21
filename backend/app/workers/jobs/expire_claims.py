@@ -10,8 +10,10 @@ DECIDES:
   (``collect_due_claim_ids``), and enqueues one ``workers.expire_claim``
   per id. No domain decision ever happens here.
 - ``workers.expire_claim`` — the per-id unit of work: opens its OWN
-  session via the process-wide session maker, samples the SystemClock
-  instant for this attempt, calls
+  session via the shared per-job source
+  (``app.workers.session_source`` — one fresh engine per invocation,
+  created and disposed inside the same ``asyncio.run``), samples the
+  SystemClock instant for this attempt, calls
   ``ClaimService.expire_claim_if_due(session, claim_id, now)``, and
   returns the JSON payload the result reduces to. Every outcome —
   EXPIRED, NOT_DUE, PROTECTED, VALID_SUBMISSION, ALREADY_TERMINAL,
@@ -55,6 +57,8 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from celery import shared_task  # type: ignore[import-untyped]
+
+from app.workers.session_source import run_with_session
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -147,19 +151,20 @@ def _expire_payload(result: ExpireResult) -> dict[str, Any]:
 
 
 async def _expire_one(claim_id: UUID, now: datetime) -> dict[str, Any]:
-    from app.db.session import get_async_session_maker
-
     service = build_expire_service()
-    async with get_async_session_maker()() as session:
+
+    async def _expire(session: AsyncSession) -> dict[str, Any]:
         result = await service.expire_claim_if_due(session, claim_id, now)
-    return _expire_payload(result)
+        return _expire_payload(result)
+
+    return await run_with_session(_expire)
 
 
 async def _discover_due(now: datetime) -> list[UUID]:
-    from app.db.session import get_async_session_maker
-
-    async with get_async_session_maker()() as session:
+    async def _discover(session: AsyncSession) -> list[UUID]:
         return await collect_due_claim_ids(session, now)
+
+    return await run_with_session(_discover)
 
 
 @shared_task(  # type: ignore[untyped-decorator]

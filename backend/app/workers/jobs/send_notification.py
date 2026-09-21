@@ -25,64 +25,87 @@ idempotently.
 
 Correlation (§15): `request_id` arrives as an explicit task argument
 and is logged and passed through unchanged, never re-derived.
+
+Session lifecycle: the whole composition — the DeliveryService's own
+transactions and the deadline-suppression read below — runs on ONE
+fresh per-job engine (`app.workers.session_source.run_with_session_maker`),
+created and disposed inside this task's `asyncio.run`. The
+process-wide session maker's pooled engine must never be implicitly
+reused across a Celery body's per-task event loops (see that module's
+docstring for the WHY).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from celery import shared_task  # type: ignore[import-untyped]
 from sqlalchemy import select
 
 from app.modules.notifications.delivery_service import DeliveryService
+from app.workers.session_source import run_with_session_maker
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
-async def _claim_status(claim_id: UUID) -> str | None:
-    """Deadline-suppression input: the claim's status column, or None.
-
-    Imported lazily so that importing this job module stays environment-
-    free (the celery_app lazy-construction contract); the workers layer
-    MAY read across modules — the notifications service it feeds may
-    not (notifications -> identity only).
-    """
-    from app.db.session import get_async_session_maker
-    from app.modules.tasks.models import AssignmentClaim
-
-    async with get_async_session_maker()() as session:
-        # cast: session.scalar is untyped for a column select; the query
-        # returns the status string or None, nothing wider.
-        return cast(
-            "str | None",
-            await session.scalar(
-                select(AssignmentClaim.status).where(AssignmentClaim.id == claim_id)
-            ),
-        )
-
-
-def build_delivery_service() -> DeliveryService:
+def build_delivery_service(
+    *, session_maker: async_sessionmaker[AsyncSession]
+) -> DeliveryService:
     """Production composition (§12 step 2): dependencies in, service out.
+
+    `session_maker` is the per-job maker from
+    `app.workers.session_source.run_with_session_maker`: every session
+    the service opens (and the deadline-suppression read below) sits on
+    one engine that is disposed inside this task's `asyncio.run` — the
+    process-wide maker's pooled connections cannot cross the loop
+    boundary the next task invocation closes. Tests substitute the
+    fakes by patching this factory.
 
     The SMS/EMAIL senders are the interim Logging* adapters until this
     plan's later provider wiring replaces them at this exact call site
     (real adapters translate their SDK failures into the §13 taxonomy
-    and honor `idempotency_key`; nothing else changes). Tests substitute
-    the fakes by patching this factory.
+    and honor `idempotency_key`; nothing else changes).
     """
     from datetime import timedelta
 
     from app.core.clock import SystemClock
     from app.core.config import get_settings
-    from app.db.session import get_async_session_maker
     from app.integrations.email import LoggingEmailSender
     from app.integrations.sms import LoggingSmsSender
+    from app.modules.tasks.models import AssignmentClaim
+
+    async def _claim_status(claim_id: UUID) -> str | None:
+        """Deadline-suppression input: the claim's status column, or
+        None.
+
+        Imported lazily so the DB read stays inside the call (the
+        celery_app lazy-construction contract); the workers layer MAY
+        read across modules — the notifications service it feeds may
+        not (notifications -> identity only). Runs on the SAME per-job
+        engine: the resolver is awaited inside `service.send`, i.e.
+        inside this task's `asyncio.run`, so the maker's engine is
+        alive for the whole call.
+        """
+        async with session_maker() as session:
+            # cast: session.scalar is untyped for a column select; the
+            # query returns the status string or None, nothing wider.
+            return cast(
+                "str | None",
+                await session.scalar(
+                    select(AssignmentClaim.status).where(
+                        AssignmentClaim.id == claim_id
+                    )
+                ),
+            )
 
     return DeliveryService(
-        session_maker=get_async_session_maker(),
+        session_maker=session_maker,
         sms_sender=LoggingSmsSender(),
         email_sender=LoggingEmailSender(),
         clock=SystemClock(),
@@ -115,8 +138,12 @@ def send_notification_delivery(
         "send_notification_delivery.start",
         extra={"request_id": request_id, "job_id": job_id},
     )
-    service = build_delivery_service()
-    result = asyncio.run(service.send(UUID(delivery_id), request_id))
+
+    async def _send(session_maker: Any) -> Any:
+        service = build_delivery_service(session_maker=session_maker)
+        return await service.send(UUID(delivery_id), request_id)
+
+    result = asyncio.run(run_with_session_maker(_send))
     payload: dict[str, Any] = {
         "delivery_id": str(result.delivery_id),
         "outcome": result.outcome.value,
