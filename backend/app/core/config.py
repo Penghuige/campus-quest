@@ -118,6 +118,11 @@ class Settings(BaseSettings):
     # much of each cell value the persisted validation report carries.
     validation_preview_rows: int = 10
     validation_preview_value_chars: int = 200
+    # Comment content cap (spec §21.1: 单条长度默认上限 2000 个字符，可配置
+    # — the default is the spec's 2000 and deployments may tighten it).
+    # Consumed by `CommentService`, which receives the scalar at the
+    # composition root.
+    comment_max_length: int = 2000
 
     @field_validator("business_timezone")
     @classmethod
@@ -141,6 +146,17 @@ class Settings(BaseSettings):
         # abandon attempt.
         if value < 1:
             raise ValueError(f"daily_abandon_limit must be >= 1, got {value}")
+        return value
+
+    @field_validator("comment_max_length")
+    @classmethod
+    def _validate_comment_max_length(cls, value: int) -> int:
+        # A cap below 1 rejects every comment while still consuming the
+        # comment rate-limit budget (spec §33.1); a deployment wanting the
+        # surface closed should disable it, not set an unusable quota. Fail
+        # at settings load, not at the first comment attempt.
+        if value < 1:
+            raise ValueError(f"comment_max_length must be >= 1, got {value}")
         return value
 
     @field_validator("token_secret")

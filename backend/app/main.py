@@ -10,6 +10,7 @@ from app.core import rbac
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
+from app.modules.community import router as community_router
 from app.modules.identity import (
     auth_router as identity_auth_router,
 )
@@ -73,6 +74,14 @@ def create_app() -> FastAPI:
     # bucket for these surfaces in V1).
     app.include_router(points_router.router, prefix="/api/v1")
     app.include_router(rankings_router.router, prefix="/api/v1")
+
+    # Community API (comments/votes/reactions/reports/ratings, spec
+    # §20-§24): same shape — BusinessError subclasses render through the
+    # core handler, and this module's two transport mappings (the
+    # endpoint limiter's 429 and RATING_NOT_ELIGIBLE) register before the
+    # mount.
+    community_router.register_community_exception_handlers(app)
+    app.include_router(community_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done
