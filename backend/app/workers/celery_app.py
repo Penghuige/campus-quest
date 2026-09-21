@@ -41,6 +41,7 @@ from app.core.config import Settings, get_settings
 JOB_MODULES = (
     "app.workers.jobs.health",
     "app.workers.jobs.send_notification",
+    "app.workers.jobs.expire_claims",
 )
 
 
@@ -67,6 +68,16 @@ def create_celery_app(settings: Settings) -> Celery:
         result_serializer="json",
         accept_content=["json"],
         task_eager_propagates=True,
+        # Plan-04 amendment 1 (watchdog/self-heal scope): acknowledge
+        # LATE and reject on worker loss, so a worker dying mid-task
+        # redelivers instead of silently dropping the job. Delivery
+        # becomes at-least-once, which every job must absorb
+        # idempotently: expire_claim replays answer ALREADY_TERMINAL
+        # and write nothing, expire_claims_scan re-discovers only what
+        # is still due, and send_notification_delivery collapses
+        # duplicates claim-before-send (health is pure).
+        task_acks_late=True,
+        task_reject_on_worker_lost=True,
     )
     return app
 

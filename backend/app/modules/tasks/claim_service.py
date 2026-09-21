@@ -99,6 +99,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -110,6 +111,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.events import DomainEvent, DomainEventPublisher
 from app.modules.tasks.deadlines import compute_claim_deadlines
 from app.modules.tasks.enums import (
     AssignmentAvailability,
@@ -127,10 +129,13 @@ from app.modules.tasks.models import (
 from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
+    "CLAIM_EXPIRED",
+    "EXPIRY_ACTIONABLE_STATUSES",
     "MAX_ACTIVE_CLAIMS",
     "QUOTA_OCCUPYING_STATUSES",
     "REASSIGN_EXCLUDED_STATUSES",
     "REWARD_POLICY_SNAPSHOT_V1",
+    "TERMINAL_CLAIM_STATUSES",
     "REWARD_POLICY_VERSION",
     "AccountNotActiveError",
     "ActiveClaim",
@@ -141,10 +146,15 @@ __all__ = [
     "ClaimService",
     "Claimer",
     "ClaimerNotStudentError",
+    "ExpireResult",
+    "ExpiryOutcome",
     "NoAssignmentAvailableError",
+    "NoValidSubmissionsInspector",
     "NotificationEventRecorder",
     "TaskNotClaimableError",
     "UserNotFoundError",
+    "ValidSubmissionInspector",
+    "effective_expiry_deadline",
 ]
 
 
@@ -167,6 +177,29 @@ REASSIGN_EXCLUDED_STATUSES: tuple[ClaimStatus, ...] = (
     ClaimStatus.ABANDONED,
     ClaimStatus.EXPIRED,
 )
+
+# Statuses that end the claim lifecycle (the ACTIVE_CLAIM_STATUSES
+# complement in models.py); the expiry ladder judges terminality
+# against this set, and replaying any terminal claim is a no-op.
+TERMINAL_CLAIM_STATUSES: tuple[ClaimStatus, ...] = (
+    ClaimStatus.COMPLETED,
+    ClaimStatus.ABANDONED,
+    ClaimStatus.EXPIRED,
+)
+
+# The statuses the expiry worker still acts on (spec §8.2 actionable
+# set — the same statuses the quota counts and abandon accepts).
+# Claims in the remaining ACTIVE statuses (VALIDATING/UNDER_REVIEW)
+# carry an already-submitted file the review pipeline owns.
+EXPIRY_ACTIONABLE_STATUSES: tuple[ClaimStatus, ...] = (
+    ClaimStatus.CLAIMED,
+    ClaimStatus.REVISION_REQUIRED,
+)
+
+# Audit-stream identifier for the expiry behavior history — twin of
+# CLAIM_ABANDONED in abandon_service (audit contract, deliberately
+# NOT a §25 notification event).
+CLAIM_EXPIRED = "CLAIM_EXPIRED"
 
 # The V1 reward ladder (spec §9.3) snapshotted onto every claim. Fractions
 # are exact Decimal strings: JSONB has no Decimal and points arithmetic
@@ -535,6 +568,90 @@ class NotificationEventRecorder(Protocol):
     ) -> None: ...
 
 
+# --- claim expiry (plan 07 T6; spec §8.2, §11.4, §11.5/§26) --------------------------
+
+
+def effective_expiry_deadline(claim: AssignmentClaim) -> datetime:
+    """The instant the claim becomes expirable: the LATER of the frozen
+    grace deadline and, when a review extended the window, the revision
+    deadline (max, so an extension always protects and an earlier
+    revision deadline never shortens grace)."""
+    deadline = claim.grace_deadline_at
+    if claim.revision_deadline_at is not None:
+        deadline = max(deadline, claim.revision_deadline_at)
+    return deadline
+
+
+class ValidSubmissionInspector(Protocol):
+    """Whether the claim's submission state protects it from expiry.
+
+    Amendment-2 seam (plan-04 final review, §11.5/§26 ruling): ONLY a
+    machine-VALIDATED submission finalized in-window protects a due
+    claim. This branch has no submissions table, so the default
+    implementation below answers False and a due claim whose in-window
+    submission is not yet VALIDATED expires; the stream that owns
+    submission validation wires the real VALIDATED-reading inspector at
+    the ClaimService constructor (the expiry worker's
+    build_expire_service is the production call site).
+    """
+
+    async def has_valid_submission(self, db: AsyncSession, claim_id: UUID) -> bool: ...
+
+
+class NoValidSubmissionsInspector:
+    """The default inspector: no submission protects (answers False).
+
+    Correct on this branch (there is no submission state to read) and
+    the pin for the strict amendment-2 reading; replaced — not
+    subclassed — by the VALIDATED reader once the submissions module
+    exists.
+    """
+
+    async def has_valid_submission(self, db: AsyncSession, claim_id: UUID) -> bool:
+        return False
+
+
+class ExpiryOutcome(StrEnum):
+    """One expiry attempt's decision (a fact, never an exception)."""
+
+    EXPIRED = "EXPIRED"
+    NOT_DUE = "NOT_DUE"
+    PROTECTED = "PROTECTED"
+    VALID_SUBMISSION = "VALID_SUBMISSION"
+    ALREADY_TERMINAL = "ALREADY_TERMINAL"
+    MISSING = "MISSING"
+
+
+@dataclass(frozen=True, slots=True)
+class ExpireResult:
+    """The decision plus the claim facts the caller's summary needs,
+    captured from the locked row BEFORE the commit (no caller re-reads
+    the row to log or serialize the outcome)."""
+
+    claim_id: UUID
+    outcome: ExpiryOutcome
+    status: ClaimStatus | None
+    assignment_id: UUID | None
+    task_id: UUID | None
+    user_id: UUID | None
+    terminal_at: datetime | None
+
+
+def _expire_result(claim: AssignmentClaim, outcome: ExpiryOutcome) -> ExpireResult:
+    """Reduce the locked row to the result snapshot (fields captured
+    pre-commit by construction — the caller reads them after the commit
+    only from this value)."""
+    return ExpireResult(
+        claim_id=claim.id,
+        outcome=outcome,
+        status=ClaimStatus(claim.status),
+        assignment_id=claim.assignment_id,
+        task_id=claim.task_id,
+        user_id=claim.user_id,
+        terminal_at=claim.terminal_at,
+    )
+
+
 # --- the service ---------------------------------------------------------------------
 
 
@@ -547,6 +664,10 @@ class ClaimService:
     trigger inside the claim transaction so the notifications module
     plans the deadline reminders in the same commit (plan 07 T5); None
     disables notification scheduling entirely.
+    ``event_publisher`` (optional) is the audit seam for CLAIM_EXPIRED
+    (plan 07 T6; None disables the audit event); ``valid_submission_inspector``
+    (optional, default NoValidSubmissionsInspector) is the amendment-2
+    protection seam consulted inside the expiry transaction.
     """
 
     def __init__(
@@ -555,10 +676,18 @@ class ClaimService:
         clock: Clock,
         max_active_claims: int = MAX_ACTIVE_CLAIMS,
         notification_recorder: NotificationEventRecorder | None = None,
+        event_publisher: DomainEventPublisher | None = None,
+        valid_submission_inspector: ValidSubmissionInspector | None = None,
     ) -> None:
         self._clock = clock
         self._eligibility = ClaimEligibilityService(max_active_claims=max_active_claims)
         self._notification_recorder = notification_recorder
+        self._event_publisher = event_publisher
+        self._valid_submission_inspector: ValidSubmissionInspector = (
+            valid_submission_inspector
+            if valid_submission_inspector is not None
+            else NoValidSubmissionsInspector()
+        )
 
     async def claim_random_assignment(
         self, db: AsyncSession, user_id: UUID, task_id: UUID
@@ -683,3 +812,125 @@ class ClaimService:
             )
         await db.commit()
         return claim
+
+    async def expire_claim_if_due(
+        self, db: AsyncSession, claim_id: UUID, now: datetime
+    ) -> ExpireResult:
+        """Expire one claim when its effective deadline has passed (plan
+        07 T6; spec §8.2, §11.4, §11.5/§26).
+
+        The caller owns ``now`` (deadlines.py's aware-only philosophy):
+        the expiry worker samples the SystemClock once per task attempt
+        and tests freeze it. A naive instant is refused with ValueError
+        BEFORE any lock or query — it has no UTC instant to compare
+        against the deadline columns.
+
+        Transaction shape (one transaction, one commit, only on the
+        EXPIRED path — every other outcome writes nothing):
+
+        1. ``SELECT ... FROM assignment_claims WHERE id = :claim_id FOR
+           UPDATE`` — every decision below is judged on the locked row,
+           so a concurrent finalize (a status flip or a VALIDATED
+           submission) that commits before this lock lands is always
+           observed, and a finalize arriving after waits and then sees
+           EXPIRED.
+        2. Outcome ladder, in order: MISSING (no row) -> ALREADY_TERMINAL
+           (terminal statuses; idempotent replay — same terminal_at, no
+           second event, no release flip) -> PROTECTED (VALIDATING /
+           UNDER_REVIEW: the review pipeline owns the claim) -> NOT_DUE
+           (strictly ``now < effective_expiry_deadline``; exactly-at is
+           due) -> VALID_SUBMISSION (the inspector, consulted HERE under
+           the lock, reports a protecting submission).
+        3. Release: assignment FOR UPDATE, OCCUPIED -> AVAILABLE only —
+           RETIRED/COMPLETED are sticky (spec §8.2) and never
+           resurrected; the claim still terminates either way.
+        4. Claim -> EXPIRED + ``terminal_at = now``, flush, ONE
+           ``CLAIM_EXPIRED`` audit event through the ``event_publisher``
+           seam (after the flush, before the commit — the abandon
+           convention), one commit. The result is captured from the
+           locked row BEFORE the commit.
+
+        Amendment-2 strict reading (§11.5/§26, plan-04 final review):
+        only a machine-VALIDATED submission protects; the inspector is
+        the seam and its default answers False, so an in-window
+        submission that is not yet VALIDATED does NOT block expiry. The
+        merged branch wires the VALIDATED-reading inspector at the
+        constructors (build_expire_service is the production site).
+
+        No payout (spec §11.4): reward-lock fields, locked points, and
+        every claim-time snapshot are untouched — expiry pays nothing,
+        and reversals own the ledger.
+
+        The lock order (claim row -> assignment row) keeps the abandon
+        flow's convention of taking the assignment last; the claim
+        flow's candidates use FOR UPDATE SKIP LOCKED and never wait on
+        the assignment row, so no cycle can form between the services.
+        """
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError(
+                f"now must be a timezone-aware datetime (UTC instant), "
+                f"got naive {now!r}"
+            )
+        claim = await db.scalar(
+            select(AssignmentClaim)
+            .where(AssignmentClaim.id == claim_id)
+            .with_for_update()
+        )
+        if claim is None:
+            return ExpireResult(
+                claim_id=claim_id,
+                outcome=ExpiryOutcome.MISSING,
+                status=None,
+                assignment_id=None,
+                task_id=None,
+                user_id=None,
+                terminal_at=None,
+            )
+        status = ClaimStatus(claim.status)
+        if status in TERMINAL_CLAIM_STATUSES:
+            return _expire_result(claim, ExpiryOutcome.ALREADY_TERMINAL)
+        if status not in EXPIRY_ACTIONABLE_STATUSES:
+            return _expire_result(claim, ExpiryOutcome.PROTECTED)
+        if now < effective_expiry_deadline(claim):
+            return _expire_result(claim, ExpiryOutcome.NOT_DUE)
+        if await self._valid_submission_inspector.has_valid_submission(db, claim.id):
+            return _expire_result(claim, ExpiryOutcome.VALID_SUBMISSION)
+
+        # Release the assignment under FOR UPDATE. Only OCCUPIED flips
+        # back to AVAILABLE; RETIRED/COMPLETED are sticky (spec §8.2) and
+        # are never resurrected. The FK guarantees the row exists; if it
+        # somehow did not, the claim still terminates — the quota and the
+        # reassignment exclusion must not hinge on the release succeeding.
+        assignment = await db.scalar(
+            select(Assignment)
+            .where(Assignment.id == claim.assignment_id)
+            .with_for_update()
+        )
+        if (
+            assignment is not None
+            and AssignmentAvailability(assignment.availability_status)
+            is AssignmentAvailability.OCCUPIED
+        ):
+            assignment.availability_status = AssignmentAvailability.AVAILABLE
+
+        claim.status = ClaimStatus.EXPIRED
+        claim.terminal_at = now
+        await db.flush()
+        result = _expire_result(claim, ExpiryOutcome.EXPIRED)
+        if self._event_publisher is not None:
+            self._event_publisher.publish(
+                DomainEvent(
+                    event_type=CLAIM_EXPIRED,
+                    aggregate_type="AssignmentClaim",
+                    aggregate_id=claim.id,
+                    occurred_at=now,
+                    payload={
+                        "user_id": str(claim.user_id),
+                        "assignment_id": str(claim.assignment_id),
+                        "task_id": str(claim.task_id),
+                        "terminal_at": now.isoformat(),
+                    },
+                )
+            )
+        await db.commit()
+        return result
