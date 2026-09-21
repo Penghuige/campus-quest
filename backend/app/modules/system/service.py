@@ -32,13 +32,13 @@ Module boundaries: like ``audit``, this module imports nothing from
 the domain modules — the arrow points IN (points' composition reads
 the setting; the admin router writes it).
 
-One known narrow race, documented rather than papered over: two
-concurrent ``set`` calls for a brand-NEW key can both miss the row and
-both INSERT; the loser fails the primary key at flush (500
-INTERNAL_ERROR, that transaction writes nothing) and its retry finds
-the row. Concurrent writes to an EXISTING key — the real admin
-workflow — serialize on the row lock, so ``before_snapshot.value``
-in the audit row is exact.
+One known narrow edge, closed by design (PR #2 closure review P2):
+two concurrent ``set`` calls for a brand-NEW key both miss the row and
+both write; the insert path is a PostgreSQL UPSERT, so the conflict
+resolves inside the database (serialization, never an INTERNAL_ERROR).
+A lost first-write race may still audit a stale ``before_snapshot``
+value — the row itself is correct (last write wins), and a settings
+key has one authoritative writer in practice.
 """
 
 from __future__ import annotations
