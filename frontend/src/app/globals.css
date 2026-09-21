@@ -1506,3 +1506,424 @@ body {
     transition: none;
   }
 }
+
+/* ==== T6: community — comments, votes/reactions, rating, report (spec §20-§24;
+   design-system §9 Comments: identity/timestamps/content/actions/deleted state
+   are visually separate; two-level threading per §21.2). ==== */
+
+/* Ghost button joins the base hierarchy (design §9 Buttons): lightweight
+   toolbar action for row-level 回复/举报. */
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+
+.community-section .tab-bar {
+  /* The sort tabs sit beside the section title, not on their own row. */
+  flex-wrap: nowrap;
+}
+
+/* --- comment list: root groups stacked; replies indent one fixed level --- */
+
+.comment-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.comment-thread {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.comment-thread-leaf {
+  /* No replies: the group box hugs the single row (no dead space). */
+  padding-block: var(--space-2);
+}
+
+.comment {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  min-width: 0;
+}
+
+/* The second (and only other) visual level: every reply, however deep
+   its chain, renders at this ONE indent — deep replies group under the
+   root thread without growing indentation (spec §21.2). */
+.comment-depth-2 {
+  margin-left: var(--space-4);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border);
+}
+
+.comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.comment-author {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.comment-edited {
+  color: var(--subtle-foreground);
+}
+
+.comment-edited::before {
+  content: "· ";
+}
+
+/* User text renders as plain text: pre-wrap keeps the author's line
+   breaks, break-words/overflow-wrap keep long payloads (and XSS-shaped
+   strings, which display verbatim per spec §33.1) from breaking layout. */
+.comment-content {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-tombstone .comment-tombstone-text {
+  color: var(--subtle-foreground);
+  font-style: italic;
+}
+
+.comment-orphan-hint {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.comment-action {
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+/* --- votes + reactions (spec §22): toggle buttons with pressed state --- */
+
+.vote-group,
+.reaction-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.vote-btn,
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.vote-btn:hover:not(:disabled),
+.reaction-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+
+.vote-btn[aria-pressed="true"],
+.reaction-btn[aria-pressed="true"] {
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+  background: color-mix(in oklab, var(--primary) 8%, var(--surface-1));
+  color: var(--primary);
+  font-weight: 550;
+}
+
+.vote-count,
+.reaction-count {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty count placeholder keeps the buttons aligned before the first
+   echo fills the totals (unknown counts render as nothing, never 0). */
+.vote-count:empty {
+  display: none;
+}
+
+.interaction-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+/* --- composer (spec §21.1/§21.4): explicit identity + preview --- */
+
+.composer {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.composer-input {
+  resize: vertical;
+  min-height: 4.5rem;
+  font: inherit;
+}
+
+.composer-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.composer-meta .field-error,
+.composer-meta .field-hint {
+  margin: 0;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reply-context {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.reply-context-line {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.reply-context-author {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.comment-reply-composer {
+  margin-top: var(--space-2);
+}
+
+.comment-depth-2 .comment-reply-composer {
+  /* A reply to a reply keeps its composer inside the same second level. */
+  margin-left: 0;
+}
+
+.identity-toggle {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.identity-toggle legend {
+  padding: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.identity-options,
+.report-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.report-categories {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Pill choice (identity + report categories): the radio input is
+   visually absorbed into the label; focus stays visible on the pill. */
+.identity-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.identity-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.identity-option:has(input:checked) {
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+  background: color-mix(in oklab, var(--primary) 8%, var(--surface-1));
+  color: var(--primary);
+  font-weight: 550;
+}
+
+.identity-option:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.identity-preview {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+}
+
+/* --- report dialog (spec §23): the reported comment stays visible --- */
+
+.report-target {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.report-confirmation {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--foreground);
+}
+
+/* --- task rating (spec §20): aggregate + star picker --- */
+
+.task-rating {
+  border-top: 1px solid var(--border);
+}
+
+.rating-aggregate {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.star-picker {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.star-picker legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.star-options {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.star-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.star-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.star-glyph {
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--border-strong);
+}
+
+.star-glyph[data-active="true"] {
+  color: var(--warning);
+}
+
+.star-option:hover .star-glyph {
+  color: var(--warning-strong);
+}
+
+.star-option:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.rating-outcome-ok {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--success);
+}
+
+.rating-outcome-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+/* Narrow workload class (design §13): keep tappable actions comfortable. */
+@media (max-width: 40rem) {
+  .comment-depth-2 {
+    margin-left: var(--space-2);
+    padding-left: var(--space-2);
+  }
+
+  .report-categories {
+    grid-template-columns: 1fr;
+  }
+
+  .comment-actions {
+    gap: var(--space-2);
+  }
+}
