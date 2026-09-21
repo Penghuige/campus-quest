@@ -351,6 +351,8 @@ Worker registry (PR #2 hardening step 4, post-carry): JOB_MODULES also registers
 
 Durable audit (PR #2 hardening step 7, migration 0014): `audit_logs` is append-only (the sole insert path is `AuditLogWriter.append`, flush-only into the caller's transaction; no UPDATE/DELETE anywhere; actor has no FK — rows outlive user deletion). Audited actions: `COMMUNITY_IDENTITY_REVEAL` (every anonymous-identity reveal, reason-mandatory, G12 sensitive read), `REDEMPTION_APPROVE` / `REDEMPTION_REJECT` / `REDEMPTION_FULFILL` (actual state transitions only; idempotent replays write nothing). These are audit identifiers, distinct from the DomainEvent stream names. `reward_redemptions.rejection_reason` persists the reject reason (closure review pts-F1) and surfaces on the Admin review DTO only; the student catalogue DTO no longer carries the dormant `requires_manual_review` flag (V1 reviews every redemption manually — G13 option 1; auto-timeout remains the recorded open product decision).
 
+Report closure (PR #2 hardening step 10): `POST /api/v1/tasks/{task_id}/reports/{report_id}/dismiss` (reason mandatory) and `/handle` (optional note) move a report OPEN -> DISMISSED/HANDLED exactly once under the moderation standing of `list_task_reports`; same-terminal replays are idempotent and write no second audit row. Audit actions `REPORT_DISMISSED` (reason) / `REPORT_HANDLED` (note in details), target_type `comment_report`. Typed errors on frozen codes: 403 standing, 400 blank dismiss reason, 404 unknown/cross-task report, 409 other-terminal.
+
 Lock order contract: users row -> tasks row -> assignments/claims rows; all new transactions must preserve it.
 
 ## Adapter Ports
