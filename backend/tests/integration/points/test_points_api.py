@@ -514,9 +514,19 @@ async def test_staff_lists_pending_redemptions_oldest_first(
     db_session.add(rejected)
     await db_session.flush()
 
-    response = await client.get(
+    # The queue exposes every requester's identity: Admin-only with the
+    # decision endpoints until scoped delegation lands (PR #2 closure
+    # review) — an ACTIVE+TOTP Teacher is PERMISSION_DENIED.
+    denied = await client.get(
         "/api/v1/teacher/rewards/redemptions",
         headers=world["teacher_headers"],
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    response = await client.get(
+        "/api/v1/teacher/rewards/redemptions",
+        headers=world["admin_headers"],
     )
     assert response.status_code == 200
     body = response.json()
@@ -535,18 +545,10 @@ async def test_staff_lists_pending_redemptions_oldest_first(
     paged = await client.get(
         "/api/v1/teacher/rewards/redemptions",
         params={"limit": 1, "offset": 1},
-        headers=world["teacher_headers"],
+        headers=world["admin_headers"],
     )
     assert paged.json()["items"][0]["id"] == str(newer.id)
     assert paged.json()["total"] == 2
-
-    # The queue is a staff READ (it decides nothing): an Admin passes
-    # the staff guard too.
-    as_admin = await client.get(
-        "/api/v1/teacher/rewards/redemptions", headers=world["admin_headers"]
-    )
-    assert as_admin.status_code == 200
-    assert as_admin.json()["total"] == 2
 
 
 async def test_admin_approves_then_fulfills_the_redemption(
@@ -704,9 +706,7 @@ async def test_review_decisions_reject_teachers_until_scoped_delegation(
     assert consumption == 0
     # The freeze survives untouched.
     reservation = await db_session.scalar(
-        select(PointReservation).where(
-            PointReservation.redemption_id == redemption.id
-        )
+        select(PointReservation).where(PointReservation.redemption_id == redemption.id)
     )
     assert reservation is not None
     assert reservation.status == ReservationStatus.ACTIVE.value

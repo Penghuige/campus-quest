@@ -108,7 +108,6 @@ from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
     require_admin_actor,
-    require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
 from app.modules.identity.events import Actor
@@ -258,9 +257,7 @@ def get_academic_term_provider() -> SettingsAcademicTermProvider:
 
 def get_redemption_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
-    terms: Annotated[
-        SettingsAcademicTermProvider, Depends(get_academic_term_provider)
-    ],
+    terms: Annotated[SettingsAcademicTermProvider, Depends(get_academic_term_provider)],
 ) -> RedemptionService:
     # The ledger is the dispatcher-bound production construction (the
     # get_ledger_service ruling): today's redemption entries are all
@@ -277,7 +274,6 @@ def get_user_directory() -> SqlAlchemyUserDirectory:
 ClockDep = Annotated[Clock, Depends(get_business_clock)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
-StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 AdminActor = Annotated[Actor, Depends(require_admin_actor)]
 LedgerServiceDep = Annotated[LedgerService, Depends(get_ledger_service)]
 RedemptionServiceDep = Annotated[RedemptionService, Depends(get_redemption_service)]
@@ -403,7 +399,7 @@ def _redemption_response(redemption: RewardRedemption) -> RedemptionResponse:
 
 @router.get("/teacher/rewards/redemptions", response_model=ReviewQueueResponse)
 async def list_redemption_queue(
-    actor: StaffActor,
+    actor: AdminActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
@@ -412,7 +408,11 @@ async def list_redemption_queue(
 ) -> ReviewQueueResponse:
     """The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
     oldest first, with the requester's display nickname through the
-    identity directory port and the item name."""
+    identity directory port and the item name. Admin-only with the
+    decision endpoints until scoped delegation lands (PR #2 closure
+    review): the queue exposes every requester's identity, and the
+    approved rule is "Teacher reviews AUTHORIZED-RELATED redemptions",
+    not "every Teacher inspects all applications"."""
     rows, total = await redemptions.list_redemptions(db, limit=limit, offset=offset)
     items: list[RedemptionReviewResponse] = []
     for redemption, item_name in rows:

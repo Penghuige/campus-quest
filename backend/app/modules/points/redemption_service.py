@@ -306,14 +306,18 @@ class RedemptionLimitReachedError(BusinessError):
 
 class InsufficientPointsError(BusinessError):
     """Spendable balance (available - ACTIVE reservations) cannot cover
-    the cost (spec §16.1/§16.2/§16.3)."""
+    the cost (spec §16.1/§16.2/§16.3). The deciding comparison runs on
+    the RAW spendable (a reward reversal can overdraft it negative),
+    but the public detail clamps at 0 — user-facing surfaces never
+    render a negative spendable (spec §15.1 display rule, PR #2
+    closure review)."""
 
     def __init__(self, *, required: int, spendable: int) -> None:
         super().__init__(
             ErrorCode.INSUFFICIENT_POINTS,
             "可用积分不足",
             status_code=409,
-            details={"required": required, "spendable": spendable},
+            details={"required": required, "spendable": max(spendable, 0)},
         )
 
 

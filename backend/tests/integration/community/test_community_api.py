@@ -850,9 +850,7 @@ async def test_teacher_participates_admin_is_refused_on_ordinary_surfaces(
     PERMISSION_DENIED, while Admin's governance surface (the moderation
     listing) stays open. A suspended account is still refused by the
     state gate."""
-    teacher = _user(
-        username=_TEACHER_EMAIL, role=Role.TEACHER, nickname="发帖教师"
-    )
+    teacher = _user(username=_TEACHER_EMAIL, role=Role.TEACHER, nickname="发帖教师")
     _, admin_tokens = await _staff_account(
         db_session, api_clock, username=_ADMIN_EMAIL, role=Role.ADMIN
     )

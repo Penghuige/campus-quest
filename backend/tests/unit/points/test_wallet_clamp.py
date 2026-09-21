@@ -49,9 +49,7 @@ def test_overdrawn_wallet_clamps_and_carries_the_debt() -> None:
     balance figures clamp at 0 and the overdraft surfaces as
     point_debt — earned is never touched by spending (spec §17.1)."""
     response = _wallet_response(
-        WalletSummary(
-            available_points=-150, earned_points=200, spendable_points=-150
-        )
+        WalletSummary(available_points=-150, earned_points=200, spendable_points=-150)
     )
     assert response == WalletResponse(
         available_points=0,
