@@ -42,15 +42,18 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import FrozenClock
 from app.core.error_codes import ErrorCode
+from app.modules.audit.models import AuditLog
 from app.modules.community.comment_service import CommentService
 from app.modules.community.gates import CommentNotFoundError
 from app.modules.community.models import Comment
 from app.modules.community.moderation_service import (
     COMMENT_IDENTITY_REVEALED,
+    COMMUNITY_IDENTITY_REVEAL,
     ModerationService,
     RevealDeniedError,
     RevealReasonRequiredError,
@@ -495,6 +498,52 @@ async def test_valid_reveal_returns_identity_and_emits_audit_event(
 
 
 @pytest.mark.integration
+async def test_valid_reveal_writes_a_durable_audit_row(
+    db_session: AsyncSession,
+) -> None:
+    """G12 durable audit (PR #2 hardening P0-5): every accepted reveal
+    commits exactly one ``audit_logs`` row in the SAME transaction as
+    the call — actor (id + role snapshot), the COMMUNITY_IDENTITY_REVEAL
+    action, the comment target, the TRIMMED reason, the database
+    timestamp, and what was disclosed (``revealed_user_id``) in details
+    — beside the unchanged DomainEvent stream (V1 direct-write ruling:
+    no event-consumer pipeline)."""
+    task, _teacher, author, _, _, admin = await _fixture(db_session)
+    comment = await _root_comment(db_session, task, author)
+    service, events = _moderation_service()
+
+    revealed = await service.request_identity_reveal(
+        db_session, _actor(admin), comment.id, "  治理复核：第三次实名投诉  "
+    )
+    assert revealed.user_id == author.id
+
+    rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.target_id == str(comment.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.action == COMMUNITY_IDENTITY_REVEAL
+    assert row.actor_user_id == admin.id
+    assert row.actor_role == Role.ADMIN.value
+    assert row.target_type == "comment"
+    assert row.target_id == str(comment.id)
+    assert row.reason == "治理复核：第三次实名投诉"  # trimmed
+    assert row.details == {
+        "task_id": str(task.id),
+        "revealed_user_id": str(author.id),
+    }
+    assert row.created_at is not None
+    # The durable row and the DomainEvent are one trace, one call.
+    assert len(events.of_type(COMMENT_IDENTITY_REVEALED)) == 1
+
+
+@pytest.mark.integration
 async def test_repeated_reveal_emits_an_event_every_time(
     db_session: AsyncSession,
 ) -> None:
@@ -519,6 +568,17 @@ async def test_repeated_reveal_emits_an_event_every_time(
         "第一次核实",
         "二次复核",
     ]
+    # 每次追溯 in the DURABLE trail too: two audit rows, one per call.
+    audit_rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(AuditLog.target_id == str(comment.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.reason for row in audit_rows] == ["第一次核实", "二次复核"]
 
 
 @pytest.mark.integration

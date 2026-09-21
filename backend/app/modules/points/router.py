@@ -71,6 +71,13 @@ Other transport decisions
   knows (it IS the requester); the staff queue enriches with the
   nickname through ``UserDirectory`` — never identity ORM models —
   and carries no contact field because the DTO has none.
+- **Every applied decision leaves a durable audit row (G12; PR #2
+  hardening P0-5).** The service appends a ``REDEMPTION_APPROVE`` /
+  ``_REJECT`` / ``_FULFILL`` row to ``audit_logs`` inside the decision
+  transaction (flush-only writer, the caller-commits discipline), so
+  the points-sensitive decision and its trace commit or roll back
+  together. The reject reason is persisted on the redemption row
+  (``rejection_reason``, staff DTO only) and rides the audit row.
 - **The wallet display clamps at the DTO, never below (PR #2
   hardening, the migration-0012 overdraft ruling's user side).** The
   internal wallet/ledger keeps TRUE negative balances (PostgreSQL is
@@ -104,6 +111,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.config import get_settings
 from app.db.session import get_db_session
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
@@ -147,8 +155,10 @@ class WalletResponse(BaseModel):
 
 class RewardItemResponse(BaseModel):
     """One catalogue row for the student listing (spec §16/§42). The
-    admin-only ``fulfillment_instructions`` and the enabled flag (always
-    true in this listing) stay server-side."""
+    admin-only ``fulfillment_instructions``, the enabled flag (always
+    true in this listing), and the dormant
+    ``requires_manual_review`` column (V1 reviews every redemption
+    manually; PR #2 hardening G13 方案一) stay server-side."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -160,7 +170,6 @@ class RewardItemResponse(BaseModel):
     per_user_term_limit: int | None
     available_from: datetime | None
     available_until: datetime | None
-    requires_manual_review: bool
     window_open: bool
 
 
@@ -187,13 +196,17 @@ class RedemptionResponse(BaseModel):
 class RedemptionReviewResponse(RedemptionResponse):
     """The staff view: the student fields plus the review/fulfillment
     trail and the display-name enrichment (nickname only — the directory
-    port's shape, no contact fields to leak)."""
+    port's shape, no contact fields to leak). ``rejection_reason`` (PR
+    #2 final review pts-F1) is staff-only: the student DTO never
+    carries it (the notification already delivers the reason to the
+    requester)."""
 
     requester_nickname: str | None
     item_name: str
     decided_at: datetime | None = None
     fulfilled_at: datetime | None = None
     fulfillment_note: str | None = None
+    rejection_reason: str | None = None
 
 
 class ReviewQueueResponse(BaseModel):
@@ -279,6 +292,10 @@ def get_redemption_service(
         terms=terms,
         ledger=get_ledger_service(),
         notification_recorder=NotificationPort(clock=clock),
+        # The durable audit seam (G12, PR #2 hardening P0-5): stateless
+        # and flush-only, wired explicitly so the composition root shows
+        # every side effect a decision commits.
+        audit=AuditLogWriter(),
     )
 
 
@@ -367,7 +384,6 @@ def _item_response(item: RewardItem, open_now: bool) -> RewardItemResponse:
         per_user_term_limit=item.per_user_term_limit,
         available_from=item.available_from,
         available_until=item.available_until,
-        requires_manual_review=item.requires_manual_review,
         window_open=open_now,
     )
 
@@ -442,6 +458,7 @@ async def list_redemption_queue(
                 created_at=redemption.created_at,
                 requester_nickname=profile.nickname if profile else None,
                 item_name=item_name,
+                rejection_reason=redemption.rejection_reason,
             )
         )
     return ReviewQueueResponse(items=items, total=total, limit=limit, offset=offset)
@@ -534,4 +551,5 @@ async def _review_response(
         decided_at=redemption.decided_at,
         fulfilled_at=redemption.fulfilled_at,
         fulfillment_note=redemption.fulfillment_note,
+        rejection_reason=redemption.rejection_reason,
     )

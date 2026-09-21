@@ -59,8 +59,11 @@ class ReservationStatus(StrEnum):
 
     ACTIVE while the redemption request holds the points frozen; CONSUMED
     when the review approves (the freeze becomes a REWARD_REDEMPTION
-    ledger row); RELEASED when the review rejects or a worker times the
-    request out. Mirrors the `point_reservations.status` CHECK member set.
+    ledger row); RELEASED when the review rejects. An expiry-release for
+    stale requests is an OPEN PRODUCT DECISION — interfaces.md's
+    RedemptionStatus ruling forbids adding an auto-cancel/timeout rule
+    without a new owner ruling, and no such path is implemented. Mirrors
+    the `point_reservations.status` CHECK member set.
     """
 
     ACTIVE = "ACTIVE"

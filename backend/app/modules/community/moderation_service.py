@@ -19,14 +19,17 @@ Design decisions:
   reason — None, a non-string, or blank after trimming — is the typed
   VALIDATION_ERROR raised before any database touch (the
   category-first precedent). The audited reason is the trimmed text.
-- **Every call audits.** Re-revealing is allowed (repeat tracing is
-  legitimate) and EVERY call — first or repeat — publishes one
+- **Every call audits — durably (G12; PR #2 hardening P0-5).**
+  Re-revealing is allowed (repeat tracing is legitimate) and EVERY
+  call — first or repeat — writes one ``COMMUNITY_IDENTITY_REVEAL``
+  row into ``audit_logs`` (actor, comment target, reason, database
+  timestamp, plus the disclosed ``revealed_user_id`` in ``details``)
+  through the flush-only ``AuditLogWriter`` and publishes one
   ``COMMENT_IDENTITY_REVEALED`` DomainEvent through the injected
-  publisher port: actor, comment id, reason, and the timestamp from the
-  injected clock, plus the revealed user id so the audit stream (plan
-  08's AuditLog consumes it) records WHAT was disclosed, not just that
-  something was. No audit row is written here; persistence is the
-  audit/outbox module's consumer side of the port.
+  publisher port. V1 writes the audit row DIRECTLY in this
+  transaction (controller ruling: no event-consumer pipeline — Plan
+  08's audit query/UI work may build one); the DomainEvent stream is
+  unchanged for the future pipeline.
 - **Governance reaches history.** The comment lookup is a plain
   existence read — soft-deleted and hard-hidden comments stay
   revealable (the privacy/legal removal flow is exactly when tracing
@@ -35,9 +38,10 @@ Design decisions:
   ``RevealedIdentity`` (schemas) — user id, nickname, username (the
   student number) — is the documented explicit-reveal surface and must
   never be composed into a student-facing or moderation-list response.
-- **Read-only.** Nothing is written, so no commit: the reveal changes
-  no comment state; its trace is the event, and the outbox owns
-  durability.
+- **One write, one commit.** The audit row is the reveal's only
+  persistence: written and committed here (backend-engineering §5 —
+  the service owns its transaction). The comment row itself is still
+  untouched — the reveal changes no comment state.
 """
 
 from __future__ import annotations
@@ -51,6 +55,7 @@ from app.core.clock import Clock, SystemClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.service import AuditLogWriter
 from app.modules.community.gates import (
     CommenterNotFoundError,
     CommentNotFoundError,
@@ -66,13 +71,24 @@ from app.modules.identity.events import (
 
 __all__ = [
     "COMMENT_IDENTITY_REVEALED",
+    "COMMUNITY_IDENTITY_REVEAL",
     "ModerationService",
     "RevealDeniedError",
     "RevealReasonRequiredError",
     "normalize_reveal_reason",
 ]
 
-# Audit action name (the STAFF_INVITATION_CREATED family): consumed by
+# Audit action name (the STAFF_INVITATION_CREATED family): the durable
+# audit_logs row's action for the identity reveal (G12; PR #2 hardening
+# P0-5) — distinct from the DomainEvent type below (the event-stream
+# identifier), which the future audit pipeline keeps consuming.
+COMMUNITY_IDENTITY_REVEAL = "COMMUNITY_IDENTITY_REVEAL"
+
+# The audit target vocabulary for the reveal: the comment whose author
+# was de-anonymized (target_id = the comment's UUID as text).
+_AUDIT_TARGET_TYPE = "comment"
+
+# Audit event name (the STAFF_INVITATION_CREATED family): consumed by
 # the audit/outbox module's AuditLog (spec §21.4 每次追溯必须写 AuditLog).
 COMMENT_IDENTITY_REVEALED = "COMMENT_IDENTITY_REVEALED"
 
@@ -146,15 +162,20 @@ class ModerationService:
         *,
         clock: Clock | None = None,
         events: DomainEventPublisher | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         # The clock is the only business-time source (the event's
         # occurred_at); the publisher is the audit outbox port — the
         # in-memory collector in tests, the log-and-nothing adapter in
-        # interim production (the CommentService wiring).
+        # interim production (the CommentService wiring); the audit
+        # writer is the durable audit_logs seam — stateless and
+        # flush-only, defaulting to a fresh instance so no wiring slip
+        # can silently drop the G12 trace.
         self._clock: Clock = clock if clock is not None else SystemClock()
         self._events: DomainEventPublisher = (
             events if events is not None else LoggingEventPublisher()
         )
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     async def request_identity_reveal(
         self,
@@ -164,6 +185,7 @@ class ModerationService:
         reason: str,
     ) -> RevealedIdentity:
         """Reveal ``comment_id``'s author to an Admin, audited every
+        call — one durable ``audit_logs`` row and one DomainEvent per
         call (spec §21.4 每次追溯必须写 AuditLog).
 
         Admin-only (the server-resolved role; teachers and students are
@@ -171,7 +193,9 @@ class ModerationService:
         the audit payload), comment by plain existence — removed
         comments stay revealable (governance reaches history). Returns
         ``RevealedIdentity`` — the real identity, TO THIS ADMIN ONLY.
-        Repeats are allowed and each publishes its own event.
+        Repeats are allowed; each call writes its own audit row and
+        event, and the transaction commits here (the audit row is the
+        reveal's only write; the comment row is untouched).
         """
         if not is_admin(admin_actor.role):
             raise RevealDeniedError(admin_actor.role)
@@ -210,6 +234,21 @@ class ModerationService:
                 },
             )
         )
+        # The durable G12 trace: flush-only append, then THIS service
+        # commits it (the reveal's only write; backend-engineering §5).
+        await self._audit.append(
+            db,
+            actor=admin_actor,
+            action=COMMUNITY_IDENTITY_REVEAL,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(comment.id),
+            reason=normalized_reason,
+            details={
+                "task_id": str(comment.task_id),
+                "revealed_user_id": str(comment.user_id),
+            },
+        )
+        await db.commit()
         return RevealedIdentity(
             user_id=comment.user_id,
             # Row unpacks arrive as Any; both columns are NOT NULL VARCHAR.

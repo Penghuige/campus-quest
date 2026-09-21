@@ -165,6 +165,7 @@ from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
 )
+from app.modules.audit.service import AuditLogWriter
 from app.modules.community.comment_service import (
     CommentModerationDeniedError,
     CommentService,
@@ -353,7 +354,10 @@ def get_rating_service() -> RatingService:
 def get_moderation_service(
     clock: ClockDep, events: EventPublisherDep
 ) -> ModerationService:
-    return ModerationService(clock=clock, events=events)
+    # audit: the durable audit_logs writer (G12, PR #2 hardening P0-5),
+    # wired explicitly so the composition root shows the reveal's side
+    # effects; stateless and flush-only.
+    return ModerationService(clock=clock, events=events, audit=AuditLogWriter())
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]

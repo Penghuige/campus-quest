@@ -61,6 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.core.clock import Clock, FrozenClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.audit.models import AuditLog
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
@@ -230,6 +231,12 @@ async def _committed_cleanup(
             )
             await session.execute(
                 delete(PointWallet).where(PointWallet.user_id == user_id)
+            )
+            # The durable audit rows the decisions wrote (G12); no FK,
+            # so they must be deleted explicitly (actor_user_id names
+            # the deciding admin, one of the seeded users).
+            await session.execute(
+                delete(AuditLog).where(AuditLog.actor_user_id == user_id)
             )
         for item_id in item_ids:
             await session.execute(
