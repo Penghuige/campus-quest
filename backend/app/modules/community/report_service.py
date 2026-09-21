@@ -195,6 +195,8 @@ def _require_category(category: object) -> str:
     """Exact-string membership in the closed ``ReportCategory`` set;
     anything else is the typed rejection. Pure — the check runs before
     any database touch."""
+    if not isinstance(category, str):
+        raise InvalidReportCategoryError(category)
     try:
         return ReportCategory(category).value
     except ValueError:
@@ -396,13 +398,14 @@ class ReportService:
     ) -> CommentReport | None:
         """The report for one (comment, reporter, category) triple, or
         None — the idempotency read and the post-race re-read."""
-        return await db.scalar(
+        found = await db.scalar(
             select(CommentReport).where(
                 CommentReport.comment_id == comment_id,
                 CommentReport.reporter_user_id == reporter_user_id,
                 CommentReport.category == category,
             )
         )
+        return found if found is None or isinstance(found, CommentReport) else None
 
     @staticmethod
     async def _require_report_viewer(
