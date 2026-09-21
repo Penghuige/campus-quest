@@ -239,11 +239,6 @@ def test_download_to_file_writes_stored_content_and_records_the_key(
 
 
 def test_download_to_file_size_defaults_to_content_length() -> None:
-
-
-def test_delete_object_missing_raises_file_not_found_error() -> None:
-    # §27 contract: a missing object is a typed signal the retention
-    # cleanup worker branches on, not a provider failure.
     storage = FakeObjectStorage()
     url = storage.create_upload_url(
         claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
@@ -253,6 +248,31 @@ def test_delete_object_missing_raises_file_not_found_error() -> None:
     assert storage.head_object(object_key=url.object_key) == ObjectHead(
         object_key=url.object_key, size=len(payload), content_type="text/csv"
     )
+
+
+def test_delete_object_removes_stored_object_and_records_key() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=2048)
+
+    storage.delete_object(object_key=url.object_key)
+
+    assert storage.head_object(object_key=url.object_key) is None
+    assert storage.deleted_keys == [url.object_key]
+
+
+def test_delete_object_missing_raises_file_not_found_error() -> None:
+    # §27 contract: a missing object is a typed signal the retention
+    # cleanup worker branches on, not a provider failure.
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    with pytest.raises(FileNotFoundError):
+        storage.delete_object(object_key=url.object_key)
+    assert storage.deleted_keys == []
 
 
 def test_download_to_file_missing_object_raises_file_not_found(
