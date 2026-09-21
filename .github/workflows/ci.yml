@@ -45,6 +45,13 @@ jobs:
       # against the MinIO step container below; locally the same tests skip
       # without this flag.
       CQ_S3_SMOKE: "1"
+      # Runs the production-composition smoke
+      # (tests/integration/test_composition_smoke.py, G18) — the full
+      # presign -> PUT -> finalize -> validation-job -> approve chain over
+      # the real PostgreSQL/Redis/MinIO services above with no core
+      # provider overridden; locally the same module skips without this
+      # flag.
+      CQ_COMPOSITION_SMOKE: "1"
 
     services:
       postgres:
