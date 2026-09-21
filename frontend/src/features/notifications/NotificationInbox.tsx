@@ -31,6 +31,7 @@ import {
   SectionError,
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
+import { mergeOffsetPage } from "@/lib/offsetPages";
 import type { SectionErrorView } from "@/lib/errors";
 import { describeSectionError } from "@/lib/errors";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
@@ -124,10 +125,9 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
         limit: NOTIFICATION_PAGE_LIMIT,
         offset: items.length,
       });
-      // Offset pages can overlap under concurrent writes; merge by id.
-      const seen = new Set(items.map((item) => item.id));
-      const fresh = page.items.filter((item) => !seen.has(item.id));
-      setItems([...items, ...fresh]);
+      // Offset pages can overlap under concurrent writes; merge by id
+      // (the shared pinned helper — see lib/offsetPages).
+      setItems(mergeOffsetPage(items, page.items, (row) => row.id));
       setTotal(page.total);
     } catch (cause) {
       // Non-fatal (the loaded rows stay usable), but no longer SILENT:

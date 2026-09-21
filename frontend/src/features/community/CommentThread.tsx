@@ -26,6 +26,7 @@ import {
   SectionError,
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
+import { mergeOffsetPage } from "@/lib/offsetPages";
 import { formatDeadlineDateTime } from "@/lib/time";
 
 import {
@@ -112,10 +113,9 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
         limit: COMMENT_PAGE_LIMIT,
         offset: items.length,
       });
-      // Offset pages can overlap under concurrent writes; merge by id.
-      const seen = new Set(items.map((item) => item.id));
-      const fresh = page.items.filter((item) => !seen.has(item.id));
-      setItems([...items, ...fresh]);
+      // Offset pages can overlap under concurrent writes; merge by id
+      // (the shared pinned helper — see lib/offsetPages).
+      setItems(mergeOffsetPage(items, page.items, (row) => row.id));
       setTotal(page.total);
     } catch (cause) {
       // Non-fatal (the loaded thread stays usable), but no longer SILENT:

@@ -232,7 +232,7 @@ export function TotpSetup({ accessToken }: TotpSetupProps) {
       <AuthField
         name="totp_code"
         label="第 2 步：输入验证器当前显示的动态验证码"
-        hint="6 位数字，每 30 秒变化一次。"
+        hint="6 位数字，每 30 秒变化一次；请输入当前正在显示的那一组。若反复失败，请重新打开邀请链接，从第 1 步重新开始绑定。"
         error={codeError}
         inputProps={{
           value: code,

@@ -2207,3 +2207,286 @@ body {
     flex-basis: 100%;
   }
 }
+
+/* --- T9: teacher workbench (design §8 Teacher; token-only values) ------------- */
+
+/* Neutral badge tone for DRAFT/CLOSED/ARCHIVED (status text is the signal). */
+.badge-muted {
+  background: var(--surface-2);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+
+/* Staff role tag beside the nickname in the topbar. */
+.staff-role-tag {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+}
+
+/* Dense workbench table (§5/§9 Tables: tabular numbers, sticky-free but
+   scroll-contained; the wrapper .table-scroll already exists). */
+.staff-table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.staff-table th {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 2px solid var(--border-strong);
+  color: var(--muted-foreground);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.staff-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+
+.staff-cell-title {
+  font-weight: 600;
+  min-width: 12rem;
+  overflow-wrap: anywhere;
+}
+
+/* Compact in-row action cluster (one primary max; §9 Buttons). */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.row-actions .btn {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-2xs);
+  min-height: 2rem;
+}
+
+/* Wider dialog for the create-task form (small-forms rule, §10). */
+.dialog-wide {
+  width: min(40rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.dialog-wide .input {
+  width: 100%;
+}
+
+/* Two-column form grid inside dialogs/panels; stacks under 40rem. */
+.form-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+/* Permission/file-type checkbox cluster (reuses .identity-option). */
+.perm-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Import preview (§7.1 step 4). */
+.upload-block {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.import-preview {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.import-counts {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-confirm-row {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  align-items: center;
+}
+
+/* Side-by-side panels (statistics/collaborators, moderation columns). */
+.workbench-columns {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  align-items: start;
+}
+
+.moderation-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.moderation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.moderation-item {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.moderation-item[data-deleted="true"] .comment-content {
+  color: var(--subtle-foreground);
+}
+
+.moderation-key {
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+  overflow-wrap: anywhere;
+}
+
+.report-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.comment-type {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* Collaborator session rows. */
+.collab-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.collab-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.collab-id {
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+.collab-perms {
+  flex: 1 1 8rem;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* Review master/detail (patterns §8): queue left, judging context right. */
+.review-layout {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(16rem, 22rem) 1fr;
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.review-queue {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.review-item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.review-item:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.review-item[data-selected="true"] {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.review-item-head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.review-item-title {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.review-pair {
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.review-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.review-tier {
+  font-size: var(--text-2xs);
+  color: var(--muted-foreground);
+}
+
+.review-detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.review-detail-empty {
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.review-actions {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  justify-content: flex-start;
+}
