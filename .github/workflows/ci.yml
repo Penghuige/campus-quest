@@ -41,6 +41,10 @@ jobs:
       S3_ACCESS_KEY: campusquest
       S3_SECRET_KEY: campusquest-dev
       BUSINESS_TIMEZONE: Asia/Shanghai
+      # Runs the real-S3 smoke (tests/integration/test_object_storage_smoke.py)
+      # against the MinIO step container below; locally the same tests skip
+      # without this flag.
+      CQ_S3_SMOKE: "1"
 
     services:
       postgres:

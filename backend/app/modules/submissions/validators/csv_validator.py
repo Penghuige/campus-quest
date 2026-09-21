@@ -52,7 +52,10 @@ Design decisions:
   itself is still checked at the end. ``min_rows`` is checked at the
   end; a header-only file fails with ``NO_DATA_ROWS`` (an empty
   dataset is never a valid submission, even without ``min_rows``)
-  distinct from the zero-byte ``EMPTY_FILE``. ANY incomplete scan —
+  distinct from the zero-byte ``EMPTY_FILE`` — and a file whose every
+  row is blank cells (`,,,`) is ``EMPTY_FILE`` too, the CSV twin of
+  the XLSX empty-sheet verdict (§38.4; sub-F1: it previously bypassed
+  the presence verdict entirely). ANY incomplete scan —
   row-cap stop, timeout, or a mid-file parse abort — emits a
   ``ROW_COUNT_TRUNCATED`` warning (``row_count`` is a lower bound)
   and skips the verdicts that need a completed scan (presence,
@@ -106,8 +109,11 @@ from .common import (
 __all__ = ["PARSER_VERSION", "validate_csv"]
 
 #: Recorded in the §12.4 report's parser_version; bump on any change
-#: to this module's parsing or classification semantics.
-PARSER_VERSION = "csv-1"
+#: to this module's parsing or classification semantics. csv-2: a file
+#: whose every row is blank (all-empty cells) is now EMPTY_FILE
+#: (sub-F1: it previously slipped past the has-header guard and could
+#: pass machine validation with no min_rows).
+PARSER_VERSION = "csv-2"
 
 _SNIFF_BYTES = 8192
 _CSV_DELIMITERS = ",;\t"
@@ -348,6 +354,18 @@ def _consume(
     except UnicodeDecodeError:
         builder.add_error(ValidationCode.INVALID_ENCODING, _ENCODING_MESSAGE)
         scan_incomplete = True
+
+    if header_cells is None and not scan_incomplete:
+        # Every row was blank cells (e.g. b",,,\n,,,\n,,,\n"): the file
+        # carries no header and no data — content-free, so it must fail
+        # exactly like the XLSX path's empty sheet (§38.4 空/仅 header
+        # 必须失败). Without this, finalize_scan's ``header_cells is
+        # not None`` guard skipped NO_DATA_ROWS and a schema without
+        # min_rows let the file PASS machine validation (sub-F1: a
+        # locked PROVISIONAL reward on an empty upload). A mid-file
+        # abort (scan_incomplete) already recorded its own error and
+        # says nothing about the rest of the file, so it is excluded.
+        builder.add_error(ValidationCode.EMPTY_FILE, "CSV 文件为空（没有表头）")
 
     return finalize_scan(
         header_cells=header_cells,

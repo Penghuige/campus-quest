@@ -87,20 +87,18 @@ _MAX_RETRIES = 5
 def _default_storage() -> ObjectStorage:
     """Storage adapter factory (the worker-side composition seam).
 
-    The object-storage provider adapter (S3/MinIO against the frozen
-    ``ObjectStorage`` port) is not implemented yet, so no environment
-    has a default binding: development and test composition inject the
-    adapter through ``run_submission_validation(storage=...)`` (the
-    in-memory fake in tests); when the provider adapter lands, this
-    factory constructs it from ``Settings`` (s3_endpoint_url /
-    s3_bucket / credentials are already typed). Failing loudly beats
-    silently talking to nothing.
+    Production binding (hardening P0-1): ``S3ObjectStorage`` built from
+    ``Settings`` — the required s3_* fields fail a misconfigured
+    deployment at Settings construction (fail-closed; no fallback
+    exists in this chain, see the adapter's docstring). The import
+    stays INSIDE the factory like every heavy dependency here so
+    importing this job module stays cheap and boto3 loads only when a
+    job actually runs. Tests keep injecting the in-memory fake through
+    ``run_submission_validation(storage=...)``.
     """
-    raise NotImplementedError(
-        "no ObjectStorage adapter is bound (object-storage provider "
-        "adapter not implemented); inject one through "
-        "run_submission_validation(storage=...)"
-    )
+    from app.integrations.object_storage_s3 import S3ObjectStorage
+
+    return S3ObjectStorage(get_settings())
 
 
 def _default_session_source() -> Any:

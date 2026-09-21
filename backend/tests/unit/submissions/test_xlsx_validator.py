@@ -554,6 +554,25 @@ def test_empty_worksheet_rejected() -> None:
     assert "工作表" in first_finding(report, ValidationCode.EMPTY_FILE).message
 
 
+def test_all_empty_cells_sheet_rejected() -> None:
+    # sub-F1's shape probed on this side of the format fence (the CSV
+    # twin of this input was the bypass): rows of cells that exist but
+    # read as empty values are blank rows, so a sheet of only such
+    # rows never yields a header and must fail EMPTY_FILE — never a
+    # silent pass.
+    row = (
+        '<row r="1">'
+        + "".join(
+            f'<c r="{column}1" t="inlineStr"><is><t></t></is></c>' for column in "ABC"
+        )
+        + "</row>"
+    )
+    report = run(craft_xlsx(_sheet(row, dimension="A1:C1")))
+
+    assert report.passed is False
+    assert error_codes(report) == {ValidationCode.EMPTY_FILE}
+
+
 def test_external_links_warn_but_never_block() -> None:
     data = craft_xlsx(
         extra_parts={

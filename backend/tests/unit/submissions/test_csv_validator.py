@@ -14,7 +14,9 @@ Coverage matrix:
   empty file; header only; missing required field; duplicate unique
   URL; min_rows-1; exactly min_rows; max_rows+1; invalid datetime;
   extremely long cell; binary masquerading as CSV (NUL bytes and a
-  decode-failing binary header are distinct stable codes)
+  decode-failing binary header are distinct stable codes); plus the
+  sub-F1 regression — a file of all-empty cells (`,,,` rows) is
+  EMPTY_FILE, never a silent pass
 - resource bounds: cooperative timeout trips via a fake clock;
   row-cap abort reports ROW_LIMIT_EXCEEDED with a truncated row count;
   the row cap wins over a larger schema max_rows; header wider than
@@ -220,6 +222,44 @@ def test_header_only_with_min_rows_reports_both() -> None:
         ValidationCode.NO_DATA_ROWS,
         ValidationCode.MIN_ROWS_NOT_MET,
     }
+
+
+def test_all_blank_cells_rejected_as_empty_file() -> None:
+    # sub-F1 regression (exact exploit bytes): every row all-empty
+    # cells left header_cells None, finalize_scan's ``header_cells is
+    # not None`` guard skipped NO_DATA_ROWS, and a schema without
+    # min_rows PASSED machine validation — locking a PROVISIONAL
+    # reward on a content-free upload. Must fail like the XLSX path
+    # (§38.4 空/仅 header 必须失败).
+    report = run(b",,,\n,,,\n,,,\n")
+
+    assert report.passed is False
+    assert error_codes(report) == {ValidationCode.EMPTY_FILE}
+    assert report.row_count == 0
+    assert report.detected_columns == ()
+
+
+def test_all_blank_cells_with_min_rows_still_fails() -> None:
+    # The fix must not regress the min_rows verdict: the file stays
+    # EMPTY_FILE, and the never-satisfied min_rows still errors.
+    report = run(b",,,\n,,,\n,,,\n", make_schema(min_rows=2))
+
+    assert report.passed is False
+    assert error_codes(report) == {
+        ValidationCode.EMPTY_FILE,
+        ValidationCode.MIN_ROWS_NOT_MET,
+    }
+
+
+def test_blank_lines_around_real_content_still_validate() -> None:
+    # The blank-row skip itself is correct behavior and stays: blank
+    # lines before the header and between data rows are not rows.
+    data = b"\n,,,\n" + csv_bytes(R1).strip() + b"\n,,,\n"
+    report = run(data)
+
+    assert report.passed is True
+    assert report.row_count == 1
+    assert report.detected_columns == ("url", "title", "publish_time", "likes")
 
 
 def test_missing_required_column() -> None:

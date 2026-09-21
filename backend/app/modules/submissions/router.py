@@ -217,18 +217,17 @@ def get_rate_limiter(clock: ClockDep, redis: RedisDep) -> RateLimiter:
 def get_object_storage() -> ObjectStorage:
     """Object-storage adapter factory (the composition seam).
 
-    The object-storage provider adapter (S3/MinIO against the frozen
-    ``ObjectStorage`` port) does not exist yet, so there is no default
-    binding in ANY environment: deployments and tests inject an
-    implementation through this provider override (tests bind the
-    in-memory fake). When the adapter lands, this factory constructs it
-    from ``Settings`` (s3_endpoint_url / s3_bucket / credentials are
-    already typed). Failing loudly beats silently talking to nothing.
+    Production binding (hardening P0-1): ``S3ObjectStorage`` built from
+    ``Settings`` — the required s3_* fields make a misconfigured
+    deployment fail at Settings construction, so there is no silent
+    fallback anywhere in this chain (the adapter's docstring documents
+    the fail-closed wiring). Tests keep overriding this provider with
+    the in-memory fake (``dependency_overrides``), which is exactly the
+    seam this factory exists to provide.
     """
-    raise NotImplementedError(
-        "no ObjectStorage adapter is bound (object-storage provider "
-        "adapter not implemented); inject one through this provider"
-    )
+    from app.integrations.object_storage_s3 import S3ObjectStorage
+
+    return S3ObjectStorage(get_settings())
 
 
 class CeleryValidationDispatcher:

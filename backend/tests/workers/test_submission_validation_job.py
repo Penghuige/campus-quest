@@ -144,7 +144,7 @@ def test_sandbox_runs_real_entry_and_returns_csv_report(tmp_path: Path) -> None:
     assert outcome.report is not None
     assert outcome.report.passed
     assert outcome.report.row_count == 2
-    assert outcome.report.parser_version == "csv-1"
+    assert outcome.report.parser_version == "csv-2"
     assert outcome.report.preview_rows == (
         ("https://a.com", "t"),
         ("https://b.com", "t2"),

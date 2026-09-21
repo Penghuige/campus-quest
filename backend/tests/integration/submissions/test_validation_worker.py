@@ -391,7 +391,7 @@ def test_valid_csv_validates_and_persists_the_full_report() -> None:
         assert result.detected_type is FileType.CSV
         assert result.report.passed
         assert result.report.row_count == 3
-        assert result.report.parser_version == "csv-1"
+        assert result.report.parser_version == "csv-2"
         assert result.report.preview_rows[0] == ("https://r0.com", "t0")
 
         async def _inspect() -> None:
@@ -416,7 +416,7 @@ def test_valid_csv_validates_and_persists_the_full_report() -> None:
                 "duration_ms",
                 "preview_rows",
             }
-            assert report["parser_version"] == "csv-1"
+            assert report["parser_version"] == "csv-2"
             assert report["row_count"] == 3
             assert report["detected_columns"] == ["url", "title"]
             assert report["errors"] == []
@@ -433,7 +433,7 @@ def test_valid_csv_validates_and_persists_the_full_report() -> None:
                 .all()
             )
             assert [r.status for r in runs] == ["VALIDATED"]
-            assert runs[0].parser_version == "csv-1"
+            assert runs[0].parser_version == "csv-2"
             assert runs[0].report == report
             assert runs[0].duration_ms is not None
             assert runs[0].finished_at is not None
@@ -1374,7 +1374,7 @@ def test_validate_submission_job_e2e_in_eager_mode(
             "validation_status": "VALIDATED",
             "passed": True,
             "row_count": 3,
-            "parser_version": "csv-1",
+            "parser_version": "csv-2",
             "detected_type": "CSV",
             "already_terminal": False,
         }
