@@ -11,6 +11,12 @@ Pinned per the plan's steps:
   (another student's rows are absent from items and total); marking
   another user's notification answers PERMISSION_DENIED (403) and
   leaves that row unread; an unknown id answers NOT_FOUND (404).
+- visibility (spec §25.2 on the IN_APP channel): only rows whose IN_APP
+  delivery completed a real send (SENT without a "skipped:" marker)
+  list; future-scheduled PENDING reminders, policy-skipped rows, and
+  rows without an IN_APP delivery are absent from items and total —
+  the composed dispatch-boundary proof (FrozenClock, exact
+  scheduled_at) lives in test_inbox_visibility.py.
 - student-only surface: a TEACHER token is rejected by the student
   guard (403), an anonymous call by the bearer gate (401).
 - the DTO contract: title/body/read_at/created_at/event_type and the
@@ -54,6 +60,7 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import TotpCredential, User
 from app.modules.identity.session_service import SessionService
 from app.modules.notifications.enums import (
+    SKIPPED_LAST_ERROR_PREFIX,
     DeliveryStatus,
     NotificationChannel,
     NotificationEventType,
@@ -205,6 +212,13 @@ def _seed_delivery(
     return delivery
 
 
+def _delivered(notification: Notification) -> NotificationDelivery:
+    """An IN_APP delivery that completed a real send — the state that
+    makes a Notification row an inbox message (spec §25.2 visibility
+    gate, inbox_service): terminal SENT, no policy-skip marker."""
+    return _seed_delivery(notification, status=DeliveryStatus.SENT, attempts=1)
+
+
 def _envelope(response: httpx.Response) -> dict:
     body = response.json()
     assert set(body) == {"error"}, body
@@ -243,6 +257,17 @@ async def test_inbox_lists_own_rows_newest_first(
         created_at=_T0 - timedelta(minutes=5),
     )
     db_session.add_all([oldest, middle, newest, foreign])
+    await db_session.flush()  # server-default ids before the deliveries
+    # The foreign row is delivery-complete too: its absence is then
+    # purely the ownership scope, not the visibility gate.
+    db_session.add_all(
+        [
+            _delivered(oldest),
+            _delivered(middle),
+            _delivered(newest),
+            _delivered(foreign),
+        ]
+    )
     await db_session.flush()
     response = await client.get(
         "/api/v1/notifications",
@@ -288,6 +313,10 @@ async def test_unread_filter_and_pagination(
         created_at=_T0 - timedelta(hours=2),
     )
     db_session.add_all([read_one, unread_old, unread_new])
+    await db_session.flush()  # server-default ids before the deliveries
+    db_session.add_all(
+        [_delivered(read_one), _delivered(unread_old), _delivered(unread_new)]
+    )
     await db_session.flush()
     headers = await _session_tokens(db_session, api_clock, student)
 
@@ -321,6 +350,74 @@ async def test_unread_filter_and_pagination(
         "/api/v1/notifications", params={"limit": 51}, headers=headers
     )
     assert rejected.status_code == 422
+
+
+async def test_inbox_hides_undelivered_skipped_and_inapp_less_rows(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: StepClock
+) -> None:
+    """Spec §25.2 timing and cancellation for the IN_APP channel: the
+    inbox lists only rows whose IN_APP delivery completed a real send.
+    A future-scheduled PENDING reminder (the Notification row commits
+    with the claim, hours before its scheduled_at), a policy-skipped
+    row (SENT with the "skipped:" marker — e.g. the claim entered
+    UNDER_REVIEW and dispatch cancelled the ordinary reminder), and a
+    row with no IN_APP delivery at all are absent from items AND total;
+    only the genuinely SENT one lists."""
+    student = await _seed_user(db_session, username=f"stu-{uuid4().hex[:10]}")
+    pending = _seed_notification(
+        student,
+        event_key=f"claim:{uuid4()}:deadline_4h",
+        created_at=_T0 - timedelta(hours=1),
+    )
+    skipped = _seed_notification(
+        student,
+        event_key=f"claim:{uuid4()}:deadline_24h",
+        created_at=_T0 - timedelta(hours=1),
+    )
+    sms_only = _seed_notification(
+        student,
+        event_key=f"submission:{uuid4()}:approved",
+        created_at=_T0 - timedelta(hours=1),
+    )
+    delivered = _seed_notification(
+        student,
+        event_key=f"submission:{uuid4()}:approved",
+        created_at=_T0 - timedelta(hours=2),
+    )
+    db_session.add_all([pending, skipped, sms_only, delivered])
+    await db_session.flush()  # server-default ids before the deliveries
+    pending_delivery = _seed_delivery(pending, status=DeliveryStatus.PENDING)
+    pending_delivery.scheduled_at = _T0 + timedelta(hours=4)
+    skipped_delivery = _seed_delivery(
+        skipped,
+        status=DeliveryStatus.SENT,
+        last_error=(f"{SKIPPED_LAST_ERROR_PREFIX}deadline_claim_status:UNDER_REVIEW"),
+    )
+    sms_delivery = _seed_delivery(sms_only, status=DeliveryStatus.SENT)
+    sms_delivery.channel = NotificationChannel.SMS.value
+    db_session.add_all(
+        [pending_delivery, skipped_delivery, sms_delivery, _delivered(delivered)]
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/v1/notifications",
+        headers=await _session_tokens(db_session, api_clock, student),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [str(delivered.id)]
+
+    # The gate bounds the unread filter identically: no hidden row
+    # re-enters through ?unread=true.
+    unread = await client.get(
+        "/api/v1/notifications",
+        params={"unread": "true"},
+        headers=await _session_tokens(db_session, api_clock, student),
+    )
+    assert unread.json()["total"] == 1
+    assert [item["id"] for item in unread.json()["items"]] == [str(delivered.id)]
 
 
 async def test_teacher_and_anonymous_cannot_read_student_inbox(

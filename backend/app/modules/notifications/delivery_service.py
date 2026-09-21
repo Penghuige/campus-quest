@@ -144,6 +144,7 @@ from app.integrations.sms import SmsSender
 from app.modules.identity.models import User
 from app.modules.notifications.deadline_scheduler import should_send_reminder
 from app.modules.notifications.enums import (
+    SKIPPED_LAST_ERROR_PREFIX,
     DeliveryStatus,
     NotificationChannel,
     NotificationEventType,
@@ -445,7 +446,7 @@ class DeliveryService:
         """The "skipped:<token>" marker when dispatch policy cancels the
         send, or None when the delivery should proceed."""
         if claimed.channel_skip_reason is not None:
-            return f"skipped:{claimed.channel_skip_reason}"
+            return f"{SKIPPED_LAST_ERROR_PREFIX}{claimed.channel_skip_reason}"
 
         if (
             claimed.event_type in DEADLINE_REMINDER_EVENTS
@@ -460,7 +461,10 @@ class DeliveryService:
                     status_token = (
                         claim_status if claim_status is not None else "missing"
                     )
-                    return f"skipped:deadline_claim_status:{status_token}"
+                    return (
+                        f"{SKIPPED_LAST_ERROR_PREFIX}"
+                        f"deadline_claim_status:{status_token}"
+                    )
         return None
 
     # --- provider dispatch ------------------------------------------------------------
