@@ -11,17 +11,21 @@ Design decisions:
   this is NOT here by plan: task 9 wires the Redis limiter at the router,
   so this service stays pure (no Redis) and reusable by tests and future
   surfaces.
-- **Writer gate: role and status are judged on the users ROW, not on the
-  Actor fields.** Community writes are a Student surface (spec §4.1 —
-  Teacher/Admin read and govern through the moderation surfaces of tasks
-  3 and 8), and an ACTIVE account is required (§5.7). Judging the row
-  means direct service callers cannot bypass the transport guard, exactly
-  like the claim service. Order is role-first, then status: a suspended
-  staff account answers PERMISSION_DENIED (capability), not
-  ACCOUNT_NOT_ACTIVE — the claim service's precedent. Unlike claiming
-  there is no count-then-insert race to protect, so the read carries no
-  FOR UPDATE; a comment committed while the writer's role changes
-  concurrently simply exists (no per-user write invariant in V1).
+- **Writer gate: the shared community gate (gates.py, task 6).**
+  Community writes are a Student surface (spec §4.1 — Teacher/Admin read
+  and govern through the moderation surfaces of tasks 3 and 8), and an
+  ACTIVE account is required (§5.7). Role and status are judged on the
+  users ROW, not on the Actor fields, so direct service callers cannot
+  bypass the transport guard, exactly like the claim service. Order is
+  role-first, then status: a suspended staff account answers
+  PERMISSION_DENIED (capability), not ACCOUNT_NOT_ACTIVE — the claim
+  service's precedent. Unlike claiming there is no count-then-insert race
+  to protect, so the read carries no FOR UPDATE; a comment committed
+  while the writer's role changes concurrently simply exists (no per-user
+  write invariant in V1). The gate and its typed errors live in
+  ``gates.require_student_writer`` since task 6 (vote, reaction, and
+  report share them); this module re-exports the errors so existing
+  importers see one set of codes either way.
 - **Task gate: PUBLISHED-only, and invisibility reads as NOT_FOUND.**
   DRAFT is invisible (spec §6.2) and PAUSED/CLOSED/ARCHIVED are off the
   public task surface, so all of them — and unknown ids — raise the
@@ -124,12 +128,13 @@ Design decisions:
   need neither: ``created_at`` stays a database ``now()`` server default
   and no rule on those surfaces reads business time. Edit/delete/
   moderation timestamps and audit ``occurred_at`` come from the Clock.
-- **Identity seam.** Nickname (and the writer's role/status) are read
-  through a typed Core-level light ``users`` table, the claim service's
-  precedent: interfaces.md's ``UserDirectory`` port carries no nickname
-  and no status+role-by-id read, and identity ORM models stay behind the
-  module seam. If the port grows those reads, these queries move behind
-  it.
+- **Identity seam.** Nickname reads go through a typed Core-level light
+  ``users`` table, the claim service's precedent: interfaces.md's
+  ``UserDirectory`` port carries no nickname read, and identity ORM
+  models stay behind the module seam. Role/status moved to
+  ``gates.require_student_writer`` with the task-6 extraction; this
+  module keeps the nickname read for the author display. If the port
+  grows those reads, these queries move behind it.
 
 Transaction shape per backend-engineering §5: the row reads (FOR UPDATE
 on the target comment — one serialization point for concurrent
@@ -151,13 +156,21 @@ from app.core.clock import Clock, SystemClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.community.gates import (
+    CommentDeletedError,
+    CommenterAccountNotActiveError,
+    CommenterNotFoundError,
+    CommenterNotStudentError,
+    CommentNotFoundError,
+    require_student_writer,
+)
 from app.modules.community.models import Comment, CommentRevision
 from app.modules.community.schemas import CommentPublic, CreateComment
 from app.modules.community.serializers import (
     serialize_public_comment,
     serialize_tombstone_comment,
 )
-from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.enums import Role
 from app.modules.identity.events import (
     Actor,
     DomainEvent,
@@ -215,13 +228,11 @@ COMMENT_MODERATION_DELETED = "COMMENT_MODERATION_DELETED"
 COMMENT_HARD_HIDDEN = "COMMENT_HARD_HIDDEN"
 
 # Identity seam (see module docstring): a typed Core-level light table,
-# NOT the identity ORM model — role/status for the writer gate, nickname
-# for the public author display.
+# NOT the identity ORM model — nickname for the public author display
+# (role/status moved to gates.require_student_writer in task 6).
 _USERS = table(
     "users",
     column("id", Uuid),
-    column("role", String),
-    column("status", String),
     column("nickname", String),
 )
 
@@ -229,59 +240,16 @@ _USERS = table(
 
 _EMPTY_CONTENT_MESSAGE = "评论内容不能为空"
 _CONTENT_TOO_LONG_MESSAGE = "评论内容超过长度上限"
-_COMMENTER_NOT_FOUND_MESSAGE = "用户不存在"
-_ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许执行该操作"
-_NOT_STUDENT_MESSAGE = "仅学生账号可发表评论"
 _PARENT_NOT_FOUND_MESSAGE = "回复的评论不存在"
 _PARENT_CROSS_TASK_MESSAGE = "只能回复同一任务下的评论"
 _PARENT_DELETED_MESSAGE = "该评论已删除，不能回复"
-_COMMENT_NOT_FOUND_MESSAGE = "评论不存在"
 _NOT_COMMENT_OWNER_MESSAGE = "只能编辑或删除自己的评论"
-_COMMENT_DELETED_MESSAGE = "该评论已删除"
 _MODERATION_REASON_REQUIRED_MESSAGE = "必须提供删除原因"
 _MODERATION_DENIED_MESSAGE = "只有任务所有者或拥有社区治理权限的协作者可以删除该评论"
 _ADMIN_REQUIRED_MESSAGE = "只有管理员可以彻底隐藏评论"
 
 
 # --- typed exceptions (router-mapped) ------------------------------------------------
-
-
-class CommenterNotFoundError(BusinessError):
-    """No users row for the actor's id (the session token outlived the
-    account; same shape as the claim service's UserNotFoundError)."""
-
-    def __init__(self, user_id: UUID) -> None:
-        super().__init__(
-            ErrorCode.NOT_FOUND,
-            _COMMENTER_NOT_FOUND_MESSAGE,
-            status_code=404,
-            details={"user_id": str(user_id)},
-        )
-
-
-class CommenterNotStudentError(BusinessError):
-    """The writer's role is not STUDENT (spec §4.1: community writes are a
-    Student surface; staff govern via the moderation surfaces)."""
-
-    def __init__(self, user_id: UUID, role: str) -> None:
-        super().__init__(
-            ErrorCode.PERMISSION_DENIED,
-            _NOT_STUDENT_MESSAGE,
-            status_code=403,
-            details={"user_id": str(user_id), "role": role},
-        )
-
-
-class CommenterAccountNotActiveError(BusinessError):
-    """The writer's account is not ACTIVE (spec §5.7 state gate)."""
-
-    def __init__(self, user_id: UUID) -> None:
-        super().__init__(
-            ErrorCode.ACCOUNT_NOT_ACTIVE,
-            _ACCOUNT_NOT_ACTIVE_MESSAGE,
-            status_code=403,
-            details={"user_id": str(user_id)},
-        )
 
 
 class ParentCommentNotFoundError(BusinessError):
@@ -323,19 +291,6 @@ class ParentCommentDeletedError(BusinessError):
         )
 
 
-class CommentNotFoundError(BusinessError):
-    """``comment_id`` matches no comment on an edit/delete/moderate path
-    (task 3); aggregate semantics identical to ``TaskNotFoundError``."""
-
-    def __init__(self, comment_id: UUID) -> None:
-        super().__init__(
-            ErrorCode.NOT_FOUND,
-            _COMMENT_NOT_FOUND_MESSAGE,
-            status_code=404,
-            details={"comment_id": str(comment_id)},
-        )
-
-
 class CommentOwnerRequiredError(BusinessError):
     """Spec §21.2 MUST 越权修改别人评论: the actor is not the comment's
     author. Deliberately carries no user ids in ``details`` — the
@@ -346,19 +301,6 @@ class CommentOwnerRequiredError(BusinessError):
             ErrorCode.PERMISSION_DENIED,
             _NOT_COMMENT_OWNER_MESSAGE,
             status_code=403,
-            details={"comment_id": str(comment_id)},
-        )
-
-
-class CommentDeletedError(BusinessError):
-    """The comment is already soft-deleted (or hard-hidden, which sets the
-    trio): edit, self-delete, and moderate-delete are single-shot."""
-
-    def __init__(self, comment_id: UUID) -> None:
-        super().__init__(
-            ErrorCode.VALIDATION_ERROR,
-            _COMMENT_DELETED_MESSAGE,
-            status_code=400,
             details={"comment_id": str(comment_id)},
         )
 
@@ -484,7 +426,7 @@ class CommentService:
         """Publish one comment immediately (spec §21.1) and return its
         public DTO — the write path hands back the privacy-safe shape, so
         the stored identity is unreachable without going to the row."""
-        commenter = await self._require_student_writer(db, actor)
+        commenter = await require_student_writer(db, actor.user_id)
         content = normalize_comment_content(command.content, self._comment_max_length)
         await self._require_visible_task(db, command.task_id)
         if command.parent_id is not None:
@@ -833,29 +775,6 @@ class CommentService:
         if task is None:
             raise TaskNotFoundError(task_id)
         return task
-
-    @staticmethod
-    async def _require_student_writer(db: AsyncSession, actor: Actor) -> str:
-        """Judge role and status on the users row (role-first), and hand
-        back the nickname for the author display."""
-        row = (
-            await db.execute(
-                select(
-                    _USERS.c.role,
-                    _USERS.c.status,
-                    _USERS.c.nickname,
-                ).where(_USERS.c.id == actor.user_id)
-            )
-        ).first()
-        if row is None:
-            raise CommenterNotFoundError(actor.user_id)
-        role, status, nickname = row
-        if role != Role.STUDENT.value:
-            raise CommenterNotStudentError(actor.user_id, str(role))
-        if status != UserStatus.ACTIVE.value:
-            raise CommenterAccountNotActiveError(actor.user_id)
-        # Row unpacks arrive as Any; the column is NOT NULL VARCHAR.
-        return str(nickname)
 
     @staticmethod
     async def _nickname(db: AsyncSession, user_id: UUID) -> str:

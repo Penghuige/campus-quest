@@ -6,7 +6,8 @@ Single responsibility: the dataclass commands the community services
 consume and the read DTOs they produce. They are NOT wire shapes — task
 9's router builds its own Pydantic models, and it MUST build them field
 by field from these: the DTOs are the privacy boundary for author
-identity (spec §21.4/§40).
+identity (spec §21.4/§40) and, since task 6, for reporter identity
+(spec §23 被举报用户不可看到举报者身份).
 
 - ``CommentPublic`` has NO ``user_id`` field at all — not for anonymous
   comments (the author renders as 匿名用户) and not for named ones (the
@@ -30,6 +31,15 @@ identity (spec §21.4/§40).
   comment_service.py — deleted PARENTS with surviving children render as
   tombstones, deleted leaves vanish, and replies to a tombstone are
   rejected.
+- ``CommentReportView`` (task 6, spec §23) is the moderation-queue row:
+  the report facts, the reported comment in the ``ModerationComment``
+  base shape, and the REPORTER identity (``reporter_user_id`` +
+  ``reporter_nickname``). It is the ONLY DTO in the module that carries
+  reporter identity, on purpose: moderators see reporters (they act on
+  the report), the reported user never does — this shape must never
+  reach a student-facing surface, and ``report_comment`` returning the
+  caller's OWN report row is the sole student-visible report material
+  (one's own identity is not a leak).
 """
 
 from __future__ import annotations
@@ -126,3 +136,32 @@ class VoteResult:
     current_value: int
     likes: int
     dislikes: int
+
+
+@dataclass(frozen=True, slots=True)
+class CommentReportView:
+    """Moderation-queue report row (spec §23; plan 06 task 6).
+
+    Report facts (``category``/``note``/``status``/``handled_by``/
+    ``handled_at``), the reported comment as the task-8 base shape
+    (``comment`` — no comment-author identity, by the same §21.4 ruling
+    that governs ``ModerationComment``), and the REPORTER identity
+    (``reporter_user_id`` + ``reporter_nickname``). Spec §23 被举报用户
+    不可看到举报者身份: this is the one shape reporter identity ever
+    renders on, and ``ReportService.list_task_reports`` gates it to the
+    owner/MODERATE_COMMUNITY/Admin surface — route layers must never
+    compose it into a student-facing response. ``status`` is the raw
+    OPEN/HANDLED/DISMISSED string (task 8 owns the transitions; V1 files
+    land OPEN).
+    """
+
+    id: UUID
+    comment: ModerationComment
+    category: str
+    note: str | None
+    status: str
+    reporter_user_id: UUID
+    reporter_nickname: str
+    created_at: datetime
+    handled_by: UUID | None
+    handled_at: datetime | None

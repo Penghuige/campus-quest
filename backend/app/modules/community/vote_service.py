@@ -8,26 +8,16 @@ Design decisions:
   a UNIQUE(comment_id, user_id) anchor, and "none" means no row — no
   ``value=0`` placeholder is ever stored, so the column's CHECK (1, -1)
   domain and the table stay exactly the spec's shape.
-- **Writer gate: the T2 rule with the shared typed errors.** Voting is a
-  community write: Student role and ACTIVE status, judged on the users
-  ROW (role-first, then status), refusing with comment_service's
-  ``CommenterNotStudentError`` / ``CommenterAccountNotActiveError`` /
-  ``CommenterNotFoundError`` so the whole community write surface answers
-  with one set of codes. No per-user write invariant exists to protect
-  (the vote row itself is the invariant), so the read carries no lock —
-  the T2 create-gate precedent.
-- **Comment visibility: the public-surface rule.** The comment must exist
-  (``CommentNotFoundError``) and its task must be PUBLISHED — anything
-  else is the shared ``TaskNotFoundError``, the same
-  invisibility-reads-as-NOT_FOUND ruling as create/list. A tombstone is
-  not a votable anchor: a comment with ``deleted_at`` set is refused with
-  ``CommentDeletedError``, and because the Admin hard hide writes the
-  soft-delete trio too, that ONE guard covers both removal kinds (the T3
-  reply-guard precedent). The comment and task rows are read WITHOUT
-  locks: publish-immediately semantics — a vote that commits while the
-  comment is concurrently soft-deleted simply survives as a row on a
-  tombstone, the same ruling as a comment committing while its task
-  pauses; removing it is moderation's business, not the voter's.
+- **Writer gate / comment visibility: the shared community gates
+  (gates.py, task 6).** Voting is a community write:
+  ``gates.require_student_writer`` (Student role and ACTIVE status,
+  judged on the users ROW, role-first then status) and
+  ``gates.require_visible_comment`` (exists -> not a tombstone -> task
+  PUBLISHED) — the same typed errors and rulings as comments, votes,
+  reactions, and reports, extracted when the report service would have
+  become the third private copy. No per-user write invariant exists to
+  protect (the vote row itself is the invariant), so the gate reads
+  carry no lock — the T2 create-gate precedent.
 - **Atomic transitions (spec §22: 切换 MUST 原子化).** The existing vote
   row is locked ``FOR UPDATE`` — one serialization point per (comment,
   user) — and the transition applies on the locked row: UPDATE ``value``
@@ -49,8 +39,8 @@ Design decisions:
   flushed, so the returned totals include this transaction's effect.
   Other users' concurrently committing votes may or may not be visible
   depending on statement timing (READ COMMITTED): the result is
-  consistent with the rows as of this transaction's own commit, which is
-  what the echoing surface needs (the race tests pin the same-user
+  consistent with the rows as of this transaction's own commit, which
+  is what the echoing surface needs (the race tests pin the same-user
   serialization this guarantees).
 
 Transaction shape per backend-engineering §5: the gate reads, the locked
@@ -62,25 +52,15 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from sqlalchemy import String, Uuid, column, delete, func, select, table
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.comment_service import (
-    CommentDeletedError,
-    CommenterAccountNotActiveError,
-    CommenterNotFoundError,
-    CommenterNotStudentError,
-    CommentNotFoundError,
-)
-from app.modules.community.models import Comment, CommentVote
+from app.modules.community.gates import require_student_writer, require_visible_comment
+from app.modules.community.models import CommentVote
 from app.modules.community.schemas import VoteResult
-from app.modules.identity.enums import Role, UserStatus
-from app.modules.tasks.enums import TaskStatus
-from app.modules.tasks.models import Task
-from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = ["InvalidVoteValueError", "VoteService"]
 
@@ -92,15 +72,6 @@ _UQ_COMMENT_VOTES = "uq_comment_votes_comment_id_user_id"
 # local here: a private helper there, a private helper here — asyncpg
 # exposes .constraint_name, other drivers only the message).
 _CONSTRAINT_IN_MESSAGE = re.compile(r'constraint "(?P<name>[^"]+)"')
-
-# Identity seam (the T2 precedent): a typed Core-level light users table,
-# NOT the identity ORM model — role/status for the writer gate.
-_USERS = table(
-    "users",
-    column("id", Uuid),
-    column("role", String),
-    column("status", String),
-)
 
 _INVALID_VALUE_MESSAGE = "投票取值只能是 -1、0 或 1"
 
@@ -163,8 +134,8 @@ class VoteService:
         """One full locked attempt: gates -> FOR UPDATE -> apply ->
         counts -> commit. Re-entered exactly once by ``set_vote`` after a
         both-create-from-none UNIQUE violation."""
-        await self._require_student_voter(db, user_id)
-        await self._require_votable_comment(db, comment_id)
+        await require_student_writer(db, user_id)
+        await require_visible_comment(db, comment_id)
 
         vote = await db.scalar(
             select(CommentVote)
@@ -201,39 +172,3 @@ class VoteService:
         )
         totals = {value: int(count) for value, count in rows}
         return totals.get(1, 0), totals.get(-1, 0)
-
-    @staticmethod
-    async def _require_student_voter(db: AsyncSession, user_id: UUID) -> None:
-        """The T2 writer gate on the users row: role-first, then status,
-        with the shared community typed errors."""
-        voter = (
-            await db.execute(
-                select(_USERS.c.role, _USERS.c.status).where(_USERS.c.id == user_id)
-            )
-        ).first()
-        if voter is None:
-            raise CommenterNotFoundError(user_id)
-        role, status = voter
-        if role != Role.STUDENT.value:
-            raise CommenterNotStudentError(user_id, str(role))
-        if status != UserStatus.ACTIVE.value:
-            raise CommenterAccountNotActiveError(user_id)
-
-    @staticmethod
-    async def _require_votable_comment(db: AsyncSession, comment_id: UUID) -> None:
-        """The comment exists, is not a tombstone (soft delete OR Admin
-        hard hide — one trio guard, the T3 precedent), and sits on a
-        PUBLISHED task. Unlocked reads: publish-immediately semantics."""
-        comment = await db.scalar(select(Comment).where(Comment.id == comment_id))
-        if comment is None:
-            raise CommentNotFoundError(comment_id)
-        if comment.deleted_at is not None:
-            raise CommentDeletedError(comment_id)
-        published = await db.scalar(
-            select(Task.id).where(
-                Task.id == comment.task_id,
-                Task.status == TaskStatus.PUBLISHED.value,
-            )
-        )
-        if published is None:
-            raise TaskNotFoundError(comment.task_id)

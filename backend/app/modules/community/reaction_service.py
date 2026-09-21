@@ -15,25 +15,14 @@ Design decisions:
   ``UnknownEmojiError`` (the VALIDATION_ERROR family — the
   ``InvalidVoteValueError`` precedent), raised BEFORE any database
   touch.
-- **Writer gate: the T4 rule with the shared typed errors.** Reacting is
-  a community write: Student role and ACTIVE status, judged on the
-  users ROW (role-first, then status), refusing with comment_service's
-  ``CommenterNotStudentError`` / ``CommenterAccountNotActiveError`` /
-  ``CommenterNotFoundError`` so the whole community write surface
-  answers with one set of codes. Like T4 (and T2 before it) the gate
-  reads are this service's own private helpers — the SHAREd surface is
-  the typed-error family, not a shared query helper.
-- **Comment visibility: the public-surface rule.** The comment must
-  exist (``CommentNotFoundError``) and its task must be PUBLISHED —
-  anything else is the shared ``TaskNotFoundError``, the same
-  invisibility-reads-as-NOT_FOUND ruling as create/list/vote. A
-  tombstone is not a reactable anchor: a comment with ``deleted_at``
-  set is refused with ``CommentDeletedError``, and because the Admin
-  hard hide writes the soft-delete trio too, that ONE guard covers
-  both removal kinds. Comment and task rows are read WITHOUT locks:
-  publish-immediately semantics — a reaction that commits while the
-  comment is concurrently soft-deleted simply survives as a row on a
-  tombstone; removing it is moderation's business, not the reactor's.
+- **Writer gate / comment visibility: the shared community gates
+  (gates.py, task 6).** Reacting is a community write:
+  ``gates.require_student_writer`` (Student role and ACTIVE status,
+  judged on the users ROW, role-first then status) and
+  ``gates.require_visible_comment`` (exists -> not a tombstone -> task
+  PUBLISHED) — the same typed errors and rulings as comments, votes,
+  and reports, extracted when the report service would have become the
+  third private copy.
 - **Toggle (spec §22: 相同 emoji 重复点击 = toggle).** The per-(comment,
   user, emoji) row IS the reaction: absent -> INSERT (added, True);
   present -> DELETE (removed, False). No value column exists to flip,
@@ -75,24 +64,14 @@ import re
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import String, Uuid, column, delete, select, table
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.comment_service import (
-    CommentDeletedError,
-    CommenterAccountNotActiveError,
-    CommenterNotFoundError,
-    CommenterNotStudentError,
-    CommentNotFoundError,
-)
-from app.modules.community.models import Comment, CommentReaction
-from app.modules.identity.enums import Role, UserStatus
-from app.modules.tasks.enums import TaskStatus
-from app.modules.tasks.models import Task
-from app.modules.tasks.service import TaskNotFoundError
+from app.modules.community.gates import require_student_writer, require_visible_comment
+from app.modules.community.models import CommentReaction
 
 __all__ = [
     "DefaultEmojiWhitelistProvider",
@@ -110,18 +89,9 @@ _UQ_COMMENT_REACTIONS = "uq_comment_reactions_comment_id_user_id_emoji"
 # drivers only the message).
 _CONSTRAINT_IN_MESSAGE = re.compile(r'constraint "(?P<name>[^"]+)"')
 
-# Identity seam (the T2/T4 precedent): a typed Core-level light users
-# table, NOT the identity ORM model — role/status for the writer gate.
-_USERS = table(
-    "users",
-    column("id", Uuid),
-    column("role", String),
-    column("status", String),
-)
-
 _UNKNOWN_EMOJI_MESSAGE = "该表情不在允许的表情白名单内"
 
-# Spec §22 defaults — the eight emoji V1 ships with; Plan 08's audited
+# spec §22 defaults — the eight emoji V1 ships with; Plan 08's audited
 # Admin setting replaces the provider, never this constant's role as the
 # documented default.
 _DEFAULT_EMOJI = frozenset({"👍", "❤️", "😂", "🎉", "😭", "👀", "🤔", "🔥"})
@@ -216,8 +186,8 @@ class ReactionService:
         to decide add-vs-remove; ``judge=False`` (the retry) forces the
         add intent — the only branch whose INSERT can violate the §31.9
         triple, re-entered exactly once after that violation."""
-        await self._require_student_reactor(db, user_id)
-        await self._require_reactable_comment(db, comment_id)
+        await require_student_writer(db, user_id)
+        await require_visible_comment(db, comment_id)
 
         reaction = await db.scalar(
             select(CommentReaction)
@@ -247,40 +217,3 @@ class ReactionService:
             )
         await db.commit()
         return False
-
-    @staticmethod
-    async def _require_student_reactor(db: AsyncSession, user_id: UUID) -> None:
-        """The T2/T4 writer gate on the users row: role-first, then
-        status, with the shared community typed errors."""
-        reactor = (
-            await db.execute(
-                select(_USERS.c.role, _USERS.c.status).where(_USERS.c.id == user_id)
-            )
-        ).first()
-        if reactor is None:
-            raise CommenterNotFoundError(user_id)
-        role, status = reactor
-        if role != Role.STUDENT.value:
-            raise CommenterNotStudentError(user_id, str(role))
-        if status != UserStatus.ACTIVE.value:
-            raise CommenterAccountNotActiveError(user_id)
-
-    @staticmethod
-    async def _require_reactable_comment(db: AsyncSession, comment_id: UUID) -> None:
-        """The T4 comment-visibility rule: the comment exists, is not a
-        tombstone (soft delete OR Admin hard hide — one trio guard), and
-        sits on a PUBLISHED task. Unlocked reads: publish-immediately
-        semantics."""
-        comment = await db.scalar(select(Comment).where(Comment.id == comment_id))
-        if comment is None:
-            raise CommentNotFoundError(comment_id)
-        if comment.deleted_at is not None:
-            raise CommentDeletedError(comment_id)
-        published = await db.scalar(
-            select(Task.id).where(
-                Task.id == comment.task_id,
-                Task.status == TaskStatus.PUBLISHED.value,
-            )
-        )
-        if published is None:
-            raise TaskNotFoundError(comment.task_id)
