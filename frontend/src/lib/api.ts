@@ -20,11 +20,18 @@
  * failures reject with the browser's original `TypeError` — distinguish
  * with `isApiError`.
  *
+ * Server clock: every response's `Date` header feeds the shared
+ * server-clock offset store (`lib/serverClock.ts`), so countdowns driven
+ * by `useNow` tick against server time (spec §9.3; patterns §14). The
+ * `Date` header is a CORS-safelisted response header, so same-origin and
+ * proxied responses expose it alike.
+ *
  * Environment: browser first (relative same-origin `path`). Importing from
  * a Server Component is type-safe, but server-side callers must wrap their
  * own cookie-forwarding fetch; `document.cookie` CSRF pickup only exists
  * in the browser.
  */
+import { observeServerDateHeader } from "./serverClock";
 import { toApiError } from "./errors";
 
 /** Header the backend accepts on requests and echoes on responses. */
@@ -122,6 +129,10 @@ export async function apiRequest<T>(
     body,
     credentials: "include",
   });
+
+  // Feed the shared clock estimate from every response (success or
+  // error alike — the header rides both). Missing headers are a no-op.
+  observeServerDateHeader(response.headers.get("Date"));
 
   if (response.status === 204 || response.status === 205) {
     return undefined as T;

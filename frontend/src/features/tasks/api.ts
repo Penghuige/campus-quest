@@ -87,3 +87,16 @@ export function listMyClaims(query: PageQuery = {}): Promise<MyClaimsPageDto> {
     signal: query.signal,
   });
 }
+
+/**
+ * Abandon the actor's own claim (POST /api/v1/claims/{claim_id}/abandon,
+ * spec §8.5). The claim only leaves the UI when THIS call confirms it
+ * (patterns §7 — no optimistic removal); conflicts surface their typed
+ * codes (ABANDON_LIMIT_REACHED, CLAIM_NOT_ABANDONABLE).
+ */
+export function abandonClaim(claimId: string): Promise<ClaimDto> {
+  return apiRequest<ClaimDto>(
+    `/api/v1/claims/${encodeURIComponent(claimId)}/abandon`,
+    { method: "POST" },
+  );
+}

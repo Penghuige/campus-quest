@@ -25,7 +25,7 @@ import {
 
 import { claimTask, type ClaimDto } from "./api";
 import { describeClaimError } from "./claimErrors";
-import { claimRewardLine, claimStatusView } from "./display";
+import { claimRewardLine, claimStatusView, NEAR_CUTOFF_MS } from "./display";
 import { useNow } from "./useNow";
 
 export interface ClaimButtonProps {
@@ -113,7 +113,7 @@ function AssignedClaimPanel({ claim, nowMs }: { claim: ClaimDto; nowMs: number }
   const deadlineMs = parseServerInstant(claim.deadline_at);
   const graceMs = parseServerInstant(claim.grace_deadline_at);
   const parts = countdownFrom(deadlineMs, nowMs);
-  const urgency = nowMs >= graceMs ? "closed" : parts.expired ? "closed" : parts.totalMs <= 4 * 60 * 60 * 1000 ? "near" : "none";
+  const urgency = nowMs >= graceMs ? "closed" : parts.expired ? "closed" : parts.totalMs <= NEAR_CUTOFF_MS ? "near" : "none";
 
   return (
     <section className="claim-panel" role="status" aria-label="已分配的任务单元">

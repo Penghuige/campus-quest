@@ -118,21 +118,25 @@ function ClaimRow({
 }) {
   const status = claimStatusView(claim.status);
   return (
-    <div className="claim-row">
-      <div className="claim-row-top">
-        <span className="claim-title">{claim.task_title}</span>
-        <span className={`badge badge-${status.tone}`}>{status.label}</span>
+    // The row links into the claim's own detail page (T4 submission
+    // surface); the layout stays a row, so the whole row is the target.
+    <Link className="claim-row-link" href={`/claims/${claim.claim_id}`}>
+      <div className="claim-row">
+        <div className="claim-row-top">
+          <span className="claim-title">{claim.task_title}</span>
+          <span className={`badge badge-${status.tone}`}>{status.label}</span>
+        </div>
+        {revision ? (
+          // Design §14 preferred copy; the revision deadline is not part of
+          // the /me/claims DTO yet.
+          <p className="claim-deadline">老师已退回修改，奖励档位已保留</p>
+        ) : (
+          <p className="claim-deadline" suppressHydrationWarning>
+            截止 {formatDeadlineSummary(parseServerInstant(claim.deadline_at), now)}
+          </p>
+        )}
       </div>
-      {revision ? (
-        // Design §14 preferred copy; the revision deadline is not part of
-        // the /me/claims DTO yet.
-        <p className="claim-deadline">老师已退回修改，奖励档位已保留</p>
-      ) : (
-        <p className="claim-deadline" suppressHydrationWarning>
-          截止 {formatDeadlineSummary(parseServerInstant(claim.deadline_at), now)}
-        </p>
-      )}
-    </div>
+    </Link>
   );
 }
 
@@ -155,21 +159,32 @@ function PointsProgressSection() {
       {wallet.state.status === "ready" ? (
         <WalletBody
           wallet={wallet.state.data}
-          rewards={rewards.state.status === "ready" ? rewards.state.data.items : []}
+          rewards={
+            rewards.state.status === "ready"
+              ? { status: "ready", items: rewards.state.data.items }
+              : { status: rewards.state.status, items: [] }
+          }
         />
       ) : null}
     </section>
   );
 }
 
+/**
+ * The rewards shelf may still be loading (or failed) while the wallet is
+ * ready. The empty copy ("暂无可兑换的奖励") is a SERVER-VERDICTED fact —
+ * no purchasable item exists — so it renders ONLY on the ready shelf;
+ * pending renders a skeleton line and a failed load a muted note (the
+ * section error + retry already rendered above).
+ */
 function WalletBody({
   wallet,
   rewards,
 }: {
   wallet: WalletDto;
-  rewards: RewardItemDto[];
+  rewards: { status: "loading" | "error" | "ready"; items: RewardItemDto[] };
 }) {
-  const view = pointsProgressView(wallet, rewards);
+  const view = pointsProgressView(wallet, rewards.items);
   return (
     <div className="panel">
       <div className="metric-row">
@@ -182,7 +197,14 @@ function WalletBody({
           <span className="metric-value">{view.earnedPoints}</span>
         </div>
       </div>
-      {view.status === "ready" &&
+      {rewards.status === "loading" ? (
+        <span className="skeleton skeleton-line" data-width="narrow" aria-label="正在加载可兑换奖励" />
+      ) : null}
+      {rewards.status === "error" ? (
+        <p className="progress-note">暂时无法获取可兑换奖励，请稍后重试</p>
+      ) : null}
+      {rewards.status === "ready" &&
+      view.status === "ready" &&
       view.rewardName !== null &&
       view.rewardCost !== null ? (
         <div className="progress">
@@ -205,9 +227,10 @@ function WalletBody({
               : `距兑换「${view.rewardName}」还差 ${view.remainingPoints} 积分`}
           </p>
         </div>
-      ) : (
+      ) : null}
+      {rewards.status === "ready" && view.status === "empty" ? (
         <p className="progress-note">暂无可兑换的奖励，完成任务先攒积分吧</p>
-      )}
+      ) : null}
       {view.frozenPoints > 0 ? (
         <p className="progress-note">
           有 {view.frozenPoints} 积分冻结在兑换申请中，兑换以可花费余额为准
