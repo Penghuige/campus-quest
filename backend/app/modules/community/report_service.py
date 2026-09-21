@@ -90,7 +90,26 @@ Design decisions:
   redemption-replay ruling — audit records decisions, not requests);
   a replay onto the OTHER terminal state is the typed 409
   (VALIDATION_ERROR, the ``RedemptionNotReviewableError``
-  precedent). Both closures append exactly one durable
+  precedent).
+- **Closure serialization (PR #2 hardening pass 5c): the closure
+  gate's report read takes ``FOR UPDATE OF comment_reports``** — the
+  task-scoping JOIN stays lock-free — so two moderators racing
+  DISMISSED vs HANDLED from the same OPEN row serialize on the row
+  itself: the second transaction's locked read wakes on the WINNER's
+  committed terminal state (READ COMMITTED re-evaluates the locked
+  row) and answers the replay rulings above — same-state idempotent
+  return, other-state typed 409 — so exactly one transition and
+  exactly one decision audit row ever land. The state machine is
+  judged on the LOCKED row's database values (``populate_existing``:
+  a session whose identity map still holds a pre-race OPEN snapshot
+  from an earlier listing cannot act on the stale copy). FOR UPDATE
+  was chosen over the CAS/RETURNING alternative because it keeps the
+  module's §5 shape — the gate read becomes a locking read, and
+  everything downstream (one flush, one audit row, one commit) is
+  unchanged — matching the repo's lock discipline
+  (upload_service's intent-row FOR UPDATE state machine); the
+  conditional-UPDATE claim primitive belongs to cleanup/claim, not
+  here. Both closures append exactly one durable
   ``REPORT_DISMISSED`` / ``REPORT_HANDLED`` row into ``audit_logs``
   in the SAME transaction through the flush-only ``AuditLogWriter``
   (G12): actor, the ``comment_report`` target, the dismissal reason
@@ -132,8 +151,11 @@ Design decisions:
   this service.
 
 Transaction shape per backend-engineering §5: the gate reads, the
-duplicate read, the insert, and exactly one commit per file;
-``list_task_reports`` is read-only.
+duplicate read, the insert, and exactly one commit per file; the
+closure's report read is a LOCKING read (``FOR UPDATE OF
+comment_reports`` — see the closure-serialization decision above) so
+the terminal-state arbitration happens on the row the transaction
+holds until its commit; ``list_task_reports`` is read-only.
 """
 
 from __future__ import annotations
@@ -659,8 +681,20 @@ class ReportService:
         id and another task's report are the same typed 404. NOT
         gated on PUBLISHED or on the comment's liveness — the queue
         reviews history, and a report on a since-deleted comment must
-        still be dismissable (the listing ruling). Returns the row for
-        the state machine; terminal-state arbitration is the caller's."""
+        still be dismissable (the listing ruling). Returns the row
+        for the state machine; terminal-state arbitration is the
+        caller's.
+
+        The read is a LOCKING read — ``FOR UPDATE`` scoped to the
+        comment_reports row only (the task-scoping JOIN stays
+        lock-free, so no lock edge against the comment surfaces
+        exists to deadlock on) and the ``populate_existing`` execution
+        option so the returned ORM object carries the LOCKED row's
+        committed values, never a stale identity-map snapshot: the
+        closure race (DISMISSED vs HANDLED from one OPEN row) is
+        serialized here, with the loser waking on the winner's
+        committed terminal state (see the module docstring's
+        closure-serialization decision)."""
         await require_task_moderation_site(
             db,
             actor,
@@ -672,6 +706,8 @@ class ReportService:
             select(CommentReport)
             .join(Comment, Comment.id == CommentReport.comment_id)
             .where(CommentReport.id == report_id, Comment.task_id == task_id)
+            .with_for_update(of=CommentReport)
+            .execution_options(populate_existing=True)
         )
         if found is None or not isinstance(found, CommentReport):
             raise ReportNotFoundError(task_id, report_id)
@@ -691,7 +727,12 @@ class ReportService:
     ) -> None:
         """One OPEN -> terminal transition and its audit row, one
         transaction (backend-engineering §5): stamp the trio, append
-        the flush-only audit row, commit, refresh. ``handled_at`` is
+        the flush-only audit row, commit, refresh. The guard judges
+        the row ``_require_closable`` returned LOCKED (its values are
+        the database's, not a snapshot's), and the lock holds through
+        this commit — so between the guard and the commit no other
+        closure can touch the row: the both-closed race is impossible,
+        the loser answered at the locked read. ``handled_at`` is
         the database ``now()`` expression — the same transaction clock
         PostgreSQL stamps on the audit row's ``created_at`` (``now()``
         is the transaction timestamp, so the two are identical). The

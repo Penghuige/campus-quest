@@ -63,6 +63,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.clock import FrozenClock
+from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
@@ -74,6 +75,7 @@ from app.modules.submissions.enums import (
     ValidationStatus,
 )
 from app.modules.submissions.models import Submission, UploadIntent
+from app.modules.submissions.router import get_upload_service
 from app.modules.submissions.upload_service import UploadService
 from app.modules.tasks.enums import (
     AssignmentAvailability,
@@ -1028,5 +1030,63 @@ async def test_open_intent_finalize_on_validating_claim_is_not_submittable(
             assert intent is not None
             assert intent.consumed_at is None  # still consumable
             assert intent.finalized_submission_id is None
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+# --- composition-root TTL wiring (PR #2 hardening pass 5c) ----------------------------
+
+
+@pytest.mark.integration
+async def test_composition_root_wires_settings_ttls_into_issued_grants(
+    db_engine: AsyncEngine,
+) -> None:
+    """``get_upload_service`` reads the two typed Settings fields — the
+    "wired from Settings" claim files/cleanup_service's docstring
+    makes about the TTL ordering is literally true at the composition
+    root: a 60/120-second deployment pair reaches the ISSUED grant,
+    with the presigned URL's expiry (the fake echoes the ``expires_in``
+    it was handed under the same frozen clock) and the intent row's
+    ``expires_at`` both carrying the Settings values."""
+    factory = _factory(db_engine)
+    clock = FrozenClock(_NOW)
+    storage = FakeObjectStorage(clock=clock)
+    service = get_upload_service(
+        clock=clock,
+        settings=Settings(
+            database_url="postgresql+asyncpg://u:p@db/test",
+            redis_url="redis://redis:6379/0",
+            s3_endpoint_url="http://minio:9000",
+            s3_bucket="campusquest",
+            s3_access_key="access",
+            s3_secret_key="secret",
+            business_timezone="Asia/Shanghai",
+            upload_url_ttl_seconds=60,
+            upload_intent_ttl_seconds=120,
+        ),
+        storage=storage,
+        dispatcher=None,
+    )
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = await _seed(factory, run)
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+
+        async with factory() as session:
+            receipt = await service.create_upload_intent(
+                session,
+                _actor(seed.student),
+                seed.claim.id,
+                "数据.csv",
+                "CSV",
+                _DECLARED_SIZE,
+            )
+
+        assert receipt.url_expires_at - _NOW == timedelta(seconds=60)
+        assert receipt.intent_expires_at - _NOW == timedelta(seconds=120)
     finally:
         await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
