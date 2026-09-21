@@ -10,9 +10,10 @@ Drives the real app (``create_app()`` — the system router mounted under
   once an admin has set one;
 - ``PUT /admin/settings/current-academic-term``: stores the term and
   commits ONE ``SYSTEM_SETTING_UPDATED`` audit row in the same
-  transaction (actor/target/details, the previous value preserved in
-  ``details.old_value`` — ``None`` on the first write), with the row's
-  ``updated_by_user_id`` naming the actor;
+  transaction (actor/target, the value migration on the §30 snapshot
+  pair — ``before_snapshot.value`` is the previous value, ``None`` on
+  the first write), with the row's ``updated_by_user_id`` naming the
+  actor;
 - the shared term validation semantics: the value is stored stripped,
   and blank/empty/over-length values answer the §29 VALIDATION_ERROR
   envelope (422), never a 500;
@@ -205,7 +206,10 @@ async def test_put_stores_the_term_writes_audit_and_get_returns_it(
     assert audit.action == SYSTEM_SETTING_UPDATED
     assert audit.target_type == "system_setting"
     assert audit.target_id == CURRENT_ACADEMIC_TERM
-    assert audit.details == {"value": "2027-spring", "old_value": None}
+    # 0016: the value migration rides the §30 snapshot pair.
+    assert audit.details is None
+    assert audit.before_snapshot == {"value": None}
+    assert audit.after_snapshot == {"value": "2027-spring"}
 
     # GET now answers the configured row, not the seed (G7: the row is
     # the fact).
@@ -230,9 +234,15 @@ async def test_second_put_audits_the_previous_value(
     # transaction, so ``created_at`` (transaction time) ties and no
     # insertion order is observable — compare per written value, not
     # row order.
-    assert {audit.details["value"]: audit.details for audit in audits} == {
-        "2027-spring": {"value": "2027-spring", "old_value": None},
-        "2027-summer": {"value": "2027-summer", "old_value": "2027-spring"},
+    assert {
+        audit.after_snapshot["value"]: (
+            audit.before_snapshot,
+            audit.after_snapshot,
+        )
+        for audit in audits
+    } == {
+        "2027-spring": ({"value": None}, {"value": "2027-spring"}),
+        "2027-summer": ({"value": "2027-spring"}, {"value": "2027-summer"}),
     }
     assert all(audit.actor_user_id == admin.id for audit in audits)
 

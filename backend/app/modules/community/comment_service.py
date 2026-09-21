@@ -159,6 +159,8 @@ from app.core.clock import Clock, SystemClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.community.gates import (
     CommentDeletedError,
     CommenterAccountNotActiveError,
@@ -186,6 +188,8 @@ from app.modules.tasks.models import Task
 from app.modules.tasks.service import TaskNotFoundError
 
 __all__ = [
+    "AUDIT_ACTION_COMMENT_ADMIN_HARD_HIDDEN",
+    "AUDIT_ACTION_COMMENT_MODERATE_DELETED",
     "COMMENT_HARD_HIDDEN",
     "COMMENT_MODERATION_DELETED",
     "DEFAULT_COMMENT_MAX_LENGTH",
@@ -230,6 +234,17 @@ HARD_HIDDEN_REASON_CODE = "ADMIN_HARD_HIDE"
 # distinction): consumed by the audit/outbox module's AuditService.
 COMMENT_MODERATION_DELETED = "COMMENT_MODERATION_DELETED"
 COMMENT_HARD_HIDDEN = "COMMENT_HARD_HIDDEN"
+
+# §30 durable-audit action names (G12; PR #2 hardening pass 4a): the
+# ``audit_logs.action`` vocabulary for the two moderation surfaces.
+# Deliberately distinct CONSTANTS from the event names above even where
+# the family overlaps — the two streams rename independently (the
+# review-service ruling).
+AUDIT_ACTION_COMMENT_MODERATE_DELETED = "COMMENT_MODERATE_DELETED"
+AUDIT_ACTION_COMMENT_ADMIN_HARD_HIDDEN = "COMMENT_ADMIN_HARD_HIDDEN"
+
+# The audit target type for both moderation actions.
+_AUDIT_TARGET_TYPE = "comment"
 
 # Identity seam (see module docstring): a typed Core-level light table,
 # NOT the identity ORM model — nickname for the public author display
@@ -407,8 +422,13 @@ class CommentService:
     ``events`` are optional with interim defaults (SystemClock /
     LoggingEventPublisher) so the create/list surface stays
     dependency-free; tests freeze time with ``FrozenClock`` and assert
-    audit events through ``InMemoryEventCollector``. Task 9 adds the
-    router (and its rate limiter) on top; nothing here changes for that.
+    audit events through ``InMemoryEventCollector``. ``audit`` (PR #2
+    hardening pass 4a) is the durable audit_logs writer — stateless and
+    flush-only, defaulting to a fresh ``AuditLogWriter`` so no wiring
+    slip can silently drop the §30 trace; each moderation action
+    appends its row in the SAME transaction beside the DomainEvent
+    (the notification stream is unchanged). Task 9 adds the router (and
+    its rate limiter) on top; nothing here changes for that.
     """
 
     def __init__(
@@ -417,12 +437,14 @@ class CommentService:
         comment_max_length: int = DEFAULT_COMMENT_MAX_LENGTH,
         clock: Clock | None = None,
         events: DomainEventPublisher | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._comment_max_length = comment_max_length
         self._clock: Clock = clock if clock is not None else SystemClock()
         self._events: DomainEventPublisher = (
             events if events is not None else LoggingEventPublisher()
         )
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     async def create_comment(
         self, db: AsyncSession, actor: Actor, command: CreateComment
@@ -561,12 +583,22 @@ class CommentService:
     # -- Teacher moderation (spec §21.4 治理) --------------------------------------
 
     async def moderate_delete_comment(
-        self, db: AsyncSession, actor: Actor, comment_id: UUID, reason: str
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        comment_id: UUID,
+        reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> None:
         """Teacher moderation delete: owner-of-the-task or
         MODERATE_COMMUNITY collaborator only, reason mandatory, soft-delete
-        trio with the moderator as ``deleted_by``, and one audit-grade
-        DomainEvent published inside the transaction.
+        trio with the moderator as ``deleted_by``, one audit-grade
+        DomainEvent published inside the transaction, and (PR #2
+        hardening pass 4a) one durable ``COMMENT_MODERATE_DELETED``
+        audit row in the SAME transaction — before/after carry the
+        visibility trio migration, ids and timestamps only, no content
+        and no author identity (G11).
 
         Check order (the collaborator-service precedent: authorization
         before validation, so an unauthorized caller learns nothing about
@@ -578,6 +610,14 @@ class CommentService:
         if comment.deleted_at is not None:
             raise CommentDeletedError(comment_id)
         stored_reason = _require_moderation_reason(reason)
+
+        # Captured BEFORE the mutation: the audit row's before-snapshot
+        # is the visibility state the decision found. A comment under
+        # moderation can never be hard-hidden already (the Admin tool
+        # sets the trio too), but the snapshot states facts, not
+        # assumptions.
+        previous_deleted_at = comment.deleted_at
+        previous_hard_hidden = comment.is_hard_hidden
 
         now = self._clock.now()
         comment.deleted_at = now
@@ -598,21 +638,56 @@ class CommentService:
                 },
             )
         )
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_COMMENT_MODERATE_DELETED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(comment.id),
+            reason=stored_reason,
+            before_snapshot={
+                "deleted_at": (
+                    previous_deleted_at.isoformat()
+                    if previous_deleted_at is not None
+                    else None
+                ),
+                "delete_reason": None,  # a moderation target is never pre-deleted
+                "is_hard_hidden": previous_hard_hidden,
+            },
+            after_snapshot={
+                "deleted_at": now.isoformat(),
+                "deleted_by": str(actor.user_id),
+                "delete_reason": stored_reason,
+                "is_hard_hidden": comment.is_hard_hidden,
+            },
+            details={"task_id": str(comment.task_id)},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         await db.commit()
 
     # -- Admin hard hide (spec §21.3 彻底隐藏) -------------------------------------
 
     async def admin_hard_hide_subtree(
-        self, db: AsyncSession, actor: Actor, comment_id: UUID, reason: str
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        comment_id: UUID,
+        reason: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> None:
         """Admin-only hard hide of a whole comment subtree for privacy or
         legal removal: every subtree comment (target included) gets
         ``is_hard_hidden`` plus the soft-delete trio carrying the
         ``ADMIN_HARD_HIDE: <reason>`` code, an audit DomainEvent records
-        the verbatim reason, and NOTHING is deleted — rows, content, ids,
-        and relations survive for AuditLog-pending moderation review (the
-        public list renders the subtree nothing; task 8's moderation query
-        still sees it, flagged).
+        the verbatim reason, one durable ``COMMENT_ADMIN_HARD_HIDDEN``
+        audit row lands in the SAME transaction (before/after = the
+        affected subtree size and the root's state migration — §21.3
+        AuditLog 在 hard hide 后存活), and NOTHING is deleted — rows,
+        content, ids, and relations survive for AuditLog-pending
+        moderation review (the public list renders the subtree nothing;
+        task 8's moderation query still sees it, flagged).
 
         Unlike the delete paths this may target an ALREADY-deleted comment
         (escalating a tombstone to disappear its surviving descendants),
@@ -625,6 +700,12 @@ class CommentService:
         stored_reason = _require_moderation_reason(reason)
 
         subtree = await self._collect_subtree(db, root)
+        # Captured BEFORE the mutation (the root may arrive already
+        # soft-deleted — escalation is legal here): the audit row's
+        # before-snapshot states what the decision found.
+        root_previous_hard_hidden = root.is_hard_hidden
+        root_previous_deleted_at = root.deleted_at
+
         now = self._clock.now()
         row_reason = f"{HARD_HIDDEN_REASON_CODE}: {stored_reason}"
         for comment in subtree:
@@ -649,6 +730,32 @@ class CommentService:
                     ),
                 },
             )
+        )
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_ACTION_COMMENT_ADMIN_HARD_HIDDEN,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(root.id),
+            reason=stored_reason,
+            before_snapshot={
+                "subtree_size": len(subtree),
+                "root_is_hard_hidden": root_previous_hard_hidden,
+                "root_deleted_at": (
+                    root_previous_deleted_at.isoformat()
+                    if root_previous_deleted_at is not None
+                    else None
+                ),
+            },
+            after_snapshot={
+                "subtree_size": len(subtree),
+                "root_is_hard_hidden": True,
+                "root_deleted_at": now.isoformat(),
+                "root_delete_reason_code": HARD_HIDDEN_REASON_CODE,
+            },
+            details={"task_id": str(root.task_id)},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
         await db.commit()
 

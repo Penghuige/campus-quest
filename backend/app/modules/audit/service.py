@@ -48,6 +48,10 @@ class AuditLogWriter:
         target_id: str,
         reason: str | None = None,
         details: Mapping[str, Any] | None = None,
+        before_snapshot: Mapping[str, Any] | None = None,
+        after_snapshot: Mapping[str, Any] | None = None,
+        ip_address: str | None = None,
+        request_id: str | None = None,
     ) -> AuditLog:
         """Append one audit row for ``actor`` acting on ``target``,
         flush-only — the caller owns the commit.
@@ -59,6 +63,14 @@ class AuditLogWriter:
         as a string; ``reason`` is the action's free-text why when its
         contract carries one; ``details``, when given, must be
         JSON-serializable (the DomainEvent payload rule).
+
+        ``before_snapshot``/``after_snapshot`` (spec §30, 0016) are the
+        target's state migration as REDACTED structured JSON — business
+        facts only (statuses, amounts, visibility), never PII (G11:
+        nickname/phone/email/student id are forbidden in snapshots).
+        Both stay NULL for access-style actions that mutate nothing.
+        ``ip_address``/``request_id`` come from the caller's
+        ``AuditContext`` when one exists; NULL on non-HTTP callers.
         """
         row = AuditLog(
             actor_user_id=actor.user_id,
@@ -68,6 +80,14 @@ class AuditLogWriter:
             target_id=target_id,
             reason=reason,
             details=dict(details) if details is not None else None,
+            before_snapshot=(
+                dict(before_snapshot) if before_snapshot is not None else None
+            ),
+            after_snapshot=(
+                dict(after_snapshot) if after_snapshot is not None else None
+            ),
+            ip_address=ip_address,
+            request_id=request_id,
         )
         db.add(row)
         await db.flush()  # the caller commits (backend-engineering §5)

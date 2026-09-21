@@ -125,6 +125,7 @@ from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
 )
+from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
@@ -535,11 +536,14 @@ async def approve_submission(
     actor: StaffActor,
     db: DbSession,
     reviews: ReviewServiceDep,
+    request: Request,
 ) -> ApproveResponse:
     """Run the §14 ten-step approve transaction (claim COMPLETED, lock
     CONFIRMED, one grant, assignment COMPLETED); a replay on a COMPLETED
     claim answers ``already_reviewed`` with nothing written."""
-    result = await reviews.approve_submission(db, actor, submission_id)
+    result = await reviews.approve_submission(
+        db, actor, submission_id, audit_context=AuditContext.from_request(request)
+    )
     return ApproveResponse(
         claim_id=result.claim.id,
         claim_status=result.claim.status,
@@ -559,11 +563,18 @@ async def require_revision(
     actor: StaffActor,
     db: DbSession,
     reviews: ReviewServiceDep,
+    request: Request,
 ) -> RevisionRequiredResponse:
     """Return the submission for fixes (spec §11.3): the claim moves to
     REVISION_REQUIRED with the §11.4 window; the existing lock survives.
     The note is mandatory at the transport (the teacher's guidance)."""
-    claim = await reviews.require_revision(db, actor, submission_id, body.note)
+    claim = await reviews.require_revision(
+        db,
+        actor,
+        submission_id,
+        body.note,
+        audit_context=AuditContext.from_request(request),
+    )
     return RevisionRequiredResponse(
         claim_id=claim.id,
         claim_status=claim.status,
@@ -582,11 +593,18 @@ async def invalidate_reward_lock(
     actor: StaffActor,
     db: DbSession,
     reviews: ReviewServiceDep,
+    request: Request,
 ) -> RevisionRequiredResponse:
     """Cancel the PROVISIONAL lock and demand a resubmission (spec
     §11.3): the projection clears, the cancelled values survive on the
     append-only audit rows, and the reason is mandatory."""
-    claim = await reviews.invalidate_reward_lock(db, actor, submission_id, body.reason)
+    claim = await reviews.invalidate_reward_lock(
+        db,
+        actor,
+        submission_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
     return RevisionRequiredResponse(
         claim_id=claim.id,
         claim_status=claim.status,

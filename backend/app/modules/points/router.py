@@ -111,13 +111,14 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
 from app.core.config import get_settings
 from app.db.session import get_db_session
+from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.dependencies import (
     get_business_clock,
@@ -265,7 +266,12 @@ def get_ledger_service() -> LedgerService:
     trigger bound (final-review C1): any ranking-affecting write through
     this service — the grant, the reversal — enqueues the recompute job
     on the caller's commit."""
-    return LedgerService(ranking_dispatcher=get_ranking_dispatcher())
+    # audit: the durable audit_logs writer (G12; PR #2 hardening
+    # pass 4a) — wired explicitly, the composition-root visibility
+    # pattern (get_redemption_service below).
+    return LedgerService(
+        ranking_dispatcher=get_ranking_dispatcher(), audit=AuditLogWriter()
+    )
 
 
 async def get_academic_term_provider(
@@ -492,13 +498,16 @@ async def approve_redemption(
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
+    request: Request,
 ) -> RedemptionReviewResponse:
     """Approve: the freeze becomes one negative REWARD_REDEMPTION entry
     and the status flips to APPROVED (spec §16.2); a replay on an
     already-approved row is the idempotent no-op that returns it.
 
     Admin-only until scoped delegation (PR #2 hardening ruling)."""
-    redemption = await redemptions.approve_redemption(db, actor, redemption_id)
+    redemption = await redemptions.approve_redemption(
+        db, actor, redemption_id, audit_context=AuditContext.from_request(request)
+    )
     return await _review_response(db, redemptions, directory, redemption)
 
 
@@ -513,13 +522,18 @@ async def reject_redemption(
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
+    request: Request,
 ) -> RedemptionReviewResponse:
     """Reject with a mandatory reason: the freeze is released and NO
     consumption entry is written (spec §16.2).
 
     Admin-only until scoped delegation (PR #2 hardening ruling)."""
     redemption = await redemptions.reject_redemption(
-        db, actor, redemption_id, body.reason
+        db,
+        actor,
+        redemption_id,
+        body.reason,
+        audit_context=AuditContext.from_request(request),
     )
     return await _review_response(db, redemptions, directory, redemption)
 
@@ -535,13 +549,18 @@ async def fulfill_redemption(
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
+    request: Request,
 ) -> RedemptionReviewResponse:
     """Record the physical delivery of an APPROVED redemption (spec
     §16.2: approval and delivery are separate transitions).
 
     Admin-only until scoped delegation (PR #2 hardening ruling)."""
     redemption = await redemptions.fulfill_redemption(
-        db, actor, redemption_id, body.note
+        db,
+        actor,
+        redemption_id,
+        body.note,
+        audit_context=AuditContext.from_request(request),
     )
     return await _review_response(db, redemptions, directory, redemption)
 
