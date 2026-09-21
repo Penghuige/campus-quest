@@ -212,7 +212,14 @@ class DeliveryStatus(StrEnum):  # spec §25.3/§25.4 via Plan 07; NotificationDe
     SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+
+class ReportStatus(StrEnum):    # spec §23; CommentReport.status
+    OPEN = "OPEN"
+    HANDLED = "HANDLED"
+    DISMISSED = "DISMISSED"
 ```
+
+Report-closure ownership (PR #2 hardening ruling): the OPEN -> HANDLED/DISMISSED transitions belong to Plan 08's moderation handling flow (durable-audited dismiss/act endpoints over the moderation queue); no Plan 06 surface performs them. `report_comment` only files; `list_task_reports` only reads.
 
 ## Domain Events
 
