@@ -10,7 +10,8 @@ object-first delete, §27 reconcile/idempotency, failure taxonomy) —
 fully covered by ``tests/workers/test_file_cleanup.py`` against an
 in-memory repository and ``FakeObjectStorage``.
 
-The plan-07 merge completes this module: replace the placeholder with
+The plan-07 merge completes this module (the concentrated checklist is
+app/workers/MERGE_CARRIES.md item 3): replace the placeholder with
 the real Submission query (due retention snapshots joined to claims,
 excluding in-review claims, legal holds, permanent rows, and rows
 already marked deleted), register the Celery shell here (scan task:

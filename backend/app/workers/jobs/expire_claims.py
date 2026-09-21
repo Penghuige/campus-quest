@@ -34,7 +34,7 @@ actionable status set with both deadline columns due, ordered by
 ``(grace_deadline_at) WHERE status IN (actionable) AND (revision IS NULL
 OR revision <= grace)`` serves. It deliberately does NOT add that index
 here (a new 0011 would collide with the plans branch's 0011); the index
-lands with the beat schedule wiring at merge.
+lands with the beat schedule wiring at merge (MERGE_CARRIES.md items 4-5).
 
 Correlation (§15): ``request_id`` arrives as an explicit task argument,
 is threaded unchanged into every per-id enqueue, and is logged at both
@@ -113,7 +113,8 @@ def build_expire_service() -> ClaimService:
     valid-submission seam keeps its default (``NoValidSubmissionsInspector``,
     strict §11.5/§26 reading: only a machine-VALIDATED submission
     protects) — the stream that owns submission validation swaps the real
-    VALIDATED-reading inspector in at this exact call site. Tests
+    VALIDATED-reading inspector in at this exact call site
+    (MERGE_CARRIES.md item 1). Tests
     substitute the session maker and the service by patching around this
     wiring.
     """

@@ -22,6 +22,12 @@ Eager execution (`task_always_eager`) is TEST-ONLY and is never set here;
 tests enable it in their fixture. `task_eager_propagates=True` is safe
 app-wide because it only changes how eager (inline) executions surface
 exceptions.
+
+MERGE CARRIES: every work deferred from this branch to the stream
+merge (beat schedule for the scans, cleanup job registration +
+JOB_MODULES entry, the deferred deadline index, 0010 reparent) is
+consolidated in MERGE_CARRIES.md next to this file — the single
+checklist; the scattered in-code TODOs point there too.
 """
 
 from __future__ import annotations
@@ -37,7 +43,8 @@ from app.core.config import Settings, get_settings
 # imported — a worker process imports no test or caller module, so the
 # modules must be named here explicitly (deterministic and reviewable;
 # no autodiscovery). Each new job module appends itself to this list in
-# its own task.
+# its own task. The cleanup scan joins this list at merge
+# (MERGE_CARRIES.md item 3).
 JOB_MODULES = (
     "app.workers.jobs.dispatch_due_notifications",
     "app.workers.jobs.expire_claims",

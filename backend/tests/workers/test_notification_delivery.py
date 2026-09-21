@@ -25,6 +25,10 @@ claim-before-send race cannot be simulated on fakes):
   updated_at): a FRESH SENDING claim still answers IN_FLIGHT untouched;
   a STALE one (older than the threshold) is re-claimed and delivered,
   attempts advancing on the re-claim.
+- Lease clock domain (plan 07 final review I1): updated_at stays in the
+  SERVICE clock through claim AND finalize — the column has no ORM
+  onupdate, so a finalize re-assigning the claim's instant never lets
+  the DB clock overwrite it.
 - Not-due deliveries are left PENDING and unclaimed.
 
 Real commits require real cleanup: every seeded user/notification/
@@ -54,6 +58,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from app.core.clock import Clock, FrozenClock
 from app.core.config import Settings
 from app.integrations.errors import (
     PermanentProviderError,
@@ -287,7 +292,7 @@ def _service(
     *,
     sms: FakeSmsSender | None = None,
     email: FakeEmailSender | None = None,
-    clock: StepClock | None = None,
+    clock: Clock | None = None,
     claim_status_resolver: Any = None,
 ) -> DeliveryService:
     return DeliveryService(
@@ -479,6 +484,43 @@ async def test_bounded_retry_ladder_then_terminal_failure(
     # rung serves deployments that configure max_attempts deeper than
     # the default 3.
     assert RETRY_DELAYS == (_ONE_MINUTE, _FIVE_MINUTES, _TWENTY_MINUTES)
+
+
+# --- lease clock domain (plan 07 final review I1) ----------------------------------
+
+
+async def test_retryable_finalize_keeps_service_clock_updated_at(
+    db_engine: AsyncEngine,
+) -> None:
+    # Regression, plan 07 final review I1: tx2 finalize re-assigns the
+    # SAME `now` tx1 claimed with, so SQLAlchemy prunes the net-unchanged
+    # updated_at column from the UPDATE. While the column carried an ORM
+    # onupdate=func.now(), that pruning let the DB clock silently
+    # overwrite the claim's service-clock lease stamp (mixed domains).
+    # The frozen instant is deliberately YEARS away from wall time, so a
+    # DB-clock write cannot pass the readback equality by coincidence.
+    distant_t0 = datetime(2020, 1, 1, 0, 0, tzinfo=UTC)
+    sms = FakeSmsSender()
+    sms.fail_with(TemporaryProviderError("provider unavailable"), times=1)
+    service = _service(db_engine, sms=sms, clock=FrozenClock(current=distant_t0))
+
+    async with _seeded(db_engine, scheduled_at=distant_t0 - _ONE_MINUTE) as seeded:
+        delivery = seeded[2]
+
+        result = await service.send(delivery.id, "req-clock-1")
+        assert result.outcome is SendOutcome.RETRY_SCHEDULED
+
+        # Fresh session: the committed row, not a cached ORM instance.
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.RETRYABLE.value
+        # The lease stamp is the SERVICE-clock instant, both after the
+        # tx1 claim AND after the tx2 finalize that re-assigned it.
+        assert row.updated_at == distant_t0
+        # Belt for the legible failure mode: nowhere near the DB clock
+        # (which tracks wall time) either.
+        assert abs((row.updated_at - datetime.now(UTC)).days) > 365
+
+    assert sms.messages == []
 
 
 # --- unknown outcome (timeout) ------------------------------------------------------

@@ -592,7 +592,8 @@ class ValidSubmissionInspector(Protocol):
     submission is not yet VALIDATED expires; the stream that owns
     submission validation wires the real VALIDATED-reading inspector at
     the ClaimService constructor (the expiry worker's
-    build_expire_service is the production call site).
+    build_expire_service is the production call site; the concentrated
+    merge checklist is app/workers/MERGE_CARRIES.md item 1).
     """
 
     async def has_valid_submission(self, db: AsyncSession, claim_id: UUID) -> bool: ...

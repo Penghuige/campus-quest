@@ -6,7 +6,11 @@ inbox and the staff failure query.
   `require_active_student_actor` (notifications are a Student-facing
   capability surface in V1; staff inboxes have no product surface yet,
   so a staff token answers PERMISSION_DENIED rather than opening an
-  unscoped listing). Rows are the caller's OWN `Notification` rows,
+  unscoped listing). The ACTIVE requirement is the SUSPENDED-inbox
+  ruling's read side: routing still creates and retains a suspended
+  user's notifications (service.py), but this endpoint answers the
+  guard's ACCOUNT_NOT_ACTIVE for them — retained, not readable, until
+  reinstatement. Rows are the caller's OWN `Notification` rows,
   newest first, with the V1 `?unread=true` filter and offset
   pagination (the documented V1 pagination choice, same bounds as the
   tasks module). The DTO carries title/body/read_at/created_at and the

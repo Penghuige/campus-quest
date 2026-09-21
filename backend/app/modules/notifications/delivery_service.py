@@ -31,9 +31,13 @@ deterministic provider idempotency key collapses a genuine
 double-send. That trade-off is the documented cost of the heuristic
 over a schema change. The lease's time domain is the SERVICE clock:
 the claim (and every finalize) stamps `updated_at` with the
-caller-side `now` instead of the column's server-side onupdate, so
-"now - updated_at" here and the T8 scan's threshold compare instants
-from one domain; host clock skew skews the heuristic with it.
+caller-side `now`, and the column deliberately carries NO ORM onupdate
+(models.py) so a DB-clock write can never sneak in — including the
+subtle case where tx2 finalize re-assigns the same instant tx1 claimed
+with (SQLAlchemy prunes the net-unchanged column, and with no onupdate
+the row simply keeps the claim's service value). "now - updated_at"
+here and the T8 scan's threshold compare instants from one domain;
+host clock skew skews the heuristic with it.
 
 Committing the claim before the provider call is what makes a crashed
 provider call observable (the row is stuck in SENDING, not silently
@@ -384,9 +388,10 @@ class DeliveryService:
 
             # PENDING or RETRYABLE and due: claim before sending. The
             # claim stamps updated_at from the SERVICE clock (the same
-            # domain the staleness check below judges in) — an explicit
-            # client value overrides the column's server-side onupdate,
-            # so the lease never mixes two time domains.
+            # domain the staleness check below judges in); the column
+            # has no ORM onupdate (models.py), so every write is the
+            # caller's clock and the lease never mixes two time
+            # domains.
             delivery.status = DeliveryStatus.SENDING.value
             delivery.attempts += 1
             delivery.updated_at = now

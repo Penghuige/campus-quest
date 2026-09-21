@@ -14,9 +14,10 @@ The decision table this module pins:
 - IN_APP is the always-on fallback for accounts that can still receive
   (spec §25: 站内通知作为兜底). V1 ruling recorded here: ACTIVE and
   SUSPENDED accounts receive in-app (§5.7 keeps a suspended user's
-  data readable, and the inbox is that data); BANNED accounts receive
-  nothing on any channel, and PENDING_PHONE accounts have not finished
-  binding, so both skip everything.
+  data, so their notifications are created and RETAINED — though the
+  inbox endpoint requires ACTIVE, so retained is not readable);
+  BANNED accounts receive nothing on any channel, and PENDING_PHONE
+  accounts have not finished binding, so both skip everything.
 - Task policy (spec §25.1) gates only the two deadline reminder
   events: notify_24h/notify_4h switch the whole reminder off, and the
   per-task channel list switches a single channel off. The six

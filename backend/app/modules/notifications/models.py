@@ -162,8 +162,16 @@ class NotificationDelivery(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
+    # NO onupdate here (unlike the other updated_at columns): this
+    # column is the V1 SENDING-lease timestamp and must stay in the
+    # SERVICE clock domain only. tx2 finalize re-assigns the same
+    # service instant tx1 claimed with; with an ORM onupdate present
+    # SQLAlchemy prunes the net-unchanged column from the UPDATE and
+    # the DB clock silently overwrites the lease (mixed time domains;
+    # plan 07 final review I1). No DDL delta: onupdate never reached
+    # the migration.
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), onupdate=func.now()
+        DateTime(timezone=True), server_default=text("now()")
     )
 
 

@@ -48,7 +48,8 @@ Payload conventions (the port passes the caller's mapping through):
 
 The claim-side emitters on the plans branch (submissions validation,
 review, points redemption, identity security) call the port with these
-conventions at merge; on main the claim path (tasks.claim_service) is
+conventions at merge (MERGE_CARRIES.md item 2); on main the claim path
+(tasks.claim_service) is
 wired, and every other producer is exercised with synthetic events.
 """
 

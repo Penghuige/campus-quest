@@ -19,12 +19,16 @@ below is pin-testable:
 - IN_APP is the always-on fallback (spec §25: 轻量站内通知作为兜底).
   V1 ruling, recorded here because the spec does not spell it out:
   accounts in ACTIVE or SUSPENDED can receive (spec §5.7 keeps a
-  suspended user's points and audit data; the inbox is that retained
-  data, still readable), while BANNED accounts receive nothing on any
-  channel and PENDING_PHONE accounts have not finished registering, so
-  both skip everything. The status gate is applied to all three
-  channels uniformly — one "can this account receive at all" answer,
-  not a per-channel patch.
+  suspended user's points and audit data, so routing still creates and
+  RETAINS their notifications), while BANNED accounts receive nothing
+  on any channel and PENDING_PHONE accounts have not finished
+  registering, so both skip everything. Retained is not readable: the
+  inbox endpoint requires ACTIVE (router.py
+  `require_active_student_actor`), so a SUSPENDED user's messages wait
+  unread until reinstatement — retention preserves the data, the API
+  gate preserves the suspension. The status gate is applied to all
+  three channels uniformly — one "can this account receive at all"
+  answer, not a per-channel patch.
 - Task policy (spec §25.1: notify_24h / notify_4h / per-channel
   toggles) gates ONLY the two deadline reminder events: a disabled
   reminder flag skips the whole event on every channel; a channel
