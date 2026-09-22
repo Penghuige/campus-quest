@@ -145,3 +145,72 @@ async def test_writer_persists_the_s30_snapshot_and_request_columns(
     assert bare_loaded.after_snapshot is None
     assert bare_loaded.ip_address is None
     assert bare_loaded.request_id is None
+
+
+@pytest.mark.integration
+async def test_writer_redacts_secrets_from_every_payload_column(
+    db_session: AsyncSession,
+) -> None:
+    """Plan 08 T1's defense in depth, end to end on real PostgreSQL: a
+    caller who stuffs secret-bearing keys into ``details`` and the §30
+    snapshot pair gets a stored row with every secret replaced by
+    ``"[REDACTED]"`` — at any nesting depth — while non-secret facts
+    persist. ``reason`` is free text and is stored verbatim (the
+    documented exemption: it is a human sentence, not a structured
+    value a caller could key a credential into)."""
+    admin = User(
+        username="audit-admin-0003",
+        password_hash=hash_password(_PASSWORD),
+        nickname="审计管理员",
+        role=Role.ADMIN,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(admin)
+    await db_session.flush()
+
+    row = await AuditLogWriter().append(
+        db_session,
+        actor=Actor(user_id=admin.id, role=Role.ADMIN),
+        action="TEST_PROBE_REDACTION",
+        target_type="comment",
+        target_id="00000000-0000-0000-0000-000000000004",
+        reason="泄漏了 password 的快照",  # free text survives verbatim
+        details={"revealed_user_id": "00000000-0000-0000-0000-000000000005"},
+        before_snapshot={
+            "status": "OPEN",
+            "credentials": {"password_hash": "$argon2id$leak", "otp": "123456"},
+        },
+        after_snapshot={
+            "status": "CLOSED",
+            "session": [{"refresh_token": "rt-leak"}, {"access_token": "at-leak"}],
+            "totp_secret": "BASE32LEAK",
+            "nested": {"recovery_codes": ["raw-code-one", "raw-code-two"]},
+        },
+    )
+    await db_session.commit()
+
+    loaded = await db_session.get(AuditLog, row.id)
+    assert loaded is not None
+    assert loaded.reason == "泄漏了 password 的快照"
+    assert loaded.details == {
+        "revealed_user_id": "00000000-0000-0000-0000-000000000005"
+    }
+    assert loaded.before_snapshot == {
+        "status": "OPEN",
+        "credentials": {"password_hash": "[REDACTED]", "otp": "[REDACTED]"},
+    }
+    assert loaded.after_snapshot == {
+        "status": "CLOSED",
+        "session": [{"refresh_token": "[REDACTED]"}, {"access_token": "[REDACTED]"}],
+        "totp_secret": "[REDACTED]",
+        "nested": {"recovery_codes": "[REDACTED]"},
+    }
+    # No secret material anywhere on the persisted row.
+    for column in (
+        loaded.before_snapshot,
+        loaded.after_snapshot,
+        loaded.details,
+    ):
+        assert "leak" not in str(column)
+        assert "raw-code" not in str(column)
+        assert "123456" not in str(column)

@@ -35,6 +35,7 @@ from app.db.session import get_db_session
 from app.integrations.email import EmailSender, build_email_sender
 from app.integrations.rate_limit import RateLimiter, RedisFixedWindowLimiter
 from app.integrations.sms import SmsSender, build_sms_sender
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
@@ -186,6 +187,11 @@ def get_staff_service(
         events=events,
         invitation_ttl_hours=settings.staff_invitation_ttl_hours,
         notification_recorder=NotificationPort(clock=clock),
+        # Explicit for the family style (the points/community/system
+        # composition roots): the durable G12 writer for the staff
+        # lifecycle actions (Plan 08 T2) — identical to the constructor
+        # default, spelled out so the dependency is visible here.
+        audit=AuditLogWriter(),
     )
 
 

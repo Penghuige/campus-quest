@@ -62,6 +62,27 @@ Design decisions:
 - **Audit events** (`events.py`) are published inside the transaction,
   before commit, so the audit/outbox module's `AuditService` can persist
   them atomically; the in-memory collector is the interim adapter.
+- **Durable audit rows (Plan 08 T2) ride the same transactions.** Every
+  staff lifecycle write appends a `audit_logs` row through the
+  flush-only `AuditLogWriter` before the service's one commit:
+  `AUDIT_STAFF_INVITATION_CREATED` (actor = the inviting Admin, target
+  = the invitation) and `AUDIT_STAFF_INVITATION_ACCEPTED` (actor = the
+  freshly created staff account — it proved identity by holding the
+  single-use token — target = the consumed invitation). The ACCEPTED
+  row's `actor_role` column snapshots the granted role: that is V1's
+  role-assignment record, because **no role-promotion/revocation
+  service write point exists in V1** — roles are assigned exactly
+  once, at invitation acceptance (spec §5.8; a future promote/demote
+  flow must add its own audited action). Snapshots carry business
+  facts only (role, expiry, accepted_at); the invited email stays OFF
+  the audit row (G11) — it rests on the invitation the `target_id`
+  names. Idempotent replays write nothing: a re-presented token fails
+  before any write, and each new invitation is one business write with
+  its one row. The audit action constants are defined HERE, beside the
+  same-named DomainEvent types in `events.py`, as the audit-stream
+  vocabulary (the COMMUNITY_IDENTITY_REVEAL precedent): the two
+  contracts evolve independently and neither imports the other's
+  names.
 
 Error taxonomy: `BusinessError` with existing registry codes
 (`PERMISSION_DENIED`, `VALIDATION_ERROR`, `AUTHENTICATION_REQUIRED`,
@@ -94,6 +115,8 @@ from app.core.security import (
     validate_password_length,
     verify_password,
 )
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import (
     STAFF_INVITATION_ACCEPTED,
@@ -124,6 +147,20 @@ from app.modules.identity.totp import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Durable audit action names (G12; Plan 08 T2). The STRINGS deliberately
+# match the DomainEvent types in events.py, but the constants live HERE
+# as the audit_logs vocabulary — the audit-stream identifier vs the
+# event-stream identifier is the COMMUNITY_IDENTITY_REVEAL split: the
+# two contracts evolve independently, so neither side imports the
+# other's names (see the module docstring).
+AUDIT_STAFF_INVITATION_CREATED = "STAFF_INVITATION_CREATED"
+AUDIT_STAFF_INVITATION_ACCEPTED = "STAFF_INVITATION_ACCEPTED"
+
+# The audit target for both staff-lifecycle actions: the invitation
+# itself (target_id = the invitation's UUID as text) — the anchor both
+# rows share, so a reviewer threads CREATED → ACCEPTED by target.
+_AUDIT_TARGET_TYPE = "staff_invitation"
 
 _PERMISSION_DENIED_MESSAGE = "仅管理员可以创建员工邀请"
 _VALIDATION_MESSAGE = "员工邀请信息校验失败"
@@ -195,6 +232,11 @@ class StaffService:
     item 2) records the §25 ACCOUNT_SECURITY event when TOTP is
     enabled — inside the same transaction as the credential flip (the
     outbox rule). None keeps the service notification-free.
+
+    ``audit`` defaults to a fresh ``AuditLogWriter`` — stateless and
+    flush-only; the default means the default writer, never "no
+    auditing" (the RedemptionService wiring ruling: a wiring slip must
+    not silently drop G12 rows).
     """
 
     def __init__(
@@ -206,6 +248,7 @@ class StaffService:
         events: DomainEventPublisher,
         invitation_ttl_hours: int = 48,
         notification_recorder: NotificationEventRecorder | None = None,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         # The clock is the only business-time source (expiry, verified-at,
         # confirmed-at); `sessions` shares the same instance at the
@@ -218,9 +261,16 @@ class StaffService:
         self._invitation_ttl = timedelta(hours=invitation_ttl_hours)
         self._users = UserRepository()
         self._notification_recorder = notification_recorder
+        self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 
     async def create_staff_invitation(
-        self, db: AsyncSession, actor: Actor, email: str, role: Role
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        email: str,
+        role: Role,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> IssuedStaffInvitation:
         """Create a one-shot invitation for ``email`` into staff ``role``.
 
@@ -228,6 +278,11 @@ class StaffService:
         denied before anything is written. The target role must be
         TEACHER or ADMIN — students self-register through the whitelist
         flow, never through invitations.
+
+        The invitation and its ``AUDIT_STAFF_INVITATION_CREATED`` audit
+        row commit as one unit (Plan 08 T2); the snapshot carries the
+        invitation's business facts — role, expiry, accepted_at — and
+        never the invited email (G11; see the module docstring).
         """
         if actor.role != Role.ADMIN:
             raise BusinessError(
@@ -270,6 +325,24 @@ class StaffService:
             )
         )
         invitation_id = invitation.id
+        # Durable G12 trace (Plan 08 T2): flush-only append joins THIS
+        # transaction, so the invitation and its audit row commit
+        # together (§5). The email never lands on the row (G11) — it
+        # rests on the invitation the target_id names.
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_STAFF_INVITATION_CREATED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(invitation_id),
+            after_snapshot={
+                "role": role.value,
+                "accepted_at": None,
+                "expires_at": invitation.expires_at.isoformat(),
+            },
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
         await db.commit()
         logger.info(
             "staff invitation created invitation_id=%s role=%s actor_id=%s",
@@ -280,7 +353,12 @@ class StaffService:
         return IssuedStaffInvitation(invitation=invitation, token=token)
 
     async def accept_staff_invitation(
-        self, db: AsyncSession, token: str, password: str
+        self,
+        db: AsyncSession,
+        token: str,
+        password: str,
+        *,
+        audit_context: AuditContext | None = None,
     ) -> PendingStaffSession:
         """Trade the single-use invitation token for a staff account.
 
@@ -290,10 +368,12 @@ class StaffService:
         and already-used tokens fail with one uniform error — the branch
         reason never leaves the server.
 
-        The consumption (``accepted_at``), the User insert, and the
-        pending session mint share one transaction under the invitation
-        row lock: single-use is atomic, and a crashed accept leaves
-        neither a half-created account nor a consumed invitation.
+        The consumption (``accepted_at``), the User insert, the pending
+        session mint, and the ``AUDIT_STAFF_INVITATION_ACCEPTED`` audit
+        row (Plan 08 T2) share one transaction under the invitation row
+        lock: single-use is atomic, and a crashed accept leaves neither
+        a half-created account nor a consumed invitation — nor an audit
+        row for an acceptance that never happened.
         """
         self._require_usable_password(password)
 
@@ -359,6 +439,24 @@ class StaffService:
                     "invitation_id": str(invitation.id),
                 },
             )
+        )
+        # Durable G12 trace (Plan 08 T2): the acceptance, the created
+        # account, and the audit row are one unit. Actor = the account
+        # that just proved identity by holding the single-use token;
+        # its ``actor_role`` snapshots the granted role — V1's only
+        # role assignment (see the module docstring). The audited
+        # migration is the invitation's consumption; both parties are
+        # already named by actor and target, so ``details`` stays NULL.
+        await self._audit.append(
+            db,
+            actor=Actor(user_id=user.id, role=role),
+            action=AUDIT_STAFF_INVITATION_ACCEPTED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(invitation.id),
+            before_snapshot={"accepted_at": None},
+            after_snapshot={"accepted_at": now.isoformat()},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
         )
         # Captured pre-commit: the service must not depend on the caller's
         # session having ``expire_on_commit=False`` (see SessionService).
