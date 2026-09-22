@@ -2056,3 +2056,120 @@ async def _object_key(
         )
         assert key is not None
         return key
+
+
+@pytest.mark.integration
+def test_takeover_release_opens_protection_only_past_the_proven_external_bound() -> (
+    None
+):
+    """The final-review P0 sequence, end to end: A claims -> lease
+    expires -> B takes over -> B's provider delete fails and B RELEASES
+    -> protection enters -> A's delayed external delete completes.
+    Protection may only have entered once every possible predecessor
+    external call is provably incapable of deleting — and that proof is
+    the machine-checked Settings invariant (lease STRICTLY exceeds the
+    worst-case delete budget), which places the end of A's external
+    window (claim + budget) BEFORE the lease expiry that authorized B's
+    takeover, hence before B's release, hence before the protection
+    commit. The fencing token covers A's late DB writes; the bound
+    covers its late provider call; together the reviewer's ordering —
+    protection commits, THEN A's delete lands — is physically
+    impossible under the configured contract."""
+    from app.core.config import get_settings
+    from app.modules.submissions.cleanup_claim import (
+        ensure_no_active_cleanup_claim,
+    )
+    from app.modules.submissions.models import Submission
+    from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
+
+    # (0) The machine-checked proof this scenario stands on: with the
+    # configured contract, A's external window closes strictly before
+    # its lease can expire — every later step happens after that.
+    settings = get_settings()
+    budget = settings.s3_worst_case_delete_budget_seconds
+    lease = settings.cleanup_claim_lease_seconds
+    assert lease > budget  # Settings construction refuses otherwise
+
+    maker = _factory()
+    run = uuid.uuid4().hex[:8]
+    world = asyncio.run(_seed_world(maker, run, submissions=_DUE_SPEC))
+    repository = SubmissionCleanupRepository(maker, lease_seconds=LEASE_SECONDS)
+    storage = FakeObjectStorage()
+    claim_id = world.claim_id
+
+    async def _claim_columns() -> tuple[Any, Any, Any]:
+        async with maker() as session:
+            submission = await session.get(Submission, world.submission_ids["due"])
+            assert submission is not None
+            return (
+                submission.cleanup_claimed_at,
+                submission.cleanup_lease_expires_at,
+                submission.cleanup_claim_token,
+            )
+
+    try:
+        record = _scan_snapshot(maker, world)
+
+        # (1) Worker A claims at NOW; its provider call is bounded by
+        # NOW + budget (the adapter's total attempts x timeouts x the
+        # HEAD+DELETE pair + backoff margin).
+        token_a = asyncio.run(repository.claim_for_cleanup(record, now=NOW))
+        assert token_a is not None
+
+        # (2) Lease expiry — reachable only at NOW + LEASE, and by the
+        # invariant (LEASE > budget) strictly AFTER A's external window
+        # closed: whatever A's provider call did, it had TERMINATED
+        # before this instant.
+        later = NOW + LEASE + timedelta(seconds=1)
+        assert later > NOW + timedelta(seconds=budget)
+
+        # (3) B takes over (fresh token) ...
+        token_b = asyncio.run(repository.claim_for_cleanup(record, now=later))
+        assert token_b is not None
+        assert token_b != token_a
+
+        # ... (4) B's provider delete fails and B releases — the claim
+        # is gone, protection's gate may open.
+        asyncio.run(repository.release_cleanup_claim(record, token=token_b))
+        claimed_at, _, token_now = asyncio.run(_claim_columns())
+        assert claimed_at is None and token_now is None
+
+        # (5) Protection enters: the guard the validation/review write
+        # points call under their row lock no longer refuses.
+        async def _protection_gate_opens() -> None:
+            async with maker() as session:
+                await ensure_no_active_cleanup_claim(session, claim_id)
+
+        asyncio.run(_protection_gate_opens())
+
+        # (6) A's "delayed" external completion — the dangerous step.
+        # In wall-clock reality this is unreachable: A's provider call
+        # ended at/before NOW + budget < later (step 2's assertion), so
+        # no in-flight DELETE of A's can land here. Simulating it
+        # anyway drives home both fences: the fake storage delete CAN
+        # be issued by a zombie test hand (a missing object is §27's
+        # idempotent already-gone outcome), but A's late DB mark is
+        # fenced out — and the ordering proof above is what guarantees
+        # a real A had nothing left in flight when protection committed.
+        asyncio.run(_delete_object_async(storage, record.object_key))
+        outcome = asyncio.run(
+            repository.mark_deleted(record, token=token_a, deleted_at=later)
+        )
+        assert outcome is MarkOutcome.CLAIM_LOST
+        claimed_at, _, token_now = asyncio.run(_claim_columns())
+        assert claimed_at is None and token_now is None
+    finally:
+        asyncio.run(_cleanup_world(maker, world))
+
+
+async def _delete_object_async(storage: FakeObjectStorage, key: str) -> None:
+    """asyncio.to_thread stand-in for a worker's storage call (the
+    FakeObjectStorage port is synchronous; the repository/job call it
+    off the loop). A missing object is §27's idempotent already-gone
+    outcome — this test never uploaded a real object, and the zombie
+    hand's point is the ATTEMPT, not the bytes."""
+    import asyncio as _asyncio
+    import contextlib
+
+    with contextlib.suppress(FileNotFoundError):
+        await _asyncio.to_thread(storage.delete_object, object_key=key)

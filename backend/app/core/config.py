@@ -33,6 +33,11 @@ _INSECURE_SECRET_SENTINELS = (
     _INSECURE_TOTP_ENCRYPTION_KEY,
 )
 
+# Conservative retry-backoff margin inside the worst-case cleanup delete
+# budget (botocore standard-mode sleeps between a call's attempts); 60s
+# comfortably covers the small attempt counts the delete path allows.
+_S3_DELETE_BACKOFF_MARGIN_SECONDS = 60
+
 # (field, env var) pairs the production guard checks against their dev-only
 # sentinel defaults; extend this table when a new committed-secret default
 # lands.
@@ -66,6 +71,20 @@ class Settings(BaseSettings):
     # bucket's actual region (a wrong region breaks presigned URLs against
     # AWS). Consumed by `S3ObjectStorage`.
     s3_region: str = "us-east-1"
+    # Bounded provider calls (final-review P0, Option A): per-attempt
+    # connect/read caps and the TOTAL attempts per API call (botocore
+    # `total_max_attempts` semantics — the initial request INCLUDED, unlike
+    # `max_attempts` which counts only retries). These bound the cleanup
+    # delete path (HEAD + DELETE, two API calls); the model validator
+    # `_cleanup_lease_must_outlast_delete_budget` machine-checks that the
+    # cleanup lease strictly outlasts the derived worst-case budget, so a
+    # lease can never expire while a predecessor worker's already-sent
+    # DELETE could still be in flight (the fencing token fences DB writes;
+    # this bound is what makes "takeover + release opens protection"
+    # sound against the stale EXTERNAL side effect).
+    s3_connect_timeout_seconds: int = 10
+    s3_read_timeout_seconds: int = 30
+    s3_delete_total_attempts: int = 2
     business_timezone: str
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
@@ -407,7 +426,38 @@ class Settings(BaseSettings):
                 "land with the provider project, so V1 channels cannot "
                 "run in production)"
             )
+        budget = self.s3_worst_case_delete_budget_seconds
+        if self.cleanup_claim_lease_seconds <= budget:
+            raise ValueError(
+                "cleanup_claim_lease_seconds ("
+                f"{self.cleanup_claim_lease_seconds}s) must STRICTLY exceed "
+                f"the worst-case cleanup delete budget ({budget}s = "
+                f"{self.s3_delete_total_attempts} total attempts x "
+                f"({self.s3_connect_timeout_seconds}s connect + "
+                f"{self.s3_read_timeout_seconds}s read) x 2 API calls "
+                f"(HEAD+DELETE) + {_S3_DELETE_BACKOFF_MARGIN_SECONDS}s "
+                "retry-backoff margin): a lease that can expire while a "
+                "predecessor worker's already-sent DELETE is still in "
+                "flight would let takeover+release open protection over a "
+                "possible stale external delete (spec §27; the fencing "
+                "token fences DB writes only)"
+            )
         return self
+
+    @property
+    def s3_worst_case_delete_budget_seconds(self) -> int:
+        """The machine-checked upper bound on one cleanup delete's total
+        provider time: total attempts per API call x per-attempt
+        (connect + read) cap x the two API calls of the delete path,
+        plus a conservative retry-backoff margin. The lease validator
+        above turns this into the invariant that makes claim takeover
+        sound against stale external side effects."""
+        return (
+            self.s3_delete_total_attempts
+            * (self.s3_connect_timeout_seconds + self.s3_read_timeout_seconds)
+            * 2
+            + _S3_DELETE_BACKOFF_MARGIN_SECONDS
+        )
 
 
 @lru_cache

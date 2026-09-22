@@ -122,20 +122,18 @@ _TEMPORARY_ERROR_CODES = frozenset(
 #: head/missing-key paths), distinct from a broken bucket.
 _MISSING_OBJECT_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
-#: Explicit provider-call timeouts (hardening final pass A). botocore's
-#: defaults are 60s connect / 60s read per attempt; without explicit
-#: bounds a stuck provider could hold a cleanup claim live-but-slow for
-#: minutes. connect_timeout bounds TCP+TLS establishment; read_timeout
-#: bounds waiting for a response AFTER the request was sent (a read
-#: timeout on a DELETE surfaces as ReadTimeoutError -> the taxonomy's
-#: UnknownOutcomeError). With retries={"max_attempts": 3}, one
-#: delete_object (= HEAD + DELETE, two API calls, up to 3 attempts
-#: each) is bounded by roughly 2 * 3 * (10 + 30)s = 240s — under the
-#: 300s default cleanup lease, and the claim-ownership fencing token
-#: covers whatever residue survives. This is the SECOND line of
-#: defense behind the token, not a substitute for it.
-_CONNECT_TIMEOUT_SECONDS = 10
-_READ_TIMEOUT_SECONDS = 30
+#: Bounded provider calls (final-review P0, Option A): the per-attempt
+#: connect/read caps and the TOTAL attempts per API call live in
+#: ``Settings`` (``s3_connect_timeout_seconds`` / ``s3_read_timeout_seconds``
+#: / ``s3_delete_total_attempts``) — the single source of truth. The
+#: Settings model validator machine-checks that the cleanup lease
+#: strictly exceeds the derived worst-case delete budget
+#: (``Settings.s3_worst_case_delete_budget_seconds``: total attempts x
+#: (connect + read) x the delete path's HEAD+DELETE pair + a backoff
+#: margin), so a lease can never expire while a predecessor worker's
+#: already-sent DELETE could still be in flight. This bound is the
+#: SECOND line of defense behind the fencing token: the token fences
+#: late DB writes, the bound fences the stale EXTERNAL side effect.
 
 
 def _error_code(exc: ClientError) -> str:
@@ -217,13 +215,21 @@ class S3ObjectStorage:
             config=Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
-                retries={"max_attempts": 3, "mode": "standard"},
-                # Bounded provider calls (final pass A): every API call
-                # — including delete_object's HEAD-then-DELETE pair — is
-                # capped at connect+read per attempt; see the constant
-                # block above for the delete-path arithmetic.
-                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
-                read_timeout=_READ_TIMEOUT_SECONDS,
+                # total_max_attempts (not max_attempts): the count
+                # INCLUDES the initial request, so the worst-case budget
+                # in Settings is the exact configured contract, not a
+                # prose estimate (botocore's max_attempts counts only
+                # retries after the first send).
+                retries={
+                    "total_max_attempts": settings.s3_delete_total_attempts,
+                    "mode": "standard",
+                },
+                # Bounded provider calls: every API call — including
+                # delete_object's HEAD-then-DELETE pair — is capped at
+                # connect+read per attempt; see the constant block above
+                # and Settings.s3_worst_case_delete_budget_seconds.
+                connect_timeout=settings.s3_connect_timeout_seconds,
+                read_timeout=settings.s3_read_timeout_seconds,
             ),
         )
 
