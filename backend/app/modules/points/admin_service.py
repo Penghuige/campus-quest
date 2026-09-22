@@ -75,7 +75,7 @@ from datetime import datetime
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -114,6 +114,7 @@ __all__ = [
     "RewardItemValidationError",
     "RewardReviewGrantNotFoundError",
     "PointsAdjustmentTargetNotFoundError",
+    "RewardReviewGrantLine",
     "UNSET",
 ]
 
@@ -322,6 +323,22 @@ def _validate_catalog_shape(
 
 
 # --- the services --------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RewardReviewGrantLine:
+    """One live-grant row for the admin grants listing (T10's query
+    gap-fill): the grant facts from the row plus the teacher's DISPLAY
+    nickname resolved through the frozen directory port — the module
+    boundary holds on reads too (account facts never through identity
+    ORM). ``nickname`` is ``None`` only if the port cannot resolve the
+    display profile (no such edge in V1: accounts have no delete
+    path)."""
+
+    teacher_id: UUID
+    nickname: str | None
+    granted_by: UUID
+    granted_at: datetime
 
 
 class RewardAdminService:
@@ -668,6 +685,47 @@ class RewardAdminService:
             actor.user_id,
             teacher_id,
         )
+
+    async def list_reward_review_grants(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[RewardReviewGrantLine], int]:
+        """The live-grant page, newest grant first (T10's admin query
+        gap-fill): who currently holds the REWARD_REVIEW authorization,
+        who granted it, and when — the grant row is current state; the
+        who/why HISTORY stays in the audit stream.
+
+        The teacher's display nickname resolves through the frozen
+        directory port per row (a page is capped at the transport's 50,
+        so at most 50 port reads — no batch seam the port does not
+        offer). Pagination bounds are the CALLER's (the transport's
+        family cap); read-only, commits nothing."""
+        _require_admin(actor)
+        total = int(
+            await db.scalar(select(func.count()).select_from(RewardReviewGrant))
+        )
+        grants = await db.scalars(
+            select(RewardReviewGrant)
+            .order_by(RewardReviewGrant.granted_at.desc(), RewardReviewGrant.teacher_id)
+            .limit(limit)
+            .offset(offset)
+        )
+        lines: list[RewardReviewGrantLine] = []
+        for grant in grants:
+            profile = await self._directory.get_display_profile(db, grant.teacher_id)
+            lines.append(
+                RewardReviewGrantLine(
+                    teacher_id=grant.teacher_id,
+                    nickname=profile.nickname if profile is not None else None,
+                    granted_by=grant.granted_by,
+                    granted_at=grant.granted_at,
+                )
+            )
+        return lines, total
 
 
 class PointsAdminService:

@@ -253,6 +253,53 @@ async def test_second_put_audits_the_previous_value(
     assert all(audit.actor_user_id == admin.id for audit in audits)
 
 
+# --- PUT: the optional reason on the audit row (T10) ---------------------------------
+
+
+async def test_put_reason_rides_the_audit_row(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+) -> None:
+    """T10's audit-completeness gap-fill: the PUT body's OPTIONAL
+    ``reason`` lands trimmed on the audit row's ``reason`` column; a
+    reason-less PUT writes the audit row with ``reason`` NULL; a
+    provided-but-blank reason is the typed §29 422 at the service gate
+    (the reject-reason discipline — None is legal, whitespace-only is
+    refused, never silently dropped) and stores/audits nothing."""
+    admin, headers = await _admin(db_session, api_clock)
+
+    with_reason = await client.put(
+        _TERM_PATH,
+        json={"value": "2027-spring", "reason": "  新学期开始  "},
+        headers=headers,
+    )
+    assert with_reason.status_code == 200
+    without_reason = await client.put(
+        _TERM_PATH, json={"value": "2027-summer"}, headers=headers
+    )
+    assert without_reason.status_code == 200
+    blank = await client.put(
+        _TERM_PATH, json={"value": "2027-autumn", "reason": "   "}, headers=headers
+    )
+    assert blank.status_code == 422
+    assert blank.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert blank.json()["error"]["details"]["field"] == "reason"
+
+    by_value = {
+        audit.after_snapshot["value"]: audit
+        for audit in await _term_audit_rows(db_session)
+    }
+    # The provided reason lands TRIMMED on the audit row.
+    assert by_value["2027-spring"].reason == "新学期开始"
+    # The reason-less write is legal: the audit row carries no reason.
+    assert by_value["2027-summer"].reason is None
+    # The refused write stored and audited nothing.
+    assert "2027-autumn" not in by_value
+    row = await _setting_row(db_session)
+    assert row is not None and row.value == "2027-summer"
+
+
 # --- PUT: the request-id correlation (round-5 P1) -------------------------------------
 
 

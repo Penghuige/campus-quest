@@ -39,6 +39,17 @@ Transport decisions:
 - **Template DTOs are the admin surface of W4's
   ``NotificationTemplateAdminService``**: create/patch/enable/disable
   with the service's own markup validation answering the typed 422s.
+- **The three admin LISTINGS are offset-paginated with the family cap
+  (limit <= 50)**, the identity admin-router listing precedent (T10's
+  query gap-fill): ``GET /admin/rewards`` returns the FULL catalogue
+  including disabled rows (the student ``GET /rewards`` stays the
+  enabled-only shelf), ``GET /admin/notification-templates`` every
+  template row including disabled ones, and ``GET
+  /admin/reward-review-grants`` the live grants with the teacher's
+  display nickname resolved through the directory port inside
+  ``RewardAdminService``. Read-only listings with no stateful logic
+  are built inline; the grants page goes through the service because
+  the directory port lives there.
 """
 
 from __future__ import annotations
@@ -49,6 +60,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
@@ -65,6 +77,7 @@ from app.modules.points.admin_service import (
     PointsAdminService,
     RewardAdminService,
     RewardItemChanges,
+    RewardReviewGrantLine,
 )
 from app.modules.points.models import RewardItem
 
@@ -79,6 +92,13 @@ router = APIRouter(
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 AdminActor = Annotated[Actor, Depends(require_admin_actor)]
+
+# The documented V1 pagination choice, family cap included (the
+# identity/audit/notifications router bounds).
+DEFAULT_PAGE_LIMIT = 20
+MAX_PAGE_LIMIT = 50
+PageLimit = Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)]
+PageOffset = Annotated[int, Query(ge=0)]
 
 
 # --- provider dependencies (module composition root) ---------------------
@@ -124,6 +144,19 @@ class AdminRewardItemResponse(BaseModel):
     enabled: bool
     requires_manual_review: bool
     fulfillment_instructions: str | None
+
+
+class AdminRewardItemListResponse(BaseModel):
+    """Offset-paginated catalogue page, name-ordered, disabled rows
+    INCLUDED — the management view (the student listing's enabled-only
+    read is the student surface)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminRewardItemResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class RewardItemCreateRequest(BaseModel):
@@ -191,6 +224,30 @@ class RewardReviewGrantRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class RewardReviewGrantResponse(BaseModel):
+    """One live grant row: the teacher (id + display nickname through
+    the frozen directory port) plus the grant facts. The grant's
+    who/why HISTORY lives in the audit stream, not the row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    teacher_id: str
+    nickname: str | None
+    granted_by: str
+    granted_at: datetime
+
+
+class RewardReviewGrantListResponse(BaseModel):
+    """Offset-paginated grants page, newest grant first."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[RewardReviewGrantResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class PointsAdjustmentRequest(BaseModel):
     """One manual wallet correction through the ledger (never a direct
     wallet write): a non-zero amount plus the mandatory reason."""
@@ -229,6 +286,18 @@ class AdminNotificationTemplateResponse(BaseModel):
     version: int
 
 
+class AdminNotificationTemplateListResponse(BaseModel):
+    """Offset-paginated template page, (event_type, channel)-ordered,
+    disabled rows INCLUDED — the administration view."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminNotificationTemplateResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 def _reject_naive_datetime(value: datetime | None) -> datetime | None:
     """Refuse naive datetimes at the transport (G14): the columns are
     timezone-aware, so a naive value would fail deep inside the write
@@ -244,6 +313,31 @@ def _reject_naive_datetime(value: datetime | None) -> datetime | None:
 
 
 # --- reward catalogue administration (W3; spec §16) -----------------------
+
+
+@router.get("/admin/rewards", response_model=AdminRewardItemListResponse)
+async def list_reward_items(
+    db: DbSession,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> AdminRewardItemListResponse:
+    """The FULL catalogue page for management, disabled rows INCLUDED
+    (the student ``GET /rewards`` listing stays the enabled-only shelf;
+    no query filter — the whole catalogue, paginated; read-only listing
+    built inline — the identity admin-router listing precedent)."""
+    total = int(await db.scalar(select(func.count()).select_from(RewardItem)))
+    rows = await db.scalars(
+        select(RewardItem)
+        .order_by(RewardItem.name, RewardItem.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return AdminRewardItemListResponse(
+        items=[_reward_item_response(item) for item in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/admin/rewards", response_model=AdminRewardItemResponse)
@@ -323,6 +417,29 @@ async def disable_reward_item(
 
 
 # --- scoped review authorization (W3; spec §4.2/§4.3) ---------------------
+
+
+@router.get("/admin/reward-review-grants", response_model=RewardReviewGrantListResponse)
+async def list_reward_review_grants(
+    actor: AdminActor,
+    db: DbSession,
+    service: RewardAdminDep,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> RewardReviewGrantListResponse:
+    """The live-grant page, newest first: who currently holds the
+    REWARD_REVIEW authorization, the granting Admin, and when — the
+    teacher's display nickname resolved through the directory port
+    inside the service (the module boundary holds on reads)."""
+    lines, total = await service.list_reward_review_grants(
+        db, actor, limit=limit, offset=offset
+    )
+    return RewardReviewGrantListResponse(
+        items=[_grant_line_response(line) for line in lines],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/admin/reward-review-grants", status_code=204)
@@ -413,6 +530,34 @@ async def adjust_user_points(
 
 
 # --- notification template administration (W4; spec §25.5) ----------------
+
+
+@router.get(
+    "/admin/notification-templates",
+    response_model=AdminNotificationTemplateListResponse,
+)
+async def list_notification_templates(
+    db: DbSession,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> AdminNotificationTemplateListResponse:
+    """Every template row for administration, disabled ones INCLUDED
+    (dispatch-read rows are irrelevant to the management view), ordered
+    by the UNIQUE (event_type, channel) pair (read-only listing built
+    inline — the identity admin-router listing precedent)."""
+    total = int(await db.scalar(select(func.count()).select_from(NotificationTemplate)))
+    rows = await db.scalars(
+        select(NotificationTemplate)
+        .order_by(NotificationTemplate.event_type, NotificationTemplate.channel)
+        .limit(limit)
+        .offset(offset)
+    )
+    return AdminNotificationTemplateListResponse(
+        items=[_template_response(template) for template in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(
@@ -545,6 +690,17 @@ def _template_response(
         template_body=template.template_body,
         enabled=template.enabled,
         version=template.version,
+    )
+
+
+def _grant_line_response(line: RewardReviewGrantLine) -> RewardReviewGrantResponse:
+    """Serialize one listing line from the service's frozen dataclass
+    (explicit field enumeration)."""
+    return RewardReviewGrantResponse(
+        teacher_id=str(line.teacher_id),
+        nickname=line.nickname,
+        granted_by=str(line.granted_by),
+        granted_at=line.granted_at,
     )
 
 

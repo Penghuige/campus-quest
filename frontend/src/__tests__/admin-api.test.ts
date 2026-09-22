@@ -11,7 +11,8 @@
  * - paths + methods + exact body field names for every wrapper;
  * - the query-parameter spellings (role/status filters, the audit
  *   equality filters, revoke's reason-as-query on DELETE);
- * - the settings PUT typed bodies ({value: …} per key);
+ * - the settings PUT typed bodies ({value} per key, plus the OPTIONAL
+ *   trimmed reason — T10's audit gap-fill — omitted when absent/blank);
  * - 204 grant/revoke resolving to undefined through the shared client;
  * - cookie credentials on every call (the shared apiRequest contract).
  */
@@ -332,38 +333,53 @@ describe("system settings (typed keys)", () => {
     );
   });
 
-  test("each key PUTs its typed {value} body", async () => {
+  test("each key PUTs its typed {value} body; the optional reason rides trimmed or is omitted", async () => {
     const valueResponse = JSON.stringify({ key: "K", value: "v", version: 1 });
     stubFetch(JSON.stringify({ value: "2026-2027-2" }));
-    await putCurrentAcademicTerm("2026-2027-2");
+    await putCurrentAcademicTerm("2026-2027-2", "新学期开始");
     assert.equal(recorded?.method, "PUT");
     assert.deepEqual(JSON.parse(String(recorded?.body)), {
       value: "2026-2027-2",
+      reason: "新学期开始",
+    });
+
+    stubFetch(JSON.stringify({ value: "2026-2027-3" }));
+    await putCurrentAcademicTerm("2026-2027-3");
+    assert.deepEqual(JSON.parse(String(recorded?.body)), {
+      value: "2026-2027-3",
     });
 
     stubFetch(valueResponse);
-    await putEmojiWhitelist(["🎉", "👏"]);
+    await putEmojiWhitelist(["🎉", "👏"], "  收紧表情列表  ");
     assert.equal(
       recorded?.url,
       "/api/v1/admin/settings/emoji-whitelist",
     );
-    assert.deepEqual(JSON.parse(String(recorded?.body)), { value: ["🎉", "👏"] });
+    assert.deepEqual(JSON.parse(String(recorded?.body)), {
+      value: ["🎉", "👏"],
+      reason: "收紧表情列表", // trimmed client-side
+    });
 
     stubFetch(valueResponse);
-    await putAbandonDailyLimit(3);
+    await putAbandonDailyLimit(3, "   ");
     assert.equal(
       recorded?.url,
       "/api/v1/admin/settings/abandon-daily-limit",
     );
+    // A whitespace-only reason is OMITTED (None is legal; a blank string
+    // would be the backend's typed 422).
     assert.deepEqual(JSON.parse(String(recorded?.body)), { value: 3 });
 
     stubFetch(valueResponse);
-    await putManagementNetworkEnabled(true);
+    await putManagementNetworkEnabled(true, "机房网络收敛");
     assert.equal(
       recorded?.url,
       "/api/v1/admin/settings/management-network-enabled",
     );
-    assert.deepEqual(JSON.parse(String(recorded?.body)), { value: true });
+    assert.deepEqual(JSON.parse(String(recorded?.body)), {
+      value: true,
+      reason: "机房网络收敛",
+    });
 
     stubFetch(valueResponse);
     await putManagementNetworkCidrs(["10.0.0.0/8"]);

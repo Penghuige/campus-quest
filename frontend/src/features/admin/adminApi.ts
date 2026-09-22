@@ -16,13 +16,17 @@
  * T9) — branch through `describeAdminMutationError` in `adminView`.
  *
  * Listing-surface honesty (frozen contract, UI mirrors it):
- * - the reward catalogue READ is the student listing `GET /rewards`
- *   (enabled items only — the service's `include_disabled` flag serves a
- *   future admin listing that does not exist yet); disable responses are
- *   held client-side so a just-disabled row keeps rendering its verdict;
- * - NotificationTemplates have NO read endpoint at all: create/enable/
- *   disable/update responses are the only source of a row's shape, so
- *   the template panel edits by id (audit trail / create response).
+ * - the reward catalogue READ the rewards page mounts is still the
+ *   student listing `GET /rewards` (enabled items only); the admin
+ *   listing `GET /admin/rewards` (disabled rows included) and the
+ *   template listing `GET /admin/notification-templates` exist in the
+ *   generated contract (T10 gap-fill) but no page consumes them yet —
+ *   wiring them is a separately-scoped UI change; disable responses
+ *   are held client-side so a just-disabled row keeps rendering its
+ *   verdict;
+ * - NotificationTemplates gained an admin listing in the contract
+ *   (T10); the template panel still edits by id from the create
+ *   response / audit trail until a page consumes the listing.
  */
 import { apiRequest } from "@/lib/api";
 import type { components } from "@/lib/api/schema";
@@ -361,6 +365,21 @@ export function listAuditLogs(
 
 // --- system settings (typed keys; registry in backend system/service.py) --------------------
 
+/**
+ * The settings PUT body: the typed `{value}` plus the OPTIONAL `reason`
+ * (T10's audit-completeness gap-fill) — included only when non-blank
+ * after trim, so a bare-value PUT keeps the exact `{value}` wire shape.
+ * The backend's reject-reason discipline applies: absent is legal,
+ * whitespace-only is the typed 422 (refused there, never dropped here).
+ */
+function settingsPutBody(
+  value: unknown,
+  reason: string | undefined,
+): Record<string, unknown> {
+  const trimmed = reason?.trim() ?? "";
+  return trimmed.length > 0 ? { value, reason: trimmed } : { value };
+}
+
 /** Every registered key's current state, registry order (GET /admin/settings). */
 export function listSystemSettings(
   init: { signal?: AbortSignal } = {},
@@ -381,26 +400,35 @@ export function getCurrentAcademicTerm(
 }
 
 /** Turn the term (PUT; every later redemption snapshots the new term). */
-export function putCurrentAcademicTerm(value: string): Promise<CurrentAcademicTermDto> {
+export function putCurrentAcademicTerm(
+  value: string,
+  reason?: string,
+): Promise<CurrentAcademicTermDto> {
   return apiRequest<CurrentAcademicTermDto>(
     "/api/v1/admin/settings/current-academic-term",
-    { method: "PUT", body: { value } },
+    { method: "PUT", body: settingsPutBody(value, reason) },
   );
 }
 
 /** Set the emoji allowlist (PUT; the empty list bans all emoji — spec §22). */
-export function putEmojiWhitelist(value: string[]): Promise<SystemSettingValueDto> {
+export function putEmojiWhitelist(
+  value: string[],
+  reason?: string,
+): Promise<SystemSettingValueDto> {
   return apiRequest<SystemSettingValueDto>(
     "/api/v1/admin/settings/emoji-whitelist",
-    { method: "PUT", body: { value } },
+    { method: "PUT", body: settingsPutBody(value, reason) },
   );
 }
 
 /** Set the per-natural-day abandon cap (PUT; 0 disables abandoning — §12.4). */
-export function putAbandonDailyLimit(value: number): Promise<SystemSettingValueDto> {
+export function putAbandonDailyLimit(
+  value: number,
+  reason?: string,
+): Promise<SystemSettingValueDto> {
   return apiRequest<SystemSettingValueDto>(
     "/api/v1/admin/settings/abandon-daily-limit",
-    { method: "PUT", body: { value } },
+    { method: "PUT", body: settingsPutBody(value, reason) },
   );
 }
 
@@ -410,20 +438,22 @@ export function putAbandonDailyLimit(value: number): Promise<SystemSettingValueD
  */
 export function putManagementNetworkEnabled(
   value: boolean,
+  reason?: string,
 ): Promise<SystemSettingValueDto> {
   return apiRequest<SystemSettingValueDto>(
     "/api/v1/admin/settings/management-network-enabled",
-    { method: "PUT", body: { value } },
+    { method: "PUT", body: settingsPutBody(value, reason) },
   );
 }
 
 /** Set the management-network CIDR allowlist (PUT; strict parsing, canonical storage). */
 export function putManagementNetworkCidrs(
   value: string[],
+  reason?: string,
 ): Promise<SystemSettingValueDto> {
   return apiRequest<SystemSettingValueDto>(
     "/api/v1/admin/settings/management-network-cidrs",
-    { method: "PUT", body: { value } },
+    { method: "PUT", body: settingsPutBody(value, reason) },
   );
 }
 

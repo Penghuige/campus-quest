@@ -51,6 +51,12 @@ Transport decisions:
   de-anonymization/PII/export surfaces); the CHANGE is the audited
   event, with the previous value preserved on the §30 snapshot pair
   (0016) and the write's ``version`` in ``details`` (0020).
+- **Every PUT body takes the OPTIONAL ``reason``** (T10's
+  audit-completeness gap-fill): the free-text why rides the audit
+  row's ``reason`` column — ``None``/absent is legal, but a provided
+  reason blank after trim is the typed §29 422 at the service gate
+  (the reject-reason discipline), so a whitespace-only reason is
+  refused rather than silently dropped from the audit trail.
 - **The per-key schema lives here** (the term's ≤64 bound in the
   request DTO): the storage service is generic, the value semantics
   are this surface's contract — the Plan 08 pattern of one request
@@ -134,6 +140,7 @@ class CurrentAcademicTermRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: str = Field(min_length=1, max_length=64)
+    reason: str | None = None
 
 
 class EmojiWhitelistSettingRequest(BaseModel):
@@ -144,6 +151,7 @@ class EmojiWhitelistSettingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: list[str]
+    reason: str | None = None
 
 
 class AbandonDailyLimitSettingRequest(BaseModel):
@@ -153,6 +161,7 @@ class AbandonDailyLimitSettingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: int = Field(ge=0)
+    reason: str | None = None
 
 
 class ManagementNetworkEnabledSettingRequest(BaseModel):
@@ -163,6 +172,7 @@ class ManagementNetworkEnabledSettingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: bool
+    reason: str | None = None
 
 
 class ManagementNetworkCidrsSettingRequest(BaseModel):
@@ -175,6 +185,7 @@ class ManagementNetworkCidrsSettingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: list[str]
+    reason: str | None = None
 
 
 class SystemSettingValueResponse(BaseModel):
@@ -268,10 +279,12 @@ async def _set_setting(
     key: str,
     value: object,
     request: Request,
+    reason: str | None = None,
 ) -> SystemSettingValueResponse:
     """The shared write path: normalize (typed 422 for value-shape
-    failures), run the cross-key gate, commit value + audit row as one
-    unit, and answer the stored canonical value with the new version."""
+    failures), run the cross-key gate, commit value + audit row (with
+    the optional ``reason`` on the audit row) as one unit, and answer
+    the stored canonical value with the new version."""
     _stored_key, canonical = normalize_system_setting_value(key, value)
     await _assert_policy_stays_loadable(
         db, service, key=_stored_key, canonical_value=canonical
@@ -281,6 +294,7 @@ async def _set_setting(
         actor=actor,
         key=_stored_key,
         value=value,
+        reason=reason,
         audit_context=AuditContext.from_request(request),
     )
     row = await db.scalar(select(SystemSetting).where(SystemSetting.key == _stored_key))
@@ -352,12 +366,15 @@ async def put_current_academic_term(
 ) -> CurrentAcademicTermResponse:
     """Turn the term: the value row and its audit row commit as one
     unit, and every redemption created afterwards snapshots the new
-    term (spec §16.1 — existing redemptions keep theirs)."""
+    term (spec §16.1 — existing redemptions keep theirs). The optional
+    ``reason`` rides the audit row (blank-after-trim is the typed 422
+    at the service gate)."""
     stored = await settings_service.set(
         db,
         actor=actor,
         key=CURRENT_ACADEMIC_TERM,
         value=body.value,
+        reason=body.reason,
         audit_context=AuditContext.from_request(request),
     )
     return CurrentAcademicTermResponse(value=stored)
@@ -382,6 +399,7 @@ async def put_emoji_whitelist(
         key=EMOJI_WHITELIST,
         value=body.value,
         request=request,
+        reason=body.reason,
     )
 
 
@@ -404,6 +422,7 @@ async def put_abandon_daily_limit(
         key=ABANDON_DAILY_LIMIT,
         value=body.value,
         request=request,
+        reason=body.reason,
     )
 
 
@@ -429,6 +448,7 @@ async def put_management_network_enabled(
         key=MANAGEMENT_NETWORK_ENABLED,
         value=body.value,
         request=request,
+        reason=body.reason,
     )
 
 
@@ -453,4 +473,5 @@ async def put_management_network_cidrs(
         key=MANAGEMENT_NETWORK_CIDRS,
         value=body.value,
         request=request,
+        reason=body.reason,
     )

@@ -12,17 +12,21 @@
  *   text for the abandon limit, "true"/"false" for the network flag,
  *   comma-separated CIDRs); `null` value means "no row — the deployment
  *   seed decides" (G7) and the readers here parse accordingly;
- * - the transport carries NO reason field on settings PUTs — the audit
- *   row is written server-side automatically — so the confirm dialog
- *   shows the explicit 旧值 → 新值 diff instead of collecting a reason
- *   it could not send (an honest confirm, not a fake audited one);
+ * - the transport carries the OPTIONAL `reason` on settings PUTs (T10's
+ *   audit-completeness gap-fill): the confirm dialog collects it beside
+ *   the explicit 旧值 → 新值 diff and it rides the write's audit row —
+ *   blank-after-trim is omitted (None is legal server-side), so the
+ *   dialog never blocks on it, and the wrapper never sends a
+ *   whitespace-only reason (that would be the typed 422);
  * - the MANAGEMENT_NETWORK_* pair has the cross-key rule: enabling with
  *   an empty effective CIDR list (or emptying it while enabled) is the
  *   typed 422, rendered through `describeAdminMutationError`.
  *
- * Templates have NO read endpoint in the frozen contract: the create/
- * update/enable/disable responses are the only row source, so the panel
- * edits by id (from the create response or the audit trail).
+ * Templates gained an admin listing in the contract (T10 gap-fill,
+ * `GET /admin/notification-templates` — disabled rows included), but no
+ * page consumes it yet: the create/update/enable/disable responses
+ * remain this panel's only row source, so it still edits by id (from
+ * the create response or the audit trail) until that wiring lands.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -209,7 +213,7 @@ function SettingKeyCard({
   );
 }
 
-/** The per-key draft + explicit old->new confirm (no transport reason exists — see module note). */
+/** The per-key draft + explicit old->new confirm (the optional reason rides the audit row — see module note). */
 function SettingKeyEditor({
   view,
   item,
@@ -243,14 +247,20 @@ function SettingKeyEditor({
   const [error, setError] = useState<unknown>(null);
 
   /** The typed new value + its preview text, or null when the draft is unusable. */
-  function draft(): { apply: () => Promise<unknown>; preview: string } | null {
+  function draft(): {
+    apply: (reason: string | undefined) => Promise<unknown>;
+    preview: string;
+  } | null {
     switch (key) {
       case SETTING_KEY_CURRENT_ACADEMIC_TERM: {
         const value = termDraft.trim();
         if (value.length === 0 || value.length > 64) {
           return null;
         }
-        return { apply: () => putCurrentAcademicTerm(value), preview: value };
+        return {
+          apply: (reason) => putCurrentAcademicTerm(value, reason),
+          preview: value,
+        };
       }
       case SETTING_KEY_EMOJI_WHITELIST: {
         const value = emojiDraft
@@ -258,7 +268,7 @@ function SettingKeyEditor({
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
         return {
-          apply: () => putEmojiWhitelist(value),
+          apply: (reason) => putEmojiWhitelist(value, reason),
           preview: value.length > 0 ? value.join(" ") : "（空列表：全部禁用）",
         };
       }
@@ -267,12 +277,15 @@ function SettingKeyEditor({
           return null;
         }
         const value = Number.parseInt(limitDraft.trim(), 10);
-        return { apply: () => putAbandonDailyLimit(value), preview: String(value) };
+        return {
+          apply: (reason) => putAbandonDailyLimit(value, reason),
+          preview: String(value),
+        };
       }
       case SETTING_KEY_MANAGEMENT_NETWORK_ENABLED: {
         const value = enabledDraft === "true";
         return {
-          apply: () => putManagementNetworkEnabled(value),
+          apply: (reason) => putManagementNetworkEnabled(value, reason),
           preview: value ? "开启" : "关闭",
         };
       }
@@ -282,7 +295,7 @@ function SettingKeyEditor({
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
         return {
-          apply: () => putManagementNetworkCidrs(value),
+          apply: (reason) => putManagementNetworkCidrs(value, reason),
           preview: value.length > 0 ? value.join("，") : "（空列表）",
         };
       }
@@ -388,11 +401,11 @@ function SettingKeyEditor({
           )}
           busy={busy}
           errorView={errorView}
-          onConfirm={async () => {
+          onConfirm={async (reason) => {
             setBusy(true);
             setError(null);
             try {
-              await next.apply();
+              await next.apply(reason);
               setConfirming(false);
               onApplied();
             } catch (cause) {
@@ -431,10 +444,11 @@ function ConfirmSettingDialog({
   diff: string;
   busy: boolean;
   errorView: { message: string; requestId: string | null } | null;
-  onConfirm: () => Promise<void>;
+  onConfirm: (reason: string | undefined) => Promise<void>;
   onCancel: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [reason, setReason] = useState("");
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -442,6 +456,9 @@ function ConfirmSettingDialog({
       dialog.showModal();
     }
   }, []);
+
+  /** Blank-after-trim is OMITTED (None is legal server-side), never sent. */
+  const reasonToSend = reason.trim().length > 0 ? reason.trim() : undefined;
 
   return (
     <dialog
@@ -465,6 +482,20 @@ function ConfirmSettingDialog({
             ? "。切换学期后，新创建的兑换将快照新学期（已有兑换保持不变）。"
             : ""}
         </p>
+        <div className="field">
+          <label className="field-label" htmlFor="setting-confirm-reason">
+            修改原因（可选，将记入审计日志）
+          </label>
+          <textarea
+            id="setting-confirm-reason"
+            className="input"
+            rows={2}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            disabled={busy}
+            placeholder="例如：新学期教务安排"
+          />
+        </div>
         {errorView !== null ? (
           <div className="alert alert-error" role="alert">
             <p>
@@ -480,7 +511,7 @@ function ConfirmSettingDialog({
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => void onConfirm()}
+            onClick={() => void onConfirm(reasonToSend)}
             disabled={busy}
             aria-busy={busy}
           >

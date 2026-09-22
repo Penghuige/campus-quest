@@ -42,6 +42,11 @@ What else the service owns:
   the flush-only ``AuditLogWriter.append`` joins the caller's
   transaction, and the service commits exactly once — value and trace
   commit or roll back together, the RedemptionService discipline. The
+  optional free-text ``reason`` (T10's audit-completeness gap-fill)
+  rides the audit row's ``reason`` column under the reject-reason
+  discipline: ``None`` is legal (no reason given), but a PROVIDED
+  reason must be non-blank after trim — whitespace-only is the typed
+  §29 422 BEFORE any write, never a silently-dropped audit field. The
   audit row carries the value MIGRATION on the §30 snapshot pair
   (0016): the NEW value in ``after_snapshot.value`` and the PREVIOUS
   value in ``before_snapshot.value`` (``None`` on the first write), so
@@ -145,6 +150,30 @@ _EMOJI_MAX_CODE_POINTS = 8
 # the typed 422 envelope (backend-engineering §14: admin-supplied input
 # is untrusted input).
 _DETAILS_VALUE_PREVIEW_MAX = 120
+
+# The blank-reason refusal message (the reject-reason precedent's shape:
+# a provided reason must survive its trim).
+_REASON_BLANK_MESSAGE = "系统设置修改原因不能为空白"
+
+
+def _normalized_reason(reason: str | None) -> str | None:
+    """The optional free-text why of a settings write, in the
+    reject-reason discipline (redemption_service's mandatory gate):
+    ``None`` is legal (no reason given), but a PROVIDED reason must be
+    non-blank after trim — whitespace-only is the typed §29 422, never
+    a silently-dropped audit field (a reason the admin believes was
+    recorded must either land on the row or be refused)."""
+    if reason is None:
+        return None
+    text = reason.strip() if isinstance(reason, str) else ""
+    if not text:
+        raise BusinessError(
+            ErrorCode.VALIDATION_ERROR,
+            _REASON_BLANK_MESSAGE,
+            status_code=422,
+            details={"field": "reason"},
+        )
+    return text
 
 
 class SystemSettingValueError(BusinessError):
@@ -335,6 +364,7 @@ class SystemSettingService:
         actor: Actor,
         key: str,
         value: Any,
+        reason: str | None = None,
         audit_context: AuditContext | None = None,
     ) -> str:
         """Store ``value`` as the key's current value and write the
@@ -344,8 +374,11 @@ class SystemSettingService:
 
         ``value`` is the CALLER's typed value, validated and normalized
         through the key's registry entry (unregistered keys are the
-        typed 422). Returns the stored (canonical) value. The value
-        MIGRATION rides the §30 snapshot pair (0016):
+        typed 422). ``reason`` is the write's optional free-text why
+        (``None`` legal, blank-after-trim the typed 422 — see
+        ``_normalized_reason``); it lands verbatim-trimmed on the audit
+        row's ``reason`` column. Returns the stored (canonical) value.
+        The value MIGRATION rides the §30 snapshot pair (0016):
         ``before_snapshot={"value": ...}`` is the previous value
         (``None`` on the first write), ``after_snapshot={"value": ...}``
         the stored one — configuration facts, no PII (G11). The write's
@@ -354,6 +387,9 @@ class SystemSettingService:
         lost first-write race: the loser reads the winner's committed
         value under the row lock, so the audit chain stays connected."""
         stored_key, stored_value = normalize_system_setting_value(key, value)
+        # Validate-before-touch: a refused reason spends no insert, no
+        # lock, and leaks no key existence (the _require_reason rule).
+        reason_text = _normalized_reason(reason)
         # Chain-true first write (owner round-5 P1): the race decides
         # INSIDE the database. INSERT ... ON CONFLICT DO NOTHING
         # RETURNING — the winner (a row returned) created the key in
@@ -411,6 +447,7 @@ class SystemSettingService:
             action=SYSTEM_SETTING_UPDATED,
             target_type=_AUDIT_TARGET_TYPE,
             target_id=stored_key,
+            reason=reason_text,
             details={"version": new_version},
             before_snapshot={"value": previous},
             after_snapshot={"value": stored_value},

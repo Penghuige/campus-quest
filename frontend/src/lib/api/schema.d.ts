@@ -1637,7 +1637,9 @@ export interface paths {
          * Put Current Academic Term
          * @description Turn the term: the value row and its audit row commit as one
          *     unit, and every redemption created afterwards snapshots the new
-         *     term (spec §16.1 — existing redemptions keep theirs).
+         *     term (spec §16.1 — existing redemptions keep theirs). The optional
+         *     ``reason`` rides the audit row (blank-after-trim is the typed 422
+         *     at the service gate).
          */
         put: operations["put_current_academic_term_api_v1_admin_settings_current_academic_term_put"];
         post?: never;
@@ -1998,7 +2000,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Reward Items
+         * @description The FULL catalogue page for management, disabled rows INCLUDED
+         *     (the student ``GET /rewards`` listing stays the enabled-only shelf;
+         *     no query filter — the whole catalogue, paginated; read-only listing
+         *     built inline — the identity admin-router listing precedent).
+         */
+        get: operations["list_reward_items_api_v1_admin_rewards_get"];
         put?: never;
         /**
          * Create Reward Item
@@ -2063,7 +2072,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Reward Review Grants
+         * @description The live-grant page, newest first: who currently holds the
+         *     REWARD_REVIEW authorization, the granting Admin, and when — the
+         *     teacher's display nickname resolved through the directory port
+         *     inside the service (the module boundary holds on reads).
+         */
+        get: operations["list_reward_review_grants_api_v1_admin_reward_review_grants_get"];
         put?: never;
         /**
          * Grant Reward Review
@@ -2128,7 +2144,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Notification Templates
+         * @description Every template row for administration, disabled ones INCLUDED
+         *     (dispatch-read rows are irrelevant to the management view), ordered
+         *     by the UNIQUE (event_type, channel) pair (read-only listing built
+         *     inline — the identity admin-router listing precedent).
+         */
+        get: operations["list_notification_templates_api_v1_admin_notification_templates_get"];
         put?: never;
         /**
          * Create Notification Template
@@ -2252,6 +2275,8 @@ export interface components {
         AbandonDailyLimitSettingRequest: {
             /** Value */
             value: number;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * AccountStatusRequest
@@ -2271,6 +2296,21 @@ export interface components {
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
         };
+        /**
+         * AdminNotificationTemplateListResponse
+         * @description Offset-paginated template page, (event_type, channel)-ordered,
+         *     disabled rows INCLUDED — the administration view.
+         */
+        AdminNotificationTemplateListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNotificationTemplateResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
         /** AdminNotificationTemplateResponse */
         AdminNotificationTemplateResponse: {
             /** Id */
@@ -2287,6 +2327,22 @@ export interface components {
             enabled: boolean;
             /** Version */
             version: number;
+        };
+        /**
+         * AdminRewardItemListResponse
+         * @description Offset-paginated catalogue page, name-ordered, disabled rows
+         *     INCLUDED — the management view (the student listing's enabled-only
+         *     read is the student surface).
+         */
+        AdminRewardItemListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminRewardItemResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /**
          * AdminRewardItemResponse
@@ -2673,6 +2729,8 @@ export interface components {
         CurrentAcademicTermRequest: {
             /** Value */
             value: string;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * CurrentAcademicTermResponse
@@ -2742,6 +2800,8 @@ export interface components {
         EmojiWhitelistSettingRequest: {
             /** Value */
             value: string[];
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * FileType
@@ -2911,6 +2971,8 @@ export interface components {
         ManagementNetworkCidrsSettingRequest: {
             /** Value */
             value: string[];
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * ManagementNetworkEnabledSettingRequest
@@ -2921,6 +2983,8 @@ export interface components {
         ManagementNetworkEnabledSettingRequest: {
             /** Value */
             value: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * MePublic
@@ -3860,6 +3924,20 @@ export interface components {
             reason?: string | null;
         };
         /**
+         * RewardReviewGrantListResponse
+         * @description Offset-paginated grants page, newest grant first.
+         */
+        RewardReviewGrantListResponse: {
+            /** Items */
+            items: components["schemas"]["RewardReviewGrantResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
          * RewardReviewGrantRequest
          * @description Grant the global REWARD_REVIEW authorization to a Teacher; the
          *     mandatory why rides the audited grant row.
@@ -3872,6 +3950,25 @@ export interface components {
             teacher_id: string;
             /** Reason */
             reason: string;
+        };
+        /**
+         * RewardReviewGrantResponse
+         * @description One live grant row: the teacher (id + display nickname through
+         *     the frozen directory port) plus the grant facts. The grant's
+         *     who/why HISTORY lives in the audit stream, not the row.
+         */
+        RewardReviewGrantResponse: {
+            /** Teacher Id */
+            teacher_id: string;
+            /** Nickname */
+            nickname: string | null;
+            /** Granted By */
+            granted_by: string;
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
         };
         /** RewardsListResponse */
         RewardsListResponse: {
@@ -7881,6 +7978,38 @@ export interface operations {
             };
         };
     };
+    list_reward_items_api_v1_admin_rewards_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRewardItemListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_reward_item_api_v1_admin_rewards_post: {
         parameters: {
             query?: never;
@@ -7984,6 +8113,38 @@ export interface operations {
             };
         };
     };
+    list_reward_review_grants_api_v1_admin_reward_review_grants_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardReviewGrantListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     grant_reward_review_api_v1_admin_reward_review_grants_post: {
         parameters: {
             query?: never;
@@ -8068,6 +8229,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PointsAdjustmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notification_templates_api_v1_admin_notification_templates_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateListResponse"];
                 };
             };
             /** @description Validation Error */

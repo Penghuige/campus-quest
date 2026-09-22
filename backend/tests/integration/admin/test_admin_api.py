@@ -241,6 +241,7 @@ def _endpoint_table(teacher_id: UUID, student_id: UUID, user_id: UUID) -> list[A
             {"email": "new-teacher@pku.edu.cn", "role": "TEACHER"},
         ),
         ("POST", f"{_API}/admin/rewards", {"name": "矩阵奖品", "point_cost": 100}),
+        ("GET", f"{_API}/admin/rewards", None),
         ("PATCH", f"{_API}/admin/rewards/{uuid4()}", {"point_cost": 200}),
         ("POST", f"{_API}/admin/rewards/{uuid4()}/disable", {"reason": "库存清零"}),
         (
@@ -248,6 +249,7 @@ def _endpoint_table(teacher_id: UUID, student_id: UUID, user_id: UUID) -> list[A
             f"{_API}/admin/reward-review-grants",
             {"teacher_id": str(teacher_id), "reason": "教务授权"},
         ),
+        ("GET", f"{_API}/admin/reward-review-grants", None),
         ("DELETE", f"{_API}/admin/reward-review-grants/{teacher_id}?reason=收回", None),
         (
             "POST",
@@ -277,6 +279,7 @@ def _endpoint_table(teacher_id: UUID, student_id: UUID, user_id: UUID) -> list[A
                 "template_body": "你好 {nickname}",
             },
         ),
+        ("GET", f"{_API}/admin/notification-templates", None),
         (
             "PATCH",
             f"{_API}/admin/notification-templates/{uuid4()}",
@@ -828,6 +831,77 @@ async def test_reward_catalogue_create_patch_disable(
     )
 
 
+async def test_admin_reward_listing_includes_disabled_and_paginates(
+    client: httpx.AsyncClient,
+    admin_world: dict[str, Any],
+) -> None:
+    """T10's query gap-fill: ``GET /admin/rewards`` is the MANAGEMENT
+    catalogue — disabled rows included (the student ``GET /rewards``
+    stays the enabled-only shelf), offset-paginated with the family
+    cap. Assertions are presence-based: the shared test database may
+    carry catalogue rows from other suites' committed runs."""
+    headers = admin_world["admin_headers"]
+    suffix = uuid4().hex[:6]
+    kept = await client.post(
+        f"{_API}/admin/rewards",
+        json={"name": f"列表在架{suffix}", "point_cost": 100},
+        headers=headers,
+    )
+    assert kept.status_code == 200, kept.text
+    dropped = await client.post(
+        f"{_API}/admin/rewards",
+        json={"name": f"列表下架{suffix}", "point_cost": 200},
+        headers=headers,
+    )
+    assert dropped.status_code == 200, dropped.text
+    disabled = await client.post(
+        f"{_API}/admin/rewards/{dropped.json()['id']}/disable",
+        json={"reason": "管理列表用例下架"},
+        headers=headers,
+    )
+    assert disabled.status_code == 200
+
+    listed = await client.get(f"{_API}/admin/rewards", headers=headers)
+    assert listed.status_code == 200, listed.text
+    page = listed.json()
+    assert page["limit"] == 20 and page["offset"] == 0
+    assert page["total"] >= 2
+    by_name = {item["name"]: item for item in page["items"]}
+    assert by_name[f"列表在架{suffix}"]["enabled"] is True
+    # The disabled row is exactly what distinguishes this listing from
+    # the student shelf.
+    assert by_name[f"列表下架{suffix}"]["enabled"] is False
+    # The admin row shape: every business field (the student listing
+    # omits enabled/fulfillment_instructions).
+    assert set(page["items"][0]) == {
+        "id",
+        "name",
+        "description",
+        "point_cost",
+        "stock",
+        "per_user_term_limit",
+        "available_from",
+        "available_until",
+        "enabled",
+        "requires_manual_review",
+        "fulfillment_instructions",
+    }
+
+    paged = await client.get(
+        f"{_API}/admin/rewards", params={"limit": 1, "offset": 1}, headers=headers
+    )
+    assert paged.status_code == 200
+    assert len(paged.json()["items"]) == 1
+    assert paged.json()["limit"] == 1 and paged.json()["offset"] == 1
+    assert paged.json()["total"] == page["total"]
+
+    # The family cap is the framework 422 (le=50), never an unbounded read.
+    over = await client.get(
+        f"{_API}/admin/rewards", params={"limit": 51}, headers=headers
+    )
+    assert over.status_code == 422
+
+
 async def test_review_grant_lifecycle(
     client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -883,6 +957,67 @@ async def test_review_grant_lifecycle(
         headers=headers,
     )
     assert wrong_role.status_code == 400
+
+
+async def test_reward_review_grant_listing_resolves_teacher_and_grantor(
+    client: httpx.AsyncClient,
+    admin_world: dict[str, Any],
+) -> None:
+    """T10's query gap-fill: ``GET /admin/reward-review-grants`` answers
+    the live grants — teacher id + display nickname (through the frozen
+    directory port, never identity ORM) plus the granting Admin and
+    time — newest first, offset-paginated with the family cap. Grant
+    HISTORY stays in the audit stream: a revoked grant leaves the
+    listing (presence-based assertions; the shared database may carry
+    grants from other suites' committed runs)."""
+    headers = admin_world["admin_headers"]
+    admin = admin_world["admin"]
+    teacher_id = admin_world["teacher"].id
+
+    granted = await client.post(
+        f"{_API}/admin/reward-review-grants",
+        json={"teacher_id": str(teacher_id), "reason": "列表用例授权"},
+        headers=headers,
+    )
+    assert granted.status_code == 204
+
+    listed = await client.get(f"{_API}/admin/reward-review-grants", headers=headers)
+    assert listed.status_code == 200, listed.text
+    page = listed.json()
+    assert page["limit"] == 20 and page["offset"] == 0
+    assert page["total"] >= 1
+    row = next(item for item in page["items"] if item["teacher_id"] == str(teacher_id))
+    # The nickname is the display fact the directory port resolves (the
+    # seeding helper's 同学+用户名尾4位 form).
+    assert row["nickname"] == "同学0002"
+    assert row["granted_by"] == str(admin.id)
+    assert row["granted_at"] is not None
+    assert set(row) == {"teacher_id", "nickname", "granted_by", "granted_at"}
+    # Newest first.
+    granted_at = [item["granted_at"] for item in page["items"]]
+    assert granted_at == sorted(granted_at, reverse=True)
+
+    paged = await client.get(
+        f"{_API}/admin/reward-review-grants", params={"limit": 1}, headers=headers
+    )
+    assert paged.status_code == 200
+    assert len(paged.json()["items"]) == 1
+    assert paged.json()["limit"] == 1
+
+    over = await client.get(
+        f"{_API}/admin/reward-review-grants", params={"limit": 51}, headers=headers
+    )
+    assert over.status_code == 422
+
+    # Revocation removes the row from the current-state listing.
+    revoked = await client.delete(
+        f"{_API}/admin/reward-review-grants/{teacher_id}",
+        params={"reason": "列表用例收回"},
+        headers=headers,
+    )
+    assert revoked.status_code == 204
+    after = await client.get(f"{_API}/admin/reward-review-grants", headers=headers)
+    assert str(teacher_id) not in {item["teacher_id"] for item in after.json()["items"]}
 
 
 # --- manual points adjustment ---------------------------------------------------------
@@ -1010,6 +1145,86 @@ async def test_notification_template_lifecycle(
         headers=headers,
     )
     assert unsafe.status_code == 422
+
+
+async def test_notification_template_listing_includes_disabled(
+    client: httpx.AsyncClient,
+    admin_world: dict[str, Any],
+) -> None:
+    """T10's query gap-fill: ``GET /admin/notification-templates`` is
+    the administration listing — disabled rows included, ordered by the
+    UNIQUE (event_type, channel) pair, offset-paginated with the family
+    cap (presence-based assertions; the shared database may carry
+    template rows from other suites' committed runs)."""
+    headers = admin_world["admin_headers"]
+    created = await client.post(
+        f"{_API}/admin/notification-templates",
+        json={
+            "event_type": "ACCOUNT_SECURITY",
+            "channel": "SMS",
+            "title": "列表用例模板",
+            "template_body": "{event_time}，{event_summary}。",
+        },
+        headers=headers,
+    )
+    # The UNIQUE pair may survive from a committed prior run — a 409 is
+    # tolerable (the listing below resolves the row either way, and the
+    # disable then makes it the disabled row this test asserts on).
+    assert created.status_code in (200, 409), created.text
+
+    seeded = await client.get(f"{_API}/admin/notification-templates", headers=headers)
+    assert seeded.status_code == 200
+    template_id = next(
+        item["id"]
+        for item in seeded.json()["items"]
+        if item["event_type"] == "ACCOUNT_SECURITY" and item["channel"] == "SMS"
+    )
+    disabled = await client.post(
+        f"{_API}/admin/notification-templates/{template_id}/disable",
+        headers=headers,
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+
+    listed = await client.get(f"{_API}/admin/notification-templates", headers=headers)
+    assert listed.status_code == 200, listed.text
+    page = listed.json()
+    assert page["limit"] == 20 and page["offset"] == 0
+    assert page["total"] >= 1
+    # The disabled row rides the administration listing (the dispatch
+    # read is not this surface's concern).
+    row = next(
+        item
+        for item in page["items"]
+        if item["event_type"] == "ACCOUNT_SECURITY" and item["channel"] == "SMS"
+    )
+    assert row["enabled"] is False
+    assert set(row) == {
+        "id",
+        "event_type",
+        "channel",
+        "title",
+        "template_body",
+        "enabled",
+        "version",
+    }
+    # Deterministic order: the (event_type, channel) pair.
+    keys = [(item["event_type"], item["channel"]) for item in page["items"]]
+    assert keys == sorted(keys)
+
+    paged = await client.get(
+        f"{_API}/admin/notification-templates", params={"limit": 1}, headers=headers
+    )
+    assert paged.status_code == 200
+    assert len(paged.json()["items"]) == 1
+    assert paged.json()["limit"] == 1
+
+    over = await client.get(
+        f"{_API}/admin/notification-templates",
+        params={"limit": 51},
+        headers=headers,
+    )
+    assert over.status_code == 422
 
 
 # --- the repair commands --------------------------------------------------------------

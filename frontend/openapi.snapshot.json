@@ -3796,7 +3796,7 @@
       },
       "put": {
         "summary": "Put Current Academic Term",
-        "description": "Turn the term: the value row and its audit row commit as one\nunit, and every redemption created afterwards snapshots the new\nterm (spec §16.1 — existing redemptions keep theirs).",
+        "description": "Turn the term: the value row and its audit row commit as one\nunit, and every redemption created afterwards snapshots the new\nterm (spec §16.1 — existing redemptions keep theirs). The optional\n``reason`` rides the audit row (blank-after-trim is the typed 422\nat the service gate).",
         "operationId": "put_current_academic_term_api_v1_admin_settings_current_academic_term_put",
         "requestBody": {
           "content": {
@@ -4751,19 +4751,81 @@
       }
     },
     "/api/v1/admin/rewards": {
+      "get": {
+        "summary": "List Reward Items",
+        "description": "The FULL catalogue page for management, disabled rows INCLUDED\n(the student ``GET /rewards`` listing stays the enabled-only shelf;\nno query filter — the whole catalogue, paginated; read-only listing\nbuilt inline — the identity admin-router listing precedent).",
+        "operationId": "list_reward_items_api_v1_admin_rewards_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRewardItemListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Create Reward Item",
         "description": "Insert one enabled RewardItem (future requests see the new\neconomics; open redemptions keep their snapshots) and audit the\ncreation in the same transaction.",
         "operationId": "create_reward_item_api_v1_admin_rewards_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RewardItemCreateRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -4786,12 +4848,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/admin/rewards/{reward_item_id}": {
@@ -4907,19 +4964,81 @@
       }
     },
     "/api/v1/admin/reward-review-grants": {
+      "get": {
+        "summary": "List Reward Review Grants",
+        "description": "The live-grant page, newest first: who currently holds the\nREWARD_REVIEW authorization, the granting Admin, and when — the\nteacher's display nickname resolved through the directory port\ninside the service (the module boundary holds on reads).",
+        "operationId": "list_reward_review_grants_api_v1_admin_reward_review_grants_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardReviewGrantListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Grant Reward Review",
         "description": "Grant the global REWARD_REVIEW authorization to a Teacher\n(target must be a TEACHER account; a live grant is the typed 409\n``CONFLICT``). Effective on the review guard's next read.",
         "operationId": "grant_reward_review_api_v1_admin_reward_review_grants_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RewardReviewGrantRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {
@@ -4935,12 +5054,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/admin/reward-review-grants/{teacher_id}": {
@@ -5049,19 +5163,81 @@
       }
     },
     "/api/v1/admin/notification-templates": {
+      "get": {
+        "summary": "List Notification Templates",
+        "description": "Every template row for administration, disabled ones INCLUDED\n(dispatch-read rows are irrelevant to the management view), ordered\nby the UNIQUE (event_type, channel) pair (read-only listing built\ninline — the identity admin-router listing precedent).",
+        "operationId": "list_notification_templates_api_v1_admin_notification_templates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Create Notification Template",
         "description": "Create the (event_type, channel) template at version 1 — or the\ntyped 409 ``CONFLICT`` when one already exists. Unsafe markup and\nunknown placeholders are the typed 422 at write time.",
         "operationId": "create_notification_template_api_v1_admin_notification_templates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/NotificationTemplateCreateRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -5084,12 +5260,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/admin/notification-templates/{template_id}": {
@@ -5287,6 +5458,17 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -5339,6 +5521,39 @@
         ],
         "title": "AccountStatusResponse"
       },
+      "AdminNotificationTemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AdminNotificationTemplateListResponse",
+        "description": "Offset-paginated template page, (event_type, channel)-ordered,\ndisabled rows INCLUDED — the administration view."
+      },
       "AdminNotificationTemplateResponse": {
         "properties": {
           "id": {
@@ -5382,6 +5597,39 @@
           "version"
         ],
         "title": "AdminNotificationTemplateResponse"
+      },
+      "AdminRewardItemListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRewardItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AdminRewardItemListResponse",
+        "description": "Offset-paginated catalogue page, name-ordered, disabled rows\nINCLUDED — the management view (the student listing's enabled-only\nread is the student surface)."
       },
       "AdminRewardItemResponse": {
         "properties": {
@@ -6242,6 +6490,17 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -6352,6 +6611,17 @@
             },
             "type": "array",
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -6738,6 +7008,17 @@
             },
             "type": "array",
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -6753,6 +7034,17 @@
           "value": {
             "type": "boolean",
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -8707,6 +8999,39 @@
         "title": "RewardItemUpdateRequest",
         "description": "A partial catalogue update: an ABSENT field leaves the column\nunchanged; an explicit null clears a nullable bound. The route\ntranslates presence into the service's UNSET discipline."
       },
+      "RewardReviewGrantListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RewardReviewGrantResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "RewardReviewGrantListResponse",
+        "description": "Offset-paginated grants page, newest grant first."
+      },
       "RewardReviewGrantRequest": {
         "properties": {
           "teacher_id": {
@@ -8728,6 +9053,44 @@
         ],
         "title": "RewardReviewGrantRequest",
         "description": "Grant the global REWARD_REVIEW authorization to a Teacher; the\nmandatory why rides the audited grant row."
+      },
+      "RewardReviewGrantResponse": {
+        "properties": {
+          "teacher_id": {
+            "type": "string",
+            "title": "Teacher Id"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "granted_by": {
+            "type": "string",
+            "title": "Granted By"
+          },
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "teacher_id",
+          "nickname",
+          "granted_by",
+          "granted_at"
+        ],
+        "title": "RewardReviewGrantResponse",
+        "description": "One live grant row: the teacher (id + display nickname through\nthe frozen directory port) plus the grant facts. The grant's\nwho/why HISTORY lives in the audit stream, not the row."
       },
       "RewardsListResponse": {
         "properties": {
