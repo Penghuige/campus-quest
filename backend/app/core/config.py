@@ -33,11 +33,6 @@ _INSECURE_SECRET_SENTINELS = (
     _INSECURE_TOTP_ENCRYPTION_KEY,
 )
 
-# Conservative retry-backoff margin inside the worst-case cleanup delete
-# budget (botocore standard-mode sleeps between a call's attempts); 60s
-# comfortably covers the small attempt counts the delete path allows.
-_S3_DELETE_BACKOFF_MARGIN_SECONDS = 60
-
 # (field, env var) pairs the production guard checks against their dev-only
 # sentinel defaults; extend this table when a new committed-secret default
 # lands.
@@ -71,17 +66,17 @@ class Settings(BaseSettings):
     # bucket's actual region (a wrong region breaks presigned URLs against
     # AWS). Consumed by `S3ObjectStorage`.
     s3_region: str = "us-east-1"
-    # Bounded provider calls (final-review P0, Option A): per-attempt
-    # connect/read caps and the TOTAL attempts per API call (botocore
-    # `total_max_attempts` semantics — the initial request INCLUDED, unlike
-    # `max_attempts` which counts only retries). These bound the cleanup
-    # delete path (HEAD + DELETE, two API calls); the model validator
-    # `_cleanup_lease_must_outlast_delete_budget` machine-checks that the
-    # cleanup lease strictly outlasts the derived worst-case budget, so a
-    # lease can never expire while a predecessor worker's already-sent
-    # DELETE could still be in flight (the fencing token fences DB writes;
-    # this bound is what makes "takeover + release opens protection"
-    # sound against the stale EXTERNAL side effect).
+    # Bounded provider calls — AVAILABILITY CONTROLS ONLY (post-merge
+    # P0 ruling): per-attempt connect/read caps and the TOTAL attempts
+    # per API call (botocore `total_max_attempts` semantics — the
+    # initial request INCLUDED). They shorten failure recovery, bound
+    # the common provider hang, and keep worker availability up. They
+    # are NOT a correctness proof: connect+read timeouts bound socket
+    # waits, not a request's total lifetime (DNS/streaming/retry gaps
+    # are not a deadline), so no wall-clock arithmetic may claim "an
+    # already-sent DELETE has surely finished by X". Cleanup correctness
+    # comes from claim ownership instead (Option B): provider failures
+    # keep the unfinished claim; the lease authorizes takeover only.
     s3_connect_timeout_seconds: int = 10
     s3_read_timeout_seconds: int = 30
     s3_delete_total_attempts: int = 2
@@ -426,38 +421,32 @@ class Settings(BaseSettings):
                 "land with the provider project, so V1 channels cannot "
                 "run in production)"
             )
-        budget = self.s3_worst_case_delete_budget_seconds
-        if self.cleanup_claim_lease_seconds <= budget:
-            raise ValueError(
-                "cleanup_claim_lease_seconds ("
-                f"{self.cleanup_claim_lease_seconds}s) must STRICTLY exceed "
-                f"the worst-case cleanup delete budget ({budget}s = "
-                f"{self.s3_delete_total_attempts} total attempts x "
-                f"({self.s3_connect_timeout_seconds}s connect + "
-                f"{self.s3_read_timeout_seconds}s read) x 2 API calls "
-                f"(HEAD+DELETE) + {_S3_DELETE_BACKOFF_MARGIN_SECONDS}s "
-                "retry-backoff margin): a lease that can expire while a "
-                "predecessor worker's already-sent DELETE is still in "
-                "flight would let takeover+release open protection over a "
-                "possible stale external delete (spec §27; the fencing "
-                "token fences DB writes only)"
-            )
         return self
 
-    @property
-    def s3_worst_case_delete_budget_seconds(self) -> int:
-        """The machine-checked upper bound on one cleanup delete's total
-        provider time: total attempts per API call x per-attempt
-        (connect + read) cap x the two API calls of the delete path,
-        plus a conservative retry-backoff margin. The lease validator
-        above turns this into the invariant that makes claim takeover
-        sound against stale external side effects."""
-        return (
-            self.s3_delete_total_attempts
-            * (self.s3_connect_timeout_seconds + self.s3_read_timeout_seconds)
-            * 2
-            + _S3_DELETE_BACKOFF_MARGIN_SECONDS
-        )
+    @field_validator(
+        "s3_connect_timeout_seconds",
+        "s3_read_timeout_seconds",
+    )
+    @classmethod
+    def _validate_s3_timeout_bounds(cls, value: int) -> int:
+        # Availability-control sanity (post-merge P0, P2 hardening): a
+        # sub-second timeout would fail every call; an unbounded one
+        # would reintroduce the multi-minute provider hang these exist
+        # to shorten. NOT a correctness rule (see the field comments).
+        if not 1 <= value <= 300:
+            raise ValueError(
+                f"s3 timeouts must be within [1, 300] seconds, got {value}"
+            )
+        return value
+
+    @field_validator("s3_delete_total_attempts")
+    @classmethod
+    def _validate_s3_attempts_bounds(cls, value: int) -> int:
+        if not 1 <= value <= 10:
+            raise ValueError(
+                f"s3_delete_total_attempts must be within [1, 10], got {value}"
+            )
+        return value
 
 
 @lru_cache
