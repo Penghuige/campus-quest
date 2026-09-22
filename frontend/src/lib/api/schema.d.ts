@@ -753,8 +753,10 @@ export interface paths {
          *
          *     The browser PUTs the file straight to storage — the 200 MB payload
          *     never streams through this API. The response carries the intent id,
-         *     the short-lived URL, and the URL's expiry; the server-generated
-         *     object key stays server-side (spec §40).
+         *     the short-lived URL, the URL's expiry, and the adapter-owned signing
+         *     contract (echo headers + pinned byte count, passed through — see
+         *     ``UploadIntentResponse`` for the Content-Length browser semantics);
+         *     the server-generated object key stays server-side (spec §40).
          */
         post: operations["create_upload_intent_api_v1_submissions_upload_intent_post"];
         delete?: never;
@@ -938,7 +940,11 @@ export interface paths {
          * @description The caller's wallet strip: available (spendable-balance
          *     projection), earned (cumulative task contribution — spending never
          *     touches it, spec §17.1), and spendable (available minus ACTIVE
-         *     freezes, spec §16.2).
+         *     freezes, spec §16.2). Display-clamped here only (see the module
+         *     docstring): a reward reversal can overdraft the raw wallet negative
+         *     (migration 0012), and the user-facing answer to that is 0/0 plus the
+         *     explicit ``point_debt`` — never a raw negative — while the wallet
+         *     row and the ledger keep the true figure.
          */
         get: operations["my_wallet_api_v1_points_me_get"];
         put?: never;
@@ -1009,7 +1015,11 @@ export interface paths {
          * List Redemption Queue
          * @description The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
          *     oldest first, with the requester's display nickname through the
-         *     identity directory port and the item name.
+         *     identity directory port and the item name. Admin-only with the
+         *     decision endpoints until scoped delegation lands (PR #2 closure
+         *     review): the queue exposes every requester's identity, and the
+         *     approved rule is "Teacher reviews AUTHORIZED-RELATED redemptions",
+         *     not "every Teacher inspects all applications".
          */
         get: operations["list_redemption_queue_api_v1_teacher_rewards_redemptions_get"];
         put?: never;
@@ -1034,6 +1044,8 @@ export interface paths {
          * @description Approve: the freeze becomes one negative REWARD_REDEMPTION entry
          *     and the status flips to APPROVED (spec §16.2); a replay on an
          *     already-approved row is the idempotent no-op that returns it.
+         *
+         *     Admin-only until scoped delegation (PR #2 hardening ruling).
          */
         post: operations["approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post"];
         delete?: never;
@@ -1055,6 +1067,8 @@ export interface paths {
          * Reject Redemption
          * @description Reject with a mandatory reason: the freeze is released and NO
          *     consumption entry is written (spec §16.2).
+         *
+         *     Admin-only until scoped delegation (PR #2 hardening ruling).
          */
         post: operations["reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post"];
         delete?: never;
@@ -1076,6 +1090,8 @@ export interface paths {
          * Fulfill Redemption
          * @description Record the physical delivery of an APPROVED redemption (spec
          *     §16.2: approval and delivery are separate transitions).
+         *
+         *     Admin-only until scoped delegation (PR #2 hardening ruling).
          */
         post: operations["fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post"];
         delete?: never;
@@ -1183,6 +1199,420 @@ export interface paths {
          */
         get: operations["my_growth_api_v1_growth_me_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Task Comments
+         * @description One offset page of a published task's public comments (spec §21),
+         *     ``sort=latest`` (created_at desc) or ``sort=hot`` (server-computed
+         *     ordering per spec §24 — never a client value).
+         */
+        get: operations["list_task_comments_api_v1_tasks__task_id__comments_get"];
+        put?: never;
+        /**
+         * Create Task Comment
+         * @description Publish one comment (or reply, when ``parent_id`` is set)
+         *     immediately (spec §21.1): no pre-moderation — the rate limit is the
+         *     paired abuse control. Anonymity is a display attribute of this one
+         *     comment only (spec §21.4).
+         */
+        post: operations["create_task_comment_api_v1_tasks__task_id__comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Own Comment
+         * @description Owner soft delete (spec §21.3): the trio lands on the row and the
+         *     public list decides tombstone vs vanish. No rate bucket — the
+         *     deleted-state guard makes it single-shot.
+         */
+        delete: operations["delete_own_comment_api_v1_comments__comment_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit Comment
+         * @description Owner edit (spec §21.3): the previous version is appended to the
+         *     revision history and the response carries ``edited=True``. Concurrent
+         *     edits are last-write-wins with every superseded version retained (the
+         *     module docstring ruling) — V1 deliberately serves no 409 here.
+         */
+        patch: operations["edit_comment_api_v1_comments__comment_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/comments/{comment_id}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cast Comment Vote
+         * @description Set the caller's stance on one comment (spec §22): ``value`` 1
+         *     like, -1 dislike, 0 removes the vote; transitions are atomic in the
+         *     service.
+         */
+        post: operations["cast_comment_vote_api_v1_comments__comment_id__vote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comments/{comment_id}/reactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Toggle Comment Reaction
+         * @description Toggle one whitelisted emoji reaction (spec §22): ``added`` True
+         *     when the reaction landed, False when it was removed; the same emoji
+         *     again is the toggle. The per-emoji counts echo is the read the
+         *     service delegates to this surface.
+         */
+        post: operations["toggle_comment_reaction_api_v1_comments__comment_id__reactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/comments/{comment_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * File Comment Report
+         * @description File one report into the moderation queue (spec §23): the comment
+         *     is never removed by the filing, and a duplicate (comment, reporter,
+         *     category) is the idempotent return of the original report.
+         */
+        post: operations["file_comment_report_api_v1_comments__comment_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Task Rating
+         * @description Rate (or re-rate) one task (spec §20): one row per (task, user)
+         *     holding the latest value; only a completer of at least one Claim may
+         *     rate — that denial renders the §29 ``RATING_NOT_ELIGIBLE`` envelope
+         *     (the handler this module registers).
+         */
+        put: operations["put_task_rating_api_v1_tasks__task_id__rating_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/comments/moderation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Moderation Comments
+         * @description The Teacher-safe comment listing for one task (spec §21.4):
+         *     anonymous authors render 匿名用户 plus the pseudonymous moderation
+         *     key, and soft deletes / hard hides stay visible as history with
+         *     their flags. Standing mirrors the report queue (owner /
+         *     MODERATE_COMMUNITY / Admin) — the destructive powers remain
+         *     service-gated.
+         */
+        get: operations["list_moderation_comments_api_v1_teacher_tasks__task_id__comments_moderation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/tasks/{task_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Task Reports
+         * @description The per-task report queue (spec §23; task 6's service): report
+         *     facts, the reported comment in the Teacher-safe shape, and reporter
+         *     identity for the moderators who act on it. Admin is admitted by the
+         *     service's read ruling.
+         */
+        get: operations["list_task_reports_api_v1_teacher_tasks__task_id__reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/reports/{report_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Task Report
+         * @description Close one report as DISMISSED (PR #2 hardening step 10): the
+         *     moderator judged no action warranted — the mandatory reason records
+         *     why, one ``REPORT_DISMISSED`` audit row lands in the same
+         *     transaction, and the comment is untouched (§23 不自动删除评论
+         *     reaches closure). A same-state replay echoes the closed row; the
+         *     other terminal state is the typed 409. Standing is the queue
+         *     listing's (owner / MODERATE_COMMUNITY / Admin), so the queue's
+         *     reader is its closer. No rate bucket — the moderation write
+         *     surfaces (moderate-delete, hard hide, reveal) carry none: the
+         *     state machine makes every replay single-shot.
+         */
+        post: operations["dismiss_task_report_api_v1_tasks__task_id__reports__report_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/reports/{report_id}/handle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Handle Task Report
+         * @description Close one report as HANDLED (PR #2 hardening step 10): registers
+         *     that the moderator acted on the reported comment (through the
+         *     existing audited removal paths or otherwise) — this endpoint books
+         *     the conclusion and its ``REPORT_HANDLED`` audit row; the comment
+         *     row is never touched here. Optional note, same-state replay
+         *     idempotent, other terminal state the typed 409, standing as the
+         *     dismiss surface above.
+         */
+        post: operations["handle_task_report_api_v1_tasks__task_id__reports__report_id__handle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Moderate Delete Comment
+         * @description Teacher moderation delete (spec §21.4): the service gates the
+         *     actor to the task's owner or a MODERATE_COMMUNITY collaborator
+         *     (Admin is refused here by the task 3 power-separation ruling),
+         *     requires the reason, and publishes the audit event.
+         */
+        delete: operations["moderate_delete_comment_api_v1_teacher_comments__comment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/comments/{comment_id}/hard-hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide Comment Subtree
+         * @description Admin-only hard hide of a whole subtree (spec §21.3 彻底隐藏):
+         *     visibility removal for privacy/legal escalations — rows, content, and
+         *     relations survive, the public list renders the subtree nothing, and
+         *     the audit event carries the verbatim reason.
+         */
+        post: operations["hide_comment_subtree_api_v1_teacher_comments__comment_id__hard_hide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/comments/{comment_id}/reveal-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal Comment Identity
+         * @description The explicit, audited identity reveal (spec §21.4): Admin-only,
+         *     reason mandatory and capped, and every call publishes the
+         *     ``COMMENT_IDENTITY_REVEALED`` audit event. Ordinary moderation
+         *     surfaces stay pseudonymous until this is called.
+         */
+        post: operations["reveal_comment_identity_api_v1_admin_comments__comment_id__reveal_identity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description The caller's own inbox page, newest first (V1: ?unread=true
+         *     filters to read_at IS NULL; pagination is offset-based).
+         */
+        get: operations["list_notifications_api_v1_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Notification Read
+         * @description Mark one own notification read — idempotent: a re-read returns
+         *     the message with its first read_at unchanged.
+         */
+        post: operations["mark_notification_read_api_v1_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notification-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notification Failures
+         * @description FAILED deliveries with last_error + attempts, newest first (the
+         *     spec §25.4 failure query). Admin-only until scoped delegation (PR
+         *     #2 hardening ruling): any ACTIVE+TOTP teacher reading every user's
+         *     delivery errors was judged too broad for V1.
+         */
+        get: operations["list_notification_failures_api_v1_admin_notification_failures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/current-academic-term": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Current Academic Term
+         * @description The effective academic term: the audited system_settings row when
+         *     present, the deployment seed when not — resolved through the same
+         *     provider the redemption gate reads, so this answer is exactly what
+         *     the next redemption would snapshot.
+         */
+        get: operations["get_current_academic_term_api_v1_admin_settings_current_academic_term_get"];
+        /**
+         * Put Current Academic Term
+         * @description Turn the term: the value row and its audit row commit as one
+         *     unit, and every redemption created afterwards snapshots the new
+         *     term (spec §16.1 — existing redemptions keep theirs).
+         */
+        put: operations["put_current_academic_term_api_v1_admin_settings_current_academic_term_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1361,6 +1791,150 @@ export interface components {
             teacher_id: string;
             /** Permissions */
             permissions: string[];
+        };
+        /**
+         * CommentCreateRequest
+         * @description Publish body (spec §21.1/§21.2). ``extra="forbid"``: a client
+         *     cannot smuggle any other field past the parser — there is no hot
+         *     score, no author override, nothing but the three spec inputs.
+         */
+        CommentCreateRequest: {
+            /** Content */
+            content: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /**
+             * Is Anonymous
+             * @default false
+             */
+            is_anonymous: boolean;
+        };
+        /**
+         * CommentEditRequest
+         * @description Edit body (spec §21.3): content only — ``parent_id`` immutability
+         *     is the create-only cycle guard, so it is unrepresentable here.
+         */
+        CommentEditRequest: {
+            /** Content */
+            content: string;
+        };
+        /** CommentListResponse */
+        CommentListResponse: {
+            /** Items */
+            items: components["schemas"]["CommentPublicResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * CommentPublicResponse
+         * @description The public comment wire shape: exactly ``CommentPublic``'s fields
+         *     (spec §21.4/§40 — no user id, no contact, no username; the hot score
+         *     never rides either).
+         */
+        CommentPublicResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Content */
+            content: string | null;
+            /** Is Anonymous */
+            is_anonymous: boolean;
+            /** Author Display */
+            author_display: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Edited */
+            edited: boolean;
+            /** Deleted */
+            deleted: boolean;
+        };
+        /** CommentReportListResponse */
+        CommentReportListResponse: {
+            /** Items */
+            items: components["schemas"]["CommentReportResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * CommentReportResponse
+         * @description One report-queue row (exactly ``CommentReportView``): the reported
+         *     comment in the Teacher-safe shape plus the REPORTER identity — the
+         *     moderation surface spec §23 admits (被举报用户不可看到举报者身份 is
+         *     the student-side wall; moderators act on reports and see who filed
+         *     them). Never composed into a student-facing response.
+         */
+        CommentReportResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            comment: components["schemas"]["ModerationCommentResponse"];
+            /** Category */
+            category: string;
+            /** Note */
+            note: string | null;
+            /** Status */
+            status: string;
+            /** Reporter User Id */
+            reporter_user_id: string | null;
+            /** Reporter Nickname */
+            reporter_nickname: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Handled By */
+            handled_by: string | null;
+            /** Handled At */
+            handled_at: string | null;
+        };
+        /**
+         * CurrentAcademicTermRequest
+         * @description The new term key (spec §16.1): non-blank and within the
+         *     ``RewardRedemption.term_key`` column width — the provider's own
+         *     validation semantics, enforced at the transport so an unusable term
+         *     never reaches storage. Blank-after-strip still reaches the service
+         *     gate, which answers the same §29 code (422).
+         */
+        CurrentAcademicTermRequest: {
+            /** Value */
+            value: string;
+        };
+        /**
+         * CurrentAcademicTermResponse
+         * @description The term the platform is currently on (row value or deployment
+         *     seed — resolved through the provider, never two rules).
+         */
+        CurrentAcademicTermResponse: {
+            /** Value */
+            value: string;
         };
         /**
          * DownloadUrlResponse
@@ -1570,6 +2144,75 @@ export interface components {
             /** Email Verified At */
             email_verified_at: string | null;
         };
+        /** ModerationCommentListResponse */
+        ModerationCommentListResponse: {
+            /** Items */
+            items: components["schemas"]["ModerationCommentResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * ModerationCommentResponse
+         * @description The Teacher-safe moderation wire shape: exactly
+         *     ``ModerationComment``'s fields — 匿名用户 display, the pseudonymous
+         *     ``moderation_key`` exactly on anonymous records, the hard-hidden
+         *     flag, and never a raw author id or contact fact.
+         */
+        ModerationCommentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Content */
+            content: string | null;
+            /** Is Anonymous */
+            is_anonymous: boolean;
+            /** Author Display */
+            author_display: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Edited */
+            edited: boolean;
+            /** Deleted */
+            deleted: boolean;
+            /** Moderation Key */
+            moderation_key?: string | null;
+            /**
+             * Hard Hidden
+             * @default false
+             */
+            hard_hidden: boolean;
+        };
+        /**
+         * ModerationDeleteRequest
+         * @description Reason-mandatory bodies (spec §21.3/§21.4): blank-after-trim is the
+         *     service's typed rejection; the schema forbids extras so a reason is
+         *     all a caller can send.
+         */
+        ModerationDeleteRequest: {
+            /** Reason */
+            reason: string;
+        };
         /**
          * MyClaimResponse
          * @description A /me/claims item: the claim view plus the task's title (the list is
@@ -1633,6 +2276,100 @@ export interface components {
         NicknameUpdateRequest: {
             /** Nickname */
             nickname: string;
+        };
+        /**
+         * NotificationFailureResponse
+         * @description One FAILED delivery for the staff failure query (spec §25.4).
+         *
+         *     Operational state (attempts, error token, channel) — visible only
+         *     behind the staff management guard, never on the student inbox.
+         */
+        NotificationFailureResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Notification Id
+             * Format: uuid
+             */
+            notification_id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Event Key */
+            event_key: string;
+            /** Channel */
+            channel: string;
+            /** Attempts */
+            attempts: number;
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Scheduled At
+             * Format: date-time
+             */
+            scheduled_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * NotificationFailuresResponse
+         * @description Offset-paginated failures page, newest failure first.
+         */
+        NotificationFailuresResponse: {
+            /** Items */
+            items: components["schemas"]["NotificationFailureResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * NotificationInboxResponse
+         * @description Offset-paginated inbox page (the documented V1 choice).
+         */
+        NotificationInboxResponse: {
+            /** Items */
+            items: components["schemas"]["NotificationItemResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * NotificationItemResponse
+         * @description One inbox message: the logical Notification's own fields only.
+         */
+        NotificationItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Event Type */
+            event_type: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Read At */
+            read_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * OwnedHonorResponse
@@ -1757,6 +2494,35 @@ export interface components {
             /** Rank */
             rank: number;
         };
+        /** RatingRequest */
+        RatingRequest: {
+            /** Rating */
+            rating: number;
+        };
+        /**
+         * RatingResponse
+         * @description The rater's own rating echo (spec §20: the PUBLIC surface stays
+         *     aggregate-only; your own value back to you is not a disclosure).
+         */
+        RatingResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Rating */
+            rating: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * RatingSummaryResponse
          * @description Average + count only (spec §20/§40: no rater identity).
@@ -1766,6 +2532,27 @@ export interface components {
             average: number;
             /** Count */
             count: number;
+        };
+        /** ReactionRequest */
+        ReactionRequest: {
+            /** Emoji */
+            emoji: string;
+        };
+        /**
+         * ReactionResponse
+         * @description The toggle verdict plus the comment's per-emoji reaction counts —
+         *     the echoing read the reaction service's docstring delegates to this
+         *     surface.
+         */
+        ReactionResponse: {
+            /** Emoji */
+            emoji: string;
+            /** Added */
+            added: boolean;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
         };
         /**
          * RedemptionFulfillRequest
@@ -1817,7 +2604,10 @@ export interface components {
          * RedemptionReviewResponse
          * @description The staff view: the student fields plus the review/fulfillment
          *     trail and the display-name enrichment (nickname only — the directory
-         *     port's shape, no contact fields to leak).
+         *     port's shape, no contact fields to leak). ``rejection_reason`` (PR
+         *     #2 final review pts-F1) is staff-only: the student DTO never
+         *     carries it (the notification already delivers the reason to the
+         *     requester).
          */
         RedemptionReviewResponse: {
             /**
@@ -1851,6 +2641,8 @@ export interface components {
             fulfilled_at?: string | null;
             /** Fulfillment Note */
             fulfillment_note?: string | null;
+            /** Rejection Reason */
+            rejection_reason?: string | null;
         };
         /**
          * RefreshRequest
@@ -1876,6 +2668,127 @@ export interface components {
             phone_token: string;
             /** Password */
             password: string;
+        };
+        /**
+         * ReportClosureResponse
+         * @description The closed report row's facts back to the moderator: identity of
+         *     the decision target, the terminal status, and the closure stamps
+         *     (the actor is the caller themself, so ``handled_by`` is no
+         *     disclosure). The queue listing beside it renders the same fields
+         *     in the full row shape.
+         */
+        ReportClosureResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /**
+             * Comment Id
+             * Format: uuid
+             */
+            comment_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Handled By
+             * Format: uuid
+             */
+            handled_by: string;
+            /**
+             * Handled At
+             * Format: date-time
+             */
+            handled_at: string;
+        };
+        /**
+         * ReportDismissRequest
+         * @description Dismissal body (PR #2 hardening step 10): ``reason`` is a
+         *     mandatory part of the governance decision — absent here is the 422
+         *     parse refusal, blank-after-trim is the service's typed rejection,
+         *     and ``extra="forbid"`` keeps a reason all a caller can send (the
+         *     ModerationDeleteRequest shape).
+         */
+        ReportDismissRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * ReportHandleRequest
+         * @description Handling body: the optional governor note, normalized by the
+         *     service with the filing-note rules (blank is no note).
+         */
+        ReportHandleRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /** ReportRequest */
+        ReportRequest: {
+            /** Category */
+            category: string;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ReportResponse
+         * @description The caller's OWN report row (the report service returns it to the
+         *     reporter; one's own identity is not a leak, and no other reporter's
+         *     identity exists in the shape).
+         */
+        ReportResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Comment Id
+             * Format: uuid
+             */
+            comment_id: string;
+            /** Category */
+            category: string;
+            /** Note */
+            note: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * RevealIdentityResponse
+         * @description Exactly ``RevealedIdentity``: the one wire shape where the student
+         *     number (``username``) is representable at all (spec §21.4).
+         */
+        RevealIdentityResponse: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Nickname */
+            nickname: string;
+            /** Username */
+            username: string;
+        };
+        /**
+         * RevealRequest
+         * @description The reveal reason (spec §21.4 每次追溯): mandatory (blank-after-trim
+         *     is the service's typed rejection) and capped at 1000 characters on the
+         *     raw body — the audit payload is bounded material, not a moderation
+         *     essay.
+         */
+        RevealRequest: {
+            /** Reason */
+            reason: string;
         };
         /**
          * ReviewQueueItemResponse
@@ -1968,8 +2881,10 @@ export interface components {
         /**
          * RewardItemResponse
          * @description One catalogue row for the student listing (spec §16/§42). The
-         *     admin-only ``fulfillment_instructions`` and the enabled flag (always
-         *     true in this listing) stay server-side.
+         *     admin-only ``fulfillment_instructions``, the enabled flag (always
+         *     true in this listing), and the dormant
+         *     ``requires_manual_review`` column (V1 reviews every redemption
+         *     manually; PR #2 hardening G13 方案一) stay server-side.
          */
         RewardItemResponse: {
             /**
@@ -1991,8 +2906,6 @@ export interface components {
             available_from: string | null;
             /** Available Until */
             available_until: string | null;
-            /** Requires Manual Review */
-            requires_manual_review: boolean;
             /** Window Open */
             window_open: boolean;
         };
@@ -2528,7 +3441,22 @@ export interface components {
         /**
          * UploadIntentResponse
          * @description The issued grant: the intent id for the later finalize call, the
-         *     short-lived presigned upload URL, and its expiry instant.
+         *     short-lived presigned upload URL, its expiry instant, and the
+         *     signing contract PASSED THROUGH from the storage adapter — the PUT
+         *     headers the URL signed (``headers``) and the pinned byte count
+         *     (``pinned_content_length``). The client echoes the headers verbatim
+         *     (write-once condition, pinned content type); reconstructing them
+         *     from documentation is a contract gap the composition smoke
+         *     surfaced (PR #2 hardening step 13).
+         *
+         *     Browser semantics (hardening P4c): ``headers`` NEVER contains
+         *     Content-Length — a browser cannot set it programmatically (a
+         *     forbidden request header, MDN), so advertising it would tell the
+         *     client to do the impossible. Instead the client must send a body of
+         *     EXACTLY ``pinned_content_length`` bytes: a browser does that with a
+         *     Blob/File whose declared size equals the pin (the browser then
+         *     frames Content-Length itself and the signature holds), a non-browser
+         *     client sets Content-Length explicitly.
          */
         UploadIntentResponse: {
             /**
@@ -2543,6 +3471,12 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /** Headers */
+            headers: {
+                [key: string]: string;
+            };
+            /** Pinned Content Length */
+            pinned_content_length: number;
         };
         /**
          * UserPublic
@@ -2642,10 +3576,34 @@ export interface components {
             /** Preview Rows */
             preview_rows: string[][];
         };
+        /** VoteRequest */
+        VoteRequest: {
+            /**
+             * Value
+             * @enum {integer}
+             */
+            value: -1 | 0 | 1;
+        };
+        /**
+         * VoteResponse
+         * @description The caller's post-transition stance plus the comment's totals
+         *     (exactly ``VoteResult``): the surface echoes the toggle without a
+         *     second read.
+         */
+        VoteResponse: {
+            /** Current Value */
+            current_value: number;
+            /** Likes */
+            likes: number;
+            /** Dislikes */
+            dislikes: number;
+        };
         /**
          * WalletResponse
          * @description The wallet strip (spec §15.1/§16.2): the projection's figures
-         *     plus the spendable derivation.
+         *     plus the spendable derivation, CLAMPED for display (see the module
+         *     docstring): available/spendable never render below 0 and the
+         *     overdraft rides as the explicit ``point_debt``.
          */
         WalletResponse: {
             /** Available Points */
@@ -2654,6 +3612,8 @@ export interface components {
             earned_points: number;
             /** Spendable Points */
             spendable_points: number;
+            /** Point Debt */
+            point_debt: number;
         };
         /** ReviewQueueResponse */
         app__modules__points__router__ReviewQueueResponse: {
@@ -4535,6 +5495,670 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrowthResponse"];
+                };
+            };
+        };
+    };
+    list_task_comments_api_v1_tasks__task_id__comments_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                sort?: "latest" | "hot";
+            };
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_comment_api_v1_tasks__task_id__comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_own_comment_api_v1_comments__comment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_comment_api_v1_comments__comment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cast_comment_vote_api_v1_comments__comment_id__vote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_comment_reaction_api_v1_comments__comment_id__reactions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReactionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_comment_report_api_v1_comments__comment_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_task_rating_api_v1_tasks__task_id__rating_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_moderation_comments_api_v1_teacher_tasks__task_id__comments_moderation_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationCommentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_task_reports_api_v1_teacher_tasks__task_id__reports_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_task_report_api_v1_tasks__task_id__reports__report_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportClosureResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handle_task_report_api_v1_tasks__task_id__reports__report_id__handle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportHandleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportClosureResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moderate_delete_comment_api_v1_teacher_comments__comment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_comment_subtree_api_v1_teacher_comments__comment_id__hard_hide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_comment_identity_api_v1_admin_comments__comment_id__reveal_identity_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealIdentityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notifications_api_v1_notifications_get: {
+        parameters: {
+            query?: {
+                unread?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationInboxResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_notification_read_api_v1_notifications__notification_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notification_failures_api_v1_admin_notification_failures_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationFailuresResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_current_academic_term_api_v1_admin_settings_current_academic_term_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentAcademicTermResponse"];
+                };
+            };
+        };
+    };
+    put_current_academic_term_api_v1_admin_settings_current_academic_term_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurrentAcademicTermRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentAcademicTermResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

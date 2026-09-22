@@ -8,7 +8,7 @@
     "/api/v1/auth/phone/challenges": {
       "post": {
         "summary": "Request Phone Challenge",
-        "description": "Issue a REGISTER-purpose OTP challenge (spec \u00a75.4, \u00a733.2).\n\nThe purpose is fixed server-side: a public endpoint must never mint\nproofs for password reset or phone change.",
+        "description": "Issue a REGISTER-purpose OTP challenge (spec §5.4, §33.2).\n\nThe purpose is fixed server-side: a public endpoint must never mint\nproofs for password reset or phone change.",
         "operationId": "request_phone_challenge_api_v1_auth_phone_challenges_post",
         "requestBody": {
           "content": {
@@ -174,7 +174,7 @@
     "/api/v1/auth/refresh": {
       "post": {
         "summary": "Refresh",
-        "description": "Rotate one refresh session (cookie or body token; spec \u00a75.6).\n\nThe body is optional: a cookie-authenticated browser sends no body at\nall (the CSRF header carries the mutation proof), so requiring one\nwould 422 the exact client this endpoint serves.",
+        "description": "Rotate one refresh session (cookie or body token; spec §5.6).\n\nThe body is optional: a cookie-authenticated browser sends no body at\nall (the CSRF header carries the mutation proof), so requiring one\nwould 422 the exact client this endpoint serves.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -259,7 +259,7 @@
     "/api/v1/auth/password/forgot": {
       "post": {
         "summary": "Request Password Reset",
-        "description": "Reset OTP to the bound phone \u2014 uniformly for EVERY identifier class.\n\nKnown student, unknown username, staff account, phoneless student: the\nresponse is the identical challenge shape either way (no enumeration\noracle; see ProfileService.request_password_reset).",
+        "description": "Reset OTP to the bound phone — uniformly for EVERY identifier class.\n\nKnown student, unknown username, staff account, phoneless student: the\nresponse is the identical challenge shape either way (no enumeration\noracle; see ProfileService.request_password_reset).",
         "operationId": "request_password_reset_api_v1_auth_password_forgot_post",
         "requestBody": {
           "content": {
@@ -329,7 +329,7 @@
     "/api/v1/me": {
       "get": {
         "summary": "Read Me",
-        "description": "The owner's own account view (spec \u00a740). Read-only: any live session\nmay read its own profile, including a suspended account's.",
+        "description": "The owner's own account view (spec §40). Read-only: any live session\nmay read its own profile, including a suspended account's.",
         "operationId": "read_me_api_v1_me_get",
         "responses": {
           "200": {
@@ -396,7 +396,7 @@
     "/api/v1/me/phone/change": {
       "post": {
         "summary": "Request Phone Change",
-        "description": "Re-authenticate, then OTP-challenge the NEW phone (spec \u00a75.4).",
+        "description": "Re-authenticate, then OTP-challenge the NEW phone (spec §5.4).",
         "operationId": "request_phone_change_api_v1_me_phone_change_post",
         "requestBody": {
           "content": {
@@ -642,7 +642,7 @@
     "/api/v1/auth/staff/login": {
       "post": {
         "summary": "Staff Login",
-        "description": "Staff login: verified email + password + TOTP-or-recovery (\u00a75.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` \u2014 the client's signal to\nfinish ``/staff/totp/*`` first.",
+        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first.",
         "operationId": "staff_login_api_v1_auth_staff_login_post",
         "requestBody": {
           "content": {
@@ -681,7 +681,7 @@
     "/api/v1/auth/staff/invitations/accept": {
       "post": {
         "summary": "Accept Staff Invitation",
-        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (\u00a75.8); management endpoints stay closed until 2FA is confirmed.",
+        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.",
         "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -720,7 +720,7 @@
     "/api/v1/staff/totp/begin": {
       "post": {
         "summary": "Begin Totp Setup",
-        "description": "Generate (or rotate) the pending TOTP secret; displayed once (\u00a75.8).",
+        "description": "Generate (or rotate) the pending TOTP secret; displayed once (§5.8).",
         "operationId": "begin_totp_setup_api_v1_staff_totp_begin_post",
         "responses": {
           "200": {
@@ -788,7 +788,7 @@
     "/api/v1/tasks": {
       "get": {
         "summary": "List Tasks",
-        "description": "One offset page of PUBLISHED task cards (spec \u00a742): counts and card\nfacts only \u2014 the Assignment list never rides along.",
+        "description": "One offset page of PUBLISHED task cards (spec §42): counts and card\nfacts only — the Assignment list never rides along.",
         "operationId": "list_tasks_api_v1_tasks_get",
         "security": [
           {
@@ -893,7 +893,7 @@
     "/api/v1/tasks/{task_id}/claim": {
       "post": {
         "summary": "Claim Task",
-        "description": "Claim one random AVAILABLE assignment (spec \u00a78.3) \u2014 a Student\ncapability (spec \u00a74.1); staff roles are refused at the guard.\n\n``ClaimRequest`` is fieldless and forbids extras: the caller cannot\nname an assignment \u2014 the server picks randomly under lock. The\nresponse is owner-scoped and names the assigned unit's\nplatform/keyword (the only student surface that ever does).",
+        "description": "Claim one random AVAILABLE assignment (spec §8.3) — a Student\ncapability (spec §4.1); staff roles are refused at the guard.\n\n``ClaimRequest`` is fieldless and forbids extras: the caller cannot\nname an assignment — the server picks randomly under lock. The\nresponse is owner-scoped and names the assigned unit's\nplatform/keyword (the only student surface that ever does).",
         "operationId": "claim_task_api_v1_tasks__task_id__claim_post",
         "security": [
           {
@@ -956,7 +956,7 @@
     "/api/v1/me/claims": {
       "get": {
         "summary": "List My Claims",
-        "description": "The actor's own claim history, newest first; assignment\nplatform/keyword are visible here because every row is the owner's.\nA Student surface by policy (spec \u00a74.1): staff never own claims, and\nthe 403 pins that boundary instead of serving an empty list.",
+        "description": "The actor's own claim history, newest first; assignment\nplatform/keyword are visible here because every row is the owner's.\nA Student surface by policy (spec §4.1): staff never own claims, and\nthe 403 pins that boundary instead of serving an empty list.",
         "operationId": "list_my_claims_api_v1_me_claims_get",
         "security": [
           {
@@ -1015,7 +1015,7 @@
     "/api/v1/claims/{claim_id}/abandon": {
       "post": {
         "summary": "Abandon Claim",
-        "description": "Abandon the actor's own claim and release its assignment (spec\n\u00a78.5) \u2014 a Student capability (spec \u00a74.1); replaying a successful\nabandon returns the same terminal row.",
+        "description": "Abandon the actor's own claim and release its assignment (spec\n§8.5) — a Student capability (spec §4.1); replaying a successful\nabandon returns the same terminal row.",
         "operationId": "abandon_claim_api_v1_claims__claim_id__abandon_post",
         "security": [
           {
@@ -1061,7 +1061,7 @@
     "/api/v1/teacher/tasks": {
       "get": {
         "summary": "List Teacher Tasks",
-        "description": "The workbench Task list (spec \u00a741): the actor's own tasks plus the\nones they collaborate on, every status including DRAFT, offset-\npaginated. Card-level facts only \u2014 contract fields ride the detail.",
+        "description": "The workbench Task list (spec §41): the actor's own tasks plus the\nones they collaborate on, every status including DRAFT, offset-\npaginated. Card-level facts only — contract fields ride the detail.",
         "operationId": "list_teacher_tasks_api_v1_teacher_tasks_get",
         "security": [
           {
@@ -1118,7 +1118,7 @@
       },
       "post": {
         "summary": "Create Task",
-        "description": "Create a DRAFT task owned by the actor (spec \u00a76).",
+        "description": "Create a DRAFT task owned by the actor (spec §6).",
         "operationId": "create_task_api_v1_teacher_tasks_post",
         "security": [
           {
@@ -1162,7 +1162,7 @@
     "/api/v1/teacher/tasks/{task_id}": {
       "get": {
         "summary": "Get Teacher Task",
-        "description": "The full workbench detail of one task (spec \u00a741): everything the\nowner configured, contract fields included, DRAFT readable (unlike\nthe student surface). Owner, any collaborator, or Admin.",
+        "description": "The full workbench detail of one task (spec §41): everything the\nowner configured, contract fields included, DRAFT readable (unlike\nthe student surface). Owner, any collaborator, or Admin.",
         "operationId": "get_teacher_task_api_v1_teacher_tasks__task_id__get",
         "security": [
           {
@@ -1206,7 +1206,7 @@
       },
       "patch": {
         "summary": "Update Task",
-        "description": "Partial edit under the V1 edit rule (spec \u00a76.2); ownership and the\nfield-split are service concerns.",
+        "description": "Partial edit under the V1 edit rule (spec §6.2); ownership and the\nfield-split are service concerns.",
         "operationId": "update_task_api_v1_teacher_tasks__task_id__patch",
         "security": [
           {
@@ -1487,7 +1487,7 @@
     "/api/v1/teacher/tasks/{task_id}/assignments/import/preview": {
       "post": {
         "summary": "Preview Assignment Import",
-        "description": "Parse and pre-check a CSV upload (spec \u00a77.1 steps 1-4).\n\nThe file is the raw request body (``text/csv``); the importer's byte\ncap rejects oversize payloads before any parsing work.",
+        "description": "Parse and pre-check a CSV upload (spec §7.1 steps 1-4).\n\nThe file is the raw request body (``text/csv``); the importer's byte\ncap rejects oversize payloads before any parsing work.",
         "operationId": "preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post",
         "security": [
           {
@@ -1533,7 +1533,7 @@
     "/api/v1/teacher/tasks/{task_id}/assignments/import/confirm": {
       "post": {
         "summary": "Confirm Assignment Import",
-        "description": "Insert exactly the previewed rows in one transaction (spec \u00a77.1\nsteps 5-6), consuming the single-use preview token.",
+        "description": "Insert exactly the previewed rows in one transaction (spec §7.1\nsteps 5-6), consuming the single-use preview token.",
         "operationId": "confirm_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_confirm_post",
         "security": [
           {
@@ -1589,7 +1589,7 @@
     "/api/v1/teacher/tasks/{task_id}/collaborators/{teacher_id}": {
       "put": {
         "summary": "Add Collaborator",
-        "description": "Grant a capability set on the task to a Teacher (spec \u00a74.2); the\nstanding / grant-within-own-set / target-role rules are the service's.",
+        "description": "Grant a capability set on the task to a Teacher (spec §4.2); the\nstanding / grant-within-own-set / target-role rules are the service's.",
         "operationId": "add_collaborator_api_v1_teacher_tasks__task_id__collaborators__teacher_id__put",
         "security": [
           {
@@ -1701,7 +1701,7 @@
     "/api/v1/teacher/tasks/{task_id}/statistics": {
       "get": {
         "summary": "Get Task Statistics",
-        "description": "The workbench aggregate (spec \u00a741): counts only, by construction.",
+        "description": "The workbench aggregate (spec §41): counts only, by construction.",
         "operationId": "get_task_statistics_api_v1_teacher_tasks__task_id__statistics_get",
         "security": [
           {
@@ -1747,7 +1747,7 @@
     "/api/v1/submissions/upload-intent": {
       "post": {
         "summary": "Create Upload Intent",
-        "description": "Issue the single-use presigned upload grant (spec \u00a710 step 1-5).\n\nThe browser PUTs the file straight to storage \u2014 the 200 MB payload\nnever streams through this API. The response carries the intent id,\nthe short-lived URL, and the URL's expiry; the server-generated\nobject key stays server-side (spec \u00a740).",
+        "description": "Issue the single-use presigned upload grant (spec §10 step 1-5).\n\nThe browser PUTs the file straight to storage — the 200 MB payload\nnever streams through this API. The response carries the intent id,\nthe short-lived URL, the URL's expiry, and the adapter-owned signing\ncontract (echo headers + pinned byte count, passed through — see\n``UploadIntentResponse`` for the Content-Length browser semantics);\nthe server-generated object key stays server-side (spec §40).",
         "operationId": "create_upload_intent_api_v1_submissions_upload_intent_post",
         "requestBody": {
           "content": {
@@ -1791,7 +1791,7 @@
     "/api/v1/submissions/upload-complete": {
       "post": {
         "summary": "Complete Upload",
-        "description": "Verify the uploaded object and create the Submission version\n(spec \u00a710 steps 5-7), then hand it to the async validation pipeline\nthrough the dispatcher (step 8). Replaying a completed intent\nreturns the SAME Submission (spec \u00a732).\n\nThe object-key-free public DTO rides the response; ``created_at``\nis a server default the INSERT did not return, so the row is\nrefreshed before serialization (the tasks-router create precedent).",
+        "description": "Verify the uploaded object and create the Submission version\n(spec §10 steps 5-7), then hand it to the async validation pipeline\nthrough the dispatcher (step 8). Replaying a completed intent\nreturns the SAME Submission (spec §32).\n\nThe object-key-free public DTO rides the response; ``created_at``\nis a server default the INSERT did not return, so the row is\nrefreshed before serialization (the tasks-router create precedent).",
         "operationId": "complete_upload_api_v1_submissions_upload_complete_post",
         "requestBody": {
           "content": {
@@ -1835,7 +1835,7 @@
     "/api/v1/submissions/{submission_id}/validation": {
       "get": {
         "summary": "Get Submission Validation",
-        "description": "The owner's machine-validation report (spec \u00a711.1, \u00a712.4) \u2014 the\npersisted \u00a712.4 shape plus the status projections; ``report`` is\nnull until the async run finishes.",
+        "description": "The owner's machine-validation report (spec §11.1, §12.4) — the\npersisted §12.4 shape plus the status projections; ``report`` is\nnull until the async run finishes.",
         "operationId": "get_submission_validation_api_v1_submissions__submission_id__validation_get",
         "security": [
           {
@@ -1881,7 +1881,7 @@
     "/api/v1/submissions/{submission_id}/download": {
       "get": {
         "summary": "Download Submission",
-        "description": "Mint a short-lived presigned GET (spec \u00a733.3).\n\nThe guard is the broad ACTIVE one because BOTH authorized parties\nreach this route \u2014 the owning Student and the reviewing teacher\n(task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual\nownership/role judgment runs inside the query service BEFORE the\nport signs. The response carries the URL, never the key.",
+        "description": "Mint a short-lived presigned GET (spec §33.3).\n\nThe guard is the broad ACTIVE one because BOTH authorized parties\nreach this route — the owning Student and the reviewing teacher\n(task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual\nownership/role judgment runs inside the query service BEFORE the\nport signs. The response carries the URL, never the key.",
         "operationId": "download_submission_api_v1_submissions__submission_id__download_get",
         "security": [
           {
@@ -1986,7 +1986,7 @@
     "/api/v1/teacher/submissions/{submission_id}/approve": {
       "post": {
         "summary": "Approve Submission",
-        "description": "Run the \u00a714 ten-step approve transaction (claim COMPLETED, lock\nCONFIRMED, one grant, assignment COMPLETED); a replay on a COMPLETED\nclaim answers ``already_reviewed`` with nothing written.",
+        "description": "Run the §14 ten-step approve transaction (claim COMPLETED, lock\nCONFIRMED, one grant, assignment COMPLETED); a replay on a COMPLETED\nclaim answers ``already_reviewed`` with nothing written.",
         "operationId": "approve_submission_api_v1_teacher_submissions__submission_id__approve_post",
         "security": [
           {
@@ -2032,7 +2032,7 @@
     "/api/v1/teacher/submissions/{submission_id}/revision-required": {
       "post": {
         "summary": "Require Revision",
-        "description": "Return the submission for fixes (spec \u00a711.3): the claim moves to\nREVISION_REQUIRED with the \u00a711.4 window; the existing lock survives.\nThe note is mandatory at the transport (the teacher's guidance).",
+        "description": "Return the submission for fixes (spec §11.3): the claim moves to\nREVISION_REQUIRED with the §11.4 window; the existing lock survives.\nThe note is mandatory at the transport (the teacher's guidance).",
         "operationId": "require_revision_api_v1_teacher_submissions__submission_id__revision_required_post",
         "security": [
           {
@@ -2088,7 +2088,7 @@
     "/api/v1/teacher/submissions/{submission_id}/invalidate-reward-lock": {
       "post": {
         "summary": "Invalidate Reward Lock",
-        "description": "Cancel the PROVISIONAL lock and demand a resubmission (spec\n\u00a711.3): the projection clears, the cancelled values survive on the\nappend-only audit rows, and the reason is mandatory.",
+        "description": "Cancel the PROVISIONAL lock and demand a resubmission (spec\n§11.3): the projection clears, the cancelled values survive on the\nappend-only audit rows, and the reason is mandatory.",
         "operationId": "invalidate_reward_lock_api_v1_teacher_submissions__submission_id__invalidate_reward_lock_post",
         "security": [
           {
@@ -2144,7 +2144,7 @@
     "/api/v1/points/me": {
       "get": {
         "summary": "My Wallet",
-        "description": "The caller's wallet strip: available (spendable-balance\nprojection), earned (cumulative task contribution \u2014 spending never\ntouches it, spec \u00a717.1), and spendable (available minus ACTIVE\nfreezes, spec \u00a716.2).",
+        "description": "The caller's wallet strip: available (spendable-balance\nprojection), earned (cumulative task contribution — spending never\ntouches it, spec §17.1), and spendable (available minus ACTIVE\nfreezes, spec §16.2). Display-clamped here only (see the module\ndocstring): a reward reversal can overdraft the raw wallet negative\n(migration 0012), and the user-facing answer to that is 0/0 plus the\nexplicit ``point_debt`` — never a raw negative — while the wallet\nrow and the ledger keep the true figure.",
         "operationId": "my_wallet_api_v1_points_me_get",
         "responses": {
           "200": {
@@ -2168,7 +2168,7 @@
     "/api/v1/rewards": {
       "get": {
         "summary": "List Rewards",
-        "description": "The enabled reward catalogue with the server-side window verdict\n(spec \u00a716.1): ``window_open`` is computed HERE at the business\nclock, the same half-open rule the redeem gate enforces, so the\nshelf can never advertise an item the gate would refuse.",
+        "description": "The enabled reward catalogue with the server-side window verdict\n(spec §16.1): ``window_open`` is computed HERE at the business\nclock, the same half-open rule the redeem gate enforces, so the\nshelf can never advertise an item the gate would refuse.",
         "operationId": "list_rewards_api_v1_rewards_get",
         "responses": {
           "200": {
@@ -2192,7 +2192,7 @@
     "/api/v1/rewards/{reward_id}/redeem": {
       "post": {
         "summary": "Redeem Reward",
-        "description": "Request one redemption: the service freezes the points and\npre-occupies the stock unit atomically (spec \u00a716.1) and answers the\ntyped conflict envelopes on any gate failure.\n\n``Idempotency-Key`` is ADVISORY in V1 (spec \u00a732; see the module\ndocstring): accepted, never deduped on \u2014 the database constraints\nare the duplicate-side-effect protection.",
+        "description": "Request one redemption: the service freezes the points and\npre-occupies the stock unit atomically (spec §16.1) and answers the\ntyped conflict envelopes on any gate failure.\n\n``Idempotency-Key`` is ADVISORY in V1 (spec §32; see the module\ndocstring): accepted, never deduped on — the database constraints\nare the duplicate-side-effect protection.",
         "operationId": "redeem_reward_api_v1_rewards__reward_id__redeem_post",
         "security": [
           {
@@ -2254,7 +2254,7 @@
     "/api/v1/teacher/rewards/redemptions": {
       "get": {
         "summary": "List Redemption Queue",
-        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name.",
+        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name. Admin-only with the\ndecision endpoints until scoped delegation lands (PR #2 closure\nreview): the queue exposes every requester's identity, and the\napproved rule is \"Teacher reviews AUTHORIZED-RELATED redemptions\",\nnot \"every Teacher inspects all applications\".",
         "operationId": "list_redemption_queue_api_v1_teacher_rewards_redemptions_get",
         "security": [
           {
@@ -2313,7 +2313,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/approve": {
       "post": {
         "summary": "Approve Redemption",
-        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec \u00a716.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.",
+        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec §16.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
         "operationId": "approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post",
         "security": [
           {
@@ -2359,7 +2359,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/reject": {
       "post": {
         "summary": "Reject Redemption",
-        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec \u00a716.2).",
+        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec §16.2).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
         "operationId": "reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post",
         "security": [
           {
@@ -2415,7 +2415,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/fulfill": {
       "post": {
         "summary": "Fulfill Redemption",
-        "description": "Record the physical delivery of an APPROVED redemption (spec\n\u00a716.2: approval and delivery are separate transitions).",
+        "description": "Record the physical delivery of an APPROVED redemption (spec\n§16.2: approval and delivery are separate transitions).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
         "operationId": "fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post",
         "security": [
           {
@@ -2674,7 +2674,7 @@
     "/api/v1/growth/me": {
       "get": {
         "summary": "My Growth",
-        "description": "The \u00a719 personal growth profile: month points/rank, total earned,\ncompleted count, on-time ratio (final valid lock judgment), current\nstreak, best historical monthly rank, and owned honors.",
+        "description": "The §19 personal growth profile: month points/rank, total earned,\ncompleted count, on-time ratio (final valid lock judgment), current\nstreak, best historical monthly rank, and owned honors.",
         "operationId": "my_growth_api_v1_growth_me_get",
         "responses": {
           "200": {
@@ -2683,6 +2683,1124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GrowthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/comments": {
+      "get": {
+        "summary": "List Task Comments",
+        "description": "One offset page of a published task's public comments (spec §21),\n``sort=latest`` (created_at desc) or ``sort=hot`` (server-computed\nordering per spec §24 — never a client value).",
+        "operationId": "list_task_comments_api_v1_tasks__task_id__comments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "latest",
+                "hot"
+              ],
+              "type": "string",
+              "default": "latest",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Task Comment",
+        "description": "Publish one comment (or reply, when ``parent_id`` is set)\nimmediately (spec §21.1): no pre-moderation — the rate limit is the\npaired abuse control. Anonymity is a display attribute of this one\ncomment only (spec §21.4).",
+        "operationId": "create_task_comment_api_v1_tasks__task_id__comments_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPublicResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{comment_id}": {
+      "patch": {
+        "summary": "Edit Comment",
+        "description": "Owner edit (spec §21.3): the previous version is appended to the\nrevision history and the response carries ``edited=True``. Concurrent\nedits are last-write-wins with every superseded version retained (the\nmodule docstring ruling) — V1 deliberately serves no 409 here.",
+        "operationId": "edit_comment_api_v1_comments__comment_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentEditRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPublicResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Own Comment",
+        "description": "Owner soft delete (spec §21.3): the trio lands on the row and the\npublic list decides tombstone vs vanish. No rate bucket — the\ndeleted-state guard makes it single-shot.",
+        "operationId": "delete_own_comment_api_v1_comments__comment_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{comment_id}/vote": {
+      "post": {
+        "summary": "Cast Comment Vote",
+        "description": "Set the caller's stance on one comment (spec §22): ``value`` 1\nlike, -1 dislike, 0 removes the vote; transitions are atomic in the\nservice.",
+        "operationId": "cast_comment_vote_api_v1_comments__comment_id__vote_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{comment_id}/reactions": {
+      "post": {
+        "summary": "Toggle Comment Reaction",
+        "description": "Toggle one whitelisted emoji reaction (spec §22): ``added`` True\nwhen the reaction landed, False when it was removed; the same emoji\nagain is the toggle. The per-emoji counts echo is the read the\nservice delegates to this surface.",
+        "operationId": "toggle_comment_reaction_api_v1_comments__comment_id__reactions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{comment_id}/reports": {
+      "post": {
+        "summary": "File Comment Report",
+        "description": "File one report into the moderation queue (spec §23): the comment\nis never removed by the filing, and a duplicate (comment, reporter,\ncategory) is the idempotent return of the original report.",
+        "operationId": "file_comment_report_api_v1_comments__comment_id__reports_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/rating": {
+      "put": {
+        "summary": "Put Task Rating",
+        "description": "Rate (or re-rate) one task (spec §20): one row per (task, user)\nholding the latest value; only a completer of at least one Claim may\nrate — that denial renders the §29 ``RATING_NOT_ELIGIBLE`` envelope\n(the handler this module registers).",
+        "operationId": "put_task_rating_api_v1_tasks__task_id__rating_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/comments/moderation": {
+      "get": {
+        "summary": "List Moderation Comments",
+        "description": "The Teacher-safe comment listing for one task (spec §21.4):\nanonymous authors render 匿名用户 plus the pseudonymous moderation\nkey, and soft deletes / hard hides stay visible as history with\ntheir flags. Standing mirrors the report queue (owner /\nMODERATE_COMMUNITY / Admin) — the destructive powers remain\nservice-gated.",
+        "operationId": "list_moderation_comments_api_v1_teacher_tasks__task_id__comments_moderation_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationCommentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/tasks/{task_id}/reports": {
+      "get": {
+        "summary": "List Task Reports",
+        "description": "The per-task report queue (spec §23; task 6's service): report\nfacts, the reported comment in the Teacher-safe shape, and reporter\nidentity for the moderators who act on it. Admin is admitted by the\nservice's read ruling.",
+        "operationId": "list_task_reports_api_v1_teacher_tasks__task_id__reports_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentReportListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/reports/{report_id}/dismiss": {
+      "post": {
+        "summary": "Dismiss Task Report",
+        "description": "Close one report as DISMISSED (PR #2 hardening step 10): the\nmoderator judged no action warranted — the mandatory reason records\nwhy, one ``REPORT_DISMISSED`` audit row lands in the same\ntransaction, and the comment is untouched (§23 不自动删除评论\nreaches closure). A same-state replay echoes the closed row; the\nother terminal state is the typed 409. Standing is the queue\nlisting's (owner / MODERATE_COMMUNITY / Admin), so the queue's\nreader is its closer. No rate bucket — the moderation write\nsurfaces (moderate-delete, hard hide, reveal) carry none: the\nstate machine makes every replay single-shot.",
+        "operationId": "dismiss_task_report_api_v1_tasks__task_id__reports__report_id__dismiss_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportDismissRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportClosureResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/reports/{report_id}/handle": {
+      "post": {
+        "summary": "Handle Task Report",
+        "description": "Close one report as HANDLED (PR #2 hardening step 10): registers\nthat the moderator acted on the reported comment (through the\nexisting audited removal paths or otherwise) — this endpoint books\nthe conclusion and its ``REPORT_HANDLED`` audit row; the comment\nrow is never touched here. Optional note, same-state replay\nidempotent, other terminal state the typed 409, standing as the\ndismiss surface above.",
+        "operationId": "handle_task_report_api_v1_tasks__task_id__reports__report_id__handle_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportHandleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportClosureResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/comments/{comment_id}": {
+      "delete": {
+        "summary": "Moderate Delete Comment",
+        "description": "Teacher moderation delete (spec §21.4): the service gates the\nactor to the task's owner or a MODERATE_COMMUNITY collaborator\n(Admin is refused here by the task 3 power-separation ruling),\nrequires the reason, and publishes the audit event.",
+        "operationId": "moderate_delete_comment_api_v1_teacher_comments__comment_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/comments/{comment_id}/hard-hide": {
+      "post": {
+        "summary": "Hide Comment Subtree",
+        "description": "Admin-only hard hide of a whole subtree (spec §21.3 彻底隐藏):\nvisibility removal for privacy/legal escalations — rows, content, and\nrelations survive, the public list renders the subtree nothing, and\nthe audit event carries the verbatim reason.",
+        "operationId": "hide_comment_subtree_api_v1_teacher_comments__comment_id__hard_hide_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/comments/{comment_id}/reveal-identity": {
+      "post": {
+        "summary": "Reveal Comment Identity",
+        "description": "The explicit, audited identity reveal (spec §21.4): Admin-only,\nreason mandatory and capped, and every call publishes the\n``COMMENT_IDENTITY_REVEALED`` audit event. Ordinary moderation\nsurfaces stay pseudonymous until this is called.",
+        "operationId": "reveal_comment_identity_api_v1_admin_comments__comment_id__reveal_identity_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealIdentityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "summary": "List Notifications",
+        "description": "The caller's own inbox page, newest first (V1: ?unread=true\nfilters to read_at IS NULL; pagination is offset-based).",
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unread"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationInboxResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "summary": "Mark Notification Read",
+        "description": "Mark one own notification read — idempotent: a re-read returns\nthe message with its first read_at unchanged.",
+        "operationId": "mark_notification_read_api_v1_notifications__notification_id__read_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Notification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notification-failures": {
+      "get": {
+        "summary": "List Notification Failures",
+        "description": "FAILED deliveries with last_error + attempts, newest first (the\nspec §25.4 failure query). Admin-only until scoped delegation (PR\n#2 hardening ruling): any ACTIVE+TOTP teacher reading every user's\ndelivery errors was judged too broad for V1.",
+        "operationId": "list_notification_failures_api_v1_admin_notification_failures_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationFailuresResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/current-academic-term": {
+      "get": {
+        "summary": "Get Current Academic Term",
+        "description": "The effective academic term: the audited system_settings row when\npresent, the deployment seed when not — resolved through the same\nprovider the redemption gate reads, so this answer is exactly what\nthe next redemption would snapshot.",
+        "operationId": "get_current_academic_term_api_v1_admin_settings_current_academic_term_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAcademicTermResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Put Current Academic Term",
+        "description": "Turn the term: the value row and its audit row commit as one\nunit, and every redemption created afterwards snapshots the new\nterm (spec §16.1 — existing redemptions keep theirs).",
+        "operationId": "put_current_academic_term_api_v1_admin_settings_current_academic_term_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentAcademicTermRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAcademicTermResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2776,7 +3894,7 @@
           "already_reviewed"
         ],
         "title": "ApproveResponse",
-        "description": "The \u00a714 approve outcome: the claim's landing state and the single\ngrant. ``already_reviewed`` is True only on the idempotent replay\n(nothing written, no second grant)."
+        "description": "The §14 approve outcome: the claim's landing state and the single\ngrant. ``already_reviewed`` is True only on the idempotent replay\n(nothing written, no second grant)."
       },
       "AroundMeResponse": {
         "properties": {
@@ -2794,7 +3912,7 @@
           "entries"
         ],
         "title": "AroundMeResponse",
-        "description": "The caller's neighborhood, numbered with GLOBAL board ranks \u2014 a\nslice of the board, never a re-ranked mini-board."
+        "description": "The caller's neighborhood, numbered with GLOBAL board ranks — a\nslice of the board, never a re-ranked mini-board."
       },
       "BoardResponse": {
         "properties": {
@@ -2855,14 +3973,14 @@
           "expires_at"
         ],
         "title": "ChallengeResponse",
-        "description": "Request-side view of an OTP challenge (never the code, \u00a733.2)."
+        "description": "Request-side view of an OTP challenge (never the code, §33.2)."
       },
       "ClaimRequest": {
         "properties": {},
         "additionalProperties": false,
         "type": "object",
         "title": "ClaimRequest",
-        "description": "Claim one random assignment of a task (spec \u00a78.3).\n\nDeliberately fieldless AND ``extra=\"forbid\"``: assignment choice is\nthe server's (random, under lock) \u2014 a request that smuggles an\n``assignment_id`` is a 422 before any service call, proven by test."
+        "description": "Claim one random assignment of a task (spec §8.3).\n\nDeliberately fieldless AND ``extra=\"forbid\"``: assignment choice is\nthe server's (random, under lock) — a request that smuggles an\n``assignment_id`` is a 422 before any service call, proven by test."
       },
       "ClaimResponse": {
         "properties": {
@@ -2921,7 +4039,7 @@
           "base_reward_points_snapshot"
         ],
         "title": "ClaimResponse",
-        "description": "A claim on the owner's own surface (spec \u00a78, \u00a742): the assigned\nunit's platform/keyword appear here and nowhere else student-facing."
+        "description": "A claim on the owner's own surface (spec §8, §42): the assigned\nunit's platform/keyword appear here and nowhere else student-facing."
       },
       "CollaboratorAddRequest": {
         "properties": {
@@ -2938,7 +4056,7 @@
           "permissions"
         ],
         "title": "CollaboratorAddRequest",
-        "description": "Grant a capability set to a Teacher on a task (spec \u00a74.2)."
+        "description": "Grant a capability set to a Teacher on a task (spec §4.2)."
       },
       "CollaboratorResponse": {
         "properties": {
@@ -2969,6 +4087,323 @@
         "title": "CollaboratorResponse",
         "description": "A granted capability set, in canonical storage order."
       },
+      "CommentCreateRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "is_anonymous": {
+            "type": "boolean",
+            "title": "Is Anonymous",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "CommentCreateRequest",
+        "description": "Publish body (spec §21.1/§21.2). ``extra=\"forbid\"``: a client\ncannot smuggle any other field past the parser — there is no hot\nscore, no author override, nothing but the three spec inputs."
+      },
+      "CommentEditRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "CommentEditRequest",
+        "description": "Edit body (spec §21.3): content only — ``parent_id`` immutability\nis the create-only cycle guard, so it is unrepresentable here."
+      },
+      "CommentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentPublicResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CommentListResponse"
+      },
+      "CommentPublicResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "is_anonymous": {
+            "type": "boolean",
+            "title": "Is Anonymous"
+          },
+          "author_display": {
+            "type": "string",
+            "title": "Author Display"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "edited": {
+            "type": "boolean",
+            "title": "Edited"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "parent_id",
+          "content",
+          "is_anonymous",
+          "author_display",
+          "created_at",
+          "updated_at",
+          "edited",
+          "deleted"
+        ],
+        "title": "CommentPublicResponse",
+        "description": "The public comment wire shape: exactly ``CommentPublic``'s fields\n(spec §21.4/§40 — no user id, no contact, no username; the hot score\nnever rides either)."
+      },
+      "CommentReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentReportResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CommentReportListResponse"
+      },
+      "CommentReportResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "comment": {
+            "$ref": "#/components/schemas/ModerationCommentResponse"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reporter_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter User Id"
+          },
+          "reporter_nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Nickname"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "handled_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled By"
+          },
+          "handled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "comment",
+          "category",
+          "note",
+          "status",
+          "reporter_user_id",
+          "reporter_nickname",
+          "created_at",
+          "handled_by",
+          "handled_at"
+        ],
+        "title": "CommentReportResponse",
+        "description": "One report-queue row (exactly ``CommentReportView``): the reported\ncomment in the Teacher-safe shape plus the REPORTER identity — the\nmoderation surface spec §23 admits (被举报用户不可看到举报者身份 is\nthe student-side wall; moderators act on reports and see who filed\nthem). Never composed into a student-facing response."
+      },
+      "CurrentAcademicTermRequest": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "CurrentAcademicTermRequest",
+        "description": "The new term key (spec §16.1): non-blank and within the\n``RewardRedemption.term_key`` column width — the provider's own\nvalidation semantics, enforced at the transport so an unusable term\nnever reaches storage. Blank-after-strip still reaches the service\ngate, which answers the same §29 code (422)."
+      },
+      "CurrentAcademicTermResponse": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "CurrentAcademicTermResponse",
+        "description": "The term the platform is currently on (row value or deployment\nseed — resolved through the provider, never two rules)."
+      },
       "DownloadUrlResponse": {
         "properties": {
           "url": {
@@ -2987,7 +4422,7 @@
           "expires_at"
         ],
         "title": "DownloadUrlResponse",
-        "description": "A short-lived presigned download grant (spec \u00a733.3), minted per\nrequest after the authorization check. The response carries the URL\nand its expiry \u2014 never the object key."
+        "description": "A short-lived presigned download grant (spec §33.3), minted per\nrequest after the authorization check. The response carries the URL\nand its expiry — never the object key."
       },
       "EmailBindRequest": {
         "properties": {
@@ -3001,7 +4436,7 @@
           "email"
         ],
         "title": "EmailBindRequest",
-        "description": "Bind (or re-bind) an email and send its verification token (\u00a75.5)."
+        "description": "Bind (or re-bind) an email and send its verification token (§5.5)."
       },
       "EmailChallengeResponse": {
         "properties": {
@@ -3030,7 +4465,7 @@
           "password"
         ],
         "title": "EmailUnbindRequest",
-        "description": "Unbind the email after re-authentication (spec \u00a75.5)."
+        "description": "Unbind the email after re-authentication (spec §5.5)."
       },
       "EmailVerifyRequest": {
         "properties": {
@@ -3044,7 +4479,7 @@
           "token"
         ],
         "title": "EmailVerifyRequest",
-        "description": "Confirm an email binding with the token from the message (\u00a75.5)."
+        "description": "Confirm an email binding with the token from the message (§5.5)."
       },
       "FileType": {
         "type": "string",
@@ -3054,7 +4489,7 @@
           "SQLITE"
         ],
         "title": "FileType",
-        "description": "The closed upload file-type universe (spec \u00a710/\u00a712).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it."
+        "description": "The closed upload file-type universe (spec §10/§12).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it."
       },
       "GrowthResponse": {
         "properties": {
@@ -3126,7 +4561,7 @@
           "honors"
         ],
         "title": "GrowthResponse",
-        "description": "The \u00a719 growth page answer; every figure is the caller's own."
+        "description": "The §19 growth page answer; every figure is the caller's own."
       },
       "HTTPValidationError": {
         "properties": {
@@ -3154,7 +4589,7 @@
           "preview_token"
         ],
         "title": "ImportConfirmRequest",
-        "description": "Confirm one preview by its single-use server-side token (spec \u00a77.1)."
+        "description": "Confirm one preview by its single-use server-side token (spec §7.1)."
       },
       "ImportConfirmResponse": {
         "properties": {
@@ -3174,7 +4609,7 @@
           "inserted"
         ],
         "title": "ImportConfirmResponse",
-        "description": "All-or-nothing confirm outcome (spec \u00a77.1 steps 5-6)."
+        "description": "All-or-nothing confirm outcome (spec §7.1 steps 5-6)."
       },
       "ImportPreviewErrorResponse": {
         "properties": {
@@ -3303,7 +4738,7 @@
           "expires_at"
         ],
         "title": "ImportPreviewResponse",
-        "description": "Preview outcome (spec \u00a77.1 step 4): counts + per-row errors. The\nvalid rows themselves are NOT echoed \u2014 the count is the contract; the\ntoken names the exact server-stored rows confirm will insert."
+        "description": "Preview outcome (spec §7.1 step 4): counts + per-row errors. The\nvalid rows themselves are NOT echoed — the count is the contract; the\ntoken names the exact server-stored rows confirm will insert."
       },
       "InvalidateRewardLockRequest": {
         "properties": {
@@ -3319,7 +4754,7 @@
           "reason"
         ],
         "title": "InvalidateRewardLockRequest",
-        "description": "Cancel the provisional reward lock (spec \u00a711.3). The reviewer\nreason is mandatory \u2014 it lands on the append-only audit rows."
+        "description": "Cancel the provisional reward lock (spec §11.3). The reviewer\nreason is mandatory — it lands on the append-only audit rows."
       },
       "LoginRequest": {
         "properties": {
@@ -3338,7 +4773,7 @@
           "password"
         ],
         "title": "LoginRequest",
-        "description": "Student login: student number + password (spec \u00a75.6)."
+        "description": "Student login: student number + password (spec §5.6)."
       },
       "LogoutRequest": {
         "properties": {
@@ -3426,7 +4861,147 @@
           "email_verified_at"
         ],
         "title": "MePublic",
-        "description": "The owner's own account page (spec \u00a740): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
+        "description": "The owner's own account page (spec §40): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
+      },
+      "ModerationCommentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModerationCommentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ModerationCommentListResponse"
+      },
+      "ModerationCommentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "is_anonymous": {
+            "type": "boolean",
+            "title": "Is Anonymous"
+          },
+          "author_display": {
+            "type": "string",
+            "title": "Author Display"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "edited": {
+            "type": "boolean",
+            "title": "Edited"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "moderation_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moderation Key"
+          },
+          "hard_hidden": {
+            "type": "boolean",
+            "title": "Hard Hidden",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "parent_id",
+          "content",
+          "is_anonymous",
+          "author_display",
+          "created_at",
+          "updated_at",
+          "edited",
+          "deleted"
+        ],
+        "title": "ModerationCommentResponse",
+        "description": "The Teacher-safe moderation wire shape: exactly\n``ModerationComment``'s fields — 匿名用户 display, the pseudonymous\n``moderation_key`` exactly on anonymous records, the hard-hidden\nflag, and never a raw author id or contact fact."
+      },
+      "ModerationDeleteRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ModerationDeleteRequest",
+        "description": "Reason-mandatory bodies (spec §21.3/§21.4): blank-after-trim is the\nservice's typed rejection; the schema forbids extras so a reason is\nall a caller can send."
       },
       "MyClaimResponse": {
         "properties": {
@@ -3536,7 +5111,186 @@
           "nickname"
         ],
         "title": "NicknameUpdateRequest",
-        "description": "Change the account nickname (spec \u00a75.3)."
+        "description": "Change the account nickname (spec §5.3)."
+      },
+      "NotificationFailureResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "notification_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Notification Id"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "event_key": {
+            "type": "string",
+            "title": "Event Key"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scheduled At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "notification_id",
+          "user_id",
+          "event_key",
+          "channel",
+          "attempts",
+          "last_error",
+          "scheduled_at",
+          "updated_at"
+        ],
+        "title": "NotificationFailureResponse",
+        "description": "One FAILED delivery for the staff failure query (spec §25.4).\n\nOperational state (attempts, error token, channel) — visible only\nbehind the staff management guard, never on the student inbox."
+      },
+      "NotificationFailuresResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationFailureResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "NotificationFailuresResponse",
+        "description": "Offset-paginated failures page, newest failure first."
+      },
+      "NotificationInboxResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "NotificationInboxResponse",
+        "description": "Offset-paginated inbox page (the documented V1 choice)."
+      },
+      "NotificationItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "title",
+          "body",
+          "read_at",
+          "created_at"
+        ],
+        "title": "NotificationItemResponse",
+        "description": "One inbox message: the logical Notification's own fields only."
       },
       "OwnedHonorResponse": {
         "properties": {
@@ -3580,7 +5334,7 @@
           "granted_at"
         ],
         "title": "OwnedHonorResponse",
-        "description": "One honor the caller owns (the \u00a719 \u5df2\u83b7\u5f97\u8363\u8a89 row)."
+        "description": "One honor the caller owns (the §19 已获得荣誉 row)."
       },
       "PasswordChangeRequest": {
         "properties": {
@@ -3599,7 +5353,7 @@
           "new_password"
         ],
         "title": "PasswordChangeRequest",
-        "description": "Rotate the password after re-authentication (spec \u00a75.6)."
+        "description": "Rotate the password after re-authentication (spec §5.6)."
       },
       "PasswordForgotRequest": {
         "properties": {
@@ -3613,7 +5367,7 @@
           "username"
         ],
         "title": "PasswordForgotRequest",
-        "description": "Request a password-reset OTP on the bound phone (spec \u00a75.6)."
+        "description": "Request a password-reset OTP on the bound phone (spec §5.6)."
       },
       "PasswordResetRequest": {
         "properties": {
@@ -3652,7 +5406,7 @@
           "phone"
         ],
         "title": "PhoneChallengeRequest",
-        "description": "Request one registration OTP for ``phone`` (spec \u00a75.4, \u00a733.2)."
+        "description": "Request one registration OTP for ``phone`` (spec §5.4, §33.2)."
       },
       "PhoneChallengeVerifyRequest": {
         "properties": {
@@ -3666,7 +5420,7 @@
           "code"
         ],
         "title": "PhoneChallengeVerifyRequest",
-        "description": "Submit the SMS code for one challenge (spec \u00a75.4)."
+        "description": "Submit the SMS code for one challenge (spec §5.4)."
       },
       "PhoneChangeConfirmRequest": {
         "properties": {
@@ -3686,7 +5440,7 @@
           "code"
         ],
         "title": "PhoneChangeConfirmRequest",
-        "description": "Confirm a phone change with the NEW phone's OTP code (spec \u00a75.4)."
+        "description": "Confirm a phone change with the NEW phone's OTP code (spec §5.4)."
       },
       "PhoneChangeRequest": {
         "properties": {
@@ -3705,7 +5459,7 @@
           "new_phone"
         ],
         "title": "PhoneChangeRequest",
-        "description": "Start a phone change: re-auth plus the NEW phone (spec \u00a75.4)."
+        "description": "Start a phone change: re-auth plus the NEW phone (spec §5.4)."
       },
       "PhoneTokenResponse": {
         "properties": {
@@ -3725,7 +5479,7 @@
           "expires_at"
         ],
         "title": "PhoneTokenResponse",
-        "description": "The single-use proof minted by a verified challenge (spec \u00a75.4)."
+        "description": "The single-use proof minted by a verified challenge (spec §5.4)."
       },
       "RankingEntryResponse": {
         "properties": {
@@ -3762,7 +5516,55 @@
           "rank"
         ],
         "title": "RankingEntryResponse",
-        "description": "One public leaderboard row \u2014 EXACTLY the spec \u00a717/\u00a740 shape; any\nadditional field (student number, contact, user id) is unrepresentable\nbecause the model has no field for it."
+        "description": "One public leaderboard row — EXACTLY the spec §17/§40 shape; any\nadditional field (student number, contact, user id) is unrepresentable\nbecause the model has no field for it."
+      },
+      "RatingRequest": {
+        "properties": {
+          "rating": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rating"
+        ],
+        "title": "RatingRequest"
+      },
+      "RatingResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "rating": {
+            "type": "integer",
+            "title": "Rating"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "rating",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RatingResponse",
+        "description": "The rater's own rating echo (spec §20: the PUBLIC surface stays\naggregate-only; your own value back to you is not a disclosure)."
       },
       "RatingSummaryResponse": {
         "properties": {
@@ -3781,7 +5583,49 @@
           "count"
         ],
         "title": "RatingSummaryResponse",
-        "description": "Average + count only (spec \u00a720/\u00a740: no rater identity)."
+        "description": "Average + count only (spec §20/§40: no rater identity)."
+      },
+      "ReactionRequest": {
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Emoji"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "emoji"
+        ],
+        "title": "ReactionRequest"
+      },
+      "ReactionResponse": {
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "title": "Emoji"
+          },
+          "added": {
+            "type": "boolean",
+            "title": "Added"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "emoji",
+          "added",
+          "counts"
+        ],
+        "title": "ReactionResponse",
+        "description": "The toggle verdict plus the comment's per-emoji reaction counts —\nthe echoing read the reaction service's docstring delegates to this\nsurface."
       },
       "RedemptionFulfillRequest": {
         "properties": {
@@ -3801,7 +5645,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "RedemptionFulfillRequest",
-        "description": "The optional delivery note (spec \u00a716.2: approval and delivery are\nseparate transitions)."
+        "description": "The optional delivery note (spec §16.2: approval and delivery are\nseparate transitions)."
       },
       "RedemptionRejectRequest": {
         "properties": {
@@ -3818,7 +5662,7 @@
           "reason"
         ],
         "title": "RedemptionRejectRequest",
-        "description": "A rejection's mandatory context (spec \u00a716.2): blank is not a\nreason \u2014 the service re-validates after the strip."
+        "description": "A rejection's mandatory context (spec §16.2): blank is not a\nreason — the service re-validates after the strip."
       },
       "RedemptionResponse": {
         "properties": {
@@ -3861,7 +5705,7 @@
           "created_at"
         ],
         "title": "RedemptionResponse",
-        "description": "The student's view of one redemption (spec \u00a716.1): request-time\nsnapshots plus lifecycle state."
+        "description": "The student's view of one redemption (spec §16.1): request-time\nsnapshots plus lifecycle state."
       },
       "RedemptionReviewResponse": {
         "properties": {
@@ -3941,6 +5785,17 @@
               }
             ],
             "title": "Fulfillment Note"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
           }
         },
         "additionalProperties": false,
@@ -3956,7 +5811,7 @@
           "item_name"
         ],
         "title": "RedemptionReviewResponse",
-        "description": "The staff view: the student fields plus the review/fulfillment\ntrail and the display-name enrichment (nickname only \u2014 the directory\nport's shape, no contact fields to leak)."
+        "description": "The staff view: the student fields plus the review/fulfillment\ntrail and the display-name enrichment (nickname only — the directory\nport's shape, no contact fields to leak). ``rejection_reason`` (PR\n#2 final review pts-F1) is staff-only: the student DTO never\ncarries it (the notification already delivers the reason to the\nrequester)."
       },
       "RefreshRequest": {
         "properties": {
@@ -4003,7 +5858,201 @@
           "password"
         ],
         "title": "RegisterRequest",
-        "description": "Register one whitelisted student (spec \u00a75.1-5.4)."
+        "description": "Register one whitelisted student (spec §5.1-5.4)."
+      },
+      "ReportClosureResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "comment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Comment Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "handled_by": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Handled By"
+          },
+          "handled_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Handled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "comment_id",
+          "status",
+          "handled_by",
+          "handled_at"
+        ],
+        "title": "ReportClosureResponse",
+        "description": "The closed report row's facts back to the moderator: identity of\nthe decision target, the terminal status, and the closure stamps\n(the actor is the caller themself, so ``handled_by`` is no\ndisclosure). The queue listing beside it renders the same fields\nin the full row shape."
+      },
+      "ReportDismissRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ReportDismissRequest",
+        "description": "Dismissal body (PR #2 hardening step 10): ``reason`` is a\nmandatory part of the governance decision — absent here is the 422\nparse refusal, blank-after-trim is the service's typed rejection,\nand ``extra=\"forbid\"`` keeps a reason all a caller can send (the\nModerationDeleteRequest shape)."
+      },
+      "ReportHandleRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReportHandleRequest",
+        "description": "Handling body: the optional governor note, normalized by the\nservice with the filing-note rules (blank is no note)."
+      },
+      "ReportRequest": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "ReportRequest"
+      },
+      "ReportResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "comment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Comment Id"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "comment_id",
+          "category",
+          "note",
+          "status",
+          "created_at"
+        ],
+        "title": "ReportResponse",
+        "description": "The caller's OWN report row (the report service returns it to the\nreporter; one's own identity is not a leak, and no other reporter's\nidentity exists in the shape)."
+      },
+      "RevealIdentityResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "nickname",
+          "username"
+        ],
+        "title": "RevealIdentityResponse",
+        "description": "Exactly ``RevealedIdentity``: the one wire shape where the student\nnumber (``username``) is representable at all (spec §21.4)."
+      },
+      "RevealRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RevealRequest",
+        "description": "The reveal reason (spec §21.4 每次追溯): mandatory (blank-after-trim\nis the service's typed rejection) and capped at 1000 characters on the\nraw body — the audit payload is bounded material, not a moderation\nessay."
       },
       "ReviewQueueItemResponse": {
         "properties": {
@@ -4133,7 +6182,7 @@
           "download_url"
         ],
         "title": "ReviewQueueItemResponse",
-        "description": "One review-queue row (spec \u00a741/\u00a728): the VALIDATED submission\nwith the claim/task context the reviewer needs to judge it. The\n``download_url`` is the API path that mints the short-lived\npresigned link on demand (authorized per request), not a presigned\nURL that would expire inside a listed page."
+        "description": "One review-queue row (spec §41/§28): the VALIDATED submission\nwith the claim/task context the reviewer needs to judge it. The\n``download_url`` is the API path that mints the short-lived\npresigned link on demand (authorized per request), not a presigned\nURL that would expire inside a listed page."
       },
       "RevisionRequiredRequest": {
         "properties": {
@@ -4149,7 +6198,7 @@
           "note"
         ],
         "title": "RevisionRequiredRequest",
-        "description": "Return the submission for fixes (spec \u00a711.3). The note \u2014 the\nteacher's guidance \u2014 is mandatory at the transport."
+        "description": "Return the submission for fixes (spec §11.3). The note — the\nteacher's guidance — is mandatory at the transport."
       },
       "RevisionRequiredResponse": {
         "properties": {
@@ -4180,7 +6229,7 @@
           "revision_deadline_at"
         ],
         "title": "RevisionRequiredResponse",
-        "description": "The claim state after \u9000\u56de/\u5224\u65e0\u6548: REVISION_REQUIRED with the \u00a711.4\nrevision deadline. ``reward_lock_status`` distinguishes the two \u2014\npreserved PROVISIONAL versus cancelled INVALIDATED."
+        "description": "The claim state after 退回/判无效: REVISION_REQUIRED with the §11.4\nrevision deadline. ``reward_lock_status`` distinguishes the two —\npreserved PROVISIONAL versus cancelled INVALIDATED."
       },
       "RewardItemResponse": {
         "properties": {
@@ -4254,10 +6303,6 @@
             ],
             "title": "Available Until"
           },
-          "requires_manual_review": {
-            "type": "boolean",
-            "title": "Requires Manual Review"
-          },
           "window_open": {
             "type": "boolean",
             "title": "Window Open"
@@ -4274,11 +6319,10 @@
           "per_user_term_limit",
           "available_from",
           "available_until",
-          "requires_manual_review",
           "window_open"
         ],
         "title": "RewardItemResponse",
-        "description": "One catalogue row for the student listing (spec \u00a716/\u00a742). The\nadmin-only ``fulfillment_instructions`` and the enabled flag (always\ntrue in this listing) stay server-side."
+        "description": "One catalogue row for the student listing (spec §16/§42). The\nadmin-only ``fulfillment_instructions``, the enabled flag (always\ntrue in this listing), and the dormant\n``requires_manual_review`` column (V1 reviews every redemption\nmanually; PR #2 hardening G13 方案一) stay server-side."
       },
       "RewardsListResponse": {
         "properties": {
@@ -4323,7 +6367,7 @@
           "password"
         ],
         "title": "StaffInvitationAcceptRequest",
-        "description": "Trade the single-use invitation token for a staff account (\u00a75.8)."
+        "description": "Trade the single-use invitation token for a staff account (§5.8)."
       },
       "StaffLoginRequest": {
         "properties": {
@@ -4347,7 +6391,7 @@
           "totp_code"
         ],
         "title": "StaffLoginRequest",
-        "description": "Staff login: verified email + password + TOTP/recovery code (\u00a75.8)."
+        "description": "Staff login: verified email + password + TOTP/recovery code (§5.8)."
       },
       "SubmissionPublic": {
         "properties": {
@@ -4410,7 +6454,7 @@
           "created_at"
         ],
         "title": "SubmissionPublic",
-        "description": "Privacy-safe Submission read DTO (spec \u00a711, \u00a740).\n\nDeliberately minimal: no ``object_key`` (downloads go through\nshort-lived signed URLs issued by an authorized route), no reviewer\nidentity, no retention/legal-hold internals. The validation and\nreview status values are the frozen enum strings."
+        "description": "Privacy-safe Submission read DTO (spec §11, §40).\n\nDeliberately minimal: no ``object_key`` (downloads go through\nshort-lived signed URLs issued by an authorized route), no reviewer\nidentity, no retention/legal-hold internals. The validation and\nreview status values are the frozen enum strings."
       },
       "SubmissionValidationResponse": {
         "properties": {
@@ -4469,7 +6513,7 @@
           "report"
         ],
         "title": "SubmissionValidationResponse",
-        "description": "The owner's view of one submission's machine-validation outcome\n(spec \u00a711.1, \u00a712.4): status projections plus the persisted report \u2014\n``None`` while the run has not reached a terminal state."
+        "description": "The owner's view of one submission's machine-validation outcome\n(spec §11.1, §12.4): status projections plus the persisted report —\n``None`` while the run has not reached a terminal state."
       },
       "TaskCardResponse": {
         "properties": {
@@ -4545,7 +6589,7 @@
           "rating"
         ],
         "title": "TaskCardResponse",
-        "description": "The \u00a742 Task Card wire shape."
+        "description": "The §42 Task Card wire shape."
       },
       "TaskCreateRequest": {
         "properties": {
@@ -4670,7 +6714,7 @@
           "max_file_size_bytes"
         ],
         "title": "TaskCreateRequest",
-        "description": "Create one DRAFT task (spec \u00a76). Enum-ish fields stay raw strings:\nthe service is the single validation/normalization authority."
+        "description": "Create one DRAFT task (spec §6). Enum-ish fields stay raw strings:\nthe service is the single validation/normalization authority."
       },
       "TaskDetailResponse": {
         "properties": {
@@ -4881,7 +6925,7 @@
           "submission_counts"
         ],
         "title": "TaskStatisticsResponse",
-        "description": "The Teacher workbench statistics aggregate (spec \u00a741): counts only,\nby construction \u2014 no Assignment row material ever rides along."
+        "description": "The Teacher workbench statistics aggregate (spec §41): counts only,\nby construction — no Assignment row material ever rides along."
       },
       "TaskTransitionResponse": {
         "properties": {
@@ -5203,7 +7247,7 @@
           "created_at"
         ],
         "title": "TeacherTaskListItemResponse",
-        "description": "One workbench list row (spec \u00a741 Task list): card-level facts plus\nlifecycle timestamps, every status including DRAFT. Contract fields\nride only ``TeacherTaskResponse`` (the detail)."
+        "description": "One workbench list row (spec §41 Task list): card-level facts plus\nlifecycle timestamps, every status including DRAFT. Contract fields\nride only ``TeacherTaskResponse`` (the detail)."
       },
       "TeacherTaskListResponse": {
         "properties": {
@@ -5408,7 +7452,7 @@
           "created_at"
         ],
         "title": "TeacherTaskResponse",
-        "description": "The staff workbench's full view of a task (spec \u00a741): everything the\nowner configured, including contract fields frozen at first publish.\n``owner_teacher_id`` stays out \u2014 staff know whose surface they called,\nand the id is not needed to operate the workbench (spec \u00a740)."
+        "description": "The staff workbench's full view of a task (spec §41): everything the\nowner configured, including contract fields frozen at first publish.\n``owner_teacher_id`` stays out — staff know whose surface they called,\nand the id is not needed to operate the workbench (spec §40)."
       },
       "TokenPairResponse": {
         "properties": {
@@ -5432,7 +7476,7 @@
           "csrf_token"
         ],
         "title": "TokenPairResponse",
-        "description": "One issued session (spec \u00a75.6) \u2014 cookie-only refresh delivery.\n\nThe long-lived refresh token NEVER rides in the body:\nit travels exclusively in the HttpOnly refresh cookie the response\nsets, so a JSON body (loggers, proxies, XSS-readable storage) can\nnever leak a live refresh credential. The body's ``access_token`` is\nthe short-lived JWT \u2014 including the ``must_setup_totp`` pending staff\nsession's, which is deliberate: it is not the long-lived credential\nand confined-by-construction to the TOTP setup endpoints.\n``csrf_token`` mirrors the non-HttpOnly CSRF cookie so scripted\nclients can echo it without parsing ``Set-Cookie``."
+        "description": "One issued session (spec §5.6) — cookie-only refresh delivery.\n\nThe long-lived refresh token NEVER rides in the body:\nit travels exclusively in the HttpOnly refresh cookie the response\nsets, so a JSON body (loggers, proxies, XSS-readable storage) can\nnever leak a live refresh credential. The body's ``access_token`` is\nthe short-lived JWT — including the ``must_setup_totp`` pending staff\nsession's, which is deliberate: it is not the long-lived credential\nand confined-by-construction to the TOTP setup endpoints.\n``csrf_token`` mirrors the non-HttpOnly CSRF cookie so scripted\nclients can echo it without parsing ``Set-Cookie``."
       },
       "TotpConfirmRequest": {
         "properties": {
@@ -5446,7 +7490,7 @@
           "code"
         ],
         "title": "TotpConfirmRequest",
-        "description": "Confirm the pending TOTP credential with one valid code (\u00a75.8)."
+        "description": "Confirm the pending TOTP credential with one valid code (§5.8)."
       },
       "TotpConfirmResponse": {
         "properties": {
@@ -5464,7 +7508,7 @@
           "recovery_codes"
         ],
         "title": "TotpConfirmResponse",
-        "description": "Recovery codes from enabling 2FA, shown exactly once (spec \u00a75.8)."
+        "description": "Recovery codes from enabling 2FA, shown exactly once (spec §5.8)."
       },
       "TotpSetupResponse": {
         "properties": {
@@ -5483,7 +7527,7 @@
           "otpauth_uri"
         ],
         "title": "TotpSetupResponse",
-        "description": "A freshly generated TOTP credential, displayed exactly once (\u00a75.8)."
+        "description": "A freshly generated TOTP credential, displayed exactly once (§5.8)."
       },
       "UploadCompleteRequest": {
         "properties": {
@@ -5498,7 +7542,7 @@
           "intent_id"
         ],
         "title": "UploadCompleteRequest",
-        "description": "Notify the backend that the presigned PUT landed (spec \u00a710 step 5).\n\nThe intent id travels in the BODY: the URL shape stays the spec \u00a728\n``POST /submissions/upload-complete`` (the resource being completed\nis the single-use grant, not a Submission yet \u2014 there is no\nsubmission id to put in the path)."
+        "description": "Notify the backend that the presigned PUT landed (spec §10 step 5).\n\nThe intent id travels in the BODY: the URL shape stays the spec §28\n``POST /submissions/upload-complete`` (the resource being completed\nis the single-use grant, not a Submission yet — there is no\nsubmission id to put in the path)."
       },
       "UploadIntentRequest": {
         "properties": {
@@ -5530,7 +7574,7 @@
           "size"
         ],
         "title": "UploadIntentRequest",
-        "description": "Request an upload intent (spec \u00a710 step 1): the claim being\nsubmitted against, the display filename, the declared file type, and\nthe declared byte size the backend checks against the Task's file\npolicy before issuing a presigned URL."
+        "description": "Request an upload intent (spec §10 step 1): the claim being\nsubmitted against, the display filename, the declared file type, and\nthe declared byte size the backend checks against the Task's file\npolicy before issuing a presigned URL."
       },
       "UploadIntentResponse": {
         "properties": {
@@ -5547,16 +7591,29 @@
             "type": "string",
             "format": "date-time",
             "title": "Expires At"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers"
+          },
+          "pinned_content_length": {
+            "type": "integer",
+            "title": "Pinned Content Length"
           }
         },
         "type": "object",
         "required": [
           "intent_id",
           "upload_url",
-          "expires_at"
+          "expires_at",
+          "headers",
+          "pinned_content_length"
         ],
         "title": "UploadIntentResponse",
-        "description": "The issued grant: the intent id for the later finalize call, the\nshort-lived presigned upload URL, and its expiry instant."
+        "description": "The issued grant: the intent id for the later finalize call, the\nshort-lived presigned upload URL, its expiry instant, and the\nsigning contract PASSED THROUGH from the storage adapter — the PUT\nheaders the URL signed (``headers``) and the pinned byte count\n(``pinned_content_length``). The client echoes the headers verbatim\n(write-once condition, pinned content type); reconstructing them\nfrom documentation is a contract gap the composition smoke\nsurfaced (PR #2 hardening step 13).\n\nBrowser semantics (hardening P4c): ``headers`` NEVER contains\nContent-Length — a browser cannot set it programmatically (a\nforbidden request header, MDN), so advertising it would tell the\nclient to do the impossible. Instead the client must send a body of\nEXACTLY ``pinned_content_length`` bytes: a browser does that with a\nBlob/File whose declared size equals the pin (the browser then\nframes Content-Length itself and the signature holds), a non-browser\nclient sets Content-Length explicitly."
       },
       "UserPublic": {
         "properties": {
@@ -5589,7 +7646,7 @@
           "status"
         ],
         "title": "UserPublic",
-        "description": "Public account view returned to the account owner (spec \u00a740).\n\nThe owner sees their own username/student number; no other surface\nexposes it. Status is included because ACTIVE (vs PENDING_PHONE)\nis the registration outcome clients branch on."
+        "description": "Public account view returned to the account owner (spec §40).\n\nThe owner sees their own username/student number; no other surface\nexposes it. Status is included because ACTIVE (vs PENDING_PHONE)\nis the registration outcome clients branch on."
       },
       "UserStatus": {
         "type": "string",
@@ -5691,7 +7748,7 @@
           "message"
         ],
         "title": "ValidationFindingPayload",
-        "description": "One bounded \u00a712.4 finding sample (error or warning)."
+        "description": "One bounded §12.4 finding sample (error or warning)."
       },
       "ValidationReportPayload": {
         "properties": {
@@ -5795,7 +7852,50 @@
           "preview_rows"
         ],
         "title": "ValidationReportPayload",
-        "description": "The student/reviewer-safe \u00a712.4 report, exactly as persisted.\n\nField-by-field over the stored JSONB (the ``report_to_json`` shape):\ncounts stay exact, finding/preview lists are already bounded by the\nreport builder, and no object key or parser internal exists in the\nsource shape to leak."
+        "description": "The student/reviewer-safe §12.4 report, exactly as persisted.\n\nField-by-field over the stored JSONB (the ``report_to_json`` shape):\ncounts stay exact, finding/preview lists are already bounded by the\nreport builder, and no object key or parser internal exists in the\nsource shape to leak."
+      },
+      "VoteRequest": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1
+            ],
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "VoteRequest"
+      },
+      "VoteResponse": {
+        "properties": {
+          "current_value": {
+            "type": "integer",
+            "title": "Current Value"
+          },
+          "likes": {
+            "type": "integer",
+            "title": "Likes"
+          },
+          "dislikes": {
+            "type": "integer",
+            "title": "Dislikes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_value",
+          "likes",
+          "dislikes"
+        ],
+        "title": "VoteResponse",
+        "description": "The caller's post-transition stance plus the comment's totals\n(exactly ``VoteResult``): the surface echoes the toggle without a\nsecond read."
       },
       "WalletResponse": {
         "properties": {
@@ -5810,6 +7910,10 @@
           "spendable_points": {
             "type": "integer",
             "title": "Spendable Points"
+          },
+          "point_debt": {
+            "type": "integer",
+            "title": "Point Debt"
           }
         },
         "additionalProperties": false,
@@ -5817,10 +7921,11 @@
         "required": [
           "available_points",
           "earned_points",
-          "spendable_points"
+          "spendable_points",
+          "point_debt"
         ],
         "title": "WalletResponse",
-        "description": "The wallet strip (spec \u00a715.1/\u00a716.2): the projection's figures\nplus the spendable derivation."
+        "description": "The wallet strip (spec §15.1/§16.2): the projection's figures\nplus the spendable derivation, CLAMPED for display (see the module\ndocstring): available/spendable never render below 0 and the\noverdraft rides as the explicit ``point_debt``."
       },
       "app__modules__points__router__ReviewQueueResponse": {
         "properties": {
