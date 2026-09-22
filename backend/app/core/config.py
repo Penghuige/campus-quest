@@ -241,6 +241,17 @@ class Settings(BaseSettings):
     # dispatch is safe by the validation service's own tx1 gates (see
     # the requeue job's docstring).
     uploaded_dispatch_grace_seconds: int = 120
+    # Optional management-network restriction for staff/admin surfaces
+    # (Plan 08 T8 step 4). TRANSITIONAL HOME: these env fields hold the
+    # values until Plan 08 T5 moves them into the audited system_settings
+    # store; the key names are the ones T5's settings registration will
+    # carry, so deployments written against them survive the move.
+    # ``management_network_cidrs`` is comma-separated CIDRs parsed by
+    # app/core/admin_network_policy.py (standard-library ipaddress; an
+    # invalid entry fails policy construction loudly). Disabled (the
+    # default) is pure pass-through — 2FA/RBAC still apply.
+    management_network_enabled: bool = False
+    management_network_cidrs: str = ""
 
     @field_validator("business_timezone")
     @classmethod
