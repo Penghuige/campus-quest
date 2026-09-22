@@ -23,7 +23,11 @@ Authorization shapes:
   short-lived URL — providers sign without checking existence, so the
   business authorization is entirely this service's job.
 - ``list_review_queue`` mirrors the workbench-list visibility (spec
-  §41): tasks the actor owns OR collaborates on — Admin is deliberately
+  §41): tasks the actor owns OR collaborates on holding
+  ``REVIEW_SUBMISSIONS`` — the collaborator arm of the visibility is
+  capability-scoped like every other review surface, so a VIEW_TASK-only
+  collaborator reads the workbench detail but not the student
+  submissions' filenames and validation previews. Admin is deliberately
   not special-cased to the whole site (the §41 admin console has its
   own surfaces). The pool is machine-VALIDATED submissions whose review
   is still undecided (``PENDING_REVIEW``/``UNDER_REVIEW``): failed
@@ -190,9 +194,21 @@ class SubmissionQueryService:
     ) -> tuple[list[ReviewQueueItem], int]:
         """One offset page of the actor's review queue (spec §28/§41):
         VALIDATED-but-undecided submissions on tasks the actor owns or
-        collaborates on, oldest first (FIFO review)."""
+        reviews as a ``REVIEW_SUBMISSIONS`` collaborator, oldest first
+        (FIFO review)."""
         collaborated = select(TaskCollaborator.task_id).where(
-            TaskCollaborator.teacher_id == actor.user_id
+            TaskCollaborator.teacher_id == actor.user_id,
+            # Capability-scoped collaborator visibility (spec §4.2/§41):
+            # the queue is the review worklist, so the subquery admits
+            # only collaborators actually holding REVIEW_SUBMISSIONS —
+            # the same standing that may decide these submissions
+            # (``_require_download_standing`` and the review service
+            # below). The ARRAY ``@>`` containment mirrors the models'
+            # closed-capability CHECK vocabulary; a VIEW_TASK-only
+            # collaborator row matches nothing here.
+            TaskCollaborator.permissions.contains(
+                [CollaboratorPermission.REVIEW_SUBMISSIONS.value]
+            ),
         )
         visibility = or_(
             Task.owner_teacher_id == actor.user_id, Task.id.in_(collaborated)

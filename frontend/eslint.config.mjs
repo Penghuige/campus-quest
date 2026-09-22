@@ -8,5 +8,8 @@ import nextTypescript from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTypescript,
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  // e2e/ holds the Plan 09 Task 2 Playwright spec, written ahead of the
+  // runner: @playwright/test is installed by Plan 10, and until then ESLint
+  // cannot resolve its import. tsconfig already excludes the directory.
+  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "e2e/**"]),
 ]);

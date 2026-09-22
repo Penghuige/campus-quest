@@ -26,6 +26,13 @@ Three FastAPI dependencies, one per policy layer:
   Teacher. Admin is deliberately NOT a participant (the PR #2 hardening
   ruling: Admin's community powers are the governance surfaces, not
   posting/voting).
+- ``require_active_student_or_staff_management_actor`` — the guard for
+  the one surface both populations legitimately shares, the submission
+  download (spec §33.3, PR #4 hardening): the STUDENT arm is the plain
+  §5.7 state gate (an owner never establishes TOTP), the TEACHER/ADMIN
+  arm is the full management gate (ACTIVE + confirmed TOTP, §33.4) —
+  resource-level standing stays judged per submission in the callers'
+  services.
 
 Design decisions:
 
@@ -108,6 +115,7 @@ __all__ = [
     "require_active_community_actor",
     "require_active_staff_actor",
     "require_active_student_actor",
+    "require_active_student_or_staff_management_actor",
     "require_admin_actor",
     "require_staff_management_actor",
 ]
@@ -452,4 +460,48 @@ async def require_active_community_actor(
             _ACCOUNT_NOT_ACTIVE_MESSAGE,
             status_code=403,
         )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_active_student_or_staff_management_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The guard for the one surface both populations legitimately
+    shares: the submission download (spec §33.3, PR #4 hardening 5.2).
+
+    The route serves the owning STUDENT and the reviewing staff (task
+    owner teacher / ``REVIEW_SUBMISSIONS`` collaborator / Admin) through
+    one path, so the arm is selected by role: the student arm is exactly
+    ``require_active_student_actor``'s state gate — no TOTP, a Student
+    never establishes one — while the staff arm adds the management
+    gate's CONFIRMED-TOTP check (§33.4), so a pending-setup staff
+    account cannot pull a presigned GET before the second factor is
+    proven. The role enum is closed (STUDENT is the only non-staff
+    member), so no ``PERMISSION_DENIED`` branch exists: every role has
+    exactly one arm, and check order still follows the family — role
+    selects the arm, then status (``ACCOUNT_NOT_ACTIVE``), then the
+    staff-only 2FA gate (``TotpSetupRequiredError`` → 403
+    ``TOTP_SETUP_REQUIRED``, rendered by the app-wide identity handler).
+
+    Resource-level standing — whose submission, which task — is NOT this
+    guard's question: the submissions query service judges it per
+    submission after the port-boundary gate (backend-engineering §16).
+    """
+    user = await _resolve_user(credentials, db, codec, clock)
+    staff = rbac.is_staff(user.role)
+    if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    if staff:
+        credential = await db.get(TotpCredential, user.id)
+        if credential is None or credential.confirmed_at is None:
+            raise TotpSetupRequiredError(_TOTP_SETUP_REQUIRED_MESSAGE)
     return Actor(user_id=user.id, role=Role(user.role))

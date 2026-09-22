@@ -3,8 +3,8 @@
 # Backend: lint (ruff), types (mypy strict on app), unit+worker tests,
 # PostgreSQL/Redis/MinIO integration tests, and a clean-database Alembic
 # upgrade + `alembic check` proving migrations match the models.
-# Frontend: install, typecheck, lint, production build. Playwright is
-# intentionally absent; it lands with the E2E plan (Plan 10).
+# Frontend: install, typecheck, lint, unit tests, production build.
+# Playwright is intentionally absent; it lands with the E2E plan (Plan 10).
 #
 # Triggers: pushes to main, plus pull requests targeting main. Working
 # branches get CI through their PR (open the PR as a draft immediately);
@@ -107,6 +107,17 @@ jobs:
         working-directory: backend
         run: uv run mypy
 
+      # Contract-freshness gate, backend half (PR #4 review P1): the
+      # committed openapi.snapshot.json must match what the CURRENT
+      # backend serves. The frontend job regenerates the TS types from
+      # the same snapshot — together the two halves make "green build
+      # against a stale schema" impossible.
+      - name: OpenAPI snapshot freshness
+        working-directory: backend
+        run: |
+          uv run python scripts/dump_openapi.py ../frontend/openapi.snapshot.json
+          git diff --exit-code ../frontend/openapi.snapshot.json
+
       # MinIO cannot be a job `services` entry: service containers cannot
       # override the image CMD, and this image's default CMD does not start
       # the server (infra/docker-compose.yml passes `server /data` too).
@@ -183,11 +194,23 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      # Contract-freshness gate, frontend half (PR #4 review P1): the
+      # committed schema.d.ts must be what the committed OpenAPI
+      # snapshot generates — a hand-edited or stale type file fails
+      # here instead of green-lighting a drifted integration.
+      - name: Generated TS types freshness
+        run: |
+          npm run api:types:snapshot
+          git diff --exit-code src/lib/api/schema.d.ts
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
 
       - name: Production build
         run: npm run build

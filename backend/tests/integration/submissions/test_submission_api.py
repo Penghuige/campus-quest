@@ -20,9 +20,11 @@ surfaces the task brief freezes:
 - downloads: the short-lived URL is minted only after authorization
   (owner, task owner, REVIEW_SUBMISSIONS collaborator; never an
   unrelated teacher or another student) and the response carries the
-  URL, never the key;
+  URL, never the key; the staff arm of the route's guard additionally
+  demands a confirmed TOTP credential (PR #4 hardening 5.2);
 - the teacher review queue: VALIDATED-but-undecided submissions on
-  own/collaborating tasks only, oldest first, offset-paginated, with
+  own tasks or tasks the actor collaborates on holding
+  REVIEW_SUBMISSIONS only, oldest first, offset-paginated, with
   claim/task context (platform/keyword), the locked reward tier, the
   validation summary + preview, and the API download path;
 - the three review actions through the API: approve (claim COMPLETED,
@@ -824,6 +826,72 @@ async def test_download_url_issued_only_after_authorization(
     assert _envelope(missing)["code"] == "NOT_FOUND"
 
 
+@pytest.mark.integration
+async def test_download_staff_arm_requires_confirmed_totp(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """The staff arm of the download gate passes the management 2FA gate
+    (spec §33.4; PR #4 hardening 5.2): a pending-TOTP task owner — whose
+    standing would otherwise pass the service gate — is refused with the
+    setup-forcing 403 and no URL is minted; the owning Student downloads
+    regardless (students never establish TOTP); confirming the teacher's
+    credential flips the same request through."""
+    # A TEACHER with reviewer standing but NO confirmed TOTP credential.
+    owner = await _seed_user(db_session, username=_OWNER_EMAIL, role=Role.TEACHER)
+    owner_tokens = await _session_tokens(db_session, api_clock, owner)
+    student = await _seed_user(db_session, username=_STUDENT_NUMBER, role=Role.STUDENT)
+    student_tokens = await _session_tokens(db_session, api_clock, student)
+    task = _seed_task(owner.id)
+    db_session.add(task)
+    await db_session.flush()
+    assignment = _seed_assignment(task.id, "考研经验")
+    db_session.add(assignment)
+    await db_session.flush()
+    claim = _seed_claim(task, assignment, student.id)
+    db_session.add(claim)
+    await db_session.flush()
+    submission = _seed_submission(claim)
+    db_session.add(submission)
+    await db_session.flush()
+    claim.latest_submission_id = submission.id
+    await db_session.flush()
+
+    # The owning Student is untouched by the staff arm's gate.
+    as_student = await client.get(
+        f"/api/v1/submissions/{submission.id}/download",
+        headers=_bearer(student_tokens),
+    )
+    assert as_student.status_code == 200, as_student.text
+
+    # Pending-TOTP staff: refused at the transport boundary with the
+    # distinct setup-forcing code, before any ownership judgment runs.
+    denied = await client.get(
+        f"/api/v1/submissions/{submission.id}/download",
+        headers=_bearer(owner_tokens),
+    )
+    assert denied.status_code == 403, denied.text
+    assert _envelope(denied)["code"] == "TOTP_SETUP_REQUIRED"
+
+    # Confirming the credential is the only change: the same request —
+    # same standing (task owner), same token — now passes.
+    db_session.add(
+        TotpCredential(
+            user_id=owner.id,
+            secret_encrypted=b"test-stand-in-secret",
+            confirmed_at=api_clock.now(),
+        )
+    )
+    await db_session.flush()
+    allowed = await client.get(
+        f"/api/v1/submissions/{submission.id}/download",
+        headers=_bearer(owner_tokens),
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert set(allowed.json()) == _DOWNLOAD_FIELDS
+
+
 # --- the teacher review queue (spec §28, §41) ----------------------------------------
 
 
@@ -1044,6 +1112,85 @@ async def test_teacher_review_queue_context_fields_and_pagination(
     )
     assert colleague_view.status_code == 200, colleague_view.text
     assert colleague_view.json()["total"] == 0
+
+
+@pytest.mark.integration
+async def test_review_queue_collaborator_visibility_requires_review_capability(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+) -> None:
+    """The collaborator arm of the queue visibility is capability-scoped
+    (spec §4.2/§41; PR #4 hardening 5.1): a REVIEW_SUBMISSIONS
+    collaborator sees the task's undecided submissions, a VIEW_TASK-only
+    collaborator does not — the queue is the review worklist, not the
+    workbench detail, so the student filenames and validation previews
+    stay invisible without the review capability."""
+    owner, _ = await _seed_management_teacher(
+        db_session, api_clock, username=_OWNER_EMAIL
+    )
+    viewer, viewer_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_VIEW_COLLEAGUE_EMAIL
+    )
+    reviewer, reviewer_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_REVIEW_COLLEAGUE_EMAIL
+    )
+    student = await _seed_user(db_session, username=_STUDENT_NUMBER, role=Role.STUDENT)
+
+    task = _seed_task(owner.id, title="能力过滤任务")
+    db_session.add(task)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            # The two collaborator standings the fix separates.
+            TaskCollaborator(
+                task_id=task.id, teacher_id=viewer.id, permissions=["VIEW_TASK"]
+            ),
+            TaskCollaborator(
+                task_id=task.id,
+                teacher_id=reviewer.id,
+                permissions=["REVIEW_SUBMISSIONS"],
+            ),
+        ]
+    )
+    assignment = _seed_assignment(task.id, "协作者关键词")
+    db_session.add(assignment)
+    await db_session.flush()
+    claim = _seed_claim(
+        task,
+        assignment,
+        student.id,
+        status=ClaimStatus.UNDER_REVIEW.value,
+        reward_lock_status=RewardLockStatus.PROVISIONAL.value,
+        reward_tier_locked=100,
+        locked_reward_points=100,
+        reward_locked_at=_T0,
+    )
+    db_session.add(claim)
+    await db_session.flush()
+    row = _seed_submission(claim, submitted_at=_T0 - timedelta(hours=1))
+    db_session.add(row)
+    await db_session.flush()
+    claim.latest_submission_id = row.id
+    await db_session.flush()
+
+    as_reviewer = await client.get(
+        "/api/v1/teacher/submissions/review-queue", headers=_bearer(reviewer_tokens)
+    )
+    assert as_reviewer.status_code == 200, as_reviewer.text
+    body = as_reviewer.json()
+    assert body["total"] == 1
+    assert [item["submission_id"] for item in body["items"]] == [str(row.id)]
+
+    as_viewer = await client.get(
+        "/api/v1/teacher/submissions/review-queue", headers=_bearer(viewer_tokens)
+    )
+    assert as_viewer.status_code == 200, as_viewer.text
+    # VIEW_TASK alone lists nothing: not the row, not the filename, not
+    # the validation preview it carries.
+    assert as_viewer.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert str(row.id) not in as_viewer.text
+    assert row.original_filename not in as_viewer.text
 
 
 # --- the review actions (spec §11.3, §14) ---------------------------------------------

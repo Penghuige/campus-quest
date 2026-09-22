@@ -45,6 +45,7 @@ from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
     require_active_community_actor,
+    require_active_student_or_staff_management_actor,
     require_admin_actor,
     require_staff_management_actor,
 )
@@ -159,6 +160,17 @@ def _build_app(db: AsyncSession, clock: Clock) -> FastAPI:
     ) -> dict[str, str]:
         # Stand-in for the ordinary community participant surfaces
         # (comments, votes, reactions, reports).
+        return {"user_id": str(actor.user_id), "role": actor.role.value}
+
+    @app.post("/test/download-op")
+    async def download_op(
+        actor: Annotated[
+            Actor, Depends(require_active_student_or_staff_management_actor)
+        ],
+    ) -> dict[str, str]:
+        # Stand-in for the submission download surface (spec §33.3): the
+        # one route the two populations share — owning Students and
+        # reviewing staff (PR #4 hardening 5.2).
         return {"user_id": str(actor.user_id), "role": actor.role.value}
 
     @app.exception_handler(TotpSetupRequiredError)
@@ -617,6 +629,94 @@ async def test_suspended_participant_denied_the_community_guard(
 
     async with _api(db_session, clock) as client:
         response = await client.post("/test/community-op", headers=_auth(tokens))
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == ErrorCode.ACCOUNT_NOT_ACTIVE
+
+
+# --- the submission download guard (PR #4 hardening: dual population) -----------------
+
+
+@pytest.mark.integration
+async def test_student_passes_the_download_guard_without_totp(
+    db_session: AsyncSession,
+) -> None:
+    """The student arm is the plain §5.7 state gate: the owning Student
+    downloads without ever establishing a TOTP credential."""
+    clock = FrozenClock(_T0)
+    user = await _seed_user(db_session, role=Role.STUDENT)
+    _, tokens = await _open_session(
+        db_session, user, codec=get_access_token_codec(), clock=clock
+    )
+
+    async with _api(db_session, clock) as client:
+        response = await client.post("/test/download-op", headers=_auth(tokens))
+
+    assert response.status_code == 200
+    assert response.json()["role"] == Role.STUDENT.value
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("role", [Role.TEACHER, Role.ADMIN])
+async def test_confirmed_staff_passes_the_download_guard(
+    db_session: AsyncSession, role: Role
+) -> None:
+    """The staff arm accepts the management gate's own success shape:
+    ACTIVE + confirmed TOTP for either staff role."""
+    clock = FrozenClock(_T0)
+    user = await _seed_user(db_session, role=role)
+    _, tokens = await _open_session(
+        db_session, user, codec=get_access_token_codec(), clock=clock
+    )
+    await _seed_totp(db_session, user, confirmed=True)
+
+    async with _api(db_session, clock) as client:
+        response = await client.post("/test/download-op", headers=_auth(tokens))
+
+    assert response.status_code == 200
+    assert response.json()["role"] == role.value
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("with_credential_row", [True, False])
+async def test_staff_without_confirmed_totp_forced_into_setup_on_download(
+    db_session: AsyncSession, with_credential_row: bool
+) -> None:
+    """A presigned GET is a management-grade read (spec §33.3/§33.4): the
+    pending staff token authenticates, but the staff arm inherits the
+    management gate's setup-forcing refusal — whether setup never
+    started or is unconfirmed."""
+    clock = FrozenClock(_T0)
+    user = await _seed_user(db_session, role=Role.TEACHER)
+    _, tokens = await _open_session(
+        db_session, user, codec=get_access_token_codec(), clock=clock
+    )
+    if with_credential_row:
+        await _seed_totp(db_session, user, confirmed=False)
+
+    async with _api(db_session, clock) as client:
+        response = await client.post("/test/download-op", headers=_auth(tokens))
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "TOTP_SETUP_REQUIRED"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("role", [Role.STUDENT, Role.TEACHER])
+async def test_suspended_actor_denied_the_download_guard(
+    db_session: AsyncSession, role: Role
+) -> None:
+    # The §5.7 state gate travels with BOTH arms, and precedes the 2FA
+    # check in the staff arm (capability-then-state-then-factor order).
+    clock = FrozenClock(_T0)
+    user = await _seed_user(db_session, role=role, status=UserStatus.SUSPENDED)
+    _, tokens = await _open_session(
+        db_session, user, codec=get_access_token_codec(), clock=clock
+    )
+    await _seed_totp(db_session, user, confirmed=True)
+
+    async with _api(db_session, clock) as client:
+        response = await client.post("/test/download-op", headers=_auth(tokens))
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == ErrorCode.ACCOUNT_NOT_ACTIVE

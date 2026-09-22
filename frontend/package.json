@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:unit": "tsx --test src/__tests__/*.test.ts",
+    "test": "npm run test:unit",
+    "api:types": "openapi-typescript \"${OPENAPI_URL:-http://localhost:8000/openapi.json}\" -o src/lib/api/schema.d.ts",
+    "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts"
   },
   "dependencies": {
     "next": "^16.3.5",
@@ -19,6 +23,8 @@
     "@types/react-dom": "^19.3.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.5",
+    "openapi-typescript": "^7.13.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
 }
