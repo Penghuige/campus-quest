@@ -10,6 +10,7 @@ from app.core import rbac
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
+from app.modules.community import router as community_router
 from app.modules.identity import (
     auth_router as identity_auth_router,
 )
@@ -21,6 +22,11 @@ from app.modules.identity import (
     staff_router as identity_staff_router,
 )
 from app.modules.identity.dependencies import get_actor
+from app.modules.notifications import router as notifications_router
+from app.modules.points import router as points_router
+from app.modules.rankings import router as rankings_router
+from app.modules.submissions import router as submissions_router
+from app.modules.system import router as system_router
 from app.modules.tasks import router as tasks_router
 from app.workers.celery_app import get_celery_app
 
@@ -56,6 +62,40 @@ def create_app() -> FastAPI:
     # needs registering before the mount.
     tasks_router.register_tasks_exception_handlers(app)
     app.include_router(tasks_router.router, prefix="/api/v1")
+
+    # Submissions/review API: same posture — BusinessError subclasses
+    # render through the core handler, the endpoint-limiter mapping
+    # registers here (identical render, last-writer-wins is harmless).
+    submissions_router.register_submissions_exception_handlers(app)
+    app.include_router(submissions_router.router, prefix="/api/v1")
+
+    # Points/rewards + rankings/growth APIs: every typed exception in
+    # both modules subclasses BusinessError with its frozen code/status,
+    # so the core envelope handler alone covers them — no module-local
+    # handler registration, no rate-limit mapping (spec §33.1 names no
+    # bucket for these surfaces in V1).
+    app.include_router(points_router.router, prefix="/api/v1")
+    app.include_router(rankings_router.router, prefix="/api/v1")
+
+    # Community API (comments/votes/reactions/reports/ratings, spec
+    # §20-§24): same shape — BusinessError subclasses render through the
+    # core handler, and this module's two transport mappings (the
+    # endpoint limiter's 429 and RATING_NOT_ELIGIBLE) register before the
+    # mount.
+    community_router.register_community_exception_handlers(app)
+    app.include_router(community_router.router, prefix="/api/v1")
+
+    # Notifications API (plan 07 T8): the student inbox + mark-read and
+    # the staff failure query. Every typed exception its handlers raise
+    # subclasses BusinessError, so the core envelope handler covers it
+    # and no module-local registration is needed.
+    app.include_router(notifications_router.router, prefix="/api/v1")
+
+    # System settings admin API (PR #2 hardening step 8): the audited
+    # CURRENT_ACADEMIC_TERM surface — GET/PUT resolve through the same
+    # typed BusinessError family, so the core envelope handler covers
+    # this module too.
+    app.include_router(system_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done

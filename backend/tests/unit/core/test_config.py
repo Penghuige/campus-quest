@@ -18,6 +18,15 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
 
 
+def _set_production_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real values for the three committed dev-only sentinels, so a
+    production-environment test fails on the rule under test, not on the
+    (already-pinned) secret rejection."""
+    monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
+    monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
+    monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+
 def test_business_timezone_defaults_to_configured_value(monkeypatch):
     _set_required_env(monkeypatch)
     settings = Settings()
@@ -77,9 +86,13 @@ def test_production_accepts_overridden_otp_hmac_secret(monkeypatch) -> None:
     # token-signing and TOTP-encryption secrets must be real here too.
     monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
     monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    settings = Settings()
-    assert settings.environment == "production"
-    assert settings.otp_hmac_secret == "a-real-deployment-secret"
+    # The secret rule itself now passes: with real secrets the startup
+    # failure no longer names the secrets — V1 production still fails
+    # closed, but on the logging provider (see the provider tests below;
+    # real SMS/EMAIL adapters land with the provider project).
+    with pytest.raises(ValidationError, match="SMS_PROVIDER") as exc_info:
+        Settings()
+    assert "OTP_HMAC_SECRET" not in str(exc_info.value)
 
 
 def test_development_accepts_sentinel_token_secret(monkeypatch) -> None:
@@ -121,13 +134,72 @@ def test_production_accepts_overridden_token_secret(monkeypatch) -> None:
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
     monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
     monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    settings = Settings()
-    assert settings.token_secret == "a-real-access-token-secret-0123456789"
+    # Same as the OTP-HMAC override above: the token-secret rule passes,
+    # and the remaining startup failure is the (V1-unavoidable) logging
+    # provider, not the secrets.
+    with pytest.raises(ValidationError, match="EMAIL_PROVIDER") as exc_info:
+        Settings()
+    assert "TOKEN_SECRET" not in str(exc_info.value)
 
 
 def test_environment_rejects_unknown_values(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "staging")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+# --- outbound providers (PR #2 hardening P0-2, fail-closed) ------------------------
+
+
+def test_providers_default_to_logging_in_development(monkeypatch) -> None:
+    # development MAY run explicitly on the logging provider: sends are
+    # simulated there, and the recorded deliveries carry "logging:"-prefixed
+    # provider_message_ids so the simulation is distinguishable from real
+    # provider receipts.
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    settings = Settings()
+    assert settings.environment == "development"
+    assert settings.sms_provider == "logging"
+    assert settings.email_provider == "logging"
+
+
+def test_production_rejects_logging_sms_provider(monkeypatch) -> None:
+    # G4/G5: the logging adapter delivers nothing while the delivery row
+    # is recorded SENT, so production must fail at settings load instead
+    # of running a fake-success provider. Real secrets are set so the
+    # failure under test is the provider one.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    _set_production_secrets(monkeypatch)
+    monkeypatch.delenv("SMS_PROVIDER", raising=False)
+    with pytest.raises(ValidationError, match="SMS_PROVIDER"):
+        Settings()
+
+
+def test_production_rejects_logging_email_provider(monkeypatch) -> None:
+    # Same guard for the email channel: both defaults offend together,
+    # and the one error names everything the deployer must configure.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    _set_production_secrets(monkeypatch)
+    monkeypatch.delenv("EMAIL_PROVIDER", raising=False)
+    with pytest.raises(ValidationError, match="EMAIL_PROVIDER"):
+        Settings()
+
+
+def test_real_provider_values_are_not_yet_selectable(monkeypatch) -> None:
+    # Boundary: real adapters ("twilio"/"smtp") arrive with the provider
+    # project; until the Literals grow, pydantic rejects the values at
+    # settings load — fail closed rather than accepting a value that no
+    # composition point wires.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("SMS_PROVIDER", "twilio")
+    with pytest.raises(ValidationError):
+        Settings()
+    monkeypatch.setenv("SMS_PROVIDER", "logging")
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
     with pytest.raises(ValidationError):
         Settings()
 

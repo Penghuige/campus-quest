@@ -3,7 +3,8 @@
 
 Covers the recording contract from the task brief (exact-delivery
 assertions via list equality), the object-storage fake's key/metadata
-semantics, and raise-on-demand failure programming used by later worker
+semantics (including the retention ``delete_object`` contract from
+spec §27), and raise-on-demand failure programming used by later worker
 tests to simulate provider outages.
 """
 
@@ -100,6 +101,44 @@ def test_upload_url_expiry_comes_from_injected_clock() -> None:
         claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
     )
     assert url.expires_at == FROZEN_NOW + TTL
+
+
+def test_upload_url_records_pinned_content_length() -> None:
+    storage = FakeObjectStorage()
+    pinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL, content_length=2048
+    )
+    unpinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    # The declared size is recorded for call-site assertions (the intent
+    # flow must pin what cleared its size policy); legacy callers that
+    # pass nothing record None.
+    assert storage.pinned_content_lengths[pinned.object_key] == 2048
+    assert storage.pinned_content_lengths[unpinned.object_key] is None
+
+
+def test_upload_url_returns_adapter_signing_contract() -> None:
+    """The fake mirrors the S3 adapter's return contract (hardening
+    P4c): the echo headers a client must send verbatim, and the pinned
+    byte count as a scalar — Content-Length is never a client header
+    (browser-forbidden), so it must not appear in client_headers."""
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID,
+        content_type="text/csv",
+        expires_in=TTL,
+        content_length=512,
+    )
+    assert url.client_headers == {"If-None-Match": "*", "Content-Type": "text/csv"}
+    assert "Content-Length" not in url.client_headers
+    assert url.pinned_content_length == 512
+
+    unpinned = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    assert unpinned.client_headers == {"If-None-Match": "*", "Content-Type": "text/csv"}
+    assert unpinned.pinned_content_length is None
 
 
 def test_head_object_returns_pinned_metadata_after_simulated_upload() -> None:
@@ -220,6 +259,118 @@ def test_fake_object_storage_recovers_after_programmed_outage() -> None:
     assert storage.head_object(object_key=url.object_key) is not None
 
 
+def test_download_to_file_writes_stored_content_and_records_the_key(
+    tmp_path,
+) -> None:
+    # The worker-side read path (plan 04 task 7): content PUT through
+    # the test helper comes back byte-identical through the port.
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    payload = b"url,title\nhttps://a.com,t\n"
+    storage.put_object(object_key=url.object_key, content=payload)
+    destination = tmp_path / "downloaded.bin"
+    storage.download_to_file(object_key=url.object_key, destination=destination)
+    assert destination.read_bytes() == payload
+    assert storage.downloads == [url.object_key]
+
+
+def test_download_to_file_size_defaults_to_content_length() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    payload = b"12345"
+    storage.put_object(object_key=url.object_key, content=payload)
+    assert storage.head_object(object_key=url.object_key) == ObjectHead(
+        object_key=url.object_key, size=len(payload), content_type="text/csv"
+    )
+
+
+def test_delete_object_removes_stored_object_and_records_key() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=2048)
+
+    storage.delete_object(object_key=url.object_key)
+
+    assert storage.head_object(object_key=url.object_key) is None
+    assert storage.deleted_keys == [url.object_key]
+
+
+def test_delete_object_missing_raises_file_not_found_error() -> None:
+    # §27 contract: a missing object is a typed signal the retention
+    # cleanup worker branches on, not a provider failure.
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    with pytest.raises(FileNotFoundError):
+        storage.delete_object(object_key=url.object_key)
+    assert storage.deleted_keys == []
+
+
+def test_download_to_file_missing_object_raises_file_not_found(
+    tmp_path,
+) -> None:
+    # Port contract: a missing key downloads as FileNotFoundError (an
+    # OSError) — S3's NoSuchKey class — so the retry taxonomy treats it
+    # like other storage OSErrors (bounded retry, then a stale run the
+    # next attempt can resume).
+    storage = FakeObjectStorage()
+    destination = tmp_path / "never-written.bin"
+    with pytest.raises(FileNotFoundError):
+        storage.download_to_file(
+            object_key=f"submissions/{CLAIM_ID}/gone", destination=destination
+        )
+    assert storage.downloads == []
+
+
+def test_download_to_file_programmed_failure_raises_and_records_nothing(
+    tmp_path,
+) -> None:
+    storage = FakeObjectStorage()
+    storage.fail_with(OSError("connection reset by peer"))
+    destination = tmp_path / "downloaded.bin"
+    with pytest.raises(OSError):
+        storage.download_to_file(
+            object_key=f"submissions/{CLAIM_ID}/abc", destination=destination
+        )
+    assert storage.downloads == []
+
+
+def test_delete_object_twice_raises_on_second_call() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=10)
+    storage.delete_object(object_key=url.object_key)
+
+    with pytest.raises(FileNotFoundError):
+        storage.delete_object(object_key=url.object_key)
+
+    assert storage.deleted_keys == [url.object_key]
+
+
+def test_delete_object_programmed_failure_deletes_nothing() -> None:
+    storage = FakeObjectStorage()
+    url = storage.create_upload_url(
+        claim_id=CLAIM_ID, content_type="text/csv", expires_in=TTL
+    )
+    storage.put_object(object_key=url.object_key, size=10)
+    storage.fail_with(PermanentProviderError("access denied"))
+
+    with pytest.raises(PermanentProviderError):
+        storage.delete_object(object_key=url.object_key)
+
+    assert storage.head_object(object_key=url.object_key) is not None
+    assert storage.deleted_keys == []
+
+
 def test_fake_rate_limiter_records_exact_checks() -> None:
     limiter = FakeRateLimiter()
 
@@ -235,7 +386,7 @@ def test_fake_rate_limiter_records_exact_checks() -> None:
         )
     ]
     assert limiter.checks_for("auth:login")[0].identifier == "alice"
-    assert limiter.checks_for("auth:register") == []
+    assert limiter.checks_for("auth:otp-send") == []
 
 
 def test_fake_rate_limiter_programmed_bucket_raises() -> None:

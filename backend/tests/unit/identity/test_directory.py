@@ -7,8 +7,9 @@ account facts — they consume the port, never identity ORM models.
 `UserSummary` is the whole contract: identity plus role/status, NO contact
 fields (phone and email stay inside the identity module).
 
-The concrete adapter is a thin delegation over `UserRepository`; these
-tests drive it with a stub repository (no database) to pin the mapping, the
+The concrete adapter is a thin delegation over `UserRepository`, plus
+(since Plan 05 Task 7) an injectable display-honor title resolver;
+these tests drive both with stubs (no database) to pin the mapping, the
 email normalization, and the frozen field set.
 """
 
@@ -20,7 +21,10 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.modules.identity.directory import (
+    DisplayProfile,
     SqlAlchemyUserDirectory,
     UserDirectory,
     UserSummary,
@@ -152,3 +156,87 @@ def test_unknown_lookups_return_none():
 
     assert _run(directory.find_by_username(None, "20990099999")) is None
     assert _run(directory.find_by_email(None, "nobody@school.edu")) is None
+
+
+# --- the ranking display-profile read (Plan 05 Task 6 + Task 7) -----------------------
+
+
+@dataclass
+class _HonorLookup:
+    """One recorded honor-title resolver call (session + user id)."""
+
+    session: Any
+    user_id: UUID
+
+
+class _StubHonorTitleResolver:
+    """The honors seam's stand-in: records calls and answers a canned
+    title (None by default — the unset-choice shape)."""
+
+    def __init__(self, title: str | None = None) -> None:
+        self._title = title
+        self.calls: list[_HonorLookup] = []
+
+    async def __call__(self, session: AsyncSession, user_id: UUID) -> str | None:
+        self.calls.append(_HonorLookup(session=session, user_id=user_id))
+        return self._title
+
+
+def _make_display_directory(
+    users: list[User], title: str | None
+) -> tuple[SqlAlchemyUserDirectory, _StubUserRepository, _StubHonorTitleResolver]:
+    stub = _StubUserRepository(users)
+    resolver = _StubHonorTitleResolver(title)
+    return (
+        SqlAlchemyUserDirectory(users=stub, honor_title_resolver=resolver),
+        stub,
+        resolver,
+    )
+
+
+def test_display_profile_carries_exactly_nickname_and_honor():
+    directory, _, _ = _make_display_directory(
+        [_make_user(nickname="排行榜同学")], title="本月卷王"
+    )
+
+    profile = _run(directory.get_display_profile(None, _STUDENT_ID))
+
+    assert isinstance(profile, DisplayProfile)
+    # The ranking privacy pin (spec §17/§40): display facts only — no
+    # username/student number, no contact fields, no ids.
+    assert {f.name for f in dataclasses.fields(profile)} == {
+        "nickname",
+        "display_honor_title",
+    }
+    assert profile.nickname == "排行榜同学"
+    # The title is the resolver's answer: the user's CHOSEN display
+    # honor (Plan 05 Task 7), None while the choice is unset.
+    assert profile.display_honor_title == "本月卷王"
+
+    unset, _, _ = _make_display_directory([_make_user()], title=None)
+    unset_profile = _run(unset.get_display_profile(None, _STUDENT_ID))
+    assert unset_profile is not None
+    assert unset_profile.display_honor_title is None
+
+
+def test_display_profile_delegates_nickname_and_resolves_the_title():
+    directory, stub, resolver = _make_display_directory(
+        [_make_user()], title="今日卷王"
+    )
+
+    profile = _run(directory.get_display_profile(None, _STUDENT_ID))
+
+    assert profile is not None
+    # Nickname + existence ride find_by_id (the repository delegation
+    # Task 6 froze); the honor title rides the injected resolver with
+    # the caller's session and the SAME user id.
+    assert stub.calls == [_Lookup("find_by_id", _STUDENT_ID)]
+    assert resolver.calls == [_HonorLookup(session=None, user_id=_STUDENT_ID)]
+
+
+def test_display_profile_unknown_user_is_none():
+    directory, _, resolver = _make_display_directory([_make_user()], title="今日卷王")
+
+    assert _run(directory.get_display_profile(None, uuid4())) is None
+    # The unknown account short-circuits before the honor read fires.
+    assert resolver.calls == []

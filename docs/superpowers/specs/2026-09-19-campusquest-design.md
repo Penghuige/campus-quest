@@ -742,6 +742,7 @@ INVALIDATE_REWARD_LOCK：
 - 写 AuditLog。
 - 取消当前 provisional lock。
 - 后续新的有效 Submission 按新的 submitted_at 重新锁档。
+- 修订窗口内晚于 grace_deadline_at 的新有效提交重锁时，档位取阶梯最低档 20%（窗口内提交仍应获得奖励，取最低档）。
 - 不应自动扣用户历史积分；若已经错误发放则通过反向 PointsLedger 冲销。
 
 ### 11.4 Revision window
@@ -995,6 +996,24 @@ PointsLedger 至少包含：
 - Ledger 是可审计事实源。
 - 投影必须可从 Ledger 重建。
 - Ledger 与投影更新必须在同一事务。
+
+展示层 clamp（PR #2 owner 裁定，V2）：奖励冲销已消费积分可使钱包 raw 余额为负，账实保留真实负数（见 §17.2）。用户侧展示值的规范定义：
+
+```text
+raw_balance
+    = affects_balance ledger projection，可为负
+
+point_debt
+    = max(-raw_balance, 0)
+
+available_points
+    = max(raw_balance, 0)
+
+spendable_points
+    = max(raw_balance - active_reservations, 0)
+```
+
+只 clamp 用户 facing 可用值；**不得把 DB wallet projection clamp 为 0**，否则破坏 Ledger reconciliation。
 
 ## 16. RewardItem 与兑换
 

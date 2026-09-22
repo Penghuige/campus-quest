@@ -1,0 +1,485 @@
+# backend/app/modules/notifications/templates.py
+"""Constrained notification template rendering (spec §25.5, §33).
+
+Spec §25.5: "模板渲染必须使用受限变量，不执行代码。" This module implements
+that sentence as a manual single-pass scanner — deliberately NOT Jinja,
+`eval`, or `str.format`:
+
+- Template text is admin-influenced (spec §25.5: Admin edits
+  NotificationTemplate rows; Plan 08 adds the editing surface). A
+  placeholder is exactly ``{name}`` where ``name`` matches
+  ``[a-z][a-z0-9_]*`` AND belongs to the rendering event type's frozen
+  whitelist (`EVENT_VARIABLES`). Attribute walks (``x.__class__``),
+  positional indexes (``{0}``), filters (``|safe``), conversions
+  (``!r``), format specs (``:>20``), and Jinja blocks all fail the
+  grammar or the whitelist and raise `InvalidTemplateError` — an
+  admin-facing render error naming the offending placeholder. Nothing
+  is ever parsed as an expression, so there is nothing to sanitize.
+- Substitution is one `re.sub` pass with a FUNCTION replacement: the
+  function's return string is inserted verbatim (no backreference
+  processing, no re-scan). A variable VALUE containing ``{...}`` or
+  ``\\g<0>`` therefore renders literally — user-influenced strings
+  (task titles, review comments) cannot inject a second substitution
+  pass. The str.format-style index tricks are additionally impossible
+  because names are dict-keyed, not positional.
+- Two failure classes stay distinguishable:
+  `InvalidTemplateError` — the template text itself references a
+  non-whitelisted placeholder (an Admin problem; Plan 08 surfaces it
+  in template editing) — versus `MissingTemplateVariableError` — a
+  whitelisted variable with no value at render time (a caller/dispatch
+  bug). Both are module-local `ValueError`s on purpose: they are
+  internal service failures that the dispatch layer turns into SKIPPED
+  or FAILED deliveries, not §29 API envelope codes (the registry is
+  frozen by interfaces.md and carries no notification-template code).
+- Values must already be `str`: the renderer never formats dates or
+  numbers itself (backend-engineering §11 keeps timezone/locale
+  decisions with the caller), so a non-str value is a `TypeError` at
+  this boundary.
+
+Seed templates (`DEFAULT_TEMPLATES`) cover all 8 event types x 3
+channels with concise Chinese product copy (spec §25/§25.1; SMS bodies
+stay short for single-segment delivery). They are module constants
+seeded/read at dispatch until Plan 08 lands Admin-editable
+NotificationTemplate rows; the `template=` parameter of
+`render_template` is the seam — the dispatch service will pass a
+`TemplateText` built from the row's `title`/`template_body` when an
+enabled override exists, and the override flows through this exact
+same scanner. An import-time self-check re-validates every seed
+against the whitelists so drift between `EVENT_VARIABLES` and
+`DEFAULT_TEMPLATES` fails at import, not at first render.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from app.modules.notifications.enums import NotificationChannel, NotificationEventType
+
+# A placeholder is a braced group with no nested braces. Content is
+# matched lazily and validated against the name grammar below — the
+# regex alone grants nothing.
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+
+# Variable-name grammar: lowercase snake_case, no leading underscore.
+# This grammar (not a sanitizer) is what makes attribute access and
+# dunder walks structurally unrepresentable.
+_VARIABLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+_ALL_CHANNELS = frozenset(NotificationChannel)
+
+
+class TemplateRenderError(ValueError):
+    """Base for the two render-time failures below (module-local on
+    purpose — see module docstring)."""
+
+
+class InvalidTemplateError(TemplateRenderError):
+    """Template text contains a braced group that is not exactly one
+    whitelisted variable name for the event type. Admin-facing: the
+    template row (or seed) is wrong, the variables were fine."""
+
+    def __init__(
+        self,
+        event_type: NotificationEventType | str,
+        channel: NotificationChannel | str,
+        placeholder: str,
+        known: frozenset[str],
+    ) -> None:
+        self.event_type = event_type
+        self.channel = channel
+        self.placeholder = placeholder
+        self.known = known
+        sorted_known = ", ".join(sorted(known)) or "(none)"
+        super().__init__(
+            f"invalid notification template for {event_type}/{channel}: "
+            f"placeholder {placeholder!r} is not a whitelisted variable "
+            f"(known variables: {sorted_known})"
+        )
+
+
+class MissingTemplateVariableError(TemplateRenderError):
+    """The template is valid but the render call supplied no value for a
+    whitelisted variable it references. A caller/dispatch bug, not an
+    Admin problem."""
+
+    def __init__(
+        self,
+        event_type: NotificationEventType | str,
+        channel: NotificationChannel | str,
+        variable: str,
+    ) -> None:
+        self.event_type = event_type
+        self.channel = channel
+        self.variable = variable
+        super().__init__(
+            f"missing value for notification template variable "
+            f"{variable!r} ({event_type}/{channel})"
+        )
+
+
+@dataclass(frozen=True)
+class TemplateText:
+    """A template pair as stored on NotificationTemplate (title +
+    template_body). The Plan 08 override seam: dispatch builds one from
+    a row and passes it to `render_template`."""
+
+    title: str
+    body: str
+
+
+@dataclass(frozen=True)
+class RenderedMessage:
+    """The rendered snapshot persisted onto `Notification.title/body`
+    (models.py: a later Admin template edit never rewrites an
+    already-created notification)."""
+
+    title: str
+    body: str
+
+
+# --- per-event variable whitelists (spec §25.5: 受限变量) -----------------------
+#
+# Frozen per event type and shared across channels: the variables an
+# event may carry are a property of the DOMAIN event, not of the pipe
+# it rides. Every name is referenced by at least one seed below (the
+# import-time self-check would otherwise be the only witness).
+
+EVENT_VARIABLES: dict[NotificationEventType, frozenset[str]] = {
+    NotificationEventType.ASSIGNMENT_DEADLINE_24H: frozenset(
+        {"task_title", "deadline_at"}
+    ),
+    NotificationEventType.ASSIGNMENT_DEADLINE_4H: frozenset(
+        {"task_title", "deadline_at"}
+    ),
+    NotificationEventType.REVISION_REQUIRED: frozenset(
+        {"task_title", "revision_deadline_at", "review_comment"}
+    ),
+    NotificationEventType.SUBMISSION_APPROVED: frozenset(
+        {"task_title", "reward_points"}
+    ),
+    NotificationEventType.SUBMISSION_VALIDATION_FAILED: frozenset(
+        {"task_title", "validation_summary"}
+    ),
+    NotificationEventType.REWARD_REDEMPTION_APPROVED: frozenset(
+        {"item_name", "points_spent"}
+    ),
+    NotificationEventType.REWARD_REDEMPTION_REJECTED: frozenset(
+        {"item_name", "rejection_reason", "points_refunded"}
+    ),
+    NotificationEventType.ACCOUNT_SECURITY: frozenset({"event_summary", "event_time"}),
+}
+
+
+# --- seed templates (8 event types x 3 channels; Plan 08 adds DB overrides) ----
+#
+# Concise Chinese per the product language; SMS bodies short enough for
+# a single segment; EMAIL bodies slightly fuller with a sign-off. The
+# checker invariants: seeds use only whitelisted placeholders, and
+# deadline SMS/EMAIL bodies carry the deadline variables the §25.2
+# reminder is about.
+
+_SMS_SIGNATURE = "【CampusQuest】"
+_EMAIL_SIGNOFF = "\n—— CampusQuest"
+
+DEFAULT_TEMPLATES: dict[
+    tuple[NotificationEventType, NotificationChannel], TemplateText
+] = {
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_24H,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="任务24小时后截止",
+        body="您领取的任务《{task_title}》将于{deadline_at}截止，请尽快提交。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_24H,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="任务将于24小时后截止",
+        body=(
+            "您好：\n"
+            "您领取的任务《{task_title}》将于{deadline_at}截止，请及时完成并提交。\n"
+            "如已提交，请忽略本邮件。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_24H,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="任务将于24小时后截止",
+        body="您领取的任务《{task_title}》将于{deadline_at}截止，请尽快提交。",
+    ),
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_4H,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="任务4小时后截止",
+        body="您领取的任务《{task_title}》将于{deadline_at}截止，请立即提交。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_4H,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="任务将于4小时后截止",
+        body=(
+            "您好：\n"
+            "您领取的任务《{task_title}》将于{deadline_at}截止，请尽快完成并提交。\n"
+            "如已提交，请忽略本邮件。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.ASSIGNMENT_DEADLINE_4H,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="任务将于4小时后截止",
+        body="您领取的任务《{task_title}》将于{deadline_at}截止，请立即提交。",
+    ),
+    (
+        NotificationEventType.REVISION_REQUIRED,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="提交需修改",
+        body="您在任务《{task_title}》的提交需修改，请在{revision_deadline_at}前重新提交。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.REVISION_REQUIRED,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="提交需要修改",
+        body=(
+            "您好：\n"
+            "您在任务《{task_title}》的提交未通过审核，请在{revision_deadline_at}前"
+            "修改后重新提交。\n审核意见：{review_comment}" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.REVISION_REQUIRED,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="提交需要修改",
+        body=(
+            "您在任务《{task_title}》的提交未通过审核，请在{revision_deadline_at}前"
+            "修改后重新提交。审核意见：{review_comment}"
+        ),
+    ),
+    (
+        NotificationEventType.SUBMISSION_APPROVED,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="任务审核通过",
+        body="您在任务《{task_title}》的提交已通过审核，获得{reward_points}积分。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.SUBMISSION_APPROVED,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="任务审核通过",
+        body=(
+            "您好：\n"
+            "您在任务《{task_title}》的提交已通过审核，{reward_points}积分已入账。"
+            + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.SUBMISSION_APPROVED,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="任务审核通过",
+        body="您在任务《{task_title}》的提交已通过审核，获得{reward_points}积分。",
+    ),
+    (
+        NotificationEventType.SUBMISSION_VALIDATION_FAILED,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="提交校验未通过",
+        body="您在任务《{task_title}》的提交未通过自动校验，请修正后重新提交。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.SUBMISSION_VALIDATION_FAILED,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="提交未通过自动校验",
+        body=(
+            "您好：\n"
+            "您在任务《{task_title}》的提交未通过自动校验：{validation_summary}\n"
+            "请修正问题后重新提交。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.SUBMISSION_VALIDATION_FAILED,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="提交未通过自动校验",
+        body=(
+            "您在任务《{task_title}》的提交未通过自动校验：{validation_summary}。"
+            "请修正后重新提交。"
+        ),
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_APPROVED,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="兑换成功",
+        body="您兑换的「{item_name}」已通过审核，消耗{points_spent}积分，请留意领取通知。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_APPROVED,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="兑换申请已通过",
+        body=(
+            "您好：\n"
+            "您使用{points_spent}积分兑换的「{item_name}」已通过审核，"
+            "请按站内通知的领取方式领取。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_APPROVED,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="兑换申请已通过",
+        body="您兑换的「{item_name}」已通过审核，消耗{points_spent}积分。",
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_REJECTED,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="兑换未通过",
+        body="您对「{item_name}」的兑换未通过，{points_refunded}积分已退回。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_REJECTED,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="兑换申请未通过",
+        body=(
+            "您好：\n"
+            "您对「{item_name}」的兑换申请未通过，原因：{rejection_reason}。\n"
+            "冻结的{points_refunded}积分已退回可用余额。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.REWARD_REDEMPTION_REJECTED,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="兑换申请未通过",
+        body=(
+            "您对「{item_name}」的兑换申请未通过，原因：{rejection_reason}。"
+            "{points_refunded}积分已退回。"
+        ),
+    ),
+    (
+        NotificationEventType.ACCOUNT_SECURITY,
+        NotificationChannel.SMS,
+    ): TemplateText(
+        title="账号安全提醒",
+        body="{event_time}，{event_summary}。如非本人操作，请尽快修改密码。"
+        + _SMS_SIGNATURE,
+    ),
+    (
+        NotificationEventType.ACCOUNT_SECURITY,
+        NotificationChannel.EMAIL,
+    ): TemplateText(
+        title="账号安全提醒",
+        body=(
+            "您好：\n"
+            "{event_time}，{event_summary}。\n"
+            "如非本人操作，请立即修改密码并检查账号安全设置。" + _EMAIL_SIGNOFF
+        ),
+    ),
+    (
+        NotificationEventType.ACCOUNT_SECURITY,
+        NotificationChannel.IN_APP,
+    ): TemplateText(
+        title="账号安全提醒",
+        body="{event_time}，{event_summary}。如非本人操作，请尽快修改密码。",
+    ),
+}
+
+
+def render_template(
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    variables: Mapping[str, str],
+    *,
+    template: TemplateText | None = None,
+) -> RenderedMessage:
+    """Render the (event_type, channel) message from the seed template
+    or a Plan 08 override (`template=`), substituting whitelisted
+    `{name}` placeholders from `variables`.
+
+    Raises `InvalidTemplateError` for a non-whitelisted placeholder in
+    the template text, `MissingTemplateVariableError` for a whitelisted
+    variable without a value, `TypeError` for a non-str value, and
+    `ValueError` for an unknown event type or channel (programming
+    errors). See the module docstring for the safety argument.
+    """
+
+    if event_type not in EVENT_VARIABLES:
+        raise ValueError(
+            f"unknown notification event type {event_type!r}; expected one of "
+            f"{sorted(event.value for event in NotificationEventType)}"
+        )
+    if channel not in _ALL_CHANNELS:
+        raise ValueError(
+            f"unknown notification channel {channel!r}; expected one of "
+            f"{sorted(channel.value for channel in NotificationChannel)}"
+        )
+
+    source = (
+        template if template is not None else DEFAULT_TEMPLATES[(event_type, channel)]
+    )
+    allowed = EVENT_VARIABLES[event_type]
+
+    def _substitute(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if _VARIABLE_NAME_RE.match(name) is None or name not in allowed:
+            raise InvalidTemplateError(event_type, channel, name, allowed)
+        value = variables.get(name)
+        if value is None:
+            raise MissingTemplateVariableError(event_type, channel, name)
+        if not isinstance(value, str):
+            raise TypeError(
+                f"notification template variable {name!r} must be str, "
+                f"got {type(value).__name__}; format dates and numbers "
+                "at the call site"
+            )
+        # Function replacement: `value` is inserted verbatim — no
+        # backreference processing, no second scan.
+        return value
+
+    return RenderedMessage(
+        title=_PLACEHOLDER_RE.sub(_substitute, source.title),
+        body=_PLACEHOLDER_RE.sub(_substitute, source.body),
+    )
+
+
+def _validate_seed_templates() -> None:
+    """Import-time drift check: every seed placeholder must be a
+    whitelisted variable name for its event type. Keeps
+    `EVENT_VARIABLES` and `DEFAULT_TEMPLATES` from silently diverging;
+    violations mean this module is broken, not any caller."""
+
+    for (event_type, channel), seed in DEFAULT_TEMPLATES.items():
+        for text in (seed.title, seed.body):
+            for match in _PLACEHOLDER_RE.finditer(text):
+                name = match.group(1)
+                if _VARIABLE_NAME_RE.match(name) is None or (
+                    name not in EVENT_VARIABLES[event_type]
+                ):
+                    raise RuntimeError(
+                        f"seed template {event_type}/{channel} contains "
+                        f"non-whitelisted placeholder {name!r}"
+                    )
+
+
+_validate_seed_templates()
