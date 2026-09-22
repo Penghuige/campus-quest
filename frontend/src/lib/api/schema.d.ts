@@ -825,11 +825,14 @@ export interface paths {
          * Download Submission
          * @description Mint a short-lived presigned GET (spec §33.3).
          *
-         *     The guard is the broad ACTIVE one because BOTH authorized parties
-         *     reach this route — the owning Student and the reviewing teacher
-         *     (task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual
-         *     ownership/role judgment runs inside the query service BEFORE the
-         *     port signs. The response carries the URL, never the key.
+         *     Both authorized parties reach this route — the owning Student and
+         *     the reviewing staff (task owner / REVIEW_SUBMISSIONS collaborator /
+         *     Admin) — so the guard is the dual-population identity one: the
+         *     Student arm carries only the ACTIVE state gate, the staff arm the
+         *     full §33.4 management gate (a pending-TOTP teacher answers 403
+         *     ``TOTP_SETUP_REQUIRED`` before any ownership judgment runs). The
+         *     actual ownership/role judgment runs inside the query service BEFORE
+         *     the port signs. The response carries the URL, never the key.
          */
         get: operations["download_submission_api_v1_submissions__submission_id__download_get"];
         put?: never;

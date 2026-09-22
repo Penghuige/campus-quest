@@ -1881,7 +1881,7 @@
     "/api/v1/submissions/{submission_id}/download": {
       "get": {
         "summary": "Download Submission",
-        "description": "Mint a short-lived presigned GET (spec §33.3).\n\nThe guard is the broad ACTIVE one because BOTH authorized parties\nreach this route — the owning Student and the reviewing teacher\n(task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual\nownership/role judgment runs inside the query service BEFORE the\nport signs. The response carries the URL, never the key.",
+        "description": "Mint a short-lived presigned GET (spec §33.3).\n\nBoth authorized parties reach this route — the owning Student and\nthe reviewing staff (task owner / REVIEW_SUBMISSIONS collaborator /\nAdmin) — so the guard is the dual-population identity one: the\nStudent arm carries only the ACTIVE state gate, the staff arm the\nfull §33.4 management gate (a pending-TOTP teacher answers 403\n``TOTP_SETUP_REQUIRED`` before any ownership judgment runs). The\nactual ownership/role judgment runs inside the query service BEFORE\nthe port signs. The response carries the URL, never the key.",
         "operationId": "download_submission_api_v1_submissions__submission_id__download_get",
         "security": [
           {
