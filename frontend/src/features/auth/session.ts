@@ -57,7 +57,7 @@ const STALE_AFTER_MS = 30_000;
 // login would otherwise poison the next shell mount into rendering
 // "未登录" from the fresh window.
 let cache: { result: SessionResult; fetchedAt: number } | null = null;
-let inflight: Promise<SessionResult> | null = null;
+let inflight: { generation: number; promise: Promise<SessionResult> } | null = null;
 let generation = 0;
 
 /**
@@ -113,8 +113,14 @@ async function fetchSession(): Promise<SessionResult> {
 }
 
 function load(): Promise<SessionResult> {
-  if (inflight !== null) {
-    return inflight;
+  // The inflight slot is GENERATION-SCOPED (final re-review P1): a
+  // consumer may only dedupe onto a /me from its OWN generation. After
+  // a login bumps the generation, a newly mounted shell must start a
+  // FRESH /me with the new bearer instead of inheriting the pre-login
+  // promise — whose result (old user, anonymous, or error) would be
+  // applied straight to the new shell, cache fence notwithstanding.
+  if (inflight !== null && inflight.generation === generation) {
+    return inflight.promise;
   }
   const myGeneration = generation;
   const request: Promise<SessionResult> = fetchSession().then((result) => {
@@ -127,16 +133,22 @@ function load(): Promise<SessionResult> {
     }
     return result;
   });
-  inflight = request;
-  // Clear the dedupe slot when settled; the handled copy prevents this
-  // settlement from surfacing as an unhandled rejection — real callers
-  // already receive the outcome through `request` itself.
+  inflight = { generation: myGeneration, promise: request };
+  // Clear the dedupe slot when settled — but only if THIS promise is
+  // still the slot's occupant: an older generation settling late must
+  // not null out a newer generation's live inflight. The handled copy
+  // prevents this settlement from surfacing as an unhandled rejection
+  // — real callers already receive the outcome through `request`.
   request.then(
     () => {
-      inflight = null;
+      if (inflight !== null && inflight.promise === request) {
+        inflight = null;
+      }
     },
     () => {
-      inflight = null;
+      if (inflight !== null && inflight.promise === request) {
+        inflight = null;
+      }
     },
   );
   return request;

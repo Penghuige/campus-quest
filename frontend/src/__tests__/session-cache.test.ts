@@ -119,7 +119,6 @@ describe("login synchronously invalidates the anonymous session cache (targeted 
     route({
       [ME]: [
         () => late.promise, // the login page's anonymous /me, in flight
-        anonymous401, // its bearer retry ALSO 401s (the session dies)
         json({ id: "u1", username: "s", nickname: "同学", role: "STUDENT" }),
       ],
       [LOGIN]: [
@@ -130,16 +129,76 @@ describe("login synchronously invalidates the anonymous session cache (targeted 
     const pending = loadSessionForTests();
     await loginStudent("student01", "correct-horse"); // lands while /me is in flight
 
-    // The anonymous result settles AFTER the invalidation — note the
-    // P0 guard first retries it with the new bearer (a late anonymous
-    // 401 self-heals when a session now exists); the retry ALSO 401s
-    // here, so the load still concludes anonymous. The generation
-    // fence must drop that post-invalidation cache write.
+    // The anonymous result settles AFTER the invalidation. Note the
+    // interplay with the epoch guard: the old request was sent under
+    // the anonymous epoch, and the login bumped the epoch — so the
+    // 401 is NOT replayed at all (correct: an old context never
+    // replays). The load concludes anonymous, and the generation fence
+    // must drop that post-invalidation cache write.
     late.resolve(anonymous401());
     assert.equal((await pending).kind, "anonymous");
     assert.equal(peekSessionCacheForTests().result, null);
 
-    // The next mount refetches with the bearer instead.
-    assert.equal((await loadSessionForTests()).kind, "authenticated");
+    // The next mount starts a fresh /me in the NEW generation.
+    const next = loadSessionForTests();
+    const meCalls = calls.filter((call) => call.url === ME);
+    assert.equal(meCalls.length, 2);
+    assert.equal(meCalls[1].headers.get("Authorization"), "Bearer token-1");
+    assert.equal((await next).kind, "authenticated");
+  });
+
+  test("generation-scoped inflight: a post-login mount starts its OWN /me; the old promise cannot serve or clear it", async () => {
+    const oldMe = Promise.withResolvers<Response>();
+    const newMe = Promise.withResolvers<Response>();
+    route({
+      [ME]: [
+        () => oldMe.promise, // generation 0's /me (anonymous era), pending
+        () => newMe.promise, // generation 1's /me (post-login), pending
+      ],
+      [LOGIN]: [
+        json({ access_token: "token-1", csrf_token: "ct", token_type: "bearer" }),
+      ],
+    });
+
+    // The login page's /me starts and STAYS pending.
+    const oldLoad = loadSessionForTests();
+    await loginStudent("student01", "correct-horse"); // generation -> 1
+
+    // BEFORE the old /me resolves, the new shell mounts and loads: it
+    // must NOT dedupe onto the old promise — a SECOND /me fires, with
+    // the new bearer.
+    const newLoad = loadSessionForTests();
+    const meCalls = calls.filter((call) => call.url === ME);
+    assert.equal(meCalls.length, 2, "the new mount must start its own /me");
+    assert.equal(meCalls[1].headers.get("Authorization"), "Bearer token-1");
+
+    // The OLD /me settles (with a stale authenticated shape — even a
+    // successful old result must not reach the new shell or the cache,
+    // and must not null out the new generation's inflight).
+    oldMe.resolve(json({ id: "old-user", username: "old", nickname: "旧", role: "STUDENT" })());
+    assert.equal((await oldLoad).kind, "authenticated"); // old caller gets its own result
+    await Promise.resolve(); // let the old settlement's clear-callback run
+    assert.equal(peekSessionCacheForTests().result, null); // old write fenced
+
+    // A THIRD load while the new /me is still pending dedupes onto the
+    // NEW inflight (proving the old settlement did not clear it) and
+    // issues no third fetch.
+    const thirdLoad = loadSessionForTests();
+    assert.equal(calls.filter((call) => call.url === ME).length, 2);
+
+    // The new /me settles: the new shell gets the new user, the cache
+    // holds it, and everyone waiting on this generation agrees.
+    newMe.resolve(json({ id: "u1", username: "s", nickname: "同学", role: "STUDENT" })());
+    const [a, b, c] = await Promise.all([newLoad, thirdLoad, newLoad]);
+    assert.equal(a.kind, "authenticated");
+    assert.equal(b.kind, "authenticated");
+    assert.equal(c.kind, "authenticated");
+    const cached = peekSessionCacheForTests();
+    assert.ok(cached.fresh);
+    assert.equal(cached.result?.kind, "authenticated");
+    assert.equal(
+      cached.result?.kind === "authenticated" ? cached.result.me.id : null,
+      "u1",
+    );
   });
 });

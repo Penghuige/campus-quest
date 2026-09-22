@@ -10,7 +10,7 @@
  * the HttpOnly cookie the backend sets.
  */
 import { apiRequest } from "../../lib/api";
-import { clearAccessToken, setAccessToken } from "../../lib/accessToken";
+import { recordLogin, recordLogout } from "../../lib/accessToken";
 import { invalidateSessionCache } from "./session";
 import type { components } from "../../lib/api/schema";
 
@@ -83,11 +83,12 @@ export async function loginStudent(
     method: "POST",
     body: { username, password },
   });
-  setAccessToken(tokens.access_token);
-  // Synchronously drop any cached ANONYMOUS /me: the login page's
+  // An explicit login opens a NEW auth context (epoch bump) and
+  // synchronously drops any cached ANONYMOUS /me: the login page's
   // hook may have cached it moments ago, and the freshly mounted
   // shell must never render "未登录" from that stale fresh-window
   // entry (targeted re-review P1).
+  recordLogin(tokens.access_token);
   invalidateSessionCache();
   return tokens;
 }
@@ -158,11 +159,12 @@ export async function loginStaff(
     method: "POST",
     body: { email, password, totp_code: totpCode },
   });
-  setAccessToken(tokens.access_token);
-  // Synchronously drop any cached ANONYMOUS /me: the login page's
+  // An explicit login opens a NEW auth context (epoch bump) and
+  // synchronously drops any cached ANONYMOUS /me: the login page's
   // hook may have cached it moments ago, and the freshly mounted
   // shell must never render "未登录" from that stale fresh-window
   // entry (targeted re-review P1).
+  recordLogin(tokens.access_token);
   invalidateSessionCache();
   return tokens;
 }
@@ -178,7 +180,10 @@ export async function logout(): Promise<void> {
   try {
     await apiRequest<void>(`${BASE}/logout`, { method: "POST" });
   } finally {
-    clearAccessToken();
+    // An explicit logout CLOSES the auth context (epoch bump): in-
+    // flight requests from the closed context must never replay
+    // against whoever logs in next (final re-review P0).
+    recordLogout();
     // The authenticated /me cache is as stale as the token now.
     invalidateSessionCache();
   }

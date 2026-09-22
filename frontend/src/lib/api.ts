@@ -45,7 +45,7 @@
  */
 import { observeServerDateHeader } from "./serverClock";
 import { toApiError } from "./errors";
-import { getAccessToken, refreshAccessToken } from "./accessToken";
+import { getAccessToken, getAuthEpoch, refreshAccessToken } from "./accessToken";
 import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
 
 /** Header the backend accepts on requests and echoes on responses. */
@@ -113,13 +113,16 @@ async function performApiRequest<T>(
 
   // Caller-owned Authorization wins (the pending staff TOTP session
   // passes its confined bearer explicitly); otherwise the memory-only
-  // manager's token rides, and its 401-recovery applies. tokenUsed
-  // remembers WHICH token this request carried — the late-stale-401
-  // guard below compares it against the manager's current token.
+  // manager's token rides, and its 401-recovery applies. tokenUsed /
+  // authEpochUsed remember WHAT this request carried and UNDER WHICH
+  // auth context — the recovery block below distinguishes a same-
+  // context refresh rotation from a logout/login context switch.
   const callerOwnsAuthorization = headers.has("Authorization");
   let tokenUsed: string | null = null;
+  let authEpochUsed = 0;
   if (!callerOwnsAuthorization) {
     tokenUsed = getAccessToken();
+    authEpochUsed = getAuthEpoch();
     if (tokenUsed !== null) {
       headers.set("Authorization", `Bearer ${tokenUsed}`);
     }
@@ -170,19 +173,29 @@ async function performApiRequest<T>(
     !callerOwnsAuthorization &&
     !path.startsWith(AUTH_API_PREFIX)
   ) {
-    // Late-stale-401 guard (targeted re-review P0): this request's 401
-    // may arrive AFTER another request's rotation already replaced the
-    // token it used. Rotating again would revoke the session the first
-    // retry is riding (the backend's rotate-once semantics revoke the
-    // predecessor), so when the manager already holds a DIFFERENT
-    // token, retry directly with it — no second rotation.
-    const current = getAccessToken();
-    if (current !== null && current !== tokenUsed) {
-      return performApiRequest<T>(path, init, false);
-    }
-    const rotated = await refreshAccessToken();
-    if (rotated) {
-      return performApiRequest<T>(path, init, false);
+    if (getAuthEpoch() !== authEpochUsed) {
+      // Auth-context switch (final re-review P0): the human behind the
+      // tab changed (logout A -> login B) since this request was sent.
+      // Replaying it with the NEW account's token would execute the OLD
+      // account's intent against the new one — never do that; surface
+      // the original 401 unchanged (and never rotate for a dead
+      // context either).
+    } else {
+      // Late-stale-401 guard (targeted re-review P0): within the SAME
+      // auth context, this 401 may arrive after another request's
+      // rotation already replaced the token it used. Rotating again
+      // would revoke the session the first retry is riding (the
+      // backend's rotate-once semantics revoke the predecessor), so
+      // when the manager already holds a DIFFERENT token, retry
+      // directly with it — no second rotation.
+      const current = getAccessToken();
+      if (current !== null && current !== tokenUsed) {
+        return performApiRequest<T>(path, init, false);
+      }
+      const rotated = await refreshAccessToken();
+      if (rotated) {
+        return performApiRequest<T>(path, init, false);
+      }
     }
   }
 

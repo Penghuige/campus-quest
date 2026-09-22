@@ -35,8 +35,40 @@ export const AUTH_REFRESH_PATH = "/api/v1/auth/refresh";
 
 let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+// Auth-context epoch (final re-review P0): bumped by every EXPLICIT
+// auth transition (login, logout) and untouched by refresh rotations.
+// Requests capture the epoch they were sent under; a 401 landing in a
+// LATER epoch means the human behind the tab changed (logout A ->
+// login B) — replaying that request with the new account's token would
+// execute A's intent against B's account, so it must never happen.
+let authEpoch = 0;
 
-/** Remember a freshly issued access token (login body / rotation body). */
+/**
+ * Record an explicit login: remember the token AND open a new auth
+ * context (epoch bump). Rotation through the refresh cookie does NOT
+ * bump — it is the same logged-in context renewing its credential.
+ */
+export function recordLogin(token: string): void {
+  accessToken = token;
+  authEpoch += 1;
+}
+
+/**
+ * Record an explicit logout: forget the token AND close the auth
+ * context (epoch bump), so in-flight requests from the closed context
+ * can be distinguished from a same-session refresh.
+ */
+export function recordLogout(): void {
+  accessToken = null;
+  authEpoch += 1;
+}
+
+/** The auth-context epoch the caller's requests are running under. */
+export function getAuthEpoch(): number {
+  return authEpoch;
+}
+
+/** Remember a freshly issued access token WITHOUT opening a new context (rotation). */
 export function setAccessToken(token: string): void {
   accessToken = token;
 }
@@ -109,4 +141,5 @@ async function rotate(): Promise<boolean> {
 export function resetAccessTokenManagerForTests(): void {
   accessToken = null;
   refreshInFlight = null;
+  authEpoch = 0;
 }
