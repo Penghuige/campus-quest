@@ -27,6 +27,7 @@ import asyncio
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pyotp
@@ -101,7 +102,10 @@ async def _seed_user(
 
 
 def _make_service(
-    clock: FrozenClock, events: InMemoryEventCollector | None = None
+    clock: FrozenClock,
+    events: InMemoryEventCollector | None = None,
+    *,
+    notification_recorder: Any = None,
 ) -> StaffService:
     return StaffService(
         clock=clock,
@@ -115,6 +119,7 @@ def _make_service(
         fernet=Fernet(_FERNET_KEY),
         events=events if events is not None else InMemoryEventCollector(),
         invitation_ttl_hours=_INVITATION_TTL_HOURS,
+        notification_recorder=notification_recorder,
     )
 
 
@@ -552,6 +557,53 @@ async def test_correct_totp_enables_staff_login(db_session: AsyncSession) -> Non
     ).decode(tokens.access_token)
     assert claims.sub == str(user.id)
     assert claims.role == Role.TEACHER.value
+
+
+@pytest.mark.integration
+async def test_totp_enable_records_account_security_notification(
+    db_session: AsyncSession,
+) -> None:
+    # The identity-security producer (MERGE_CARRIES item 2): confirming
+    # TOTP records the §25 ACCOUNT_SECURITY event through the REAL
+    # NotificationPort constructor-injected into StaffService (the
+    # providers.py production shape) — the logical Notification plus its
+    # IN_APP delivery row commit with the credential flip (the outbox
+    # rule), under the per-user occurrence key.
+    from app.modules.notifications.enums import (
+        DeliveryStatus,
+        NotificationChannel,
+        NotificationEventType,
+    )
+    from app.modules.notifications.models import Notification, NotificationDelivery
+    from app.modules.notifications.port import NotificationPort
+
+    clock = FrozenClock(_T0)
+    service = _make_service(
+        clock, notification_recorder=NotificationPort(clock=FrozenClock(_T0))
+    )
+    user, credential, _codes, _secret = await _onboard_confirmed_staff(
+        db_session, clock, service, role=Role.TEACHER
+    )
+    assert credential.confirmed_at == _T0
+
+    notification = await db_session.scalar(
+        select(Notification).where(
+            Notification.event_key == f"user:{user.id}:totp_enabled",
+            Notification.user_id == user.id,
+        )
+    )
+    assert notification is not None
+    assert notification.event_type == NotificationEventType.ACCOUNT_SECURITY.value
+    assert "两步验证已开启" in notification.body
+    delivery = await db_session.scalar(
+        select(NotificationDelivery).where(
+            NotificationDelivery.notification_id == notification.id,
+            NotificationDelivery.channel == NotificationChannel.IN_APP.value,
+        )
+    )
+    assert delivery is not None
+    assert delivery.status == DeliveryStatus.PENDING.value
+    assert delivery.scheduled_at == _T0
 
 
 @pytest.mark.integration

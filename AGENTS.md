@@ -21,7 +21,9 @@ All agents MUST read:
 
 - docs/superpowers/specs/2026-09-19-campusquest-design.md
 - the implementation plan for the task they are executing
-- docs/quality/quality-gates.md
+- docs/quality/quality-gates.md — including §16 Engineering Golden Rules,
+  which is a long-term merge gate (PR #2 onward): every implementation and
+  review must comply, with G1/G2/G3/G17/G18 as blocking checks
 
 Frontend work MUST also read:
 

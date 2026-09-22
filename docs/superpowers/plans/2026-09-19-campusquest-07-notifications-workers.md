@@ -191,6 +191,12 @@ git commit -m "feat: translate domain events into notifications"
 
 ### Task 6: Implement Claim Expiry Worker
 
+**Plan-04 final-review amendments (binding inputs to this task):**
+
+- Watchdog/self-heal scope after the plan-04 C1 fix (failed validation now rolls the claim back to an actionable state): the residual stuck states are (a) early-ack worker death mid-task — Celery's default early ack means a dead worker does NOT redeliver — and (b) submissions/claims stuck VALIDATING in flight. Requires `task_acks_late=True` + `task_reject_on_worker_lost=True`, or a beat scan re-enqueueing stale UPLOADED/VALIDATING rows.
+- Ruling needed, then implemented: whether §11.5/§26 protects submissions finalized in-window but not yet machine-VALIDATED at expiry time. Current reading: only VALIDATED protects — confirm or extend before the expiry scan ships.
+- Gate-1 integration test: `task.allowed_file_types` tightened after an upload was finalized; the re-validation path must recheck the declared type against the narrowed set and fail it.
+
 **Files:**
 - Create: `backend/app/workers/jobs/expire_claims.py`
 - Modify: `backend/app/modules/tasks/claim_service.py`
