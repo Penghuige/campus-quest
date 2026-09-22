@@ -6,6 +6,18 @@
  * - the refresh token lives ONLY in an HttpOnly + Secure + SameSite=Lax
  *   cookie scoped to the auth paths — this client never reads, stores, or
  *   accepts tokens in localStorage or in JS variables;
+ * - the SHORT-LIVED access token sits in the memory-only manager
+ *   (`lib/accessToken.ts`) after login or a refresh rotation, and every
+ *   request automatically carries it as `Authorization: Bearer …`. With
+ *   no remembered token NO header is sent — the backend's 401 then
+ *   triggers the bootstrap below (cold start after a reload);
+ * - a 401 on an API request recovers exactly ONCE through the
+ *   single-flight `POST /auth/refresh` (HttpOnly cookie + CSRF header)
+ *   and retries the original request with the rotated bearer. Requests
+ *   under `/api/v1/auth/` never enter that loop (their 401s are
+ *   verdicts — wrong credentials, dead challenge — not session
+ *   expiry), and neither do caller-supplied `Authorization` headers
+ *   (the pending staff TOTP session owns its credential);
  * - every request sends cookies via `credentials: "include"` (same-origin);
  * - a CSRF double-submit token sits in the NON-HttpOnly `csrf_token`
  *   cookie; every mutating request echoes it in the `X-CSRF-Token` header.
@@ -33,39 +45,25 @@
  */
 import { observeServerDateHeader } from "./serverClock";
 import { toApiError } from "./errors";
+import { getAccessToken, refreshAccessToken } from "./accessToken";
+import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
 
 /** Header the backend accepts on requests and echoes on responses. */
 export const REQUEST_ID_HEADER = "X-Request-ID";
 
-const CSRF_COOKIE_NAME = "csrf_token";
-const CSRF_HEADER_NAME = "X-CSRF-Token";
+/**
+ * The identity surface's own endpoints. Their 401s are VERDICTS (wrong
+ * credentials, dead OTP/invitation token), never an expired-session
+ * signal, so the refresh-retry loop below never enters this prefix —
+ * and `/auth/refresh` itself is structurally excluded from recursion.
+ */
+const AUTH_API_PREFIX = "/api/v1/auth/";
 
 export interface ApiRequestInit extends Omit<RequestInit, "body"> {
   /** Request body; plain objects are JSON-encoded automatically. */
   body?: unknown;
   /** Forwarded as the `X-Request-ID` header (pass-through, optional). */
   requestId?: string;
-}
-
-/** Read the double-submit CSRF token from the non-HttpOnly cookie. */
-export function readCsrfToken(): string | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const match = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${CSRF_COOKIE_NAME}=`));
-  if (!match) {
-    return null;
-  }
-  try {
-    return decodeURIComponent(match.slice(CSRF_COOKIE_NAME.length + 1));
-  } catch {
-    // A malformed escape sequence must never break the request path; a
-    // cookie we cannot decode simply provides no CSRF token.
-    return null;
-  }
 }
 
 function hasNativeBody(value: unknown): boolean {
@@ -84,11 +82,26 @@ function hasNativeBody(value: unknown): boolean {
  * - `path` is a same-origin API path such as `/api/v1/me`;
  * - plain-object bodies are JSON-encoded with `Content-Type: application/json`;
  * - 204/205 responses resolve to `undefined`;
- * - non-2xx responses throw `ApiError` built from the §29 envelope.
+ * - non-2xx responses throw `ApiError` built from the §29 envelope;
+ * - the memory-only access token rides as `Authorization: Bearer …`
+ *   when one is remembered and the caller did not supply their own.
  */
 export async function apiRequest<T>(
   path: string,
   init: ApiRequestInit = {},
+): Promise<T> {
+  return performApiRequest<T>(path, init, true);
+}
+
+/**
+ * One request attempt. `allowRefreshRetry` is false on the retry itself:
+ * a request recovers through at most ONE rotation, so a second 401 (the
+ * rotation did not help, or the endpoint's own verdict) surfaces as-is.
+ */
+async function performApiRequest<T>(
+  path: string,
+  init: ApiRequestInit,
+  allowRefreshRetry: boolean,
 ): Promise<T> {
   const { body: initBody, headers: initHeaders, method: initMethod, requestId, ...rest } = init;
   const method = (initMethod ?? "GET").toUpperCase();
@@ -96,6 +109,17 @@ export async function apiRequest<T>(
   const headers = new Headers(initHeaders);
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
+  }
+
+  // Caller-owned Authorization wins (the pending staff TOTP session
+  // passes its confined bearer explicitly); otherwise the memory-only
+  // manager's token rides, and its 401-recovery applies.
+  const callerOwnsAuthorization = headers.has("Authorization");
+  if (!callerOwnsAuthorization) {
+    const token = getAccessToken();
+    if (token !== null) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
   }
 
   let body: BodyInit | undefined;
@@ -133,6 +157,21 @@ export async function apiRequest<T>(
   // Feed the shared clock estimate from every response (success or
   // error alike — the header rides both). Missing headers are a no-op.
   observeServerDateHeader(response.headers.get("Date"));
+
+  // Session-expiry recovery (cold-start bootstrap included): rotate the
+  // HttpOnly refresh cookie once, then retry the original request with
+  // the fresh bearer. The failed attempt's body is left unread.
+  if (
+    response.status === 401 &&
+    allowRefreshRetry &&
+    !callerOwnsAuthorization &&
+    !path.startsWith(AUTH_API_PREFIX)
+  ) {
+    const rotated = await refreshAccessToken();
+    if (rotated) {
+      return performApiRequest<T>(path, init, false);
+    }
+  }
 
   if (response.status === 204 || response.status === 205) {
     return undefined as T;

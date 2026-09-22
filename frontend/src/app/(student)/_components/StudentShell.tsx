@@ -4,7 +4,8 @@
  * whole (student) route group. The session hook (SWR-style /me cache)
  * gates the group — anonymous visitors get the login CTA instead of a
  * page of failing sections, a session outage gets a retryable error, and
- * only authenticated users reach the pages (design §10).
+ * only STUDENT sessions reach the pages (design §10); a TEACHER/ADMIN
+ * session gets guidance to the staff workspace (see `workspace.ts`).
  *
  * Pages inside stay Server Components; this file is the ONLY client
  * boundary of the shell (patterns §2: isolate the interactive child).
@@ -15,6 +16,7 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { useSession } from "@/features/auth/session";
+import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 
 const NAV_ITEMS = [
@@ -85,6 +87,37 @@ export function StudentShell({ children }: { children: ReactNode }) {
         </div>
         <main className="app-main">
           <SectionError error={state.error} onRetry={refresh} retryLabel="重新加载" />
+        </main>
+      </div>
+    );
+  }
+
+  // Role gate (PR #4 hardening Task 3): the student workspace mounts
+  // ONLY for a STUDENT session. A TEACHER/ADMIN session gets guidance
+  // to the staff workspace instead — and because the pages (children)
+  // never mount, none of the student-only sections can fire their API
+  // calls from a staff session.
+  const gate = studentWorkspaceGate(state.me.role);
+  if (gate.kind !== "student") {
+    return (
+      <div className="app-shell">
+        <div className="app-topbar">
+          <div className="app-topbar-inner">
+            <span className="app-brand">CampusQuest</span>
+          </div>
+        </div>
+        <main className="app-main">
+          <div className="alert alert-warning" role="alert">
+            <p>
+              <span className="alert-marker" aria-hidden="true">!</span>
+              学生工作区仅对学生账号开放，当前登录的是教师或管理员账号。
+            </p>
+            <p>
+              <Link className="btn btn-primary" href={gate.workspacePath}>
+                前往教师工作台
+              </Link>
+            </p>
+          </div>
         </main>
       </div>
     );

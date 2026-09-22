@@ -6,7 +6,9 @@
  *
  * Submit flow: email + password + second factor -> POST /api/v1/auth/staff/
  * login -> §29 envelope branching:
- * - success: refresh the session cache and land on home;
+ * - success: refresh the session cache and land on the TEACHER landing
+ *   (the review queue — a staff session never lands on the student
+ *   home, where the shell would turn it away);
  * - `AUTHENTICATION_REQUIRED`: the uniform wrong email/password/code copy
  *   (one staff-specific line — never the student form's 学号 copy);
  * - `TOTP_SETUP_REQUIRED`: raised only AFTER the password proved correct
@@ -23,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
+import { TEACHER_LANDING_PATH } from "@/features/auth/workspace";
 import { isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
@@ -75,7 +78,7 @@ export function StaffLoginForm() {
     try {
       await loginStaff(email, values.password, values.totp_code.trim());
       refreshSession();
-      router.replace("/");
+      router.replace(TEACHER_LANDING_PATH); // Teacher landing: the review queue
       router.refresh();
     } catch (error) {
       if (!isApiError(error)) {

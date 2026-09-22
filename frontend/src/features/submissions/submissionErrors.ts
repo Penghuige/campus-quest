@@ -7,6 +7,7 @@
  * attempt never mutates the visible claim state; patterns §7).
  */
 import { isApiError, isKnownErrorCode, isSystemErrorCode } from "@/lib/errors";
+import { PinnedLengthMismatchError } from "./api";
 
 /** Presentation view of one failed submission/abandon attempt. */
 export interface SubmissionErrorView {
@@ -37,6 +38,11 @@ const GENERIC_TEXT = "操作失败，请稍后重试";
 
 /** Derive a submission/abandon failure view. Pure: same failure in, same view out. */
 export function describeSubmissionError(error: unknown): SubmissionErrorView {
+  // The local byte-pin failure carries its own actionable copy (the
+  // re-select path is the fix — no request ever fired).
+  if (error instanceof PinnedLengthMismatchError) {
+    return { message: error.message, requestId: null };
+  }
   if (!isApiError(error)) {
     return { message: NETWORK_TEXT, requestId: null };
   }

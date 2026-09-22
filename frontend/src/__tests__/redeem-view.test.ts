@@ -54,7 +54,6 @@ function reward(overrides: Partial<RewardItemDto>): RewardItemDto {
     per_user_term_limit: null,
     available_from: null,
     available_until: null,
-    requires_manual_review: false,
     window_open: true,
     ...overrides,
   };

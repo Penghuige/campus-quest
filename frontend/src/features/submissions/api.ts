@@ -6,11 +6,15 @@
  * Presigned flow (spec §10): `createUploadIntent` gets the single-use
  * grant, the browser PUTs the file STRAIGHT to storage via
  * `putFileToPresignedUrl` (no auth material on that request — the
- * signature in the URL IS the authorization; the Content-Type is PINNED
- * to the declared type's MIME because the provider rejects any other),
- * then `completeUpload` finalizes and the async validation runs. The
- * presigned URL is TRANSIENT STATE ONLY: it is never rendered and never
- * logged (spec §40 — no object-storage paths on any student surface).
+ * signature in the URL IS the authorization), then `completeUpload`
+ * finalizes and the async validation runs. The SIGNING CONTRACT rides
+ * the intent response: `headers` are the client headers the URL signed
+ * (echoed VERBATIM — including `If-None-Match: *` and the pinned
+ * Content-Type) and `pinned_content_length` is the exact byte count the
+ * signature covers — the client never reconstructs either from
+ * documentation. The presigned URL is TRANSIENT STATE ONLY: it is never
+ * rendered and never logged (spec §40 — no object-storage paths on any
+ * student surface).
  */
 import { apiRequest } from "@/lib/api";
 import type { components } from "@/lib/api/schema";
@@ -55,17 +59,6 @@ export const FILE_TYPE_LABELS: Record<FileTypeKey, string> = {
   CSV: "CSV",
   XLSX: "Excel（.xlsx）",
   SQLITE: "SQLite",
-};
-
-/**
- * MIME pinned on every presigned PUT per declared type — must match the
- * backend's `DECLARED_TYPE_CONTENT_TYPES` exactly, or the provider
- * rejects the PUT (spec §10 declared-type pinning).
- */
-const DECLARED_TYPE_CONTENT_TYPES: Record<FileTypeKey, string> = {
-  CSV: "text/csv",
-  XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  SQLITE: "application/vnd.sqlite3",
 };
 
 /**
@@ -161,14 +154,15 @@ export interface PutProgress {
 
 /**
  * Minimal transport port for `putFileToPresignedUrl` — injectable so unit
- * tests pin the request shape (method, pinned Content-Type, NO auth
- * headers, no cookies) without a browser XMLHttpRequest.
+ * tests pin the request shape (method, echoed signed headers, NO auth
+ * headers, no cookies, pinned body length) without a browser
+ * XMLHttpRequest.
  */
 export interface PutTransport {
   put(
     url: string,
     body: ArrayBuffer,
-    contentType: string,
+    headers: Record<string, string>,
     onProgress: (sample: PutProgress) => void,
     signal: AbortSignal | undefined,
   ): Promise<void>;
@@ -186,54 +180,88 @@ export class StoragePutError extends Error {
 }
 
 /**
- * PUT the file bytes straight to the short-lived presigned URL (spec §10).
+ * The picked file no longer matches the signed byte pin — raised BEFORE
+ * any bytes leave (the storage signature covers exactly
+ * `pinned_content_length`, so a mismatched body could never land anyway).
+ */
+export class PinnedLengthMismatchError extends Error {
+  readonly actualBytes: number;
+  readonly pinnedBytes: number;
+
+  constructor(actualBytes: number, pinnedBytes: number) {
+    super(
+      `文件内容已变化（当前 ${actualBytes} 字节，上传任务锁定 ${pinnedBytes} 字节），请重新选择文件后再试`,
+    );
+    this.name = "PinnedLengthMismatchError";
+    this.actualBytes = actualBytes;
+    this.pinnedBytes = pinnedBytes;
+  }
+}
+
+/**
+ * PUT the file bytes straight to the short-lived presigned URL (spec
+ * §10), consuming the backend's signing contract VERBATIM:
  *
+ * - `intent.headers` — every client header the URL signed (`If-None-Match:
+ *   *`, the pinned Content-Type) is echoed exactly as returned. The
+ *   client keeps NO copy of the signing policy; a header the backend did
+ *   not return is a header we do not send.
+ * - `intent.pinned_content_length` — the PUT body must cover exactly this
+ *   many bytes. A browser cannot set Content-Length programmatically (a
+ *   forbidden header), so the pin is honored by SENDING a body of exactly
+ *   that length: a Blob/File whose size equals the pin lets the browser
+ *   frame Content-Length itself and the signature holds. Any mismatch is
+ *   a LOCAL failure raised before the request fires.
  * - XHR (not fetch): upload progress via `xhr.upload.onprogress` is
  *   trivial here and nonexistent on fetch; when the storage never sends
  *   computable length the caller renders an indeterminate spinner.
  * - NO Authorization header, NO CSRF header, NO cookies: the URL's
  *   signature is the authorization, and attaching credentials would leak
  *   API auth material to the storage origin.
- * - The Content-Type is pinned to the declared type's MIME: the provider
- *   rejects a PUT carrying any other value.
- * - CORS preflight (deployment contract): a non-safelisted
- *   Content-Type makes this cross-origin PUT a NON-simple request, so
- *   the browser sends an OPTIONS preflight BEFORE any bytes leave; the
- *   storage provider's CORS configuration must allow the PUT method and
- *   exactly this Content-Type (the e2e mock route mirrors the same
- *   shape). A refused preflight surfaces as the generic `onerror`
- *   network failure below — nothing in this transport can bypass it.
+ * - CORS preflight (deployment contract): a non-safelisted Content-Type
+ *   makes this cross-origin PUT a NON-simple request, so the browser
+ *   sends an OPTIONS preflight BEFORE any bytes leave; the storage
+ *   provider's CORS configuration must allow the PUT method and exactly
+ *   the headers echoed here (the e2e mock route mirrors the same shape).
+ *   A refused preflight surfaces as the generic `onerror` network
+ *   failure below — nothing in this transport can bypass it.
  */
 export function putFileToPresignedUrl(
-  url: string,
+  intent: UploadIntentDto,
   file: Blob,
-  declaredType: FileTypeKey,
   options: {
     onProgress?: (sample: PutProgress) => void;
     signal?: AbortSignal;
   } = {},
   transport: PutTransport = xhrPutTransport,
 ): Promise<void> {
-  return file
-    .arrayBuffer()
-    .then((body) =>
-      transport.put(
-        url,
-        body,
-        DECLARED_TYPE_CONTENT_TYPES[declaredType],
-        (sample) => options.onProgress?.(sample),
-        options.signal,
-      ),
+  if (file.size !== intent.pinned_content_length) {
+    return Promise.reject(
+      new PinnedLengthMismatchError(file.size, intent.pinned_content_length),
     );
+  }
+  return file.arrayBuffer().then((body) =>
+    transport.put(
+      intent.upload_url,
+      body,
+      intent.headers,
+      (sample) => options.onProgress?.(sample),
+      options.signal,
+    ),
+  );
 }
 
 /** Browser XHR binding of the transport port. */
 const xhrPutTransport: PutTransport = {
-  put(url, body, contentType, onProgress, signal) {
+  put(url, body, headers, onProgress, signal) {
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", url);
-      xhr.setRequestHeader("Content-Type", contentType);
+      // Verbatim echo of the signed client headers (spec §10): each
+      // returned header — and ONLY those — rides the PUT.
+      for (const [name, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(name, value);
+      }
       xhr.responseType = "text";
 
       const onAbort = () => {

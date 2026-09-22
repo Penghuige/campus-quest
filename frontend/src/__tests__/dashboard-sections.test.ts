@@ -37,7 +37,6 @@ function reward(overrides: Partial<RewardItemDto>): RewardItemDto {
     per_user_term_limit: null,
     available_from: null,
     available_until: null,
-    requires_manual_review: false,
     window_open: true,
     ...overrides,
   };
@@ -47,6 +46,7 @@ const WALLET = {
   available_points: 160,
   earned_points: 420,
   spendable_points: 160,
+  point_debt: 0,
 };
 
 beforeEach(() => {
@@ -109,6 +109,22 @@ describe("points + nearest-reward progress", () => {
     assert.equal(view.frozenPoints, 60);
   });
 
+  test("the overdraft rides as point_debt, verbatim — never a negative available", () => {
+    const overdrawn = {
+      ...WALLET,
+      available_points: 0,
+      spendable_points: 0,
+      point_debt: 40,
+    };
+    const progress = pointsProgressView(overdrawn, [reward({ point_cost: 120 })]);
+    assert.equal(progress.pointDebt, 40);
+    assert.equal(progress.availablePoints, 0); // clamped server-side, shown as-is
+    for (const status of ["loading", "error", "ready"] as const) {
+      const view = walletShelfView(overdrawn, { status, items: [] });
+      assert.equal(view.pointDebt, 40); // wallet fact on every branch
+    }
+  });
+
   test("wallet and rewards wrappers hit the exact endpoints", async () => {
     stubFetch(JSON.stringify(WALLET));
     const wallet = await myWallet();
@@ -125,12 +141,12 @@ describe("points + nearest-reward progress", () => {
 describe("wallet shelf gating (empty copy is a server verdict)", () => {
   test("loading shelf -> skeleton branch, no verdict and no empty copy", () => {
     const view = walletShelfView(WALLET, { status: "loading", items: [] });
-    assert.deepEqual(view, { shelf: "loading", frozenPoints: 0 });
+    assert.deepEqual(view, { shelf: "loading", frozenPoints: 0, pointDebt: 0 });
   });
 
   test("failed shelf -> unavailable branch (wallet numbers stay, no empty copy)", () => {
     const view = walletShelfView(WALLET, { status: "error", items: [] });
-    assert.deepEqual(view, { shelf: "unavailable", frozenPoints: 0 });
+    assert.deepEqual(view, { shelf: "unavailable", frozenPoints: 0, pointDebt: 0 });
   });
 
   test("frozen note rides every branch (wallet fact, not a shelf verdict)", () => {

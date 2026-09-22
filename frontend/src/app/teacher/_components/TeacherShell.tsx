@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { useSession } from "@/features/auth/session";
+import { teacherWorkspaceGate } from "@/features/auth/workspace";
 
 const NAV_ITEMS = [
   { href: "/teacher/reviews", label: "审核队列" },
@@ -86,7 +87,12 @@ export function TeacherShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (state.me.role === "STUDENT") {
+  // Role gate (`workspace.ts`, PR #4 hardening Task 3): the staff
+  // workspace mounts ONLY for TEACHER/ADMIN; a STUDENT session gets the
+  // permission guidance (design §10: explain + navigate back), never a
+  // page of 403ing sections.
+  const gate = teacherWorkspaceGate(state.me.role);
+  if (gate.kind === "student-guidance") {
     return (
       <div className="app-shell">
         <div className="app-topbar">
@@ -101,7 +107,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
               教师工作台仅对教师与管理员开放，当前账号是学生账号。
             </p>
             <p>
-              <Link className="link" href="/">
+              <Link className="link" href={gate.workspacePath}>
                 返回学生首页
               </Link>
             </p>

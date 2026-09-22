@@ -20,6 +20,12 @@ export interface PointsProgressView {
   earnedPoints: number;
   /** Points currently frozen by pending redemptions (shown as a note). */
   frozenPoints: number;
+  /**
+   * The wallet's overdraft, VERBATIM from `point_debt` (the backend
+   * clamps available/spendable at 0 and carries the overdraft here;
+   * never a client-side negative). Shown as a note when > 0.
+   */
+  pointDebt: number;
   rewardName: string | null;
   rewardCost: number | null;
   /** Points still needed; null when the reward is already affordable. */
@@ -56,6 +62,7 @@ export function pointsProgressView(
     availablePoints: wallet.available_points,
     earnedPoints: wallet.earned_points,
     frozenPoints: Math.max(wallet.available_points - wallet.spendable_points, 0),
+    pointDebt: wallet.point_debt,
     rewardName: null,
     rewardCost: null,
     remainingPoints: null,
@@ -94,14 +101,16 @@ export interface RewardsShelf {
  * - `verdict`  -> the ready-shelf progress view, empty or not.
  */
 export type WalletShelfView =
-  | { shelf: "loading"; frozenPoints: number }
-  | { shelf: "unavailable"; frozenPoints: number }
-  | { shelf: "verdict"; frozenPoints: number; progress: PointsProgressView };
+  | { shelf: "loading"; frozenPoints: number; pointDebt: number }
+  | { shelf: "unavailable"; frozenPoints: number; pointDebt: number }
+  | { shelf: "verdict"; frozenPoints: number; pointDebt: number; progress: PointsProgressView };
 
 /**
  * Gate the shelf branch for the wallet panel; pure presentation rule.
- * `frozenPoints` rides every branch — the freeze note belongs to the
- * WALLET, not to the shelf's load state.
+ * `frozenPoints` and `pointDebt` ride every branch — both are WALLET
+ * facts (the freeze note and the overdraft note), not properties of the
+ * shelf's load state. `pointDebt` is the backend's clamped overdraft
+ * carried verbatim (see `PointsProgressView.pointDebt`).
  */
 export function walletShelfView(
   wallet: WalletDto,
@@ -111,15 +120,17 @@ export function walletShelfView(
     wallet.available_points - wallet.spendable_points,
     0,
   );
+  const pointDebt = wallet.point_debt;
   if (rewards.status === "loading") {
-    return { shelf: "loading", frozenPoints };
+    return { shelf: "loading", frozenPoints, pointDebt };
   }
   if (rewards.status === "error") {
-    return { shelf: "unavailable", frozenPoints };
+    return { shelf: "unavailable", frozenPoints, pointDebt };
   }
   return {
     shelf: "verdict",
     frozenPoints,
+    pointDebt,
     progress: pointsProgressView(wallet, rewards.items),
   };
 }

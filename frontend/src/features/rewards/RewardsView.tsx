@@ -98,7 +98,12 @@ function WalletSection({
 }: {
   status: "loading" | "ready" | "error";
   error: unknown;
-  data: { available_points: number; earned_points: number; spendable_points: number } | null;
+  data: {
+    available_points: number;
+    earned_points: number;
+    spendable_points: number;
+    point_debt: number;
+  } | null;
   retry: () => void;
 }) {
   const frozen =
@@ -126,6 +131,11 @@ function WalletSection({
               <span className="metric-value">{data.spendable_points}</span>
             </div>
           </div>
+          {data.point_debt > 0 ? (
+            <p className="progress-note">
+              当前积分透支 {data.point_debt}（可用与可花费已按 0 显示），新获得的积分会先偿还透支部分
+            </p>
+          ) : null}
           {frozen > 0 ? (
             <p className="progress-note">
               有 {frozen} 积分冻结在兑换申请中，兑换以可花费余额为准
@@ -228,7 +238,6 @@ function RewardCard({
         <span className="reward-cost meta-num">{item.point_cost} 积分</span>
         {view.stockLabel !== null ? <span>{view.stockLabel}</span> : null}
         {view.windowLabel !== null ? <span>{view.windowLabel}</span> : null}
-        {item.requires_manual_review ? <span>需老师审核</span> : null}
       </div>
       {/* Spendability is the server's call (patterns §3): the button
           stays enabled on redeemable items and typed conflicts teach. */}

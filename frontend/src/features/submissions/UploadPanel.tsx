@@ -28,6 +28,7 @@ import {
   getValidation,
   putFileToPresignedUrl,
   type FileTypeKey,
+  type UploadIntentDto,
 } from "./api";
 import { describeSubmissionError } from "./submissionErrors";
 import {
@@ -166,17 +167,15 @@ export function UploadPanel({
     async (file: File, declaredType: FileTypeKey) => {
       const { signal } = beginRun();
       dispatch({ type: "prepare-started" });
-      // The presigned URL stays inside this closure (spec §40).
-      let intentId: string;
-      let uploadUrl: string;
+      // The intent (presigned URL included) stays inside this closure
+      // (spec §40); the PUT consumes its signing contract verbatim.
+      let intent: UploadIntentDto;
       try {
-        const intent = await createUploadIntent(
+        intent = await createUploadIntent(
           claimId,
           { name: file.name, size: file.size },
           declaredType,
         );
-        intentId = intent.intent_id;
-        uploadUrl = intent.upload_url;
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -184,9 +183,9 @@ export function UploadPanel({
         dispatch({ type: "failed", stage: "prepare", error });
         return;
       }
-      dispatch({ type: "intent-issued", intentId });
+      dispatch({ type: "intent-issued", intentId: intent.intent_id });
       try {
-        await putFileToPresignedUrl(uploadUrl, file, declaredType, {
+        await putFileToPresignedUrl(intent, file, {
           onProgress: (sample) =>
             dispatch({ type: "progress", loaded: sample.loaded, total: sample.total }),
           signal,
@@ -199,7 +198,7 @@ export function UploadPanel({
         return;
       }
       dispatch({ type: "put-succeeded" });
-      await finalize(intentId, signal);
+      await finalize(intent.intent_id, signal);
     },
     [beginRun, claimId, finalize],
   );

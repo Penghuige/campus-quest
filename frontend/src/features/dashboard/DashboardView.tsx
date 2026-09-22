@@ -227,6 +227,11 @@ function WalletBody({
       {shelf.shelf === "verdict" && shelf.progress.status === "empty" ? (
         <p className="progress-note">暂无可兑换的奖励，完成任务先攒积分吧</p>
       ) : null}
+      {shelf.pointDebt > 0 ? (
+        <p className="progress-note">
+          当前积分透支 {shelf.pointDebt}（可用与可花费已按 0 显示），新获得的积分会先偿还透支部分
+        </p>
+      ) : null}
       {shelf.frozenPoints > 0 ? (
         <p className="progress-note">
           有 {shelf.frozenPoints} 积分冻结在兑换申请中，兑换以可花费余额为准

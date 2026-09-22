@@ -10,6 +10,7 @@
  * the HttpOnly cookie the backend sets.
  */
 import { apiRequest } from "../../lib/api";
+import { clearAccessToken, setAccessToken } from "../../lib/accessToken";
 import type { components } from "../../lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -68,15 +69,21 @@ export function registerStudent(payload: RegisterPayload): Promise<RegisteredUse
   });
 }
 
-/** Student login; the backend sets the refresh + CSRF cookies. */
-export function loginStudent(
+/**
+ * Student login; the backend sets the refresh + CSRF cookies. The body's
+ * short-lived access token is remembered by the memory-only manager, so
+ * the next `apiRequest` carries it as the bearer (`lib/accessToken.ts`).
+ */
+export async function loginStudent(
   username: string,
   password: string,
 ): Promise<LoginTokens> {
-  return apiRequest<LoginTokens>(`${BASE}/login`, {
+  const tokens = await apiRequest<LoginTokens>(`${BASE}/login`, {
     method: "POST",
     body: { username, password },
   });
+  setAccessToken(tokens.access_token);
+  return tokens;
 }
 
 /**
@@ -107,12 +114,16 @@ export function confirmPasswordReset(
 // - `invitations/accept` and `staff/login` behave like the student login:
 //   the refresh token rides the HttpOnly cookie; the SHORT-LIVED access
 //   token + CSRF mirror sit in the body;
+// - `staff/login` success is a full staff session, so its access token
+//   enters the memory-only manager exactly like the student login's;
 // - the pending staff session's access token is the SANCTIONED body-token
 //   exception (backend `PendingStaffSession`): the server confines it to
-//   `/staff/totp/*`, so the two setup calls below present it as an
-//   `Authorization: Bearer` header (the guard reads the bearer scheme —
-//   identity/dependencies.py). Callers keep it in React state ONLY:
-//   never localStorage/sessionStorage, never logged.
+//   `/staff/totp/*`, so it is deliberately NOT promoted into the shared
+//   memory manager (it must never ride unrelated API requests) — the two
+//   setup calls below present it as an `Authorization: Bearer` header
+//   (the guard reads the bearer scheme — identity/dependencies.py) and
+//   the invitation flow keeps it in React state ONLY: never
+//   localStorage/sessionStorage, never logged.
 
 /** `TotpSetupResponse` — secret + otpauth URI, displayed exactly once. */
 export type StaffTotpSetup = Schemas["TotpSetupResponse"];
@@ -132,15 +143,32 @@ export function acceptStaffInvitation(
 }
 
 /** Staff login: verified email + password + TOTP-or-recovery code. */
-export function loginStaff(
+export async function loginStaff(
   email: string,
   password: string,
   totpCode: string,
 ): Promise<LoginTokens> {
-  return apiRequest<LoginTokens>(`${BASE}/staff/login`, {
+  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/login`, {
     method: "POST",
     body: { email, password, totp_code: totpCode },
   });
+  setAccessToken(tokens.access_token);
+  return tokens;
+}
+
+/**
+ * Revoke the presented session server-side (204) and forget the
+ * memory-only access token. The memory clears in a `finally` even when
+ * the revoke call itself fails: the client must never keep a token the
+ * user asked to drop (a survived cookie would simply re-bootstrap on
+ * the next request — the server stays the authority).
+ */
+export async function logout(): Promise<void> {
+  try {
+    await apiRequest<void>(`${BASE}/logout`, { method: "POST" });
+  } finally {
+    clearAccessToken();
+  }
 }
 
 /** Generate (or rotate) the unconfirmed TOTP secret; shown once (§5.8). */

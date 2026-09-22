@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
+import { STUDENT_LANDING_PATH } from "@/features/auth/workspace";
 import { isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
@@ -55,7 +56,7 @@ export function LoginForm() {
     try {
       await loginStudent(trimmed, password);
       refreshSession(); // invalidate the cached anonymous /me result
-      router.replace("/");
+      router.replace(STUDENT_LANDING_PATH); // student home (role's own landing)
       router.refresh(); // re-render server components with the new session
     } catch (error) {
       if (!isApiError(error)) {
