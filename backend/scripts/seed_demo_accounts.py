@@ -1,8 +1,8 @@
 """Seed demo accounts into the running dev database.
 
-Usage (from backend/, against the dev compose stack):
-  DATABASE_URL=postgresql+asyncpg://campusquest:campusquest-dev@localhost:15432/campusquest \
-  REDIS_URL=redis://localhost:6379/1 ... uv run python scripts/seed_demo_accounts.py
+Usage (from backend/, with the dev-stack environment exported —
+DATABASE_URL pointing at the compose PostgreSQL, REDIS_URL, S3_*, BUSINESS_TIMEZONE):
+  uv run python scripts/seed_demo_accounts.py
 
 Creates:
 - STUDENTS: student01..student20, password "student-demo-2026", ACTIVE
@@ -14,6 +14,7 @@ Creates:
 
 Idempotent: skips rows whose username/email already exist.
 """
+
 import asyncio
 import sys
 from datetime import UTC, datetime
@@ -108,8 +109,7 @@ async def main() -> None:
     print("\nTOTP (both staff accounts share the demo secret):")
     print(f"  secret:   {DEMO_TOTP_SECRET}")
     print(
-        "  otpauth:  "
-        + build_otpauth_uri(DEMO_TOTP_SECRET, "admin@campus.example.edu")
+        "  otpauth:  " + build_otpauth_uri(DEMO_TOTP_SECRET, "admin@campus.example.edu")
     )
     totp = pyotp.TOTP(DEMO_TOTP_SECRET)
     print(f"  code now: {totp.now()}")
