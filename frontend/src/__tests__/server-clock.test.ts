@@ -37,25 +37,38 @@ function stubResponse(headers: Record<string, string>, status = 200): () => numb
 
 describe("apiRequest feeds the server-clock store from the Date header", () => {
   test("a valid Date header becomes the offset (header - receivedAt)", async () => {
-    const serverMs = Date.parse("2026-09-21T10:00:00Z");
-    const receivedAt = stubResponse({ Date: "Mon, 21 Sep 2026 10:00:00 GMT" });
+    // A FIXED skew from NOW, not a hardcoded calendar date: the store
+    // discards samples beyond ±24h as proxy garbage, so a hardcoded
+    // "Sep 21" header is a time bomb — the suite starts failing exactly
+    // one day after the stamp (observed 2026-09-22). A -90s skew from
+    // the current clock is always inside the window.
+    const skewMs = 90_000;
+    const serverMs = Date.now() - skewMs;
+    const receivedAt = stubResponse({ Date: new Date(serverMs).toUTCString() });
     await apiRequest("/api/v1/tasks");
     const expected = serverMs - receivedAt();
-    // The stub records receive time synchronously; allow scheduling slack.
+    // The stub records its timestamp SYNCHRONOUSLY at the fetch call;
+    // the estimator's clock read happens one microtask later, so the
+    // stub-derived expectation is the UPPER bound of the sample and the
+    // scheduling gap is one-sided: expected - offset ∈ [0, slack]. The
+    // slack is generous (a loaded dev box can stall the gap for
+    // seconds); what the assertion must catch is a WRONG SIGN or a
+    // garbage-sized sample, both of which land far outside it.
+    const offset = currentServerClockOffset();
     assert.ok(
-      Math.abs(currentServerClockOffset() - expected) < 100,
-      `offset ${currentServerClockOffset()} should be ~${expected}`,
+      expected - offset >= 0 && expected - offset < 5_000,
+      `offset ${offset} should be within [expected-5000, expected] of ${expected}`,
     );
   });
 
   test("204 responses observe the header too", async () => {
-    stubResponse({ Date: "Mon, 21 Sep 2026 10:00:00 GMT" }, 204);
+    stubResponse({ Date: new Date(Date.now() - 90_000).toUTCString() }, 204);
     await apiRequest("/api/v1/void");
     assert.notEqual(currentServerClockOffset(), 0);
   });
 
   test("error responses still feed the estimate", async () => {
-    stubResponse({ Date: "Mon, 21 Sep 2026 10:00:00 GMT" }, 500);
+    stubResponse({ Date: new Date(Date.now() - 90_000).toUTCString() }, 500);
     await assert.rejects(apiRequest("/api/v1/tasks"));
     assert.notEqual(currentServerClockOffset(), 0);
   });

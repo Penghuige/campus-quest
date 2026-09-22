@@ -113,12 +113,15 @@ async function performApiRequest<T>(
 
   // Caller-owned Authorization wins (the pending staff TOTP session
   // passes its confined bearer explicitly); otherwise the memory-only
-  // manager's token rides, and its 401-recovery applies.
+  // manager's token rides, and its 401-recovery applies. tokenUsed
+  // remembers WHICH token this request carried — the late-stale-401
+  // guard below compares it against the manager's current token.
   const callerOwnsAuthorization = headers.has("Authorization");
+  let tokenUsed: string | null = null;
   if (!callerOwnsAuthorization) {
-    const token = getAccessToken();
-    if (token !== null) {
-      headers.set("Authorization", `Bearer ${token}`);
+    tokenUsed = getAccessToken();
+    if (tokenUsed !== null) {
+      headers.set("Authorization", `Bearer ${tokenUsed}`);
     }
   }
 
@@ -167,6 +170,16 @@ async function performApiRequest<T>(
     !callerOwnsAuthorization &&
     !path.startsWith(AUTH_API_PREFIX)
   ) {
+    // Late-stale-401 guard (targeted re-review P0): this request's 401
+    // may arrive AFTER another request's rotation already replaced the
+    // token it used. Rotating again would revoke the session the first
+    // retry is riding (the backend's rotate-once semantics revoke the
+    // predecessor), so when the manager already holds a DIFFERENT
+    // token, retry directly with it — no second rotation.
+    const current = getAccessToken();
+    if (current !== null && current !== tokenUsed) {
+      return performApiRequest<T>(path, init, false);
+    }
     const rotated = await refreshAccessToken();
     if (rotated) {
       return performApiRequest<T>(path, init, false);

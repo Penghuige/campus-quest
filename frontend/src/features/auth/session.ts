@@ -50,8 +50,49 @@ type SessionResult =
 
 const STALE_AFTER_MS = 30_000;
 
+// Cache generation (targeted re-review P1): bumped by
+// invalidateSessionCache() on every auth transition (login, logout).
+// A fetch started under an older generation must not write its result
+// into the cache — a stale anonymous /me landing after a successful
+// login would otherwise poison the next shell mount into rendering
+// "未登录" from the fresh window.
 let cache: { result: SessionResult; fetchedAt: number } | null = null;
 let inflight: Promise<SessionResult> | null = null;
+let generation = 0;
+
+/**
+ * Synchronously drop the session cache (login/logout transitions).
+ * The generation bump also fences every in-flight fetch: results from
+ * requests that started BEFORE the transition can no longer repopulate
+ * the cache a newly mounted consumer would trust.
+ */
+export function invalidateSessionCache(): void {
+  generation += 1;
+  cache = null;
+}
+
+/** Test seam: reset the store to the pre-mount state. */
+export function resetSessionCacheForTests(): void {
+  cache = null;
+  inflight = null;
+  generation = 0;
+}
+
+/** Test seam: the REAL loader, so regressions exercise production code. */
+export const loadSessionForTests: () => Promise<SessionResult> = () => load();
+
+/**
+ * Test seam: the cache a freshly mounted `useSession` would consult on
+ * its first render (result + fresh-window verdict), or null.
+ */
+export function peekSessionCacheForTests(): {
+  result: SessionResult | null;
+  fresh: boolean;
+} {
+  return cache === null
+    ? { result: null, fresh: false }
+    : { result: cache.result, fresh: isFresh() };
+}
 
 function toState(result: SessionResult): SessionState {
   return result.kind === "authenticated"
@@ -75,8 +116,15 @@ function load(): Promise<SessionResult> {
   if (inflight !== null) {
     return inflight;
   }
+  const myGeneration = generation;
   const request: Promise<SessionResult> = fetchSession().then((result) => {
-    cache = { result, fetchedAt: Date.now() };
+    // Generation fence: only the CURRENT generation's fetch may write
+    // the cache — a result that raced past an invalidateSessionCache()
+    // (login landed while the anonymous /me was still in flight) is
+    // dropped instead of poisoning the fresh window.
+    if (generation === myGeneration) {
+      cache = { result, fetchedAt: Date.now() };
+    }
     return result;
   });
   inflight = request;

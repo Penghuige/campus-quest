@@ -11,6 +11,7 @@
  */
 import { apiRequest } from "../../lib/api";
 import { clearAccessToken, setAccessToken } from "../../lib/accessToken";
+import { invalidateSessionCache } from "./session";
 import type { components } from "../../lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -83,6 +84,11 @@ export async function loginStudent(
     body: { username, password },
   });
   setAccessToken(tokens.access_token);
+  // Synchronously drop any cached ANONYMOUS /me: the login page's
+  // hook may have cached it moments ago, and the freshly mounted
+  // shell must never render "未登录" from that stale fresh-window
+  // entry (targeted re-review P1).
+  invalidateSessionCache();
   return tokens;
 }
 
@@ -153,6 +159,11 @@ export async function loginStaff(
     body: { email, password, totp_code: totpCode },
   });
   setAccessToken(tokens.access_token);
+  // Synchronously drop any cached ANONYMOUS /me: the login page's
+  // hook may have cached it moments ago, and the freshly mounted
+  // shell must never render "未登录" from that stale fresh-window
+  // entry (targeted re-review P1).
+  invalidateSessionCache();
   return tokens;
 }
 
@@ -168,6 +179,8 @@ export async function logout(): Promise<void> {
     await apiRequest<void>(`${BASE}/logout`, { method: "POST" });
   } finally {
     clearAccessToken();
+    // The authenticated /me cache is as stale as the token now.
+    invalidateSessionCache();
   }
 }
 
