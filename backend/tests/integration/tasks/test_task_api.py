@@ -1130,7 +1130,7 @@ async def test_teacher_statistics_counts(
     assert body["assignments_retired"] == 1
     assert body["active_claims"] == 1
     assert body["completion_rate"] == 0.25  # 1 / (2+1+1)
-    assert body["rating"] is None  # no ratings seeded (plan-06 adapter wired)
+    assert body["rating"] is None  # NullRatingSummaryPort until Plan 06
     assert body["submission_counts"] == {}  # Plan 04 seam
 
 

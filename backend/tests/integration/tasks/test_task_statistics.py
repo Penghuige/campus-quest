@@ -16,10 +16,6 @@ Pinned behavior:
   VIEW_TASK; any other Teacher (and Students) get PERMISSION_DENIED.
 - The rating port is None-safe: NullRatingSummaryPort yields rating
   None; a fake port's summary is surfaced verbatim.
-- Plan 06 task 7 adds the community module's REAL adapter: one test
-  wires CommunityRatingSummaryAdapter so a genuine TaskRating aggregate
-  flows through statistics end to end (eligibility included, via the
-  rating service itself).
 - No Clock is injected: statistics are as-of-now snapshots with no
   time-dependent business rule (plan pre-flight decision).
 """
@@ -36,8 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.modules.community.adapters import CommunityRatingSummaryAdapter
-from app.modules.community.rating_service import RatingService
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
@@ -365,40 +359,3 @@ async def test_unknown_task_not_found(db_session: AsyncSession) -> None:
             UUID("00000000-0000-0000-0000-000000000000"),
             NullRatingSummaryPort(),
         )
-
-
-@pytest.mark.integration
-async def test_real_rating_adapter_feeds_statistics(db_session: AsyncSession) -> None:
-    """Plan 06 task 7's wiring proof: the community module's REAL adapter
-    (not a fake port) supplies the statistics rating. Two completers rate
-    5 and 4 through the rating service itself — eligibility included —
-    and the aggregate (average 4.5, count 2) surfaces through
-    get_task_statistics, exactly the shape spec §20 allows out of
-    ratings: 聚合分和数量， never who gave what."""
-    owner = _user(username="teacher0051", role=Role.TEACHER)
-    rater_a = _user(username="20250010051", role=Role.STUDENT)
-    rater_b = _user(username="20250010052", role=Role.STUDENT)
-    db_session.add_all([owner, rater_a, rater_b])
-    await db_session.flush()
-    task = _task(owner)
-    db_session.add(task)
-    await db_session.flush()
-    assignment = _assignment(task, "考研历史", AssignmentAvailability.COMPLETED)
-    db_session.add(assignment)
-    await db_session.flush()
-    db_session.add_all(
-        [
-            _claim(assignment, rater_a, ClaimStatus.COMPLETED),
-            _claim(assignment, rater_b, ClaimStatus.COMPLETED),
-        ]
-    )
-    await db_session.flush()
-
-    await RatingService().rate_task(db_session, rater_a.id, task.id, 5)
-    await RatingService().rate_task(db_session, rater_b.id, task.id, 4)
-
-    stats = await TaskQueryService().get_task_statistics(
-        db_session, _actor(owner), task.id, CommunityRatingSummaryAdapter(db_session)
-    )
-
-    assert stats.rating == RatingSummary(average=4.5, count=2)

@@ -31,13 +31,6 @@ Design decisions:
 - 2FA state lives in `totp_credentials` only (one row per user;
   `confirmed_at IS NOT NULL` means enabled). There is deliberately no
   `two_factor_enabled` column on `users`: two sources of truth could drift.
-- `display_honor_id` (migration 0008) points at the rankings module's
-  `honors` table: the one honor the user chose to display (spec §18). It
-  is a plain nullable pointer — ownership (a matching `user_honors` row)
-  is `rankings.honor_service.set_display_honor`'s rule, not a composite
-  FK — and identity never imports the rankings models: the display
-  title is resolved through a typed Core light table in `directory.py`
-  (the tasks module's `_USERS_LOCK` seam, mirrored).
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -103,10 +96,6 @@ class User(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     role: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16))
-    # The user's chosen display honor (spec §18; the honors table is
-    # rankings-owned, migration 0008). Plain nullable pointer; ownership
-    # is set_display_honor's service rule — see the module docstring.
-    display_honor_id: Mapped[UUID | None] = mapped_column(ForeignKey("honors.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

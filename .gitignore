@@ -33,6 +33,3 @@ npm-debug.log*
 .vscode/
 *.swp
 .DS_Store
-
-# agent stream scratch dirs (frontend S4 task workspaces)
-.t*scratch/

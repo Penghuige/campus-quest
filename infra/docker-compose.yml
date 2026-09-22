@@ -55,21 +55,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
-      # CORS origin allowlist for the browser-driven presigned flow
-      # (hardening P4c): the student's browser PUTs uploads straight to
-      # MinIO and GETs presigned downloads, both cross-origin from the
-      # frontend. The pinned server release does NOT implement the S3
-      # bucket-CORS API (mc cors set answers NotImplemented — probed on
-      # RELEASE.2025-09-07T16-13-09Z), so the supported gate is this
-      # server-wide origin list. MinIO's CORS layer echoes the
-      # preflight's requested headers (Content-Type, the write-once
-      # If-None-Match) in Access-Control-Allow-Headers; Content-Length
-      # is never requested by compliant browser code — it is a forbidden
-      # request header and the browser frames it automatically from the
-      # Blob whose declared size equals the API's pinned_content_length.
-      # Defaults are the Next.js dev server ("next dev", port 3000);
-      # set the production frontend origin in the environment instead.
-      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -97,10 +82,6 @@ services:
         mc alias set campusquest http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
         mc mb --ignore-existing campusquest/campusquest
         mc mb --ignore-existing campusquest/campusquest-test
-        # No bucket-CORS step here: the pinned MinIO server does not
-        # implement the bucket-CORS API (mc cors set -> NotImplemented,
-        # probed 2026-09 on this release). Browser CORS is configured
-        # on the minio service via MINIO_API_CORS_ALLOW_ORIGIN above.
 
 volumes:
   postgres-data:

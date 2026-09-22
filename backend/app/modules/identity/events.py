@@ -23,16 +23,10 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.modules.identity.enums import Role
-
-if TYPE_CHECKING:
-    # Annotation-only: keeps this module runtime-importable without
-    # sqlalchemy (the NotificationEventRecorder parameter annotation is
-    # lazy under `from __future__ import annotations`).
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -79,31 +73,6 @@ class DomainEventPublisher(Protocol):
     """
 
     def publish(self, event: DomainEvent) -> None: ...
-
-
-class NotificationEventRecorder(Protocol):
-    """The duck-typed ``NotificationPort.record_event`` seam
-    (MERGE_CARRIES item 2; the claim-service pattern).
-
-    identity must not import the notifications module — that module
-    imports identity (its frozen dependency direction) — so identity
-    services declare the callable they need and the composition root
-    (identity/providers.py, the one layer allowed to see both modules)
-    injects the concrete ``app.modules.notifications.port.
-    NotificationPort``. Emission joins the caller's transaction (the
-    outbox rule): the notification rows commit with the security state
-    change or not at all.
-    """
-
-    async def record_event(
-        self,
-        db: AsyncSession,
-        event_key: str,
-        event_type: str,
-        user_id: UUID,
-        payload: Mapping[str, Any],
-        task_policy: Any = None,
-    ) -> None: ...
 
 
 class InMemoryEventCollector:

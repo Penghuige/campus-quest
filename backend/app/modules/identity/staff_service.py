@@ -102,7 +102,6 @@ from app.modules.identity.events import (
     Actor,
     DomainEvent,
     DomainEventPublisher,
-    NotificationEventRecorder,
 )
 from app.modules.identity.models import (
     RecoveryCode,
@@ -189,13 +188,7 @@ class TotpSetup:
 
 
 class StaffService:
-    """Staff invitation, TOTP onboarding, and second-factor login (§5.8).
-
-    ``notification_recorder`` (optional, default None; MERGE_CARRIES
-    item 2) records the §25 ACCOUNT_SECURITY event when TOTP is
-    enabled — inside the same transaction as the credential flip (the
-    outbox rule). None keeps the service notification-free.
-    """
+    """Staff invitation, TOTP onboarding, and second-factor login (§5.8)."""
 
     def __init__(
         self,
@@ -205,7 +198,6 @@ class StaffService:
         fernet: Fernet,
         events: DomainEventPublisher,
         invitation_ttl_hours: int = 48,
-        notification_recorder: NotificationEventRecorder | None = None,
     ) -> None:
         # The clock is the only business-time source (expiry, verified-at,
         # confirmed-at); `sessions` shares the same instance at the
@@ -217,7 +209,6 @@ class StaffService:
         self._events = events
         self._invitation_ttl = timedelta(hours=invitation_ttl_hours)
         self._users = UserRepository()
-        self._notification_recorder = notification_recorder
 
     async def create_staff_invitation(
         self, db: AsyncSession, actor: Actor, email: str, role: Role
@@ -488,25 +479,6 @@ class StaffService:
                 payload={"recovery_codes_issued": len(codes)},
             )
         )
-        if self._notification_recorder is not None:
-            # The §25 ACCOUNT_SECURITY event joins THIS transaction
-            # (MERGE_CARRIES item 2; the outbox rule): the security
-            # reminder commits with the credential flip or not at all.
-            # User-scoped event key: TOTP enable is once-per-user by
-            # the state machine (a confirmed credential blocks
-            # re-begin, and no disable flow exists), so the aggregate
-            # key is the occurrence key — the claim:{id}:created
-            # convention.
-            await self._notification_recorder.record_event(
-                db,
-                event_key=f"user:{user_id}:totp_enabled",
-                event_type="ACCOUNT_SECURITY",
-                user_id=user_id,
-                payload={
-                    "event_summary": "两步验证已开启",
-                    "event_time": now,
-                },
-            )
         await db.commit()
         logger.info("totp enabled user_id=%s recovery_codes=%d", user_id, len(codes))
         return codes

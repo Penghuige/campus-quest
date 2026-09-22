@@ -44,8 +44,6 @@ from app.modules.identity.dependencies import (
     get_actor,
     get_business_clock,
     require_active_actor,
-    require_active_community_actor,
-    require_admin_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.enums import Role, UserStatus
@@ -142,23 +140,6 @@ def _build_app(db: AsyncSession, clock: Clock) -> FastAPI:
         actor: Annotated[Actor, Depends(require_staff_management_actor)],
     ) -> dict[str, str]:
         # Stand-in for the guard on ALL management endpoints (§33.4).
-        return {"user_id": str(actor.user_id), "role": actor.role.value}
-
-    @app.post("/test/admin-guard-op")
-    async def admin_guard_op(
-        actor: Annotated[Actor, Depends(require_admin_actor)],
-    ) -> dict[str, str]:
-        # Stand-in for the PR #2 hardening Admin-only surfaces (the
-        # points redemption review decisions, the notifications failure
-        # query) until scoped delegation lands.
-        return {"user_id": str(actor.user_id), "role": actor.role.value}
-
-    @app.post("/test/community-op")
-    async def community_op(
-        actor: Annotated[Actor, Depends(require_active_community_actor)],
-    ) -> dict[str, str]:
-        # Stand-in for the ordinary community participant surfaces
-        # (comments, votes, reactions, reports).
         return {"user_id": str(actor.user_id), "role": actor.role.value}
 
     @app.exception_handler(TotpSetupRequiredError)
@@ -495,128 +476,6 @@ async def test_suspended_teacher_denied_the_management_guard(
 
     async with _api(db_session, clock) as client:
         response = await client.post("/test/manage-op", headers=_auth(tokens))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == ErrorCode.ACCOUNT_NOT_ACTIVE
-
-
-# --- the Admin-only guard (PR #2: Admin-only until scoped delegation) -----------------
-
-
-@pytest.mark.integration
-async def test_confirmed_admin_passes_the_admin_guard(db_session: AsyncSession) -> None:
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=Role.ADMIN)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-    await _seed_totp(db_session, user, confirmed=True)
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/admin-guard-op", headers=_auth(tokens))
-
-    assert response.status_code == 200
-    assert response.json()["role"] == Role.ADMIN.value
-
-
-@pytest.mark.integration
-async def test_confirmed_teacher_denied_the_admin_guard(
-    db_session: AsyncSession,
-) -> None:
-    """The hardening flip: a TEACHER holding everything the management
-    guard demands (ACTIVE + confirmed TOTP) is still the wrong role for
-    the Admin-only surfaces."""
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=Role.TEACHER)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-    await _seed_totp(db_session, user, confirmed=True)
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/admin-guard-op", headers=_auth(tokens))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == ErrorCode.PERMISSION_DENIED
-
-
-@pytest.mark.integration
-async def test_admin_without_confirmed_totp_forced_into_setup(
-    db_session: AsyncSession,
-) -> None:
-    # The Admin role does not waive §5.8 step 3: the 2FA gate the
-    # management surfaces carry is inherited whole.
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=Role.ADMIN)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/admin-guard-op", headers=_auth(tokens))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "TOTP_SETUP_REQUIRED"
-
-
-# --- the community participant guard (PR #2 hardening: Student + Teacher) -------------
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("role", [Role.STUDENT, Role.TEACHER])
-async def test_student_and_teacher_pass_the_community_guard(
-    db_session: AsyncSession, role: Role
-) -> None:
-    """Spec §4.2 "除普通社区能力外，可：": the participant family is
-    Student + Teacher, and NO TOTP is demanded — community participation
-    is not management (§33.4's 2FA gate guards the staff surfaces), so a
-    Teacher with a plain session participates."""
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=role)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/community-op", headers=_auth(tokens))
-
-    assert response.status_code == 200
-    assert response.json()["role"] == role.value
-
-
-@pytest.mark.integration
-async def test_admin_denied_the_community_guard(db_session: AsyncSession) -> None:
-    """Admin is NOT a participant (the hardening ruling): even with a
-    confirmed TOTP credential, the ordinary community surfaces refuse —
-    Admin's community powers are the governance surfaces."""
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=Role.ADMIN)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-    await _seed_totp(db_session, user, confirmed=True)
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/community-op", headers=_auth(tokens))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == ErrorCode.PERMISSION_DENIED
-
-
-@pytest.mark.integration
-async def test_suspended_participant_denied_the_community_guard(
-    db_session: AsyncSession,
-) -> None:
-    # Spec §5.7: the state gate travels with the widened family — a
-    # suspended account participates in nothing.
-    clock = FrozenClock(_T0)
-    user = await _seed_user(db_session, role=Role.TEACHER, status=UserStatus.SUSPENDED)
-    _, tokens = await _open_session(
-        db_session, user, codec=get_access_token_codec(), clock=clock
-    )
-
-    async with _api(db_session, clock) as client:
-        response = await client.post("/test/community-op", headers=_auth(tokens))
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == ErrorCode.ACCOUNT_NOT_ACTIVE

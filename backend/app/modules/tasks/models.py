@@ -56,10 +56,9 @@ Design decisions:
 - `reward_tier_locked` is the locked percentage from the snapshotted
   ladder (spec §9.3: 100/80/50/20), not a string tier name — the ladder
   shape itself is versioned inside `reward_policy_snapshot`.
-- `latest_submission_id` is a plain nullable UUID with no FK (the 0005
-  decision): submissions already FK to claims, and a reciprocal FK pair
-  would be circular; consistency is kept transactionally by the upload
-  finalize service with UNIQUE(claim_id, version) as the anchor.
+- `latest_submission_id` is a plain nullable UUID with no FK: the
+  submissions table does not exist yet; the module that introduces it adds
+  the FK then.
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -104,23 +103,6 @@ _ACTIVE_CLAIM_STATUS_LIST = ", ".join(
     f"'{status.value}'" for status in ACTIVE_CLAIM_STATUSES
 )
 _WHERE_CLAIM_IS_ACTIVE = text(f"status IN ({_ACTIVE_CLAIM_STATUS_LIST})")
-
-# The expiry worker's actionable set (claim_service
-# EXPIRY_ACTIONABLE_STATUSES) as a partial-index predicate: the due scan
-# reads exactly this slice ordered by (grace_deadline_at, id) —
-# migration 0013 (MERGE_CARRIES item 4 / final-review N5). The
-# predicate deliberately stops at the status set: the originally
-# deferred ``AND revision <= grace`` would have excluded the rows a
-# review extended past grace, which are among the scan's most frequent
-# hits.
-_ACTIONABLE_CLAIM_STATUSES: tuple[ClaimStatus, ...] = (
-    ClaimStatus.CLAIMED,
-    ClaimStatus.REVISION_REQUIRED,
-)
-_ACTIONABLE_CLAIM_STATUS_LIST = ", ".join(
-    f"'{status.value}'" for status in _ACTIONABLE_CLAIM_STATUSES
-)
-_WHERE_CLAIM_IS_ACTIONABLE = text(f"status IN ({_ACTIONABLE_CLAIM_STATUS_LIST})")
 
 # Closed capability and value sets guarded at the database boundary.
 _COLLABORATOR_CAPABILITIES = (
@@ -341,12 +323,6 @@ class AssignmentClaim(Base):
             "task_id",
             unique=True,
             postgresql_where=_WHERE_CLAIM_IS_ACTIVE,
-        ),
-        Index(
-            "ix_assignment_claims_expiry_due",
-            "grace_deadline_at",
-            "id",
-            postgresql_where=_WHERE_CLAIM_IS_ACTIONABLE,
         ),
     )
 

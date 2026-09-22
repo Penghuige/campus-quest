@@ -133,8 +133,8 @@ Other transport decisions
   ``daily_abandon_limit`` + ``business_timezone`` into
   ``AbandonService``, the ``assignment_import_*`` caps into the importer,
   ``max_upload_bytes_default`` into ``TaskService``. The rating summary
-  port is the community module's TaskRating-backed adapter (plan 06 task
-  9's wiring), constructed per request over that request's session.
+  port ships as ``NullRatingSummaryPort`` until the community module
+  wires the real adapter.
 """
 
 from __future__ import annotations
@@ -161,7 +161,6 @@ from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
 )
-from app.modules.community.adapters import CommunityRatingSummaryAdapter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
@@ -174,7 +173,6 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     LoggingEventPublisher,
 )
-from app.modules.notifications.port import NotificationPort
 from app.modules.tasks.abandon_service import AbandonService
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
@@ -182,6 +180,7 @@ from app.modules.tasks.commands import CreateTask, UpdateTask
 from app.modules.tasks.importer import AssignmentImportService
 from app.modules.tasks.models import Task
 from app.modules.tasks.query_service import (
+    NullRatingSummaryPort,
     RatingSummaryPort,
     TaskQueryService,
 )
@@ -274,14 +273,10 @@ def get_event_publisher() -> DomainEventPublisher:
     return LoggingEventPublisher()
 
 
-def get_rating_summary_port(
-    db: Annotated[AsyncSession, Depends(get_db_session)],
-) -> RatingSummaryPort:
-    """The community module's TaskRating-backed adapter (plan 06 task 7
-    built it, task 9 wires it in): one per request, over that request's
-    session, so the task surfaces read exactly the aggregate the rating
-    service commits."""
-    return CommunityRatingSummaryAdapter(db)
+def get_rating_summary_port() -> RatingSummaryPort:
+    """Interim stand-in; the community module wires the TaskRating-backed
+    adapter."""
+    return NullRatingSummaryPort()
 
 
 def get_task_service(clock: ClockDep, settings: AppSettings) -> TaskService:
@@ -290,17 +285,7 @@ def get_task_service(clock: ClockDep, settings: AppSettings) -> TaskService:
 
 def get_claim_service(clock: ClockDep) -> ClaimService:
     # max_active_claims stays at the spec §8.2 default of 3.
-    # The notification recorder is the plan 07 T5/T8 production carry:
-    # NotificationPort joins the claim transaction so deadline-reminder
-    # intent commits with the claim or not at all (the outbox rule).
-    # THE SAME clock instance stamps claimed_at and the reminder
-    # scheduling instants — one request, one business-time source —
-    # and the import lives at this composition root, the one layer
-    # allowed to see both modules (notifications -> identity only).
-    return ClaimService(
-        clock=clock,
-        notification_recorder=NotificationPort(clock=clock),
-    )
+    return ClaimService(clock=clock)
 
 
 def get_abandon_service(

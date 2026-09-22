@@ -7,47 +7,21 @@ docs/quality/backend-engineering.md §16): the canonical V1 shape is
 `submissions/{claim_id}/{uuid}` and the original filename is display
 metadata only. No provider SDK is imported here; a real S3 adapter is a
 separate later task.
-
-Worker-side reads (plan 04 task 7) go through `download_to_file`, not
-through `create_download_url`: presigned HTTP URLs are for BROWSERS
-(a student/teacher download link); a worker pulling the object for
-validation streams it server-side through the adapter instead. A
-missing key raises `FileNotFoundError` (S3's NoSuchKey class, an
-`OSError`) and transient provider failures raise the adapter taxonomy
-(`integrations.errors`) or `OSError` — both are retry classes for the
-validation job's bounded retry policy.
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
 
 @dataclass(frozen=True)
 class UploadUrl:
-    """A short-lived presigned upload target for one server-generated key.
-
-    The signing contract travels WITH the URL (single source of truth):
-    ``client_headers`` are the headers the client MUST send verbatim with
-    its PUT (they are signed — omitting or altering one breaks the
-    signature), and ``pinned_content_length`` is the exact byte count the
-    PUT body must carry. Content-Length is deliberately NOT a member of
-    ``client_headers``: browsers cannot set it programmatically (a
-    forbidden request header, MDN) — a browser satisfies the pin with a
-    Blob whose declared size equals ``pinned_content_length`` and lets
-    the browser frame the header itself; a non-browser client sets
-    Content-Length explicitly (Python clients can and must).
-    """
+    """A short-lived presigned upload target for one server-generated key."""
 
     object_key: str
     url: str
     expires_at: datetime
-    client_headers: dict[str, str]
-    #: ``None`` only when the URL was issued without a signed length
-    #: (legacy/test callers); the production upload flow always pins.
-    pinned_content_length: int | None
 
 
 @dataclass(frozen=True)
@@ -69,19 +43,12 @@ class DownloadUrl:
 
 
 class ObjectStorage(Protocol):
-    """Port for presigned uploads, metadata checks, signed downloads,
-    worker-side object reads, and retention deletes."""
+    """Port for presigned uploads, metadata checks, and signed downloads."""
 
     def create_upload_url(
-        self,
-        *,
-        claim_id: UUID,
-        content_type: str,
-        expires_in: timedelta,
-        content_length: int | None = None,
+        self, *, claim_id: UUID, content_type: str, expires_in: timedelta
     ) -> UploadUrl:
-        """Issue a short-lived, write-once presigned PUT and return it
-        with its key.
+        """Issue a short-lived presigned PUT and return it with its key.
 
         Args:
             claim_id: Claim the upload belongs to; the adapter derives the
@@ -92,34 +59,6 @@ class ObjectStorage(Protocol):
                 provider.
             expires_in: Time-to-live of the URL; keep it short (minutes) —
                 the returned `expires_at` is the instant it stops working.
-            content_length: Declared byte size pinned on the presigned URL
-                as a signed Content-Length header; a client PUT whose body
-                length differs is rejected by the provider (403). Pass the
-                exact declared size that cleared the caller's size policy.
-                ``None`` leaves the length unsigned (legacy/test callers).
-
-        Write-once contract (hardening P0): every issued URL is good for
-        EXACTLY ONE successful PUT. The adapter signs an If-None-Match:*
-        condition into the URL, so the provider rejects any PUT whose key
-        already holds an object (412) — a replayed or re-issued URL can
-        never replace a stored object, at any time inside or past the URL
-        TTL. Callers must not rely on database bookkeeping to revoke the
-        URL: the single-write guarantee is the provider's, not the
-        application's. The client echoes the returned ``client_headers``
-        (Content-Type, If-None-Match) and sends a body of exactly
-        ``pinned_content_length`` bytes — omitting a signed header or
-        framing any other length is itself a rejection.
-
-        Ownership of the signing contract (hardening P4c): the ADAPTER
-        owns the signing policy and describes it on this return value;
-        the application echoes, never reconstructs. Whatever headers and
-        length the adapter signed must be exactly what the client is
-        told to send — a second, independent reconstruction in service
-        code would silently desync from the real signature the day the
-        policy changes. ``Content-Length`` is never a client header: it
-        is a browser-forbidden header, so it travels as the scalar
-        ``pinned_content_length`` (a Blob of that declared size lets the
-        browser satisfy the pin automatically).
         """
         ...
 
@@ -146,40 +85,5 @@ class ObjectStorage(Protocol):
                 existence, and so does every implementation of this port.
             expires_in: Time-to-live of the URL; keep it short (minutes) —
                 the returned `expires_at` is the instant it stops working.
-        """
-        ...
-
-    def download_to_file(self, *, object_key: str, destination: Path) -> None:
-        """Stream the stored object to a local file (worker-side reads).
-
-        Server-side reads (the validation worker pulling an upload for
-        parsing) must NOT go through presigned HTTP — that path is for
-        browser downloads. The adapter streams the object into
-        `destination` (an existing directory, adapter-created file).
-
-        Args:
-            object_key: Key previously returned by `create_upload_url`.
-            destination: Local path the content is written to.
-        Raises:
-            FileNotFoundError: No object under `object_key` (S3's
-                NoSuchKey class; an `OSError`, so the retry taxonomy
-                treats it with the storage-transient policy).
-            OSError / the adapter failure taxonomy: transient provider
-                failures — retryable by the caller's bounded policy.
-        """
-
-    def delete_object(self, *, object_key: str) -> None:
-        """Delete one stored object (retention cleanup; spec §13, §27).
-
-        Args:
-            object_key: Key previously returned by `create_upload_url`. A
-                missing object raises `FileNotFoundError` — a normal,
-                expected result the retention cleanup worker consumes
-                (§27: an already-marked-deleted row makes it an idempotent
-                success; a row believed present makes it a reconcile) —
-                while provider failures raise the adapter error taxonomy
-                (`TemporaryProviderError` et al.) so callers can pick a
-                retry policy. Deleting an absent object twice therefore
-                raises on the second call, matching real providers.
         """
         ...
