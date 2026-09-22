@@ -2165,18 +2165,30 @@ def test_postmerge_p0_provider_failure_keeps_claim_blocking_protection() -> None
         assert outcome is MarkOutcome.CLAIM_LOST
         assert asyncio.run(_protection_blocked())
 
-        # 8. The current owner converges: next takeover after the
-        #    (rewritten) lease expires again, provider healthy now.
+        # 8. The current owner converges — through the REAL service
+        #    path (the owner's final suggestion): the takeover happens
+        #    after the rewritten lease expires again, the provider is
+        #    healthy, and cleanup_expired_file itself claims (fresh
+        #    token), finds the object already gone, and settles the row
+        #    through the §27 missing-object reconcile branch.
+        from app.modules.files.cleanup_service import FileCleanupOutcome
+
         storage.failures.clear()
         settle = _now_for_takeover() + LEASE + timedelta(seconds=1)
-        token_c = asyncio.run(repository.claim_for_cleanup(record, now=settle))
-        assert token_c is not None and token_c != token_b
-        marked = asyncio.run(
-            repository.mark_deleted(record, token=token_c, deleted_at=settle)
-        )
-        assert marked is MarkOutcome.MARKED
-        _, _, _, deleted_at = asyncio.run(_claim_columns())
-        assert deleted_at == settle
+        settle_record = _scan_snapshot(maker, world)
+
+        async def _service_settles() -> Any:
+            from app.modules.files.cleanup_service import cleanup_expired_file
+
+            return await cleanup_expired_file(
+                settle_record, repo=repository, storage=storage, now=settle
+            )
+
+        outcome = asyncio.run(_service_settles())
+        assert outcome is FileCleanupOutcome.RECONCILED_MISSING
+        _, _, token_now, deleted_at = asyncio.run(_claim_columns())
+        assert token_now is not None and token_now != token_b  # the takeover
+        assert deleted_at == settle  # the row settled
 
         # 9. Settled: protection enters.
         assert not asyncio.run(_protection_blocked())
