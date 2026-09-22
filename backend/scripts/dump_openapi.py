@@ -3,6 +3,13 @@ freshness): python dump_openapi.py <output-path>."""
 
 import json
 import sys
+from pathlib import Path
+
+# Self-anchor the backend root onto sys.path: python puts the script's
+# own directory (backend/scripts) on the path, not backend/ — without
+# this the import works only when the caller sets PYTHONPATH (CI does
+# not).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.main import create_app
 
