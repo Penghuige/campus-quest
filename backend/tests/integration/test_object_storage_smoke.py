@@ -30,7 +30,14 @@ signature path the contract lives on):
 - metadata check, byte-faithful server-side download, blind download
   signing, and the §27 delete semantics — including the adapter's
   HEAD-before-DELETE behavior a plain provider DeleteObject would
-  silently break (204 for a missing key).
+  silently break (204 for a missing key);
+- the browser half of the upload contract (final pass B P2): the real
+  CORS preflight the frontend's cross-origin PUT triggers — Origin +
+  Access-Control-Request-Method PUT + the SIGNED headers
+  (Content-Type, If-None-Match) as requested headers — is answered
+  with an allow by the provider's server-wide origin list
+  (``MINIO_API_CORS_ALLOW_ORIGIN`` in the compose env; the pinned
+  MinIO release has no bucket-CORS API, so that env is the only gate).
 
 Skipped unless ``CQ_S3_SMOKE=1``: the default local run must stay
 green without MinIO. CI sets the flag (the MinIO service is up before
@@ -46,6 +53,7 @@ import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -107,6 +115,67 @@ def _rejected_put(
 def _get(url: str) -> tuple[int, bytes]:
     with urllib.request.urlopen(url, timeout=30) as response:
         return response.status, response.read()
+
+
+def _preflight(url: str) -> tuple[int, Any]:
+    """Issue the CORS preflight a browser sends before the signed PUT
+    (final pass B P2) and return ``(status, headers)`` — the headers
+    object is the case-insensitive ``http.client.HTTPMessage``."""
+    request = urllib.request.Request(
+        url,
+        method="OPTIONS",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "PUT",
+            # Exactly the headers the adapter signs onto the PUT
+            # (client_headers minus the browser-forbidden
+            # Content-Length, which a browser never requests).
+            "Access-Control-Request-Headers": "content-type, if-none-match",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, response.headers
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers
+
+
+def test_cors_preflight_admits_the_signed_browser_put(
+    storage: ObjectStorage,
+) -> None:
+    """The upload contract's browser half, against the real provider:
+    the frontend PUTs cross-origin to MinIO carrying the signed
+    Content-Type and If-None-Match, so the OPTIONS preflight must be
+    answered with an allow — the origin allowlist
+    (MINIO_API_CORS_ALLOW_ORIGIN) admits the frontend dev origin, and
+    both signed headers are echoed in Access-Control-Allow-Headers. A
+    rejection here would break every browser upload even though the
+    Python-client PUTs (which never preflight) all pass."""
+    upload = storage.create_upload_url(
+        claim_id=uuid.uuid4(),
+        content_type="text/csv",
+        expires_in=_TTL,
+        content_length=6,
+    )
+    status, headers = _preflight(upload.url)
+    assert 200 <= status < 300, f"preflight must be allowed, got {status}"
+    allow_origin = headers.get("Access-Control-Allow-Origin")
+    assert allow_origin == "http://localhost:3000", (
+        f"the frontend origin must be allowed, got {allow_origin!r}"
+    )
+    allow_headers = {
+        header.strip().lower()
+        for header in (headers.get("Access-Control-Allow-Headers") or "").split(",")
+        if header.strip()
+    }
+    assert {"content-type", "if-none-match"} <= allow_headers, (
+        f"both signed headers must be allowed, got {sorted(allow_headers)}"
+    )
+    allow_methods = (headers.get("Access-Control-Allow-Methods") or "").upper()
+    assert "PUT" in allow_methods, (
+        f"the cross-origin PUT method must be allowed, got {allow_methods!r}"
+    )
+    # Nothing was uploaded through this URL; no object to clean up.
 
 
 def test_roundtrip_upload_head_download_delete(

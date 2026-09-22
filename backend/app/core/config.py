@@ -212,6 +212,21 @@ class Settings(BaseSettings):
     stale_validating_requeue_seconds: int = 1800
     # How often the stale-VALIDATING scan looks for wedged rows.
     stale_validating_scan_interval_seconds: int = 300
+    # Stale-UPLOADED recovery (PR #2 hardening final pass B, P1): a
+    # finalize commit can outlive its validation dispatch (a broker
+    # outage at the enqueue, and the client never retries), and a
+    # validation job whose tx1 kept refusing (CleanupClaimConflictError
+    # against a live deletion lease) exhausts Celery's bounded retries —
+    # ~31s of backoff against a 300s lease — with the row never leaving
+    # UPLOADED, a shape the stale-VALIDATING watchdog cannot see (no run
+    # row exists). The requeue scan re-dispatches UPLOADED rows whose
+    # ``submitted_at`` is older than this grace, so a freshly finalized
+    # row whose dispatch simply has not landed yet is never scooped up
+    # (a grace below the healthy finalize->enqueue round trip would
+    # re-dispatch every fresh submission on every beat). Repeat
+    # dispatch is safe by the validation service's own tx1 gates (see
+    # the requeue job's docstring).
+    uploaded_dispatch_grace_seconds: int = 120
 
     @field_validator("business_timezone")
     @classmethod
@@ -311,6 +326,19 @@ class Settings(BaseSettings):
         if value < 1:
             raise ValueError(
                 f"stale_validating_requeue_seconds must be >= 1, got {value}"
+            )
+        return value
+
+    @field_validator("uploaded_dispatch_grace_seconds")
+    @classmethod
+    def _validate_uploaded_dispatch_grace_seconds(cls, value: int) -> int:
+        # A zero grace would re-dispatch every fresh finalize before its
+        # validation enqueue even lands — a hot loop over healthy rows.
+        # No upper bound: a longer grace only delays recovery, and the
+        # scan absorbs it (see the requeue job's docstring).
+        if value < 1:
+            raise ValueError(
+                f"uploaded_dispatch_grace_seconds must be >= 1, got {value}"
             )
         return value
 

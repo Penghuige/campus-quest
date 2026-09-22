@@ -37,18 +37,24 @@ path; both flows):
 0. Locator + remote HEAD, both lock-free/off-loop (S3 hardening P1):
    one lock-free SELECT of the intent's ``claim_id`` and ``object_key``
    (immutable columns — see LOCK ORDER below), then ``head_object``
-   runs via ``asyncio.to_thread`` BEFORE any row lock is taken. This is
-   safe ONLY because the upload URL is write-once (signed
-   If-None-Match): an object that exists can no longer be replaced
-   through any presigned URL, so the pre-lock HEAD's size/content-type
-   answer remains valid through the short locked transaction — and a
-   slow provider now delays locks it never holds instead of stretching
-   the user/claim/intent lock hold time and blocking the event loop.
-   The HEAD result is stashed, never acted on here: the state machine
-   below decides whether it matters (a finalized replay whose object
-   has since been retention-deleted still returns the Submission; an
-   expired or burned intent answers without the HEAD changing the
-   verdict).
+   runs via ``asyncio.to_thread`` BEFORE any row lock is taken — but
+   only when the locator shows NO ``finalized_submission_id`` (final
+   pass B P2): that column transitions NULL -> id exactly once (the
+   single-use consume) and never back, so the locator read is a safe
+   finalized-replay detector, and a replay PG can answer from the
+   database alone must not depend on the object store being up (under
+   the old ordering an S3 outage failed even a replay whose Submission
+   already existed). The pre-lock HEAD is safe ONLY because the upload
+   URL is write-once (signed If-None-Match): an object that exists can
+   no longer be replaced through any presigned URL, so the pre-lock
+   HEAD's size/content-type answer remains valid through the short
+   locked transaction — and a slow provider now delays locks it never
+   holds instead of stretching the user/claim/intent lock hold time and
+   blocking the event loop. The HEAD result is stashed, never acted on
+   here: the state machine below decides whether it matters (a
+   finalized replay returns the Submission without any HEAD at all —
+   even one whose object has since been retention-deleted; an expired
+   or burned intent answers without the HEAD changing the verdict).
 1. User-row lock + account gate (same as create).
 2. Claim row FOR UPDATE: ownership is judged on the locked row.
 3. Intent row FOR UPDATE: the single-use state machine. FINALIZED
@@ -182,7 +188,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.integrations.object_storage import ObjectStorage
+from app.integrations.object_storage import ObjectHead, ObjectStorage
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.submissions.enums import (
@@ -841,26 +847,40 @@ class UploadService:
         (see the module docstring's dispatch rule); ``request_id`` is the
         correlation id threaded to the job.
         """
-        # (0) Locator + remote HEAD, lock-free and off the event loop
-        # (module docstring step 0): the SELECT reads only immutable
-        # columns, and the provider call happens BEFORE any row lock, so
-        # a slow HEAD delays no lock and blocks no loop. Safe because the
-        # upload URL is write-once: an existing object cannot change
+        # (0) Locator first, then the pre-lock HEAD only when the
+        # locator is NOT already finalized (module docstring step 0).
+        # The SELECT reads immutable columns plus
+        # ``finalized_submission_id`` — NULL -> id exactly once (the
+        # single-use consume), never back — so the unlocked peek cannot
+        # observe half-written state. A locator that already carries the
+        # finalized id takes NO provider dependency at all: the durable
+        # idempotent answer lives in the database (final pass B P2 — a
+        # replay must succeed even while the object store is down), and
+        # the finalized branch below ignores the object anyway. The HEAD
+        # runs only on the not-yet-finalized path, off the event loop
+        # and before any row lock; it is safe there because the upload
+        # URL is write-once — an existing object cannot change
         # afterwards, so this answer stays valid through the locked
-        # transaction below. The result is stashed, never acted on here —
-        # the state machine decides whether it matters.
+        # transaction below. The result is stashed, never acted on here
+        # — the state machine decides whether it matters (a concurrent
+        # finalize that won between the locator and the lock leaves the
+        # HEAD unused).
         locator = (
             await db.execute(
-                select(UploadIntent.claim_id, UploadIntent.object_key).where(
-                    UploadIntent.id == intent_id
-                )
+                select(
+                    UploadIntent.claim_id,
+                    UploadIntent.object_key,
+                    UploadIntent.finalized_submission_id,
+                ).where(UploadIntent.id == intent_id)
             )
         ).one_or_none()
         if locator is None:
             raise UploadIntentNotFoundError(intent_id)
-        head = await asyncio.to_thread(
-            self._storage.head_object, object_key=locator.object_key
-        )
+        head: ObjectHead | None = None
+        if locator.finalized_submission_id is None:
+            head = await asyncio.to_thread(
+                self._storage.head_object, object_key=locator.object_key
+            )
 
         # (1) Same-user serialization + account gate as in create.
         await self._lock_account(db, actor)
@@ -897,8 +917,9 @@ class UploadService:
         if intent.finalized_submission_id is not None:
             # Idempotent replay (spec §32): the SAME Submission, never a
             # version N+1 — judged BEFORE the submittability gate (see
-            # step 2's note). The stashed HEAD is irrelevant here even
-            # when the object has since been retention-deleted.
+            # step 2's note). No provider dependency on this path: the
+            # locator skipped the HEAD, and the answer would ignore it
+            # anyway (the object may since have been retention-deleted).
             submission = await db.get(Submission, intent.finalized_submission_id)
             if submission is None:
                 # Unreachable while the FK holds; fail safe, never

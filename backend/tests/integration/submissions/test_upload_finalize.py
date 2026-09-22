@@ -458,6 +458,73 @@ async def test_task_policy_edit_after_finalize_never_rewrites_snapshot(
 
 
 @pytest.mark.integration
+async def test_finalize_replay_after_success_never_touches_storage(
+    db_engine: AsyncEngine,
+) -> None:
+    """Durable idempotency, storage-free replay (final pass B P2): the
+    replay of an already-finalized intent is answered from the database
+    alone — the locator read carries ``finalized_submission_id``, so no
+    provider HEAD happens and a full object-storage outage cannot fail a
+    replay PG can answer. Under the previous ordering the pre-lock HEAD
+    ran on EVERY call, so this test was red: the programmed outage
+    raised out of the replay."""
+    factory = _factory(db_engine)
+    clock = FrozenClock(_NOW)
+    storage = FakeObjectStorage(clock=clock)
+    service = _service(clock, storage)
+    run = uuid4().hex[:8]
+
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = await _seed(factory, run)
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+
+        async with factory() as session:
+            receipt = await service.create_upload_intent(
+                session,
+                _actor(seed.student),
+                seed.claim.id,
+                "数据.csv",
+                "CSV",
+                _DECLARED_SIZE,
+            )
+            storage.put_object(object_key=receipt.object_key, size=_DECLARED_SIZE)
+            first = await service.finalize_upload(
+                session, _actor(seed.student), receipt.intent_id
+            )
+            assert first.version == 1
+
+            # Total provider outage from here on: every remaining port
+            # call would raise. The replay must make NONE.
+            storage.fail_with(OSError("simulated provider outage"))
+
+            second = await service.finalize_upload(
+                session, _actor(seed.student), receipt.intent_id
+            )
+            assert second.id == first.id
+            assert second.version == 1
+            assert second.submitted_at == _NOW
+
+            # Zero port calls: the programmed outage is untouched, which
+            # is the no-HEAD proof (any head_object would have consumed
+            # the one programmed failure and raised).
+            assert len(storage.failures) == 1
+
+            versions = (
+                await session.scalars(
+                    select(Submission.version).where(
+                        Submission.claim_id == seed.claim.id
+                    )
+                )
+            ).all()
+            assert versions == [1]
+    finally:
+        await _cleanup(factory, task_ids=task_ids, user_ids=user_ids)
+
+
+@pytest.mark.integration
 async def test_duplicate_finalize_returns_same_submission(
     db_engine: AsyncEngine,
 ) -> None:
