@@ -93,6 +93,17 @@ Design decisions:
   column stays (history; future admin tooling may set it), but its
   product semantics (e.g. auto-approve when false) are an open product
   decision that requires an owner ruling, not an agent choice.
+- `RewardReviewGrant` (Plan 08 T4 — the scoped-delegation landing) is
+  the Admin-granted GLOBAL redemption-review authorization for one
+  Teacher: row EXISTS = grant live, DELETE = revoked, so revocation
+  takes effect on the very next guard read (no cache, no TTL). The
+  capability column is a closed vocabulary in the TaskCollaborator
+  CHECK style — V1 holds exactly 'REWARD_REVIEW' — which is why the
+  grant lives in its own table instead of a task_collaborators row:
+  that table's grants are per-task, and a redemption carries no
+  task/course dimension to scope by (the V1-global ruling,
+  admin_service.py). Widening this vocabulary is an owner decision +
+  migration, never an agent choice (G13).
 - No ORM relationships are declared yet; navigation joins arrive with the
   services that need them (backend-engineering §8).
 """
@@ -384,3 +395,42 @@ class PointReservation(Base):
         DateTime(timezone=True), server_default=text("now()")
     )
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RewardReviewGrant(Base):
+    """One Admin-granted global redemption-review authorization held by a
+    Teacher (Plan 08 T4 — the scoped delegation the PR #2 hardening
+    ruling waited for; spec §4.2 "按管理员授权审核相关
+    RewardRedemption").
+
+    Row EXISTS = the Teacher may review redemptions (with Admin);
+    revocation is a DELETE, so the per-request guard read keeps it
+    immediate. ``teacher_id`` is the primary key: at most one live grant
+    per account — a second grant is the typed duplicate conflict, not a
+    second row. The grant's HISTORY lives in audit_logs
+    (REWARD_REVIEW_GRANTED/_REVOKED), not here: the row is current
+    state only, like every projection-vs-fact split in this module.
+    """
+
+    __tablename__ = "reward_review_grants"
+    __table_args__ = (
+        # Closed capability vocabulary, the TaskCollaborator CHECK
+        # discipline: membership is pinned here at the database boundary,
+        # and widening it is a migration + owner ruling (G13), never a
+        # service-layer string.
+        CheckConstraint(
+            "capability IN ('REWARD_REVIEW')",
+            name="capability",
+        ),
+    )
+
+    teacher_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    # What the row grants; every insert states it explicitly (the
+    # no-defaults discipline for semantic columns).
+    capability: Mapped[str] = mapped_column(String(32))
+    # The Admin who granted (the revocation's audit row records the
+    # revoking actor instead).
+    granted_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )

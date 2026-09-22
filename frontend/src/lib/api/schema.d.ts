@@ -354,6 +354,8 @@ export interface paths {
          *
          *     The returned tokens are a real session confined to finishing TOTP
          *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
+         *     The accept writes its durable audit row inside the service's
+         *     transaction, carrying this request's correlation pair (§30).
          */
         post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
         delete?: never;
@@ -1018,11 +1020,11 @@ export interface paths {
          * List Redemption Queue
          * @description The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
          *     oldest first, with the requester's display nickname through the
-         *     identity directory port and the item name. Admin-only with the
-         *     decision endpoints until scoped delegation lands (PR #2 closure
-         *     review): the queue exposes every requester's identity, and the
-         *     approved rule is "Teacher reviews AUTHORIZED-RELATED redemptions",
-         *     not "every Teacher inspects all applications".
+         *     identity directory port and the item name. Admin globally; a
+         *     granted Teacher reads the same queue (Plan 08 T4) — the read was
+         *     widened WITH the decisions (the ruling's read/write-consistency
+         *     clause: the queue exposes every requester's identity, so it can
+         *     never be broader than the decisions it feeds).
          */
         get: operations["list_redemption_queue_api_v1_teacher_rewards_redemptions_get"];
         put?: never;
@@ -1048,7 +1050,7 @@ export interface paths {
          *     and the status flips to APPROVED (spec §16.2); a replay on an
          *     already-approved row is the idempotent no-op that returns it.
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post"];
         delete?: never;
@@ -1071,7 +1073,7 @@ export interface paths {
          * @description Reject with a mandatory reason: the freeze is released and NO
          *     consumption entry is written (spec §16.2).
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post"];
         delete?: never;
@@ -1094,7 +1096,7 @@ export interface paths {
          * @description Record the physical delivery of an APPROVED redemption (spec
          *     §16.2: approval and delivery are separate transitions).
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post"];
         delete?: never;

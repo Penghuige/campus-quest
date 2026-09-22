@@ -26,9 +26,9 @@ Drives the real app (``create_app()`` — the points router mounted under
   the explicit ``point_debt`` — driven here through the REAL ledger
   path (grant + redemption + full reversal -> raw -150);
 - the review surface: the queue AND the decision endpoints (approve /
-  reject / fulfill) are Admin-only until scoped delegation (PR #2
-  closure review) — an ACTIVE+TOTP Teacher is 403 on all four, an
-  Admin passes — with the
+  reject / fulfill) sit behind the scoped-delegation review guard
+  (Plan 08 T4) — an ACTIVE+TOTP Teacher WITHOUT a reward-review grant
+  is 403 on all four, an Admin passes — with the
   approve consumption entry, reject freeze release, and fulfill note
   assertions the review flow always had;
 - the durable audit trail (G12; PR #2 hardening P0-5): every APPLIED
@@ -535,9 +535,11 @@ async def test_staff_lists_pending_redemptions_oldest_first(
     db_session.add(rejected)
     await db_session.flush()
 
-    # The queue exposes every requester's identity: Admin-only with the
-    # decision endpoints until scoped delegation lands (PR #2 closure
-    # review) — an ACTIVE+TOTP Teacher is PERMISSION_DENIED.
+    # The queue exposes every requester's identity, so it rides the same
+    # review standing as the decisions (Plan 08 T4 read/write
+    # consistency): an ACTIVE+TOTP Teacher WITHOUT a grant is
+    # PERMISSION_DENIED; the granted-Teacher queue read is pinned in
+    # test_reward_admin.py.
     denied = await client.get(
         "/api/v1/teacher/rewards/redemptions",
         headers=world["teacher_headers"],
@@ -790,13 +792,15 @@ async def test_redemption_decisions_write_durable_audit_rows(
     assert approve_rows == 1
 
 
-async def test_review_decisions_reject_teachers_until_scoped_delegation(
+async def test_review_decisions_reject_ungranted_teachers(
     client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
 ) -> None:
-    """The PR #2 hardening ruling (P0-4): until scoped delegation lands,
-    an ACTIVE+TOTP Teacher cannot decide ANY redemption — the approve/
-    reject/fulfill surfaces answer Admin-only PERMISSION_DENIED and
-    nothing is written (the freeze stays, no entry lands)."""
+    """Scoped delegation landed (Plan 08 T4): an ACTIVE+TOTP Teacher
+    WITHOUT a REWARD_REVIEW grant still cannot decide ANY redemption —
+    the approve/reject/fulfill surfaces answer PERMISSION_DENIED and
+    nothing is written (the freeze stays, no entry lands). The
+    granted-Teacher and revocation flows are pinned in
+    test_reward_admin.py."""
     world = points_world
     redemption = await _frozen_redemption(
         db_session, user=world["student"], item=world["open_item"], points=400

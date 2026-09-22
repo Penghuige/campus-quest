@@ -681,7 +681,7 @@
     "/api/v1/auth/staff/invitations/accept": {
       "post": {
         "summary": "Accept Staff Invitation",
-        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.",
+        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.\nThe accept writes its durable audit row inside the service's\ntransaction, carrying this request's correlation pair (§30).",
         "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -2254,7 +2254,7 @@
     "/api/v1/teacher/rewards/redemptions": {
       "get": {
         "summary": "List Redemption Queue",
-        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name. Admin-only with the\ndecision endpoints until scoped delegation lands (PR #2 closure\nreview): the queue exposes every requester's identity, and the\napproved rule is \"Teacher reviews AUTHORIZED-RELATED redemptions\",\nnot \"every Teacher inspects all applications\".",
+        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name. Admin globally; a\ngranted Teacher reads the same queue (Plan 08 T4) — the read was\nwidened WITH the decisions (the ruling's read/write-consistency\nclause: the queue exposes every requester's identity, so it can\nnever be broader than the decisions it feeds).",
         "operationId": "list_redemption_queue_api_v1_teacher_rewards_redemptions_get",
         "security": [
           {
@@ -2313,7 +2313,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/approve": {
       "post": {
         "summary": "Approve Redemption",
-        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec §16.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec §16.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post",
         "security": [
           {
@@ -2359,7 +2359,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/reject": {
       "post": {
         "summary": "Reject Redemption",
-        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec §16.2).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec §16.2).\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post",
         "security": [
           {
@@ -2415,7 +2415,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/fulfill": {
       "post": {
         "summary": "Fulfill Redemption",
-        "description": "Record the physical delivery of an APPROVED redemption (spec\n§16.2: approval and delivery are separate transitions).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Record the physical delivery of an APPROVED redemption (spec\n§16.2: approval and delivery are separate transitions).\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post",
         "security": [
           {

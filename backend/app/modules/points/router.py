@@ -29,28 +29,30 @@ POST         ``/rewards/{reward_id}/redeem`` — the atomic freeze
 ===========  =========================================================
 
 Review surfaces (spec §4.2-§4.3, §33.4; the ``/teacher`` prefix is the
-module's management namespace):
+module's management namespace) — behind ``require_reward_review_actor``,
+the scoped-delegation guard (Plan 08 T4): the staff management gate
+(ACTIVE + confirmed TOTP) plus review standing — ADMIN passes globally,
+a TEACHER only with a live REWARD_REVIEW grant:
 
 ===========  =========================================================
 GET          ``/teacher/rewards/redemptions`` — the review queue:
              pending (REQUESTED/UNDER_REVIEW) oldest first,
              offset-paginated, enriched with the requester nickname
              (through the identity directory port) and the item name.
-             Admin-only with the decisions until scoped delegation
-             (PR #2 closure review: the queue exposes every
-             requester's identity).
+             Widened with the decisions by the delegation ruling's
+             read/write-consistency clause: the queue exposes every
+             requester's identity, so it can never be broader than
+             the decisions it feeds.
 POST         ``/teacher/rewards/redemptions/{id}/approve`` — consume
              the freeze into one negative REWARD_REDEMPTION entry.
-             Admin-only until scoped delegation (PR #2 hardening
-             ruling).
+             Admin globally; granted Teacher (Plan 08 T4).
 POST         ``/teacher/rewards/redemptions/{id}/reject`` — release
              the freeze; ``reason`` is mandatory at the transport.
-             Admin-only until scoped delegation (PR #2 hardening
-             ruling).
+             Admin globally; granted Teacher (Plan 08 T4).
 POST         ``/teacher/rewards/redemptions/{id}/fulfill`` — record
              the physical delivery (optional note) of an APPROVED
-             redemption. Admin-only until scoped delegation (PR #2
-             hardening ruling).
+             redemption. Admin globally; granted Teacher (Plan 08
+             T4).
 ===========  =========================================================
 
 Other transport decisions
@@ -117,15 +119,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
 from app.core.config import get_settings
+from app.core.rbac import is_admin
 from app.db.session import get_db_session
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
-    require_admin_actor,
+    require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
+from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.points.ledger_service import (
     LedgerService,
@@ -134,8 +138,10 @@ from app.modules.points.ledger_service import (
 )
 from app.modules.points.models import RewardItem, RewardRedemption
 from app.modules.points.redemption_service import (
+    RedemptionPermissionDeniedError,
     RedemptionService,
     SystemAcademicTermProvider,
+    has_reward_review_grant,
     window_open,
 )
 from app.modules.system.service import CURRENT_ACADEMIC_TERM, SystemSettingService
@@ -327,10 +333,37 @@ def get_user_directory() -> SqlAlchemyUserDirectory:
     return SqlAlchemyUserDirectory()
 
 
+# --- the scoped-delegation review guard (Plan 08 T4) ----------------------------------
+
+
+async def require_reward_review_actor(
+    actor: Annotated[Actor, Depends(require_staff_management_actor)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Actor:
+    """The review-surface guard: the staff management gate's checks
+    (TEACHER/ADMIN + ACTIVE + confirmed TOTP, spec §33.4) plus review
+    standing — ADMIN passes globally (spec §4.3), a TEACHER only while a
+    live REWARD_REVIEW grant row exists (spec §4.2 按管理员授权审核; the
+    grants themselves are administered through ``RewardAdminService``).
+
+    The grant read runs on the request's own session with no cache, so
+    an Admin revocation is effective on the very next request — the
+    immediate-invalidation clause of the delegation ruling. Raising the
+    service's typed error keeps the transport and service-gate 403s
+    byte-identical (the hard-hide precedent); the RedemptionService
+    re-checks the same standing as defense in depth.
+    """
+    if is_admin(actor.role):
+        return actor
+    if actor.role is Role.TEACHER and await has_reward_review_grant(db, actor.user_id):
+        return actor
+    raise RedemptionPermissionDeniedError(actor.user_id, actor.role)
+
+
 ClockDep = Annotated[Clock, Depends(get_business_clock)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
-AdminActor = Annotated[Actor, Depends(require_admin_actor)]
+ReviewActor = Annotated[Actor, Depends(require_reward_review_actor)]
 LedgerServiceDep = Annotated[LedgerService, Depends(get_ledger_service)]
 RedemptionServiceDep = Annotated[RedemptionService, Depends(get_redemption_service)]
 DirectoryDep = Annotated[SqlAlchemyUserDirectory, Depends(get_user_directory)]
@@ -454,7 +487,7 @@ def _redemption_response(redemption: RewardRedemption) -> RedemptionResponse:
 
 @router.get("/teacher/rewards/redemptions", response_model=ReviewQueueResponse)
 async def list_redemption_queue(
-    actor: AdminActor,
+    actor: ReviewActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
@@ -463,11 +496,11 @@ async def list_redemption_queue(
 ) -> ReviewQueueResponse:
     """The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
     oldest first, with the requester's display nickname through the
-    identity directory port and the item name. Admin-only with the
-    decision endpoints until scoped delegation lands (PR #2 closure
-    review): the queue exposes every requester's identity, and the
-    approved rule is "Teacher reviews AUTHORIZED-RELATED redemptions",
-    not "every Teacher inspects all applications"."""
+    identity directory port and the item name. Admin globally; a
+    granted Teacher reads the same queue (Plan 08 T4) — the read was
+    widened WITH the decisions (the ruling's read/write-consistency
+    clause: the queue exposes every requester's identity, so it can
+    never be broader than the decisions it feeds)."""
     rows, total = await redemptions.list_redemptions(db, limit=limit, offset=offset)
     items: list[RedemptionReviewResponse] = []
     for redemption, item_name in rows:
@@ -494,7 +527,7 @@ async def list_redemption_queue(
 )
 async def approve_redemption(
     redemption_id: UUID,
-    actor: AdminActor,
+    actor: ReviewActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
@@ -504,7 +537,7 @@ async def approve_redemption(
     and the status flips to APPROVED (spec §16.2); a replay on an
     already-approved row is the idempotent no-op that returns it.
 
-    Admin-only until scoped delegation (PR #2 hardening ruling)."""
+    Admin globally; granted Teacher (Plan 08 T4 scoped delegation)."""
     redemption = await redemptions.approve_redemption(
         db, actor, redemption_id, audit_context=AuditContext.from_request(request)
     )
@@ -518,7 +551,7 @@ async def approve_redemption(
 async def reject_redemption(
     redemption_id: UUID,
     body: RedemptionRejectRequest,
-    actor: AdminActor,
+    actor: ReviewActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
@@ -527,7 +560,7 @@ async def reject_redemption(
     """Reject with a mandatory reason: the freeze is released and NO
     consumption entry is written (spec §16.2).
 
-    Admin-only until scoped delegation (PR #2 hardening ruling)."""
+    Admin globally; granted Teacher (Plan 08 T4 scoped delegation)."""
     redemption = await redemptions.reject_redemption(
         db,
         actor,
@@ -545,7 +578,7 @@ async def reject_redemption(
 async def fulfill_redemption(
     redemption_id: UUID,
     body: RedemptionFulfillRequest,
-    actor: AdminActor,
+    actor: ReviewActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     directory: DirectoryDep,
@@ -554,7 +587,7 @@ async def fulfill_redemption(
     """Record the physical delivery of an APPROVED redemption (spec
     §16.2: approval and delivery are separate transitions).
 
-    Admin-only until scoped delegation (PR #2 hardening ruling)."""
+    Admin globally; granted Teacher (Plan 08 T4 scoped delegation)."""
     redemption = await redemptions.fulfill_redemption(
         db,
         actor,
