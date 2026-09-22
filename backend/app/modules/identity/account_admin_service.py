@@ -9,11 +9,9 @@ Design decisions:
   (the explicit unban). Every other transition — suspending a suspended
   or banned account, banning a suspended account, reactivating an
   already-ACTIVE one, anything from PENDING_PHONE — is a typed 409
-  carrying the from/to pair (``InvalidAccountTransitionError``). The
-  registry has no dedicated transition-conflict code in this wave, so
-  the typed error rides ``VALIDATION_ERROR`` at 409 — the established
-  ``StaffService`` 409 shape; a dedicated §29 code is a controller
-  registration decision noted in the wave report.
+  carrying the from/to pair (``InvalidAccountTransitionError``), coded
+  ``CONFLICT`` (registered Plan 08 T9, closing the W2 registration gap
+  this module's report noted).
 - **Reason is mandatory** (plan Global Constraints: "Admin state repair
   requires reason"): blank-after-strip reasons are a 400 before any
   read, the same validate-before-touch discipline as the staff
@@ -113,7 +111,7 @@ class InvalidAccountTransitionError(BusinessError):
 
     def __init__(self, *, operation: str, current: UserStatus, requested: UserStatus):
         super().__init__(
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.CONFLICT,
             _TRANSITION_MESSAGE,
             status_code=409,
             details={

@@ -10,7 +10,11 @@ from app.core import rbac
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
+from app.modules.audit import router as audit_router
 from app.modules.community import router as community_router
+from app.modules.identity import (
+    admin_router as identity_admin_router,
+)
 from app.modules.identity import (
     auth_router as identity_auth_router,
 )
@@ -23,6 +27,7 @@ from app.modules.identity import (
 )
 from app.modules.identity.dependencies import get_actor
 from app.modules.notifications import router as notifications_router
+from app.modules.points import admin_router as points_admin_router
 from app.modules.points import router as points_router
 from app.modules.rankings import router as rankings_router
 from app.modules.submissions import router as submissions_router
@@ -91,11 +96,23 @@ def create_app() -> FastAPI:
     # and no module-local registration is needed.
     app.include_router(notifications_router.router, prefix="/api/v1")
 
-    # System settings admin API (PR #2 hardening step 8): the audited
-    # CURRENT_ACADEMIC_TERM surface — GET/PUT resolve through the same
-    # typed BusinessError family, so the core envelope handler covers
-    # this module too.
+    # System settings admin API (PR #2 hardening step 8; Plan 08 T5/T9):
+    # the audited settings surface — the full registry keys plus the
+    # effective-term read. Typed BusinessError family, core envelope
+    # handler; the router mounts the store-backed management-network
+    # guard itself (the W4 footgun closure).
     app.include_router(system_router.router, prefix="/api/v1")
+
+    # Admin operations surfaces (Plan 08 T9): audit search + state
+    # repairs, account governance (whitelist/status/staff invitations),
+    # and points/reward/template administration. Every route in the
+    # three routers composes require_admin_actor with the store-backed
+    # management-network guard and threads AuditContext; their typed
+    # exceptions all subclass BusinessError, so the core envelope
+    # handler covers them with no module-local registration.
+    app.include_router(audit_router.router, prefix="/api/v1")
+    app.include_router(identity_admin_router.router, prefix="/api/v1")
+    app.include_router(points_admin_router.router, prefix="/api/v1")
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done

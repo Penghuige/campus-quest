@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.clock import FrozenClock
+from app.core.error_codes import ErrorCode
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
@@ -596,8 +597,9 @@ def test_scan_heals_upload_stranded_by_exhausted_cleanup_claim_conflict_retries(
             asyncio.run(_call())
 
         for _ in range(3):
-            with pytest.raises(CleanupClaimConflictError):
+            with pytest.raises(CleanupClaimConflictError) as conflict:
                 _attempt()
+            assert conflict.value.code == ErrorCode.CONFLICT
         stranded = asyncio.run(_row_by_version(maker, world.claim_id, version=2))
         assert stranded is not None
         assert stranded.validation_status == "UPLOADED"

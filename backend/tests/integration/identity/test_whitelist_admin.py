@@ -287,6 +287,7 @@ async def test_confirm_rejects_payloads_that_do_not_replay_the_preview(
             db_session, _actor(Role.ADMIN), payload
         )
     assert exc_info.value.status_code == 409
+    assert exc_info.value.code == ErrorCode.CONFLICT
     rows = await db_session.scalars(select(StudentWhitelist))
     assert list(rows) == []
 
@@ -317,6 +318,7 @@ async def test_confirm_conflicts_refuse_the_whole_batch(
         await service.confirm_whitelist_import(db_session, admin, payload)
 
     assert exc_info.value.status_code == 409
+    assert exc_info.value.code == ErrorCode.CONFLICT
     assert exc_info.value.details == {"student_numbers": [overlap]}
     # All-or-nothing: the fresh row did NOT land beside the conflict.
     assert await _count_rows(db_session, run) == 1
@@ -369,6 +371,7 @@ async def test_concurrent_overlapping_confirms_resolve_deterministically(
     assert len(losers) == 1
     loser = outcomes[losers[0]]
     assert isinstance(loser, WhitelistImportConflictError)
+    assert loser.code == ErrorCode.CONFLICT
     assert loser.details == {"student_numbers": [overlap]}
     winner_numbers = set(payloads[winners[0]].student_numbers)
 

@@ -213,6 +213,7 @@ async def test_illegal_transition_is_a_typed_409_and_writes_nothing(
         )
 
     assert exc_info.value.status_code == 409
+    assert exc_info.value.code == ErrorCode.CONFLICT
     assert exc_info.value.details["from"] == from_status.value
     assert exc_info.value.details["operation"] in {"suspend", "ban", "reactivate"}
     reloaded = await db_session.get(User, user.id)

@@ -61,11 +61,10 @@ Design decisions:
   (defense in depth, the ``StaffService.create_staff_invitation``
   shape); the service stays callable from workers/tests without HTTP.
 
-Error taxonomy: ``BusinessError`` with frozen-registry codes only (no
-interfaces.md change in this wave) — ``PERMISSION_DENIED`` 403,
-``VALIDATION_ERROR`` 400/409 (the typed subclasses below carry the
-structured details). Dedicated §29 codes for the two 409 shapes are a
-controller registration decision, noted in the wave report.
+Error taxonomy: ``BusinessError`` with frozen-registry codes only —
+``PERMISSION_DENIED`` 403, ``VALIDATION_ERROR`` 400, and ``CONFLICT``
+409 for the two typed conflict shapes (registered Plan 08 T9, closing
+the W2 registration gap this module's report noted).
 """
 
 from __future__ import annotations
@@ -159,7 +158,7 @@ class InvalidWhitelistConfirmError(BusinessError):
 
     def __init__(self, reason: str) -> None:
         super().__init__(
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.CONFLICT,
             _CONFIRM_MISMATCH_MESSAGE,
             status_code=409,
             details={"field": "confirm_payload", "reason": reason},
@@ -178,7 +177,7 @@ class WhitelistImportConflictError(BusinessError):
 
     def __init__(self, student_numbers: Iterable[str]) -> None:
         super().__init__(
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.CONFLICT,
             _IMPORT_CONFLICT_MESSAGE,
             status_code=409,
             details={"student_numbers": sorted(student_numbers)},
