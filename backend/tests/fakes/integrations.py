@@ -11,6 +11,7 @@ outages with the same taxonomy real adapters raise
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -97,11 +98,23 @@ class FakeSmsSender(_FailureProgrammable):
         self.messages: list[SentSms] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         # Snapshot so later caller-side mutation cannot rewrite history.
         self.messages.append(
-            SentSms(to=to, template=template, variables=dict(variables))
+            SentSms(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 
@@ -112,19 +125,47 @@ class FakeEmailSender(_FailureProgrammable):
         self.messages: list[SentEmail] = []
         self.failures: list[Exception] = []
 
-    def send(self, *, to: str, template: str, variables: Mapping[str, Any]) -> None:
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         self._raise_if_programmed()
         self.messages.append(
-            SentEmail(to=to, template=template, variables=dict(variables))
+            SentEmail(
+                to=to,
+                template=template,
+                variables=dict(variables),
+                idempotency_key=idempotency_key,
+            )
         )
 
 
 class FakeObjectStorage(_FailureProgrammable):
     """In-memory `ObjectStorage`.
 
-    `create_upload_url` issues server-generated keys and pins the declared
-    content type; `put_object` simulates the client completing the
-    presigned PUT; `head_object` then reports the pinned metadata.
+    `create_upload_url` issues server-generated keys, pins the declared
+    content type, and returns the SAME signing-contract fields as the
+    real adapter (`client_headers` + `pinned_content_length`, hardening
+    P4c) while recording the declared content length in
+    `pinned_content_lengths` for call-site assertions; `put_object`
+    simulates the client completing the presigned PUT; `head_object` then
+    reports the pinned metadata; `download_to_file` replays the PUT
+    content for worker-side reads (a missing key is `FileNotFoundError`,
+    matching the port contract). `delete_object` removes a held object
+    and records its key in `deleted_keys` for exact call-count assertions
+    (a missing object raises `FileNotFoundError`, the §27 reconcile
+    contract; failed calls record nothing, like every fake here).
+
+    `put_object` deliberately does NOT model the provider-side URL gates
+    (write-once If-None-Match, signed Content-Length/Content-Type): it
+    is state setup for service tests, including the finalize
+    defense-in-depth branches that need a stored object contradicting
+    the declaration. The provider semantics themselves are proven
+    against real MinIO in tests/integration/test_object_storage_smoke.py.
     """
 
     def __init__(self, *, clock: Clock | None = None) -> None:
@@ -132,11 +173,23 @@ class FakeObjectStorage(_FailureProgrammable):
         self.failures: list[Exception] = []
         self.upload_urls: list[UploadUrl] = []
         self.download_urls: list[DownloadUrl] = []
+        self.deleted_keys: list[str] = []
         self.objects: dict[str, ObjectHead] = {}
+        self.downloads: list[str] = []
+        # Declared sizes handed to `create_upload_url`, keyed by object
+        # key (public like upload_urls/deleted_keys: callers assert the
+        # intent flow pinned the declared size on the issued URL).
+        self.pinned_content_lengths: dict[str, int | None] = {}
         self._pinned_content_types: dict[str, str] = {}
+        self._contents: dict[str, bytes] = {}
 
     def create_upload_url(
-        self, *, claim_id: UUID, content_type: str, expires_in: timedelta
+        self,
+        *,
+        claim_id: UUID,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None = None,
     ) -> UploadUrl:
         self._raise_if_programmed()
         object_key = f"submissions/{claim_id}/{uuid4()}"
@@ -144,9 +197,18 @@ class FakeObjectStorage(_FailureProgrammable):
             object_key=object_key,
             url=f"{_FAKE_HOST}/upload/{object_key}",
             expires_at=self._clock.now() + expires_in,
+            # Mirrors the S3 adapter's signing contract (hardening P4c):
+            # the headers a client must echo verbatim (Content-Length is
+            # browser-forbidden and travels as pinned_content_length).
+            client_headers={
+                "If-None-Match": "*",
+                "Content-Type": content_type,
+            },
+            pinned_content_length=content_length,
         )
         self.upload_urls.append(url)
         self._pinned_content_types[url.object_key] = content_type
+        self.pinned_content_lengths[url.object_key] = content_length
         return url
 
     def head_object(self, *, object_key: str) -> ObjectHead | None:
@@ -166,16 +228,43 @@ class FakeObjectStorage(_FailureProgrammable):
         self.download_urls.append(url)
         return url
 
-    def put_object(self, *, object_key: str, size: int) -> None:
+    def delete_object(self, *, object_key: str) -> None:
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(object_key)
+        del self.objects[object_key]
+        self.deleted_keys.append(object_key)
+
+    def put_object(
+        self,
+        *,
+        object_key: str,
+        size: int | None = None,
+        content: bytes = b"",
+    ) -> None:
         """Simulate the client completing the presigned PUT for `object_key`.
 
         Test-side helper, not part of the port: the upload itself does not
-        flow through the adapter. `size` is the stored byte size; content
-        type comes from the pinned value on the issued upload URL.
+        flow through the adapter. `content` is the stored byte payload
+        (what `download_to_file` later replays); `size` defaults to
+        `len(content)` and remains independently overridable for the
+        finalize size-mismatch paths. Content type comes from the pinned
+        value on the issued upload URL.
         """
         pinned = self._pinned_content_types.get(object_key)
         if pinned is None:
             raise ValueError(f"no upload URL was issued for {object_key!r}")
         self.objects[object_key] = ObjectHead(
-            object_key=object_key, size=size, content_type=pinned
+            object_key=object_key,
+            size=len(content) if size is None else size,
+            content_type=pinned,
         )
+        self._contents[object_key] = content
+
+    def download_to_file(self, *, object_key: str, destination: Path) -> None:
+        # Worker-side read path: replay the PUT content byte-identically.
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(f"no object under key {object_key!r}")
+        self.downloads.append(object_key)
+        destination.write_bytes(self._contents.get(object_key, b""))

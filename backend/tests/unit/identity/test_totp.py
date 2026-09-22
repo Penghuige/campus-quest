@@ -223,9 +223,15 @@ class TestTotpSettings:
         monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
         monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-        settings = Settings()
+        # The Fernet rule itself passes: with a real key the startup
+        # failure no longer names TOTP_ENCRYPTION_KEY. V1 production
+        # still fails closed, but on the logging SMS/EMAIL providers
+        # (see tests/unit/core/test_config.py; real adapters land with
+        # the provider project).
+        with pytest.raises(ValidationError, match="SMS_PROVIDER") as exc_info:
+            Settings()
 
-        assert settings.environment == "production"
+        assert "TOTP_ENCRYPTION_KEY" not in str(exc_info.value)
 
     def test_non_fernet_totp_key_rejected_everywhere(self, monkeypatch) -> None:
         # A deployer pasting a passphrase (not a Fernet key) must fail at
