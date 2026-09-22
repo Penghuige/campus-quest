@@ -1,11 +1,12 @@
 # backend/tests/unit/admin/test_network_policy.py
-"""The optional management-network restriction (Plan 08 T8 step 4) as
-pure units: standard-library CIDR parsing (fail-loud on any malformed
-entry, host bits included), the enabled/empty-allowlist guard, the
-allow matrix over both IP families, and the FastAPI dependency
-factory's enabled/disabled matrix — including the trust boundary: the
-client IP is the directly connected peer only, and a spoofed
-``X-Forwarded-For`` grants nothing.
+"""The optional management-network restriction (Plan 08 T8 step 4,
+migrated to the audited settings store in T5) as pure units:
+standard-library CIDR parsing (fail-loud on any malformed entry, host
+bits included), the enabled/empty-allowlist guard, the allow matrix
+over both IP families, the FastAPI dependency factory's
+enabled/disabled matrix (sync AND async loaders — the store-reading
+shape), and the Plan 08 T5 resolution contract — settings-store rows
+first, per-key fallback to the deprecated env fields.
 
 The integration wiring (the guard mounted beside the management actors
 on real routes) is Plan 08 T9; here the guard is driven directly with
@@ -31,16 +32,6 @@ from app.core.errors import BusinessError
 
 _OFFICE_V4 = "10.20.0.0/16"
 _VPN_V6 = "2001:db8:100::/48"
-
-
-def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db/test")
-    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
-    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
-    monkeypatch.setenv("S3_BUCKET", "campusquest")
-    monkeypatch.setenv("S3_ACCESS_KEY", "access")
-    monkeypatch.setenv("S3_SECRET_KEY", "secret")
-    monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
 
 
 def _request(host: str | None, headers: dict[str, str] | None = None) -> Request:
@@ -178,36 +169,121 @@ async def test_enabled_guard_denies_when_no_client_address() -> None:
         await guard(_request(None))
 
 
-# --- the settings loader (T5 transitional home) --------------------------------------
+# --- the policy loader (Plan 08 T5: store first, env fallback) -----------------------
 
 
-def test_loader_builds_policy_from_typed_settings(monkeypatch) -> None:
+def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db/test")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("S3_BUCKET", "campusquest")
+    monkeypatch.setenv("S3_ACCESS_KEY", "access")
+    monkeypatch.setenv("S3_SECRET_KEY", "secret")
+    monkeypatch.setenv("BUSINESS_TIMEZONE", "Asia/Shanghai")
+
+
+def _env_settings(
+    monkeypatch: pytest.MonkeyPatch, *, enabled: str, cidrs: str
+) -> Settings:
     _set_required_env(monkeypatch)
-    monkeypatch.setenv("MANAGEMENT_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("MANAGEMENT_NETWORK_CIDRS", f"{_OFFICE_V4},{_VPN_V6}")
-    settings = Settings()
+    monkeypatch.setenv("MANAGEMENT_NETWORK_ENABLED", enabled)
+    monkeypatch.setenv("MANAGEMENT_NETWORK_CIDRS", cidrs)
+    return Settings()
 
-    policy = load_management_network_policy(settings)
+
+def test_store_rows_win_over_env_values(monkeypatch) -> None:
+    settings = _env_settings(monkeypatch, enabled="false", cidrs="203.0.113.0/24")
+
+    policy = load_management_network_policy(
+        stored_enabled="true",
+        stored_cidrs=f"{_OFFICE_V4},{_VPN_V6}",
+        settings=settings,
+    )
 
     assert policy.enabled is True
     assert [str(network) for network in policy.networks] == [_OFFICE_V4, _VPN_V6]
 
 
-def test_loader_defaults_to_disabled_pass_through(monkeypatch) -> None:
+def test_absent_store_keys_fall_back_per_key_to_env(monkeypatch) -> None:
+    # Per-key fallback (the transition contract): a row decides its own
+    # key only — here the stored ENABLED flag pairs with the env CIDRs.
+    settings = _env_settings(monkeypatch, enabled="false", cidrs=_OFFICE_V4)
+
+    enabled_only = load_management_network_policy(
+        stored_enabled="true", stored_cidrs=None, settings=settings
+    )
+    assert enabled_only.enabled is True
+    assert [str(network) for network in enabled_only.networks] == [_OFFICE_V4]
+
+    cidrs_only = load_management_network_policy(
+        stored_enabled=None, stored_cidrs=_VPN_V6, settings=settings
+    )
+    assert cidrs_only.enabled is False
+    assert [str(network) for network in cidrs_only.networks] == [_VPN_V6]
+
+
+def test_no_store_rows_is_the_pure_env_policy(monkeypatch) -> None:
+    settings = _env_settings(monkeypatch, enabled="true", cidrs=_OFFICE_V4)
+
+    policy = load_management_network_policy(
+        stored_enabled=None, stored_cidrs=None, settings=settings
+    )
+
+    assert policy.enabled is True
+    assert [str(network) for network in policy.networks] == [_OFFICE_V4]
+
+
+def test_no_store_rows_default_to_disabled_pass_through(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     settings = Settings()
 
-    policy = load_management_network_policy(settings)
+    policy = load_management_network_policy(
+        stored_enabled=None, stored_cidrs=None, settings=settings
+    )
 
     assert policy.enabled is False
     assert policy.networks == ()
 
 
-def test_loader_fails_loud_on_invalid_settings_cidrs(monkeypatch) -> None:
-    _set_required_env(monkeypatch)
-    monkeypatch.setenv("MANAGEMENT_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("MANAGEMENT_NETWORK_CIDRS", "10.0.0.0/33")
-    settings = Settings()
+def test_loader_fails_loud_on_invalid_stored_cidrs(monkeypatch) -> None:
+    settings = _env_settings(monkeypatch, enabled="true", cidrs=_OFFICE_V4)
 
     with pytest.raises(ValueError):
-        load_management_network_policy(settings)
+        load_management_network_policy(
+            stored_enabled="true", stored_cidrs="10.0.0.0/33", settings=settings
+        )
+
+
+def test_loader_fails_loud_on_unparseable_stored_flag(monkeypatch) -> None:
+    # A corrupted store value is a configuration error, never a
+    # silently-different policy (G5).
+    settings = _env_settings(monkeypatch, enabled="true", cidrs=_OFFICE_V4)
+
+    with pytest.raises(ValueError, match="MANAGEMENT_NETWORK_ENABLED"):
+        load_management_network_policy(
+            stored_enabled="yes", stored_cidrs=_OFFICE_V4, settings=settings
+        )
+
+
+# --- the dependency factory: async loaders (the store-reading shape) ------------------
+
+
+async def test_guard_awaits_an_async_store_reading_loader() -> None:
+    # The T9 composition shape: the loader reads the audited store per
+    # request (a DB round-trip — necessarily async); the guard must
+    # await it rather than treat the coroutine as a policy.
+    async def _store_reading_loader() -> ManagementNetworkPolicy:
+        return _enabled_policy()
+
+    guard = require_management_network(_store_reading_loader)
+    await guard(_request("10.20.30.40"))  # in-network: no raise
+    with pytest.raises(BusinessError) as exc_info:
+        await guard(_request("203.0.113.50"))
+    assert exc_info.value.status_code == 403
+
+
+async def test_guard_still_accepts_sync_loaders() -> None:
+    guard = require_management_network(lambda: _enabled_policy())
+    await guard(_request("10.20.30.40"))
+    with pytest.raises(BusinessError):
+        await guard(_request("203.0.113.50"))

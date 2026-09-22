@@ -46,7 +46,10 @@ from app.modules.notifications.templates import (
     MissingTemplateVariableError,
     RenderedMessage,
     TemplateText,
+    UnsafeTemplateMarkupError,
+    find_unsafe_template_marker,
     render_template,
+    validate_admin_template,
 )
 
 _IN_APP = NotificationChannel.IN_APP
@@ -289,3 +292,64 @@ def test_unknown_event_type_is_a_programming_error() -> None:
 def test_unknown_channel_is_a_programming_error() -> None:
     with pytest.raises(ValueError, match="channel"):
         render_template(NotificationEventType.SUBMISSION_APPROVED, "PUSH", {})
+
+
+# --- the write-time gate for Admin edits (Plan 08 T5) --------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["{{task_title}}", "{% if x %}y{% endif %}", "${inject}", "a}}b", "{{ 7*7 }}"],
+)
+def test_marker_scan_finds_every_unsafe_sequence(text: str) -> None:
+    assert find_unsafe_template_marker(text) is not None
+
+
+def test_marker_scan_passes_pure_placeholder_text() -> None:
+    assert find_unsafe_template_marker("《{task_title}》将于{deadline_at}截止") is None
+    assert find_unsafe_template_marker("} 与 { 不成对即为字面文本") is None
+
+
+def test_jinja_expression_would_render_literally_so_write_time_rejects_it() -> None:
+    """Why the marker list exists: ``{{task_title}}`` passes the render
+    grammar (the INNER ``{task_title}`` matches) and would ship literal
+    braces — the write-time gate refuses the edit before it persists."""
+    with pytest.raises(UnsafeTemplateMarkupError) as excinfo:
+        validate_admin_template(
+            NotificationEventType.ASSIGNMENT_DEADLINE_4H,
+            _SMS,
+            title="t",
+            body="{{task_title}}",
+        )
+    assert excinfo.value.field == "template_body"
+    assert excinfo.value.marker == "{{"
+
+
+def test_write_time_gate_applies_the_render_grammar_to_both_fields() -> None:
+    event = NotificationEventType.SUBMISSION_APPROVED
+    # Grammar failure in the title (uppercase); whitelist failure in
+    # the body ({item_name} belongs to a DIFFERENT event — the
+    # whitelist is per-event).
+    with pytest.raises(InvalidTemplateError):
+        validate_admin_template(event, _IN_APP, title="{Task_Title}", body="b")
+    with pytest.raises(InvalidTemplateError) as excinfo:
+        validate_admin_template(
+            event, _IN_APP, title="t", body="{item_name} 不是本事件的变量"
+        )
+    assert excinfo.value.placeholder == "item_name"
+
+
+def test_write_time_gate_accepts_exactly_what_render_honors() -> None:
+    for (event_type, channel), seed in DEFAULT_TEMPLATES.items():
+        # Every seed is a legal Admin edit: no markers, placeholders
+        # all whitelisted.
+        validate_admin_template(event_type, channel, title=seed.title, body=seed.body)
+
+
+def test_write_time_gate_keeps_the_programming_error_boundary() -> None:
+    with pytest.raises(ValueError, match="event type"):
+        validate_admin_template("NOT_AN_EVENT", _IN_APP, title="t", body="b")
+    with pytest.raises(ValueError, match="channel"):
+        validate_admin_template(
+            NotificationEventType.SUBMISSION_APPROVED, "PUSH", title="t", body="b"
+        )
