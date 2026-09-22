@@ -167,8 +167,8 @@ def test_worker_cli_style_load_registers_health_job(
         "workers.dispatch_due_notifications,workers.expire_claim,"
         "workers.expire_claims_scan,workers.health_job,"
         "workers.project_ranking_update,workers.rebuild_all_rankings,"
-        "workers.requeue_stale_validating,workers.send_notification_delivery,"
-        "workers.validate_submission"
+        "workers.recover_stuck_sending,workers.requeue_stale_validating,"
+        "workers.send_notification_delivery,workers.validate_submission"
     )
 
 
@@ -191,6 +191,9 @@ def test_beat_schedule_covers_every_planned_scan(
             settings.notification_dispatch_scan_interval_seconds
         ),
         "workers.expire_claims_scan": settings.claim_expiry_scan_interval_seconds,
+        "workers.recover_stuck_sending": (
+            settings.notification_sending_stuck_scan_interval_seconds
+        ),
         "workers.requeue_stale_validating": (
             settings.stale_validating_scan_interval_seconds
         ),
@@ -218,12 +221,14 @@ def test_scan_tasks_autoretry_transient_db_failures(
         dispatch_due_notifications,
     )
     from app.workers.jobs.expire_claims import expire_claims_scan
+    from app.workers.jobs.recover_stuck_sending import recover_stuck_sending
     from app.workers.jobs.requeue_stale_validating import requeue_stale_validating
 
     for task in (
         cleanup_files_scan,
         dispatch_due_notifications,
         expire_claims_scan,
+        recover_stuck_sending,
         requeue_stale_validating,
     ):
         assert set(task.autoretry_for) == {OperationalError, DBAPIError}, (

@@ -55,6 +55,7 @@ JOB_MODULES = (
     "app.workers.jobs.health",
     "app.workers.jobs.project_ranking_update",
     "app.workers.jobs.rebuild_rankings",
+    "app.workers.jobs.recover_stuck_sending",
     "app.workers.jobs.requeue_stale_validating",
     "app.workers.jobs.send_notification",
     "app.workers.jobs.validate_submission",
@@ -88,6 +89,13 @@ def _beat_schedule(settings: Settings) -> dict[str, Any]:
             "task": "workers.expire_claims_scan",
             "schedule": float(settings.claim_expiry_scan_interval_seconds),
             "args": ("beat.workers.expire_claims_scan",),
+        },
+        "workers.recover_stuck_sending": {
+            "task": "workers.recover_stuck_sending",
+            "schedule": float(
+                settings.notification_sending_stuck_scan_interval_seconds
+            ),
+            "args": ("beat.workers.recover_stuck_sending",),
         },
         "workers.requeue_stale_validating": {
             "task": "workers.requeue_stale_validating",
