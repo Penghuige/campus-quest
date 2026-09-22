@@ -195,6 +195,19 @@ class Settings(BaseSettings):
     # are this timestamp heuristic over `updated_at`, not a lease column.
     notification_dispatch_batch_limit: int = 500
     notification_dispatch_stale_sending_seconds: int = 900
+    # Stuck-SENDING automatic recovery monitor (Plan 08 W5a carry, the
+    # aged-SENDING ruling): how long a delivery may sit in SENDING
+    # before the ``workers.recover_stuck_sending`` beat flips it to
+    # RETRYABLE for re-dispatch. Distinct from (and shorter than) the
+    # dispatcher's re-enqueue heuristic above ON PURPOSE: the monitor
+    # is the STATE-side path (SENDING -> RETRYABLE, one conditional
+    # UPDATE) that hands the row back to the ordinary due scan, while
+    # the dispatcher's branch remains the re-enqueue path; sized above
+    # any healthy provider call (the send service holds no row lock
+    # across provider I/O, but a slow call still owns its SENDING
+    # lease), so a live sender is never scooped. The recovery's
+    # per-beat batch rides ``notification_dispatch_batch_limit``.
+    notification_sending_stuck_threshold_seconds: int = 600
     # Beat cadences (PR #2 hardening, MERGE_CARRIES item 4): how often the
     # Celery beat fires each scheduled scan. The dispatch scan keeps the
     # §25.4 ~1-minute retry rung honest; the expiry scan judges hour-scale
@@ -202,6 +215,7 @@ class Settings(BaseSettings):
     # limits (the *_batch_limit / scan LIMIT constants) stay the burst
     # bound — a slower cadence only delays work, never enlarges it.
     notification_dispatch_scan_interval_seconds: int = 60
+    notification_sending_stuck_scan_interval_seconds: int = 60
     claim_expiry_scan_interval_seconds: int = 60
     file_cleanup_scan_interval_seconds: int = 900
     # Cleanup deletion-claim lease (PR #2 hardening pass 5a, P0-2): how
@@ -318,8 +332,24 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("notification_sending_stuck_threshold_seconds")
+    @classmethod
+    def _validate_notification_sending_stuck_threshold_seconds(cls, value: int) -> int:
+        # A zero threshold would flip every live in-flight claim to
+        # RETRYABLE on every beat — re-dispatching healthy sends and
+        # racing their finalizes. The threshold must sit strictly above
+        # a healthy send's whole lifetime (no upper bound: a longer one
+        # only delays recovery, which the manual force-fail command
+        # backstops).
+        if value < 1:
+            raise ValueError(
+                "notification_sending_stuck_threshold_seconds must be >= 1 second"
+            )
+        return value
+
     @field_validator(
         "notification_dispatch_scan_interval_seconds",
+        "notification_sending_stuck_scan_interval_seconds",
         "claim_expiry_scan_interval_seconds",
         "file_cleanup_scan_interval_seconds",
         "stale_validating_scan_interval_seconds",
