@@ -17,6 +17,15 @@ Three FastAPI dependencies, one per policy layer:
 - ``require_staff_management_actor`` — the guard for ALL management
   endpoints (spec §33.4): staff role (TEACHER/ADMIN) + ACTIVE + CONFIRMED
   TOTP credential.
+- ``require_admin_actor`` — the guard for Admin-only surfaces (PR #2
+  hardening ruling): the management guard's checks with ``role == ADMIN``
+  — the narrow composition staff review/oversight endpoints sit behind
+  until scoped delegation lands.
+- ``require_active_community_actor`` — the guard for ordinary community
+  participation (spec §4.1/§4.2 "普通社区能力"): ACTIVE Student or
+  Teacher. Admin is deliberately NOT a participant (the PR #2 hardening
+  ruling: Admin's community powers are the governance surfaces, not
+  posting/voting).
 
 Design decisions:
 
@@ -96,8 +105,10 @@ __all__ = [
     "get_actor",
     "get_business_clock",
     "require_active_actor",
+    "require_active_community_actor",
     "require_active_staff_actor",
     "require_active_student_actor",
+    "require_admin_actor",
     "require_staff_management_actor",
 ]
 
@@ -105,6 +116,8 @@ _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许执行该操作"
 _MANAGEMENT_PERMISSION_MESSAGE = "仅教师或管理员可访问管理功能"
 _STUDENT_ACTION_PERMISSION_MESSAGE = "仅学生账号可执行该操作"
+_COMMUNITY_PARTICIPATION_PERMISSION_MESSAGE = "仅学生或教师账号可参与社区互动"
+_ADMIN_ACTION_PERMISSION_MESSAGE = "只有管理员可以执行该操作"
 _TOTP_SETUP_REQUIRED_MESSAGE = "必须先完成 TOTP 两步验证才能使用管理功能"
 
 # auto_error=False: a missing or malformed Authorization header is OUR
@@ -356,4 +369,87 @@ async def require_staff_management_actor(
     credential = await db.get(TotpCredential, user.id)
     if credential is None or credential.confirmed_at is None:
         raise TotpSetupRequiredError(_TOTP_SETUP_REQUIRED_MESSAGE)
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_admin_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The guard for Admin-only surfaces (PR #2 hardening ruling).
+
+    ``require_staff_management_actor``'s structure with the role narrowed
+    to ADMIN: same capability-then-state-then-second-factor check order,
+    same typed errors. A TEACHER — even ACTIVE with a confirmed TOTP
+    credential — answers ``PERMISSION_DENIED`` (403): the guarded
+    surfaces are the ones the hardening ruling pulled out of the staff
+    family until scoped delegation lands (the points redemption review
+    decisions, the notifications failure query), where any-active-staff
+    power was judged too broad. An ACTIVE Admin without a confirmed TOTP
+    credential still gets ``TotpSetupRequiredError``: the Admin role does
+    not waive the §5.8 step-3 management 2FA gate these surfaces inherit.
+    """
+    user = await _resolve_user(credentials, db, codec, clock)
+    if not rbac.is_admin(user.role):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _ADMIN_ACTION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    credential = await db.get(TotpCredential, user.id)
+    if credential is None or credential.confirmed_at is None:
+        raise TotpSetupRequiredError(_TOTP_SETUP_REQUIRED_MESSAGE)
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_active_community_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The guard for ordinary community participation (spec §4.1/§4.2).
+
+    Spec §4.2 opens with "除普通社区能力外，可：" — Teacher holds the
+    ordinary community capabilities (comments, replies, anonymity, votes,
+    reactions, reports) listed for Student in §4.1, so the participant
+    family is STUDENT + TEACHER, both ACTIVE. Admin is deliberately NOT
+    a participant (the PR #2 hardening ruling): Admin's community powers
+    are the governance surfaces (moderation queue, hard hide, identity
+    reveal), which keep their own guards; keeping the actor out of the
+    ordinary write paths preserves the participant/moderator separation
+    the anonymity design leans on.
+
+    No TOTP requirement — community participation is not management
+    (§33.4's 2FA gate guards the management surfaces only), so an invited
+    Teacher with a normal ACTIVE session participates like any Student.
+    Role is read from the user row (the stale-role defense shared with
+    every guard here); check order mirrors the student guard: role
+    (``PERMISSION_DENIED``), then status (``ACCOUNT_NOT_ACTIVE``).
+    """
+    user = await _resolve_user(credentials, db, codec, clock)
+    if not rbac.has_any_role(user.role, Role.STUDENT, Role.TEACHER):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _COMMUNITY_PARTICIPATION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
     return Actor(user_id=user.id, role=Role(user.role))

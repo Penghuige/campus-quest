@@ -259,3 +259,26 @@ make release-gate
 A fresh zero-failure run is required after the final release-gate fix.
 
 Until that command exists, use the strongest currently implemented subset rather than pretending the future gate has run.
+
+## 16. Engineering Golden Rules（PR #2 起，长期 merge gate）
+
+本节来自 PR #2 Integration Hardening 审查（owner 批准），对所有实现 Agent 与 reviewer 生效。G1/G2/G3/G17/G18 是重点 merge gate：违反即阻塞合并。
+
+- **G1 生产组合是功能的一部分。** 只有 Service/Domain + Fake 测试通过不算完成；真实 adapter、composition root、worker wiring、scheduler wiring 都属于该功能。No production binding = not done。
+- **G2 Fake 通过 ≠ 可部署。** Fake 证明领域规则；至少一条真实依赖 smoke test 证明系统能跑。CI 优先覆盖 PostgreSQL / Redis / MinIO / Celery 注册与组合。
+- **G3 占位符不得进入合并。** 生产路径出现 `NotImplementedError`、`Placeholder*`、"merge later"、"Plan X will wire this"、silent no-op adapter 默认阻塞合并。允许接口 seam，但生产路径必须有真实实现或明确 fail-fast。
+- **G4 外部副作用不得假成功。** 真成功才标成功；明确失败记失败；unknown outcome 必须用幂等 key/reconciliation；logging-only adapter 不得在 production 被当成成功 provider。
+- **G5 生产 fail closed。** 安全、权限、provider、secret、audit 等生产依赖缺失时启动失败或请求失败，不得降级为"不做任何事但返回成功"。
+- **G6 一个 event loop，一个安全的 async DB 生命周期。** 不允许 process-wide pooled AsyncEngine/asyncpg connection 跨多个 `asyncio.run()` event loop 被隐式复用；worker 统一走项目级 worker session factory，并用测试固定。
+- **G7 PostgreSQL 是事实源。** Ledger/Claim/Submission/权限/审核状态以 PG 为准；Redis 排行榜/缓存必须可重建；Object Storage 不拥有业务状态；不得为修 Redis/存储状态篡改业务事实。
+- **G8 at-least-once 需要业务幂等。** Celery/HTTP retry/webhook/finalize 都按可能多次执行设计；幂等靠稳定业务 key / DB constraint / 状态机，不靠"queue 只投一次"。
+- **G9 跨模块副作用需要 durable handoff。** 纯投影允许 best-effort + rebuild；不可由事实源自动恢复的事件（通知、审计）必须用 durable outbox / persisted delivery intent 或等价机制。
+- **G10 RBAC = 角色 + 所有权/scope + 账户状态。** "是 Teacher"≠"可操作所有 Teacher 资源"；scope 无法确定时默认拒绝。
+- **G11 隐私由 DTO 形状强制，不是前端隐藏。** 敏感字段不进入不需要它的 DTO；serializer 最小披露；de-anonymization 走独立高风险端点。
+- **G12 敏感读取是可审计行为。** 匿名揭示/PII 查看/管理员导出/敏感后台查询必须 durable 审计，记录 actor/target/reason/timestamp。
+- **G13 Agent 不得静默改变产品语义。** points/reward、deadline/grace/revision、anonymity/privacy、RBAC、ranking semantics、institutional reward policy 的变化必须先更新设计/spec 并显式标记 owner veto；Agent 只选技术实现。
+- **G14 时间边界是 API。** server-authoritative、timezone-aware、明确 </<=、exactly-at-boundary 测试；worker delay 不得改变学生应得结果。
+- **G15 并发不变量需要真实 PostgreSQL 测试。** quota/stock/claim allocation/reward issuance/redemption/version allocation/abandon limits/review races 必须用独立连接的并发 integration test；mock 不算证明。
+- **G16 每个派生缓存/投影需要重建故事。** 回答不了"Redis/worker/cache 全丢后从什么事实重建"的状态不应只存在于 projection。
+- **G17 Merge-carry 债务不得在合并中幸存。** 集成 PR 必须把 carry 当 checklist 全部关闭，而不是把 carry 文档合进 main 当未来承诺。
+- **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。

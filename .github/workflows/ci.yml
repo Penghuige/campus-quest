@@ -1,18 +1,22 @@
-# CampusQuest CI (PR1 review item 5).
+# CampusQuest CI.
 #
 # Backend: lint (ruff), types (mypy strict on app), unit+worker tests,
 # PostgreSQL/Redis/MinIO integration tests, and a clean-database Alembic
 # upgrade + `alembic check` proving migrations match the models.
 # Frontend: install, typecheck, lint, production build. Playwright is
 # intentionally absent; it lands with the E2E plan (Plan 10).
+#
+# Triggers: pushes to main, plus pull requests targeting main. Working
+# branches get CI through their PR (open the PR as a draft immediately);
+# this avoids both hardcoded branch names and push+PR double runs.
 
 name: CI
 
 on:
   push:
-    branches: [main, worktree-campusquest-v1]
+    branches: [main]
   pull_request:
-    branches: [main, worktree-campusquest-v1]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -37,6 +41,17 @@ jobs:
       S3_ACCESS_KEY: campusquest
       S3_SECRET_KEY: campusquest-dev
       BUSINESS_TIMEZONE: Asia/Shanghai
+      # Runs the real-S3 smoke (tests/integration/test_object_storage_smoke.py)
+      # against the MinIO step container below; locally the same tests skip
+      # without this flag.
+      CQ_S3_SMOKE: "1"
+      # Runs the production-composition smoke
+      # (tests/integration/test_composition_smoke.py, G18) — the full
+      # presign -> PUT -> finalize -> validation-job -> approve chain over
+      # the real PostgreSQL/Redis/MinIO services above with no core
+      # provider overridden; locally the same module skips without this
+      # flag.
+      CQ_COMPOSITION_SMOKE: "1"
 
     services:
       postgres:
@@ -103,6 +118,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=campusquest \
             -e MINIO_ROOT_PASSWORD=campusquest-dev \
+            -e MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000 \
             --health-cmd 'mc ready local' \
             --health-interval 5s \
             --health-timeout 3s \
