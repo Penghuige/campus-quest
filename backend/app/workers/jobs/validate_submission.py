@@ -81,12 +81,15 @@ logger = logging.getLogger(__name__)
 #: ``CleanupClaimConflictError`` (hardening pass 4b) is the typed 409
 #: the protected claim transitions (validation tx1's VALIDATING entry,
 #: the reward-lock UNDER_REVIEW entry) raise while a file-cleanup
-#: deletion claim is in flight: protection must win, deletion is the
-#: retryable side, and the claim window is seconds — the bounded
-#: backoff below outlives it. Both sides are replay-safe (a retried
-#: tx1 rolls back whole; a retried chained call replays the terminal
-#: VALIDATED state), and after ``max_retries`` the job fails loudly for
-#: the operator remedy (clearing a stranded claim).
+#: deletion claim is unfinished: safety-first per the final-pass
+#: claim-ownership ruling, the 409 holds even past lease expiry until
+#: the deletion settles (completion, release, or the takeover's
+#: recovery), so the retry window spans at most a lease length plus
+#: one scan interval — the bounded backoff usually outlives it, and
+#: after ``max_retries`` the job fails loudly for the operator remedy
+#: (the next cleanup scan's takeover, or clearing a stranded claim).
+#: Both sides are replay-safe (a retried tx1 rolls back whole; a
+#: retried chained call replays the terminal VALIDATED state).
 _RETRYABLE_TRANSIENTS = (
     OSError,
     TemporaryProviderError,

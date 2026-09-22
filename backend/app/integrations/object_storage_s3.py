@@ -122,6 +122,21 @@ _TEMPORARY_ERROR_CODES = frozenset(
 #: head/missing-key paths), distinct from a broken bucket.
 _MISSING_OBJECT_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
+#: Explicit provider-call timeouts (hardening final pass A). botocore's
+#: defaults are 60s connect / 60s read per attempt; without explicit
+#: bounds a stuck provider could hold a cleanup claim live-but-slow for
+#: minutes. connect_timeout bounds TCP+TLS establishment; read_timeout
+#: bounds waiting for a response AFTER the request was sent (a read
+#: timeout on a DELETE surfaces as ReadTimeoutError -> the taxonomy's
+#: UnknownOutcomeError). With retries={"max_attempts": 3}, one
+#: delete_object (= HEAD + DELETE, two API calls, up to 3 attempts
+#: each) is bounded by roughly 2 * 3 * (10 + 30)s = 240s — under the
+#: 300s default cleanup lease, and the claim-ownership fencing token
+#: covers whatever residue survives. This is the SECOND line of
+#: defense behind the token, not a substitute for it.
+_CONNECT_TIMEOUT_SECONDS = 10
+_READ_TIMEOUT_SECONDS = 30
+
 
 def _error_code(exc: ClientError) -> str:
     error = exc.response.get("Error", {})
@@ -203,6 +218,12 @@ class S3ObjectStorage:
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
                 retries={"max_attempts": 3, "mode": "standard"},
+                # Bounded provider calls (final pass A): every API call
+                # — including delete_object's HEAD-then-DELETE pair — is
+                # capped at connect+read per attempt; see the constant
+                # block above for the delete-path arithmetic.
+                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+                read_timeout=_READ_TIMEOUT_SECONDS,
             ),
         )
 

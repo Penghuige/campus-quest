@@ -1,20 +1,23 @@
 # backend/tests/workers/test_file_cleanup.py
 """File-retention cleanup worker tests (plan 07 T7; spec §13, §27;
-hardening pass 4b deletion-claim ruling; pass 5a claim leases).
+hardening pass 4b deletion-claim ruling; pass 5a claim leases; final
+pass A fencing tokens).
 
 Two layers:
 
 - The service logic (scan / guard / claim / delete / reconcile /
   idempotency) runs pure in-memory against an in-memory
   ``CleanupRepository`` (mirroring the real due predicate and the real
-  leased claim) and ``FakeObjectStorage`` — no PostgreSQL, no broker.
+  leased claim with its ownership token) and ``FakeObjectStorage`` — no
+  PostgreSQL, no broker.
 - The REAL repository (``SubmissionCleanupRepository``, wired at the
   merge per MERGE_CARRIES item 3) runs against real PostgreSQL
   (integration-marked): the due predicate's exclusion set is judged on
-  actual rows, ``mark_deleted`` is the idempotent compare-and-set the
-  racing-redelivery path relies on, and the pass-4b deletion claim, its
-  races, the pass-5a lease/takeover semantics, and the unified
-  serialization boundary proofs live in ``test_cleanup_deletion_claim.py``.
+  actual rows, ``mark_deleted`` is the idempotent token-fenced
+  compare-and-set the racing-redelivery path relies on, and the
+  pass-4b deletion claim, its races, the pass-5a lease/takeover
+  semantics, the unified serialization boundary proofs, and the
+  final-pass fencing races live in ``test_cleanup_deletion_claim.py``.
 
 Coverage per the brief:
 - Retention matrix: expired 30/90/180-day objects deleted; future,
@@ -29,7 +32,8 @@ Coverage per the brief:
   claim-exclusivity layer — a redelivered job holding a stale snapshot
   cannot claim a row whose lease is live, so it never reaches the
   provider at all — plus the pass-5a lease mirror: an EXPIRED lease
-  re-candidates the row and the takeover claim resets both timestamps.
+  re-candidates the row and the takeover claim resets both timestamps
+  and rewrites the token.
 - Failure taxonomy: temporary / permanent / unknown provider errors
   release the claim, leave the record otherwise untouched, count
   exactly one failure, and never retry in-process — a single programmed
@@ -88,8 +92,9 @@ class Row:
     ``claim_protected`` mirrors the real claim predicate's join guard
     (the row's AssignmentClaim inside VALIDATING / UNDER_REVIEW) so the
     in-memory claim can re-evaluate it; ``cleanup_claimed_at`` /
-    ``cleanup_lease_expires_at`` are the deletion-claim lease the real
-    claim transaction sets (pass 5a).
+    ``cleanup_lease_expires_at`` / ``cleanup_claim_token`` are the
+    deletion-claim lease + ownership token the real claim transaction
+    writes (pass 5a + final pass A fencing).
     """
 
     submission_id: UUID
@@ -101,12 +106,13 @@ class Row:
     deleted_at: datetime | None = None
     cleanup_claimed_at: datetime | None = None
     cleanup_lease_expires_at: datetime | None = None
+    cleanup_claim_token: UUID | None = None
     claim_protected: bool = False
 
 
 class InMemoryCleanupRepository:
-    """Due-candidate discovery + the leased deletion claim (with crash
-    takeover) + idempotent ``mark_deleted`` in memory.
+    """Due-candidate discovery + the leased, token-fenced deletion claim
+    (with crash takeover) + idempotent ``mark_deleted`` in memory.
 
     ``collect_due_files`` mirrors the real query's exclusion set (spec
     §13/§27): permanent rows, legal-hold rows, protected rows (claims in
@@ -122,12 +128,15 @@ class InMemoryCleanupRepository:
     guard (including the claim-status join mirror and the live-lease
     conjunct) is re-evaluated against the row's CURRENT state at claim
     time, and only the winner gets ``cleanup_claimed_at`` +
-    ``cleanup_lease_expires_at`` (a takeover resets both — the pass-5a
-    semantics the PostgreSQL proofs pin in test_cleanup_deletion_claim.py).
+    ``cleanup_lease_expires_at`` + a fresh ``cleanup_claim_token``
+    (a takeover resets all three — the pass-5a semantics plus final-pass
+    A fencing the PostgreSQL proofs pin in
+    test_cleanup_deletion_claim.py). The token is the return value.
 
-    ``mark_deleted`` is the idempotent compare-and-set the racing
-    redelivery path needs: an already-marked row answers ALREADY_DELETED
-    without overwriting the earlier instant.
+    ``release_cleanup_claim`` / ``mark_deleted`` mirror the real
+    compare-and-set on the token: a stale worker (a takeover rewrote
+    the token) releases nothing and, on mark, answers CLAIM_LOST —
+    never ALREADY_DELETED and never a write.
     """
 
     def __init__(self, rows: list[Row], *, stale_listing: bool = False) -> None:
@@ -178,28 +187,38 @@ class InMemoryCleanupRepository:
             due = [row for row in self.rows if self._claimable(row, now)]
         return [self.snapshot(row) for row in due[:limit]]
 
-    async def claim_for_cleanup(self, record: FileRecord, *, now: datetime) -> bool:
+    async def claim_for_cleanup(
+        self, record: FileRecord, *, now: datetime
+    ) -> UUID | None:
         self.claim_calls.append(record.object_key)
         row = self.row_for(record.object_key)
         if not self._claimable(row, now):
-            return False
+            return None
         row.cleanup_claimed_at = now
         row.cleanup_lease_expires_at = now + LEASE
-        return True
+        row.cleanup_claim_token = uuid.uuid4()
+        return row.cleanup_claim_token
 
-    async def release_cleanup_claim(self, record: FileRecord) -> None:
+    async def release_cleanup_claim(self, record: FileRecord, *, token: UUID) -> None:
         row = self.row_for(record.object_key)
-        if row.cleanup_claimed_at is not None and row.deleted_at is None:
+        if (
+            row.cleanup_claim_token == token
+            and row.cleanup_claimed_at is not None
+            and row.deleted_at is None
+        ):
             row.cleanup_claimed_at = None
             row.cleanup_lease_expires_at = None
+            row.cleanup_claim_token = None
 
     async def mark_deleted(
-        self, record: FileRecord, *, deleted_at: datetime
+        self, record: FileRecord, *, token: UUID, deleted_at: datetime
     ) -> MarkOutcome:
         self.mark_calls.append(record.object_key)
         row = self.row_for(record.object_key)
         if row.deleted_at is not None:
             return MarkOutcome.ALREADY_DELETED
+        if row.cleanup_claim_token != token:
+            return MarkOutcome.CLAIM_LOST
         row.deleted_at = deleted_at
         return MarkOutcome.MARKED
 
@@ -688,16 +707,15 @@ async def test_live_lease_is_exclusive_and_expired_lease_is_taken_over() -> None
     )
 
     # The first delivery claims... then dies before the provider call.
-    assert await repo.claim_for_cleanup(crashed, now=NOW) is True
+    first_token = await repo.claim_for_cleanup(crashed, now=NOW)
+    assert first_token is not None
     assert row.cleanup_claimed_at == NOW
     assert row.cleanup_lease_expires_at == NOW + LEASE
 
     # While the lease lives: not a candidate, and a redelivery holding
     # the stale snapshot cannot re-claim.
     assert await repo.collect_due_files(NOW + timedelta(seconds=1)) == []
-    assert await repo.claim_for_cleanup(crashed, now=NOW + timedelta(seconds=1)) is (
-        False
-    )
+    assert await repo.claim_for_cleanup(crashed, now=NOW + timedelta(seconds=1)) is None
 
     # After the lease expires: a candidate again, and the takeover
     # resets both timestamps before deleting.
@@ -1054,7 +1072,10 @@ def test_real_repository_due_predicate_excludes_protected_rows() -> None:
 def test_real_repository_mark_deleted_is_idempotent_compare_and_set() -> None:
     """mark_deleted records the instant once (MARKED) and answers
     ALREADY_DELETED on the second call without overwriting the earlier
-    instant — the racing-redelivery contract the §27 branches rely on."""
+    instant — the racing-redelivery contract the §27 branches rely on.
+    The CAS is fenced on the claim's ownership token (final pass A), so
+    the flow is the real one: CLAIM first (the token comes back), then
+    mark twice with that token."""
     from app.modules.submissions.models import Submission
     from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
 
@@ -1069,10 +1090,16 @@ def test_real_repository_mark_deleted_is_idempotent_compare_and_set() -> None:
             object_key="submissions/x/y",  # unused by mark_deleted
             retention_until=NOW - timedelta(days=30),
         )
-        first = asyncio.run(repository.mark_deleted(record, deleted_at=NOW))
+        token = asyncio.run(repository.claim_for_cleanup(record, now=NOW))
+        assert token is not None
+        first = asyncio.run(
+            repository.mark_deleted(record, token=token, deleted_at=NOW)
+        )
         assert first is MarkOutcome.MARKED
         second = asyncio.run(
-            repository.mark_deleted(record, deleted_at=NOW + timedelta(minutes=5))
+            repository.mark_deleted(
+                record, token=token, deleted_at=NOW + timedelta(minutes=5)
+            )
         )
         assert second is MarkOutcome.ALREADY_DELETED
 

@@ -190,20 +190,27 @@ class Submission(Base):
         DateTime(timezone=True),
         comment=(
             "Cleanup-worker deletion claim, lease START (hardening pass 4b, "
-            "re-based by pass 5a): set together with cleanup_lease_expires_at "
-            "by the claim transaction, which locks this row and then the "
-            "claim row (the SAME order the protection paths lock them) and "
+            "re-based by pass 5a and the final-pass claim-ownership "
+            "ruling): set together with cleanup_lease_expires_at and a "
+            "fresh cleanup_claim_token by the claim transaction, which "
+            "locks this row and then the claim row (the SAME order the "
+            "protection paths lock them) and "
             "re-evaluates every §13/§27 guard under both locks before "
             "writing — the unified serialization boundary: a protection "
             "transaction cannot commit a guarded state between this claim's "
             "guard check and its commit, and vice versa. NULL while "
             "unclaimed; cleared to release after a provider failure so the "
-            "next scan retries; reset (with the lease) by the next scan's "
+            "next scan retries; reset (with the lease and a fresh token) "
+            "by the next scan's "
             "TAKEOVER once the lease expired (a crashed worker); stays set "
             "after a completed deletion (deleted_at records the completion). "
             "Protection writers (legal_hold, claim -> VALIDATING/UNDER_REVIEW) "
             "must reject with a typed 409 while this is set with deleted_at "
-            "NULL AND the lease live — protection wins over a stale lease. "
+            "NULL, EVEN AFTER the lease has expired — an UNFINISHED deletion "
+            "claim blocks protection until the deletion settles (completion, "
+            "release, or a takeover that resolves it); lease expiry "
+            "authorizes cleanup takeover only (the owner ruling superseding "
+            "round-5's protection-wins-over-stale-lease rule). "
             "legal_hold itself has NO service write point today "
             "(operator/DBA action) — whoever sets it retries on that 409 the "
             "same way."
@@ -221,7 +228,25 @@ class Submission(Base):
             "the row is a crash survivor that re-enters the scan's "
             "candidate set, and the takeover re-evaluates every guard "
             "under the submission->claim row locks before resetting both "
-            "timestamps."
+            "timestamps and rewriting the claim token. Expiry changes "
+            "NOTHING for the protection writers (the claim-ownership "
+            "ruling): an expired lease authorizes the cleanup-side "
+            "takeover only, never a protection transition past an "
+            "unfinished claim."
+        ),
+    )
+    cleanup_claim_token: Mapped[UUID | None] = mapped_column(
+        comment=(
+            "Cleanup deletion-claim ownership token (hardening final pass "
+            "A, fencing): a fresh uuid4 written by EVERY claim and EVERY "
+            "lease takeover, cleared only by the owning worker's release. "
+            "release_cleanup_claim and mark_deleted compare-and-set on it "
+            "(WHERE cleanup_claim_token = :token), so a slow-but-alive "
+            "worker resuming after its lease expired and a takeover "
+            "happened matches zero rows and can never clear or complete "
+            "another worker's claim (ABA closure; the second line behind "
+            "it is the S3 adapter's bounded connect/read timeouts). NULL "
+            "while unclaimed."
         ),
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -285,16 +310,19 @@ class UploadIntent(Base):
         comment=(
             "Orphan-intent cleanup claim, lease START (hardening pass 5a, "
             "splitting pass 4b's combined column): set together with "
-            "cleanup_lease_expires_at by the conditional UPDATE claiming "
+            "cleanup_lease_expires_at and a fresh cleanup_claim_token "
+            "by the conditional UPDATE claiming "
             "the intent (expires_at past, never finalized, not done, no "
             "live lease); cleanup_deleted_at is now the DONE marker only. "
             "Once the lease expires (a worker that died between claim and "
             "delete), the row re-enters the candidate set and the next "
-            "scan takes over — resets both timestamps — and converges "
+            "scan takes over — resets both timestamps and rewrites the "
+            "claim token — and converges "
             "(§27); no protection transition exists for intents (finalize "
             "refuses expired intents under the intent-row FOR UPDATE it "
             "already takes, so a claim and a finalize serialize on the "
-            "row). Cleared to release after a provider failure."
+            "row). Cleared (with the token) to release after a provider "
+            "failure."
         ),
     )
     cleanup_lease_expires_at: Mapped[datetime | None] = mapped_column(
@@ -305,6 +333,17 @@ class UploadIntent(Base):
             "cleanup_claim_lease_seconds setting; the claim is exclusive "
             "only while it lives. NULL while unclaimed; a claimed row "
             "with NULL expiry is treated as LIVE (fail-safe)."
+        ),
+    )
+    cleanup_claim_token: Mapped[UUID | None] = mapped_column(
+        comment=(
+            "Orphan-intent cleanup ownership token (hardening final pass "
+            "A, fencing): a fresh uuid4 written by every claim and every "
+            "lease takeover of the intent; release_intent and "
+            "mark_intent_deleted compare-and-set on it, so a stale "
+            "worker's late release or done-mark cannot touch a "
+            "takeover's claim (the same ABA closure as the submissions "
+            "side). NULL while unclaimed; cleared on release."
         ),
     )
     cleanup_deleted_at: Mapped[datetime | None] = mapped_column(

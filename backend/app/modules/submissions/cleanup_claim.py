@@ -1,47 +1,48 @@
 # backend/app/modules/submissions/cleanup_claim.py
 """Protection-side guard for the cleanup deletion claim (hardening pass
 4b, closed by pass 5a; spec §13/§27; the unified serialization boundary
-ruling).
+ruling; the final-pass claim-ownership ruling).
 
 The file-retention cleanup deletes only under a claimed deletion right:
-``submissions.cleanup_claimed_at`` + ``cleanup_lease_expires_at`` (a
-LEASE, pass 5a). The claim transaction locks the submission row and
-then the claim row — the SAME order the protection paths lock them —
-re-evaluates every retain guard under both locks, writes the lease, and
+``submissions.cleanup_claimed_at`` + ``cleanup_lease_expires_at`` + the
+``cleanup_claim_token`` ownership column (a LEASE with a fencing token).
+The claim transaction locks the submission row and then the claim row —
+the SAME order the protection paths lock them — re-evaluates every
+retain guard under both locks, writes the lease and a fresh token, and
 commits; the provider delete runs outside the transaction. Because both
-sides now serialize on the same row locks, a claim can no longer commit
+sides serialize on the same row locks, a claim can no longer commit
 between a protection transaction's guard check (below) and its own
 status commit: whichever side takes the locks first wins, the other
-side's guard sees the committed outcome. That closes the pass-4b
-residual both-in-flight window (the sub-millisecond check-to-commit gap
-owner ruled a §27 correctness violation, not an inherent boundary).
+side's guard sees the committed outcome.
 
-This module is the protection half of the ruling: while a claim is in
-flight (claimed, not completed, lease LIVE), the writers that move a
-submission's file INTO the protected set must refuse with a typed
-conflict instead of silently landing on an object that is being deleted:
+This module is the protection half: while a claim is UNFINISHED
+(claimed, not completed), the writers that move a submission's file
+INTO the protected set must refuse with a typed conflict instead of
+silently landing on an object that is being deleted:
 
 - claim -> VALIDATING (the validation service's tx1),
 - claim -> UNDER_REVIEW (the reward-lock service's review entry).
 
-Protection must win; deletion is the retryable side. The claim window is
-seconds (claim -> S3 delete -> completion mark, no row lock held across
-the provider call), so the conflict is a RETRY-LATER answer: the
-validation job carries this error in its bounded autoretry, and an
-operator setting ``legal_hold`` retries the same way.
-
-Lease semantics (pass 5a, P0-2): an EXPIRED lease is a crashed worker,
-not an active deletion. The guard below does not treat it as a conflict
-— protection proceeds, and the next cleanup scan's takeover re-evaluates
-every guard under the row locks, loses to the committed protection, and
-never deletes. A claim whose lease column is NULL is treated as LIVE
-(fail-safe: an unknown lease never authorizes the deletion side of any
-race).
+CLAIM-OWNERSHIP SEMANTICS (owner ruling, final review — it SUPERSEDES
+round-5's "protection wins over an expired lease" rule): an unfinished
+deletion claim blocks protection transitions EVEN AFTER its lease
+expires. A lease expiring proves only that the deadline passed, never
+that the old worker died — a worker sitting in a slow S3 delete could
+still complete it. Lease expiry therefore authorizes exactly one thing:
+the CLEANUP-SIDE takeover, which re-claims under the same serialization
+boundary, REWRITES the ownership token, and resolves the deletion (the
+old worker's late release/mark then loses the token CAS and is
+abandoned). Protection retries after that recovery finishes — the
+conflict stays a RETRY-LATER answer: the validation job carries this
+error in its bounded autoretry, and an operator setting ``legal_hold``
+retries the same way. The claim window is seconds to one lease length
+(plus the provider-call bound the S3 adapter's explicit connect/read
+timeouts enforce), so the retry converges.
 
 ``legal_hold`` has NO service write point today (operator/DBA actions
 only — recorded in the 0017 migration and on the model column): whoever
-sets it must apply the same rule, re-checking for a live claim (or
-retrying on the 409) before committing the hold.
+sets it must apply the same rule, re-checking for an unfinished claim
+(or retrying on the 409) before committing the hold.
 
 Import discipline: importing this module must stay sqlalchemy-free at
 MODULE level (``app.workers.jobs.validate_submission`` pins that its
@@ -51,7 +52,6 @@ the guard function, the cleanup-repo precedent).
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -70,10 +70,12 @@ _CONFLICT_MESSAGE = "文件清理正在进行，请稍后重试"
 
 
 class CleanupClaimConflictError(BusinessError):
-    """A submission under this claim holds an unfinished cleanup claim
-    with a LIVE lease: its object is being deleted right now. Typed 409
-    — the caller retries after the seconds-level claim window closes
-    (or the lease expires and a crashed worker's claim goes stale).
+    """A submission under this claim holds an UNFINISHED cleanup claim:
+    its object is being deleted right now, or was when a worker's lease
+    expired without the deletion settling — the claim-ownership ruling
+    treats both as in-flight. Typed 409 — the caller retries after the
+    claim settles (completion, release, or the takeover's recovery; the
+    seconds-to-lease-length window closes on its own).
 
     ``code`` reuses ``VALIDATION_ERROR`` (the typed-409 precedent the
     same module family already ships, e.g. SubmissionNotValidatedError):
@@ -94,31 +96,30 @@ class CleanupClaimConflictError(BusinessError):
         )
 
 
-async def ensure_no_active_cleanup_claim(
-    db: AsyncSession, claim_id: UUID, *, now: datetime
-) -> None:
+async def ensure_no_active_cleanup_claim(db: AsyncSession, claim_id: UUID) -> None:
     """Raise ``CleanupClaimConflictError`` when ANY submission under the
-    claim holds an unfinished cleanup claim with a LIVE lease at ``now``.
+    claim holds an UNFINISHED cleanup claim — SAFETY-FIRST (the
+    claim-ownership ruling): the lease clock is NOT consulted, because
+    an expired lease does not prove the old worker died. Any of
+    ``cleanup_claimed_at`` / ``cleanup_claim_token`` set with
+    ``deleted_at`` NULL is a conflict, however stale the lease reads.
 
     Scope is the WHOLE claim, matching the cleanup predicate's scope:
     the candidate filter excludes submissions whose claim is inside the
     review pipeline, so entering those states must protect every version
     under the claim, not just the submission being processed. Not a
     conflict: a finished deletion (``deleted_at`` set — the object is
-    gone, protection is moot), a released claim (both claim columns
-    NULL), and a claim whose lease has EXPIRED (a crashed worker;
-    protection wins over a stale lease — the takeover will lose to the
-    protection this call is about to commit). A claimed row with a NULL
-    lease expiry IS a conflict (fail-safe: an unknown lease is live).
+    gone, protection is moot) and a released claim (all claim columns
+    NULL). Lease expiry changes nothing here — it authorizes the
+    cleanup-side takeover only (which rewrites the token and resolves
+    the deletion); this guard passes again once the takeover completes,
+    releases, or the original worker does.
 
     Call this INSIDE the caller's transaction while holding the
     assignment-claim row lock (both existing write points do), before
     writing the protected status; raising rolls the transition back.
-    ``now`` should be the caller's already-sampled transaction instant —
-    sampled no LATER than this check: judging a lease against an
-    earlier instant can only see it as live, which errs toward the
-    retryable 409, never toward landing on a being-deleted object.
     """
+
     from sqlalchemy import or_, select
 
     from app.modules.submissions.models import Submission
@@ -128,14 +129,13 @@ async def ensure_no_active_cleanup_claim(
             await db.execute(
                 select(Submission.id).where(
                     Submission.claim_id == claim_id,
-                    Submission.cleanup_claimed_at.is_not(None),
                     Submission.deleted_at.is_(None),
-                    # Live lease: expiry in the future, or unknown (NULL)
-                    # — the fail-safe reading that keeps the deletion
-                    # side from ever winning an ambiguous state.
+                    # Unfinished claim, fail-safe on EITHER claim marker:
+                    # a row with a token but no timestamp (or the reverse)
+                    # is still a claim nobody proved finished — it blocks.
                     or_(
-                        Submission.cleanup_lease_expires_at.is_(None),
-                        Submission.cleanup_lease_expires_at > now,
+                        Submission.cleanup_claimed_at.is_not(None),
+                        Submission.cleanup_claim_token.is_not(None),
                     ),
                 )
             )
