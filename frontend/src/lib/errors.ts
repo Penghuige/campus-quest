@@ -49,6 +49,11 @@ export const BUSINESS_ERROR_CODES = [
   "OTP_TOKEN_INVALID",
   "OTP_RESEND_COOLDOWN",
   "RATE_LIMITED",
+  // Registered in interfaces.md by Plan 08 T9 ("the generic business
+  // code for 409 state/conflict refusals" — concurrent ownership,
+  // replay-integrity failures, illegal state transitions). The mirror
+  // here syncs with the registered table; admin mutations branch on it.
+  "CONFLICT",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];

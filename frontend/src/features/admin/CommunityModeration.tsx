@@ -6,8 +6,14 @@
  * comment row goes through `moderationRowView` — the single choke point
  * whose shape carries ONLY display fields. An anonymous row renders
  * 匿名用户 plus the PSEUDONYMOUS moderation key; no student number,
- * phone, email, or login identifier has any field to land in (identity
- * reveal is the separate, Admin-only audited surface — not this page).
+ * phone, email, or login identifier has any field to land in.
+ *
+ * The ADMIN identity reveal (plan Task 10 step 2) lives HERE, in the
+ * community-governance context, as its own explicit dialog: the
+ * 揭示身份 action renders only for an ADMIN session's anonymous rows,
+ * opens `RevealIdentityDialog` (reason mandatory), and identity renders
+ * only from the reveal API's response — the comment listing never
+ * auto-fetches identities, for teachers or admins alike.
  *
  * The moderation delete is reason-mandatory (spec §21.4): the dialog
  * blocks on a blank reason exactly like the transport does. Reporter
@@ -21,9 +27,11 @@ import {
   SectionError,
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
+import { useSession } from "@/features/auth/session";
 import { hasMorePages, mergeOffsetPage } from "@/lib/offsetPages";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 
+import { RevealIdentityDialog } from "./RevealIdentityDialog";
 import {
   listModerationComments,
   listTaskReports,
@@ -40,13 +48,20 @@ import {
 const PAGE_LIMIT = 20;
 
 export function CommunityModeration({ taskId }: { taskId: string }) {
+  // The reveal affordance is role-scoped (spec §21.4 Admin-only); the
+  // backend's `require_admin_actor` stays the authority — this only
+  // keeps the button off teacher screens.
+  const { state } = useSession();
+  const canReveal =
+    state.status === "authenticated" && state.me.role === "ADMIN";
+
   return (
     <section className="section" aria-label="社区与举报">
       <div className="section-head">
         <h3 className="section-title">社区与举报</h3>
       </div>
       <div className="workbench-columns">
-        <ModerationComments taskId={taskId} />
+        <ModerationComments taskId={taskId} canReveal={canReveal} />
         <ReportQueue taskId={taskId} />
       </div>
     </section>
@@ -55,7 +70,13 @@ export function CommunityModeration({ taskId }: { taskId: string }) {
 
 // --- moderation comment listing -------------------------------------------------------
 
-function ModerationComments({ taskId }: { taskId: string }) {
+function ModerationComments({
+  taskId,
+  canReveal,
+}: {
+  taskId: string;
+  canReveal: boolean;
+}) {
   const [items, setItems] = useState<ModerationCommentDto[]>([]);
   const [total, setTotal] = useState(0);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -64,6 +85,7 @@ function ModerationComments({ taskId }: { taskId: string }) {
   const [moreError, setMoreError] = useState<unknown>(null);
   const [reloadSeed, setReloadSeed] = useState(0);
   const [deleting, setDeleting] = useState<ModerationRowView | null>(null);
+  const [revealing, setRevealing] = useState<ModerationRowView | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +140,7 @@ function ModerationComments({ taskId }: { taskId: string }) {
     <div className="panel moderation-panel">
       <h4 className="section-title">评论管理</h4>
       <p className="field-hint">
-        匿名评论仅显示化名标识（匿名用户 + 追溯键）；本页面不提供任何身份信息。
+        匿名评论仅显示化名标识（匿名用户 + 追溯键）；列表不会自动加载任何身份信息，揭示身份是管理员的独立高权限操作。
       </p>
       {phase === "loading" ? (
         <SectionSkeleton lines={4} />
@@ -142,7 +164,9 @@ function ModerationComments({ taskId }: { taskId: string }) {
                 <ModerationRow
                   key={row.id}
                   row={row}
+                  canReveal={canReveal}
                   onDelete={() => setDeleting(row)}
+                  onReveal={() => setRevealing(row)}
                 />
               );
             })}
@@ -171,16 +195,27 @@ function ModerationComments({ taskId }: { taskId: string }) {
       {deleting !== null ? (
         <ModerationDeleteDialog row={deleting} onDone={onDeleted} onCancel={() => setDeleting(null)} />
       ) : null}
+      {revealing !== null ? (
+        <RevealIdentityDialog
+          commentId={revealing.id}
+          authorDisplay={revealing.authorDisplay}
+          onCancel={() => setRevealing(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
 function ModerationRow({
   row,
+  canReveal,
   onDelete,
+  onReveal,
 }: {
   row: ModerationRowView;
+  canReveal: boolean;
   onDelete: () => void;
+  onReveal: () => void;
 }) {
   return (
     <li className="moderation-item" data-deleted={row.deleted ? "true" : "false"}>
@@ -204,6 +239,11 @@ function ModerationRow({
           <span className="mono moderation-key" title="匿名追溯键（非身份信息）">
             {row.moderationKey}
           </span>
+        ) : null}
+        {canReveal && row.isAnonymous ? (
+          <button type="button" className="btn btn-ghost comment-action" onClick={onReveal}>
+            揭示身份
+          </button>
         ) : null}
         {!row.deleted ? (
           <button type="button" className="btn btn-ghost comment-action" onClick={onDelete}>
