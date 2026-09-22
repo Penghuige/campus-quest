@@ -28,7 +28,10 @@ GET          ``/submissions/{submission_id}/validation`` — the owner's
              §12.4 report view (no object key, no parser internals).
 GET          ``/submissions/{submission_id}/download`` — a short-lived
              presigned GET minted AFTER the ownership/role check; the
-             response carries the URL, never the key (spec §33.3).
+             response carries the URL, never the key (spec §33.3). The
+             one dual-population route: the dual identity guard admits
+             the owning Student (state gate) and reviewing staff
+             (management gate, confirmed TOTP — PR #4 hardening 5.2).
 ===========  =========================================================
 
 URL-shape ruling (documented deviation inside the spec §28 family): the
@@ -128,8 +131,8 @@ from app.integrations.rate_limit import (
 from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import (
     get_business_clock,
-    require_active_actor,
     require_active_student_actor,
+    require_active_student_or_staff_management_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.events import (
@@ -336,7 +339,13 @@ def get_query_service() -> SubmissionQueryService:
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
-ActiveActor = Annotated[Actor, Depends(require_active_actor)]
+# The download route is the one submissions path two populations share:
+# owning Students (plain §5.7 state gate) and reviewing staff (the
+# §33.4 management gate, confirmed TOTP) — the dual-population identity
+# guard selects the arm by role (PR #4 hardening 5.2).
+DownloadActor = Annotated[
+    Actor, Depends(require_active_student_or_staff_management_actor)
+]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 StorageDep = Annotated[ObjectStorage, Depends(get_object_storage)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
@@ -461,18 +470,21 @@ async def get_submission_validation(
 @router.get("/submissions/{submission_id}/download", response_model=DownloadUrlResponse)
 async def download_submission(
     submission_id: uuid.UUID,
-    actor: ActiveActor,
+    actor: DownloadActor,
     db: DbSession,
     storage: StorageDep,
     queries: QueryServiceDep,
 ) -> DownloadUrlResponse:
     """Mint a short-lived presigned GET (spec §33.3).
 
-    The guard is the broad ACTIVE one because BOTH authorized parties
-    reach this route — the owning Student and the reviewing teacher
-    (task owner / REVIEW_SUBMISSIONS collaborator / Admin); the actual
-    ownership/role judgment runs inside the query service BEFORE the
-    port signs. The response carries the URL, never the key.
+    Both authorized parties reach this route — the owning Student and
+    the reviewing staff (task owner / REVIEW_SUBMISSIONS collaborator /
+    Admin) — so the guard is the dual-population identity one: the
+    Student arm carries only the ACTIVE state gate, the staff arm the
+    full §33.4 management gate (a pending-TOTP teacher answers 403
+    ``TOTP_SETUP_REQUIRED`` before any ownership judgment runs). The
+    actual ownership/role judgment runs inside the query service BEFORE
+    the port signs. The response carries the URL, never the key.
     """
     url = await queries.create_download_url(
         db,

@@ -1,5 +1,6 @@
 """Dump the current backend OpenAPI schema to a file (PR #4 contract
 freshness): python dump_openapi.py <output-path>."""
+
 import json
 import sys
 
