@@ -10,7 +10,12 @@
  * the HttpOnly cookie the backend sets.
  */
 import { apiRequest } from "../../lib/api";
-import { recordLogin, recordLogout } from "../../lib/accessToken";
+import {
+  beginAuthTransition,
+  endAuthTransition,
+  recordLogin,
+  recordLogout,
+} from "../../lib/accessToken";
 import { invalidateSessionCache } from "./session";
 import type { components } from "../../lib/api/schema";
 
@@ -79,10 +84,16 @@ export async function loginStudent(
   username: string,
   password: string,
 ): Promise<LoginTokens> {
-  const tokens = await apiRequest<LoginTokens>(`${BASE}/login`, {
-    method: "POST",
-    body: { username, password },
-  });
+  await beginAuthTransition();
+  let tokens: LoginTokens;
+  try {
+    tokens = await apiRequest<LoginTokens>(`${BASE}/login`, {
+      method: "POST",
+      body: { username, password },
+    });
+  } finally {
+    endAuthTransition();
+  }
   // An explicit login opens a NEW auth context (epoch bump) and
   // synchronously drops any cached ANONYMOUS /me: the login page's
   // hook may have cached it moments ago, and the freshly mounted
@@ -155,10 +166,16 @@ export async function loginStaff(
   password: string,
   totpCode: string,
 ): Promise<LoginTokens> {
-  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/login`, {
-    method: "POST",
-    body: { email, password, totp_code: totpCode },
-  });
+  await beginAuthTransition();
+  let tokens: LoginTokens;
+  try {
+    tokens = await apiRequest<LoginTokens>(`${BASE}/staff/login`, {
+      method: "POST",
+      body: { email, password, totp_code: totpCode },
+    });
+  } finally {
+    endAuthTransition();
+  }
   // An explicit login opens a NEW auth context (epoch bump) and
   // synchronously drops any cached ANONYMOUS /me: the login page's
   // hook may have cached it moments ago, and the freshly mounted
@@ -177,6 +194,7 @@ export async function loginStaff(
  * the next request — the server stays the authority).
  */
 export async function logout(): Promise<void> {
+  await beginAuthTransition();
   try {
     await apiRequest<void>(`${BASE}/logout`, { method: "POST" });
   } finally {
@@ -186,6 +204,7 @@ export async function logout(): Promise<void> {
     recordLogout();
     // The authenticated /me cache is as stale as the token now.
     invalidateSessionCache();
+    endAuthTransition();
   }
 }
 

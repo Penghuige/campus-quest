@@ -35,6 +35,11 @@ export const AUTH_REFRESH_PATH = "/api/v1/auth/refresh";
 
 let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+// Auth-transition window (final re-review P0): true between
+// beginAuthTransition() and endAuthTransition() — no new refresh may
+// start, and the epoch bump inside begin fences every older context's
+// recovery. See beginAuthTransition for the cookie-ordering invariant.
+let transitionActive = false;
 // Auth-context epoch (final re-review P0): bumped by every EXPLICIT
 // auth transition (login, logout) and untouched by refresh rotations.
 // Requests capture the epoch they were sent under; a 401 landing in a
@@ -96,6 +101,15 @@ export function getAccessToken(): string | null {
  * legitimately start the next one.
  */
 export function refreshAccessToken(): Promise<boolean> {
+  // No NEW rotation may start while an explicit auth transition
+  // (login/logout) is draining or executing: the transition's own
+  // network request must be the LAST auth-cookie writer, and a refresh
+  // started now could settle after it. Callers see `false` (their
+  // original 401 surfaces) — correct, because their auth context is
+  // being replaced anyway.
+  if (transitionActive) {
+    return Promise.resolve(false);
+  }
   if (refreshInFlight === null) {
     refreshInFlight = rotate().finally(() => {
       refreshInFlight = null;
@@ -110,6 +124,13 @@ async function rotate(): Promise<boolean> {
   if (csrfToken !== null) {
     headers.set(CSRF_HEADER_NAME, csrfToken);
   }
+  // The auth context this rotation belongs to: a refresh that started
+  // under one epoch and settles under another (its drain straddled a
+  // beginAuthTransition) must not write the OLD context's token into
+  // the NEW one's memory — and its HTTP response is still awaited by
+  // the transition, so its Set-Cookie is applied BEFORE the login/
+  // logout request goes out and loses the last-writer race by design.
+  const epochAtStart = authEpoch;
   try {
     const response = await fetch(AUTH_REFRESH_PATH, {
       method: "POST",
@@ -119,12 +140,24 @@ async function rotate(): Promise<boolean> {
     // Feed the shared clock estimate like every other API response.
     observeServerDateHeader(response.headers.get("Date"));
     if (!response.ok) {
-      accessToken = null;
+      if (authEpoch === epochAtStart) {
+        accessToken = null;
+      }
       return false;
     }
     const body = (await response.json()) as { access_token?: unknown };
     if (typeof body.access_token !== "string" || body.access_token.length === 0) {
-      accessToken = null;
+      if (authEpoch === epochAtStart) {
+        accessToken = null;
+      }
+      return false;
+    }
+    if (authEpoch !== epochAtStart) {
+      // The context this rotation served is gone (explicit logout or
+      // login opened a new one while it was in flight): the drained
+      // response's cookie side effect is ordered before the
+      // transition's own request by construction; the MEMORY side
+      // effect is simply dropped.
       return false;
     }
     accessToken = body.access_token;
@@ -132,9 +165,38 @@ async function rotate(): Promise<boolean> {
   } catch {
     // Network-level failure: no verdict on the session — forget the
     // stale token and let the caller's original error speak.
-    accessToken = null;
+    if (authEpoch === epochAtStart) {
+      accessToken = null;
+    }
     return false;
   }
+}
+
+/**
+ * Serialize an EXPLICIT auth transition (login/logout) against refresh
+ * rotations (final re-review P0): mark the transition, bump the epoch
+ * (requests from the closing context stop refreshing/replaying), and
+ * DRAIN any in-flight refresh to completion BEFORE the caller sends
+ * its own network request. Invariant: once the login/logout request
+ * goes out, no older refresh response can still arrive in the future —
+ * its Set-Cookie was already applied, so the transition's own cookies
+  * are the last writers.
+ */
+export async function beginAuthTransition(): Promise<void> {
+  transitionActive = true;
+  authEpoch += 1;
+  if (refreshInFlight !== null) {
+    await refreshInFlight.catch(() => {
+      // The drained rotation's own outcome is irrelevant here — what
+      // mattered was ordering its response (and its Set-Cookie) ahead
+      // of the transition request.
+    });
+  }
+}
+
+/** Close the transition window opened by beginAuthTransition. */
+export function endAuthTransition(): void {
+  transitionActive = false;
 }
 
 /** Test-only: reset the module singleton between test cases. */
@@ -142,4 +204,5 @@ export function resetAccessTokenManagerForTests(): void {
   accessToken = null;
   refreshInFlight = null;
   authEpoch = 0;
+  transitionActive = false;
 }
