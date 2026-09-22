@@ -531,11 +531,17 @@ async def test_transient_provider_failure_is_counted_and_retryable() -> None:
     # service retried in-process, that attempt would have deleted.
     assert storage.deleted_keys == []
 
-    retried_run = await cleanup_expired_files(NOW, repo, storage)
+    # Option B (post-merge P0): the claim is KEPT, so an immediate
+    # rescan cannot retry — the retry happens on the lease takeover.
+    immediate = await cleanup_expired_files(NOW, repo, storage)
+    assert immediate == CleanupSummary()
+    retried_run = await cleanup_expired_files(
+        NOW + LEASE + timedelta(seconds=1), repo, storage
+    )
 
     assert retried_run == CleanupSummary(scanned=1, deleted=1)
     assert storage.deleted_keys == [key]
-    assert repo.row_for(key).deleted_at == NOW
+    assert repo.row_for(key).deleted_at == NOW + LEASE + timedelta(seconds=1)
 
 
 async def test_permanent_provider_failure_is_counted_without_retry_loops() -> None:
@@ -581,10 +587,14 @@ async def test_unknown_outcome_is_counted_and_self_heals_next_run() -> None:
     )
     assert repo.row_for(key).deleted_at is None
 
-    healed_run = await cleanup_expired_files(NOW, repo, storage)
+    # Option B: the claim is kept, so healing arrives via the lease
+    # takeover, not an immediate rescan.
+    healed_run = await cleanup_expired_files(
+        NOW + LEASE + timedelta(seconds=1), repo, storage
+    )
 
     assert healed_run == CleanupSummary(scanned=1, deleted=1)
-    assert repo.row_for(key).deleted_at == NOW
+    assert repo.row_for(key).deleted_at == NOW + LEASE + timedelta(seconds=1)
 
 
 # --- the deletion claim (pass 4b) -----------------------------------------------------
@@ -640,10 +650,13 @@ async def test_claim_reevaluates_guards_against_current_state() -> None:
         assert storage.head_object(object_key=row.object_key) is not None
 
 
-async def test_provider_failure_releases_claim_for_the_next_scan() -> None:
-    """Every non-FileNotFoundError provider outcome RELEASES the claim:
-    the row is claimable again (the next scan re-claims and retries) and
-    a protection writer is never blocked on a dead claim."""
+async def test_provider_failure_keeps_the_claim_until_lease_takeover() -> None:
+    """Post-merge P0 (Option B): a provider failure KEEPS the unfinished
+    deletion claim — the row is NOT reclaimable while the lease lives
+    (an immediate rescan issues no provider call), a protection writer
+    stays blocked, and only the LEASE EXPIRY authorizes the takeover
+    that rewrites the token and converges the deletion. Correctness
+    never leans on a wall-clock provider bound."""
     storage = FakeObjectStorage()
     key = _stored_object(storage)
     row = _row(object_key=key, retention_until=NOW - timedelta(days=30))
@@ -656,17 +669,30 @@ async def test_provider_failure_releases_claim_for_the_next_scan() -> None:
         scanned=1,
         failed={FileCleanupOutcome.FAILED_STORAGE_TEMPORARY.value: 1},
     )
-    # Released, not stranded: the claim window closed with the failure.
-    assert row.cleanup_claimed_at is None
+    # KEPT, not released: the unfinished claim survives the failure —
+    # protection cannot open over the undecided deletion, and no new
+    # worker may touch the row while the lease lives.
+    assert row.cleanup_claimed_at == NOW
     assert row.deleted_at is None
 
-    retried_run = await cleanup_expired_files(NOW, repo, storage)
+    # The immediate rescan does not reclaim the live lease (and never
+    # reaches the provider — the fake's storage calls are counted by
+    # its failure programming being long exhausted, but the guard
+    # short-circuits before any call).
+    immediate_rescan = await cleanup_expired_files(NOW, repo, storage)
+    assert immediate_rescan == CleanupSummary()
+    assert row.deleted_at is None
 
-    assert retried_run == CleanupSummary(scanned=1, deleted=1)
-    # The claim stays set after the COMPLETED deletion (deleted_at is
-    # the completion record) — the next scan excludes the row.
-    assert row.cleanup_claimed_at == NOW
-    third_run = await cleanup_expired_files(NOW, repo, storage)
+    # After the lease expires, the takeover claims with a fresh token
+    # and — with the provider healthy again — converges the deletion.
+    takeover_run = await cleanup_expired_files(
+        NOW + LEASE + timedelta(seconds=1), repo, storage
+    )
+    assert takeover_run == CleanupSummary(scanned=1, deleted=1)
+    assert row.deleted_at is not None
+    third_run = await cleanup_expired_files(
+        NOW + LEASE + timedelta(seconds=1), repo, storage
+    )
     assert third_run == CleanupSummary()
 
 

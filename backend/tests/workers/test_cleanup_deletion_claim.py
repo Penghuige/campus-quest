@@ -93,6 +93,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.integrations.errors import TemporaryProviderError
 from app.modules.files.cleanup_service import (
     CleanupSummary,
     FileCleanupOutcome,
@@ -2059,36 +2060,30 @@ async def _object_key(
 
 
 @pytest.mark.integration
-def test_takeover_release_opens_protection_only_past_the_proven_external_bound() -> (
-    None
-):
-    """The final-review P0 sequence, end to end: A claims -> lease
-    expires -> B takes over -> B's provider delete fails and B RELEASES
-    -> protection enters -> A's delayed external delete completes.
-    Protection may only have entered once every possible predecessor
-    external call is provably incapable of deleting — and that proof is
-    the machine-checked Settings invariant (lease STRICTLY exceeds the
-    worst-case delete budget), which places the end of A's external
-    window (claim + budget) BEFORE the lease expiry that authorized B's
-    takeover, hence before B's release, hence before the protection
-    commit. The fencing token covers A's late DB writes; the bound
-    covers its late provider call; together the reviewer's ordering —
-    protection commits, THEN A's delete lands — is physically
-    impossible under the configured contract."""
-    from app.core.config import get_settings
+def test_postmerge_p0_provider_failure_keeps_claim_blocking_protection() -> None:
+    """The post-merge P0 sequence as a STATE-MACHINE safety test — no
+    wall-clock arithmetic anywhere (correctness never leans on a
+    provider timing bound, per the Option B ruling):
+
+    1. A claims (token A) and its external DELETE stays in flight
+       indefinitely (simulated: A simply never completes);
+    2. the lease expires;
+    3. worker B takes over (token B);
+    4. B's provider delete FAILS;
+    5. B must NOT release to unclaimed (the Option B hotfix: the
+       submission failure path keeps the unfinished claim);
+    6. protection attempts to enter — still 409/blocked;
+    7. A's delayed completion arrives — its late DB mark is fenced out;
+    8. the CURRENT owner converges the deletion (takeover after the
+       lease expiry, healthy provider);
+    9. only with the cleanup state truly settled does protection enter.
+    """
     from app.modules.submissions.cleanup_claim import (
+        CleanupClaimConflictError,
         ensure_no_active_cleanup_claim,
     )
     from app.modules.submissions.models import Submission
     from app.workers.jobs.cleanup_files import SubmissionCleanupRepository
-
-    # (0) The machine-checked proof this scenario stands on: with the
-    # configured contract, A's external window closes strictly before
-    # its lease can expire — every later step happens after that.
-    settings = get_settings()
-    budget = settings.s3_worst_case_delete_budget_seconds
-    lease = settings.cleanup_claim_lease_seconds
-    assert lease > budget  # Settings construction refuses otherwise
 
     maker = _factory()
     run = uuid.uuid4().hex[:8]
@@ -2097,7 +2092,7 @@ def test_takeover_release_opens_protection_only_past_the_proven_external_bound()
     storage = FakeObjectStorage()
     claim_id = world.claim_id
 
-    async def _claim_columns() -> tuple[Any, Any, Any]:
+    async def _claim_columns() -> tuple[Any, Any, Any, Any]:
         async with maker() as session:
             submission = await session.get(Submission, world.submission_ids["due"])
             assert submission is not None
@@ -2105,71 +2100,85 @@ def test_takeover_release_opens_protection_only_past_the_proven_external_bound()
                 submission.cleanup_claimed_at,
                 submission.cleanup_lease_expires_at,
                 submission.cleanup_claim_token,
+                submission.deleted_at,
             )
+
+    async def _protection_blocked() -> bool:
+        async with maker() as session:
+            try:
+                await ensure_no_active_cleanup_claim(session, claim_id)
+            except CleanupClaimConflictError:
+                return True
+        return False
+
+    async def _service_failure_keeps_claim(record: Any) -> None:
+        """Steps 4-5 through the REAL service path: a provider failure
+        on the submission cleanup must leave the claim held. The record
+        snapshot is taken in the SYNC caller — _scan_snapshot runs its
+        own asyncio.run and cannot nest inside this loop."""
+        from app.modules.files.cleanup_service import (
+            FileCleanupOutcome,
+            cleanup_expired_file,
+        )
+
+        outcome = await cleanup_expired_file(
+            record, repo=repository, storage=storage, now=_now_for_takeover()
+        )
+        assert outcome is FileCleanupOutcome.FAILED_STORAGE_TEMPORARY
+        claimed_at, _, token_now, deleted_at = await _claim_columns()
+        assert claimed_at is not None  # the claim SURVIVED the failure
+        assert token_now is not None
+        assert deleted_at is None
+
+    def _now_for_takeover() -> Any:
+        return NOW + LEASE + timedelta(seconds=1)
 
     try:
         record = _scan_snapshot(maker, world)
 
-        # (1) Worker A claims at NOW; its provider call is bounded by
-        # NOW + budget (the adapter's total attempts x timeouts x the
-        # HEAD+DELETE pair + backoff margin).
+        # 1. Worker A claims; its external DELETE is "in flight" forever
+        #    (this test never completes A's call — the wall-clock
+        #    question the old arithmetic tried to answer is now moot).
         token_a = asyncio.run(repository.claim_for_cleanup(record, now=NOW))
         assert token_a is not None
 
-        # (2) Lease expiry — reachable only at NOW + LEASE, and by the
-        # invariant (LEASE > budget) strictly AFTER A's external window
-        # closed: whatever A's provider call did, it had TERMINATED
-        # before this instant.
-        later = NOW + LEASE + timedelta(seconds=1)
-        assert later > NOW + timedelta(seconds=budget)
+        # 2. The lease expires; 3-5. worker B IS the service run at the
+        # takeover time: its own claim_for_cleanup takes over (rewrites
+        # the token) and its provider delete fails — the claim STAYS
+        # (Option B). The service call must both win the takeover AND
+        # keep the claim on the failure.
+        storage.fail_with(TemporaryProviderError("s3 unavailable"))
+        takeover_record = _scan_snapshot(maker, world)
+        asyncio.run(_service_failure_keeps_claim(takeover_record))
+        _, _, token_b, deleted_at = asyncio.run(_claim_columns())
+        assert token_b is not None and token_b != token_a  # B's takeover
 
-        # (3) B takes over (fresh token) ...
-        token_b = asyncio.run(repository.claim_for_cleanup(record, now=later))
-        assert token_b is not None
-        assert token_b != token_a
+        # 6. Protection is still blocked over the undecided deletion.
+        assert asyncio.run(_protection_blocked())
 
-        # ... (4) B's provider delete fails and B releases — the claim
-        # is gone, protection's gate may open.
-        asyncio.run(repository.release_cleanup_claim(record, token=token_b))
-        claimed_at, _, token_now = asyncio.run(_claim_columns())
-        assert claimed_at is None and token_now is None
-
-        # (5) Protection enters: the guard the validation/review write
-        # points call under their row lock no longer refuses.
-        async def _protection_gate_opens() -> None:
-            async with maker() as session:
-                await ensure_no_active_cleanup_claim(session, claim_id)
-
-        asyncio.run(_protection_gate_opens())
-
-        # (6) A's "delayed" external completion — the dangerous step.
-        # In wall-clock reality this is unreachable: A's provider call
-        # ended at/before NOW + budget < later (step 2's assertion), so
-        # no in-flight DELETE of A's can land here. Simulating it
-        # anyway drives home both fences: the fake storage delete CAN
-        # be issued by a zombie test hand (a missing object is §27's
-        # idempotent already-gone outcome), but A's late DB mark is
-        # fenced out — and the ordering proof above is what guarantees
-        # a real A had nothing left in flight when protection committed.
-        asyncio.run(_delete_object_async(storage, record.object_key))
+        # 7. A's delayed completion: fenced at the DB (zero rows).
         outcome = asyncio.run(
-            repository.mark_deleted(record, token=token_a, deleted_at=later)
+            repository.mark_deleted(
+                record, token=token_a, deleted_at=_now_for_takeover()
+            )
         )
         assert outcome is MarkOutcome.CLAIM_LOST
-        claimed_at, _, token_now = asyncio.run(_claim_columns())
-        assert claimed_at is None and token_now is None
+        assert asyncio.run(_protection_blocked())
+
+        # 8. The current owner converges: next takeover after the
+        #    (rewritten) lease expires again, provider healthy now.
+        storage.failures.clear()
+        settle = _now_for_takeover() + LEASE + timedelta(seconds=1)
+        token_c = asyncio.run(repository.claim_for_cleanup(record, now=settle))
+        assert token_c is not None and token_c != token_b
+        marked = asyncio.run(
+            repository.mark_deleted(record, token=token_c, deleted_at=settle)
+        )
+        assert marked is MarkOutcome.MARKED
+        _, _, _, deleted_at = asyncio.run(_claim_columns())
+        assert deleted_at == settle
+
+        # 9. Settled: protection enters.
+        assert not asyncio.run(_protection_blocked())
     finally:
         asyncio.run(_cleanup_world(maker, world))
-
-
-async def _delete_object_async(storage: FakeObjectStorage, key: str) -> None:
-    """asyncio.to_thread stand-in for a worker's storage call (the
-    FakeObjectStorage port is synchronous; the repository/job call it
-    off the loop). A missing object is §27's idempotent already-gone
-    outcome — this test never uploaded a real object, and the zombie
-    hand's point is the ATTEMPT, not the bytes."""
-    import asyncio as _asyncio
-    import contextlib
-
-    with contextlib.suppress(FileNotFoundError):
-        await _asyncio.to_thread(storage.delete_object, object_key=key)

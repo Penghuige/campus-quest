@@ -243,11 +243,15 @@ class CleanupRepository(Protocol):
         ...
 
     async def release_cleanup_claim(self, record: FileRecord, *, token: UUID) -> None:
-        """Release the claim after a provider failure: clear all three
-        claim columns, CAS'd on ``token`` — a stale worker whose row a
-        takeover re-claimed matches zero rows and abandons (the
-        takeover's live claim is untouched). The object is NOT marked
-        deleted.
+        """Release the claim: clear all three claim columns, CAS'd on
+        ``token`` — a stale worker whose row a takeover re-claimed
+        matches zero rows and abandons (the takeover's live claim is
+        untouched). The object is NOT marked deleted; the release means
+        "this worker gives up, the row is unclaimed". NOT used by the
+        submission failure path since the post-merge P0 (Option B):
+        provider failures there KEEP the claim for a lease takeover
+        (correctness never depends on a wall-clock provider bound).
+        Retained for administrative repair and the fencing tests.
         """
         ...
 
@@ -456,7 +460,11 @@ async def cleanup_expired_file(
     writes are abandoned. A missing object splits on the repository's
     compare-and-set: already marked = idempotent success (§27 branch
     1); believed present = reconcile with a warning (§27 branch 2).
-    Provider failures release the claim so the next scan retries.
+    Provider failures KEEP the unfinished claim (post-merge P0,
+    Option B): correctness must not depend on any wall-clock provider
+    bound, so protection stays blocked until a lease takeover
+    converges the deletion; the s3_* timeout settings are availability
+    controls, not a safety proof.
     """
     skipped = _guard(record, now)
     if skipped is not None:
@@ -487,17 +495,29 @@ async def cleanup_expired_file(
         )
         return FileCleanupOutcome.RECONCILED_MISSING
     except TemporaryProviderError:
-        await repo.release_cleanup_claim(record, token=token)
+        # Post-merge P0 hotfix (Option B): a provider failure KEEPS the
+        # unfinished deletion claim. Releasing it would let
+        # takeover-plus-release open protection while a predecessor
+        # worker's already-sent DELETE could still be in flight — no
+        # wall-clock timeout arithmetic can prove otherwise (connect and
+        # read timeouts bound socket waits, not a request's total
+        # lifetime). The claim stays; the lease authorizes another
+        # cleanup worker to take over and converge the deletion, and
+        # protection stays blocked until the cleanup state truly
+        # settles (mark_deleted or the §27 missing-object reconcile).
         return FileCleanupOutcome.FAILED_STORAGE_TEMPORARY
     except PermanentProviderError:
-        await repo.release_cleanup_claim(record, token=token)
+        # Same Option B ruling: the claim is held for takeover — a
+        # permanent provider error still leaves the object's fate
+        # unresolved, and an open protection window over a possibly
+        # deleted object is the one outcome §27 forbids.
         return FileCleanupOutcome.FAILED_STORAGE_PERMANENT
     except UnknownOutcomeError:
-        # The delete may or may not have happened; object-first ordering
-        # makes the next run converge (present -> delete again, gone ->
-        # reconcile / already-deleted). Release the claim so the next
-        # run CAN retry; no in-process retry.
-        await repo.release_cleanup_claim(record, token=token)
+        # The delete may or may not have happened — the sharpest case
+        # for holding the claim: object-first ordering converges on the
+        # next takeover (present -> delete again, gone -> reconcile /
+        # already-deleted), and until then protection cannot open over
+        # an undecided deletion.
         return FileCleanupOutcome.FAILED_STORAGE_UNKNOWN
 
     outcome = await repo.mark_deleted(record, token=token, deleted_at=now)

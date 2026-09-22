@@ -122,18 +122,16 @@ _TEMPORARY_ERROR_CODES = frozenset(
 #: head/missing-key paths), distinct from a broken bucket.
 _MISSING_OBJECT_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
-#: Bounded provider calls (final-review P0, Option A): the per-attempt
-#: connect/read caps and the TOTAL attempts per API call live in
-#: ``Settings`` (``s3_connect_timeout_seconds`` / ``s3_read_timeout_seconds``
-#: / ``s3_delete_total_attempts``) — the single source of truth. The
-#: Settings model validator machine-checks that the cleanup lease
-#: strictly exceeds the derived worst-case delete budget
-#: (``Settings.s3_worst_case_delete_budget_seconds``: total attempts x
-#: (connect + read) x the delete path's HEAD+DELETE pair + a backoff
-#: margin), so a lease can never expire while a predecessor worker's
-#: already-sent DELETE could still be in flight. This bound is the
-#: SECOND line of defense behind the fencing token: the token fences
-#: late DB writes, the bound fences the stale EXTERNAL side effect.
+#: Bounded provider calls — AVAILABILITY CONTROLS (post-merge P0
+#: ruling): the per-attempt connect/read caps and the TOTAL attempts
+#: per API call live in ``Settings`` (``s3_connect_timeout_seconds`` /
+#: ``s3_read_timeout_seconds`` / ``s3_delete_total_attempts``) — the
+#: single source of truth. They shorten failure recovery and bound the
+#: common provider hang. They are deliberately NOT a correctness proof:
+#: socket-wait caps are not a request lifetime deadline, so cleanup
+#: correctness comes from claim ownership instead (provider failures
+#: keep the unfinished claim; the lease authorizes takeover only — see
+#: files.cleanup_service and interfaces.md).
 
 
 def _error_code(exc: ClientError) -> str:
