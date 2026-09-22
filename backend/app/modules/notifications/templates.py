@@ -15,6 +15,11 @@ that sentence as a manual single-pass scanner — deliberately NOT Jinja,
   grammar or the whitelist and raise `InvalidTemplateError` — an
   admin-facing render error naming the offending placeholder. Nothing
   is ever parsed as an expression, so there is nothing to sanitize.
+  Plan 08's write-time gate (`validate_admin_template`,
+  `UnsafeTemplateMarkupError`) applies this same grammar — plus the
+  ``{{``/``}}``/``{%``/``${`` marker rejection — BEFORE a row can
+  persist, so a bad edit fails at write time instead of at the next
+  dispatch.
 - Substitution is one `re.sub` pass with a FUNCTION replacement: the
   function's return string is inserted verbatim (no backreference
   processing, no re-scan). A variable VALUE containing ``{...}`` or
@@ -116,6 +121,34 @@ class MissingTemplateVariableError(TemplateRenderError):
         super().__init__(
             f"missing value for notification template variable "
             f"{variable!r} ({event_type}/{channel})"
+        )
+
+
+class UnsafeTemplateMarkupError(TemplateRenderError):
+    """Admin-edit rejection (Plan 08 T5): the text carries a
+    Jinja/injection-style marker (``{{``, ``}}``, ``{%``, ``${``) that
+    pure ``{name}`` substitution would render LITERALLY — the admin
+    would ship braces instead of the expression they meant, and any
+    downstream provider that interprets such markup would gain code the
+    renderer never sanctioned. Module-local like its siblings: the
+    admin surface converts it to a §29 422, the registry carries no
+    notification-template code."""
+
+    def __init__(
+        self,
+        event_type: NotificationEventType | str,
+        channel: NotificationChannel | str,
+        field: str,
+        marker: str,
+    ) -> None:
+        self.event_type = event_type
+        self.channel = channel
+        self.field = field
+        self.marker = marker
+        super().__init__(
+            f"unsafe markup in notification template {event_type}/{channel}: "
+            f"{field} contains {marker!r} (templates are pure "
+            "{name} placeholder substitution)"
         )
 
 
@@ -461,6 +494,78 @@ def render_template(
         title=_PLACEHOLDER_RE.sub(_substitute, source.title),
         body=_PLACEHOLDER_RE.sub(_substitute, source.body),
     )
+
+
+# --- write-time validation for Admin template edits (Plan 08 T5) --------------------
+#
+# V1 templates are PURE {name} placeholder substitution (the module
+# docstring's safety argument). These sequences are therefore never
+# legitimate template text: Jinja expression/block delimiters would NOT
+# be interpreted by this renderer — the inner {name} would substitute
+# and the surrounding braces would ship LITERALLY ({{task_title}}
+# renders as "{value}") — so accepting them silently changes what the
+# admin meant, and ${...} additionally reads as an injection attempt to
+# every downstream system that interprets it. Rejecting them at write
+# time fails the edit with a nameable reason instead of shipping mangled
+# copy (plan 08 step 1's "unsafe executable template expressions are
+# rejected").
+
+_UNSAFE_TEMPLATE_MARKERS: tuple[str, ...] = ("{{", "}}", "{%", "${")
+
+
+def find_unsafe_template_marker(text: str) -> str | None:
+    """The first unsafe marker (``{{`` / ``}}`` / ``{%`` / ``${``) in
+    ``text``, or ``None``. A conservative lexical scan by design: it
+    errs on the side of rejecting (a stray ``}}`` after a placeholder
+    is a typo worth naming), because the renderer grants these
+    sequences no meaning and no legitimate V1 template contains them."""
+    for marker in _UNSAFE_TEMPLATE_MARKERS:
+        if marker in text:
+            return marker
+    return None
+
+
+def validate_admin_template(
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    *,
+    title: str,
+    body: str,
+) -> None:
+    """Write-time gate for an Admin-edited template pair (Plan 08 T5):
+    the text must be exactly what the renderer could honor — no
+    Jinja/injection-style markers (``UnsafeTemplateMarkupError``), and
+    every braced group exactly one whitelisted variable name for the
+    event type (``InvalidTemplateError``, the render-time grammar
+    applied BEFORE the row can persist). A template that passes here
+    can still fail at render with ``MissingTemplateVariableError`` —
+    that is a dispatch/payload bug, not a template defect, and no
+    write-time check can predict it.
+
+    ``channel`` participates in the error context only (the variable
+    whitelist is per event type, shared across channels). Raises
+    ``ValueError`` for an unknown event type or channel (programming
+    errors), mirroring ``render_template``."""
+    if event_type not in EVENT_VARIABLES:
+        raise ValueError(
+            f"unknown notification event type {event_type!r}; expected one of "
+            f"{sorted(event.value for event in NotificationEventType)}"
+        )
+    if channel not in _ALL_CHANNELS:
+        raise ValueError(
+            f"unknown notification channel {channel!r}; expected one of "
+            f"{sorted(channel.value for channel in NotificationChannel)}"
+        )
+    for field, text in (("title", title), ("template_body", body)):
+        marker = find_unsafe_template_marker(text)
+        if marker is not None:
+            raise UnsafeTemplateMarkupError(event_type, channel, field, marker)
+    allowed = EVENT_VARIABLES[event_type]
+    for _field, text in (("title", title), ("template_body", body)):
+        for match in _PLACEHOLDER_RE.finditer(text):
+            name = match.group(1)
+            if _VARIABLE_NAME_RE.match(name) is None or name not in allowed:
+                raise InvalidTemplateError(event_type, channel, name, allowed)
 
 
 def _validate_seed_templates() -> None:

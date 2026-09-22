@@ -38,24 +38,40 @@ Design decisions:
       ]
 
   The factory takes an optional ``policy_loader`` callable (evaluated
-  per request, so a future store can change policy without restart).
-  TRANSITIONAL HOME (Plan 08 T5 alignment): the default loader reads the
-  typed ``Settings`` env fields ``management_network_enabled`` /
-  ``management_network_cidrs`` (comma-separated). T5 moves the values
-  into the audited system_settings store; that wave replaces ONLY the
-  default loader's body — the policy type, the parser, and the factory
-  signature stay. The settings-based default is cached per process
-  (``lru_cache``): env settings are frozen at startup anyway
-  (``get_settings`` is cached), so per-request re-parsing would buy
-  nothing.
+  per request, so the store can change policy without restart) — sync
+  or ASYNC: a loader that reads the audited system_settings store needs
+  a database round-trip per request, so the guard awaits an awaitable
+  result and passes a plain value through (``inspect.isawaitable``).
+  The DEFAULT loader is the process-cached env policy — TRANSITIONAL
+  ONLY (see below): production wiring passes the store-reading loader
+  explicitly (read the two ``MANAGEMENT_NETWORK_*`` rows through
+  ``SystemSettingService.get`` per request and resolve them via
+  ``load_management_network_policy``), which is the T9 composition
+  step.
+- **Store first, env fallback (Plan 08 T5 migration).** The policy's
+  values live in the audited ``system_settings`` store under
+  ``MANAGEMENT_NETWORK_ENABLED`` / ``MANAGEMENT_NETWORK_CIDRS``;
+  ``load_management_network_policy`` resolves each key's value from the
+  store when the row exists and falls back PER KEY to the typed
+  ``Settings`` env fields ``management_network_enabled`` /
+  ``management_network_cidrs`` (comma-separated) when it does not —
+  deployments configured against the env vars keep working through the
+  transition, and admins migrate by writing the store keys. The env
+  fields are DEPRECATED transitional fallbacks and WILL BE REMOVED
+  BEFORE THE V1 RELEASE (config.py marks them); after removal the
+  loader's fallbacks go with them and the store is the only source.
+  ``MANAGEMENT_NETWORK_ENABLED`` is stored ``"true"``/``"false"`` and
+  ``MANAGEMENT_NETWORK_CIDRS`` comma-separated canonical CIDRs (the
+  registry's canonical forms — see system/service.py).
 - Denials are ``PERMISSION_DENIED`` 403 via ``BusinessError`` — the
   same envelope every guard raises, rendered with no per-route work.
 """
 
 from __future__ import annotations
 
+import inspect
 import ipaddress
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from functools import lru_cache
 from typing import Any
 
@@ -69,6 +85,7 @@ __all__ = [
     "IPAddress",
     "IPNetwork",
     "ManagementNetworkPolicy",
+    "ManagementNetworkPolicyLoader",
     "load_management_network_policy",
     "parse_management_networks",
     "require_management_network",
@@ -80,9 +97,10 @@ IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 _PERMISSION_DENIED_MESSAGE = "当前网络不允许访问管理功能"
 
-# A single IPv4/IPv6 network is VARCHAR-materializable; this module never
-# persists them (T5 will, in system_settings), but the bound keeps the
-# parsing vocabulary honest from day one.
+# A single IPv4/IPv6 network is VARCHAR-materializable; the store keeps
+# them as comma-separated canonical CIDR text (system_settings, Plan 08
+# T5), and this bound keeps the parsing vocabulary honest on both
+# sides.
 _MAX_NETWORKS = 64
 
 
@@ -134,43 +152,96 @@ class ManagementNetworkPolicy:
         return any(address in network for network in self.networks)
 
 
+def _stored_enabled_flag(raw: str) -> bool:
+    """Parse the stored ``MANAGEMENT_NETWORK_ENABLED`` value (the
+    registry's canonical ``"true"``/``"false"``). Anything else fails
+    loud at resolution time — a store that holds an unparseable flag is
+    a corrupted configuration, never a silently-different policy (G5).
+    """
+    candidate = raw.strip().lower()
+    if candidate == "true":
+        return True
+    if candidate == "false":
+        return False
+    raise ValueError(
+        f"stored MANAGEMENT_NETWORK_ENABLED must be 'true' or 'false', got {raw!r}"
+    )
+
+
 def load_management_network_policy(
+    *,
+    stored_enabled: str | None = None,
+    stored_cidrs: str | None = None,
     settings: Settings | None = None,
 ) -> ManagementNetworkPolicy:
-    """Build the policy from typed ``Settings`` fields (the T5
-    transitional loader; see the module docstring). Invalid CIDRs raise
-    ``ValueError`` here — the deployment fails at wiring/load, not at
-    the first guarded request."""
+    """Build the policy from the audited settings STORE first, falling
+    back per key to the DEPRECATED env fields (the Plan 08 T5
+    migration; see the module docstring).
+
+    ``stored_enabled`` / ``stored_cidrs`` are the raw
+    ``MANAGEMENT_NETWORK_ENABLED`` / ``MANAGEMENT_NETWORK_CIDRS`` row
+    values (``None`` = no row — the env fallback decides that key);
+    the composition root reads them through ``SystemSettingService.get``
+    per request and hands them here. Invalid values raise ``ValueError``
+    at resolution — the deployment fails at policy load, never as a
+    silently-different allowlist at request time (G5).
+    """
     source = settings if settings is not None else get_settings()
+    enabled = (
+        _stored_enabled_flag(stored_enabled)
+        if stored_enabled is not None
+        else source.management_network_enabled
+    )
+    cidrs = (
+        stored_cidrs if stored_cidrs is not None else source.management_network_cidrs
+    )
     return ManagementNetworkPolicy(
-        enabled=source.management_network_enabled,
-        networks=parse_management_networks(source.management_network_cidrs),
+        enabled=enabled,
+        networks=parse_management_networks(cidrs),
     )
 
 
 @lru_cache(maxsize=1)
 def _cached_settings_policy() -> ManagementNetworkPolicy:
-    # Env settings are process-frozen (get_settings is lru_cached), so
-    # the parsed policy is too. Tests inject policies through the
-    # factory parameter instead of flipping this cache.
+    # TRANSITIONAL DEFAULT (Plan 08 T5): the env-only, process-cached
+    # policy — kept only until the T9 composition wires the
+    # store-reading async loader (read the MANAGEMENT_NETWORK_* rows per
+    # request, resolve via ``load_management_network_policy``). Env
+    # settings are process-frozen (get_settings is lru_cached), so the
+    # parsed policy is too; tests inject policies through the factory
+    # parameter instead of flipping this cache.
     return load_management_network_policy()
 
 
+#: A policy source the guard evaluates per request: sync (returns the
+#: policy) or async (returns an awaitable of it — the store-reading
+#: loader's shape, since a DB read cannot be sync).
+ManagementNetworkPolicyLoader = Callable[
+    [], "ManagementNetworkPolicy | Awaitable[ManagementNetworkPolicy]"
+]
+
+
 def require_management_network(
-    policy_loader: Callable[[], ManagementNetworkPolicy] | None = None,
+    policy_loader: ManagementNetworkPolicyLoader | None = None,
 ) -> Callable[..., Coroutine[Any, Any, None]]:
     """FastAPI dependency factory: when the restriction is enabled,
     reject requests from outside the configured networks (403).
 
-    ``policy_loader`` is evaluated PER REQUEST so a future DB-backed
-    store (T5) can change policy live; the default reads the (cached)
-    typed settings. Disabled policies pass through immediately — the
-    2FA/RBAC guards mounted beside this one are unaffected.
+    ``policy_loader`` is evaluated PER REQUEST and may be sync or async
+    — the store-backed loader reads the ``MANAGEMENT_NETWORK_*`` rows
+    from the audited settings store, so policy changes apply without a
+    restart. The default is the TRANSITIONAL env-cached policy (see
+    ``_cached_settings_policy``); production wiring passes the
+    store-reading loader explicitly. Disabled policies pass through
+    immediately — the 2FA/RBAC guards mounted beside this one are
+    unaffected.
     """
     loader = policy_loader if policy_loader is not None else _cached_settings_policy
 
     async def management_network_guard(request: Request) -> None:
         policy = loader()
+        if inspect.isawaitable(policy):
+            policy = await policy
         if not policy.enabled:
             return
         # The DIRECTLY connected peer only — see the module docstring's

@@ -206,8 +206,9 @@ async def test_put_stores_the_term_writes_audit_and_get_returns_it(
     assert audit.action == SYSTEM_SETTING_UPDATED
     assert audit.target_type == "system_setting"
     assert audit.target_id == CURRENT_ACADEMIC_TERM
-    # 0016: the value migration rides the §30 snapshot pair.
-    assert audit.details is None
+    # 0016: the value migration rides the §30 snapshot pair; 0020
+    # (Plan 08 T5): the write's version rides details.version.
+    assert audit.details == {"version": 1}
     assert audit.before_snapshot == {"value": None}
     assert audit.after_snapshot == {"value": "2027-spring"}
 
@@ -238,11 +239,16 @@ async def test_second_put_audits_the_previous_value(
         audit.after_snapshot["value"]: (
             audit.before_snapshot,
             audit.after_snapshot,
+            audit.details,
         )
         for audit in audits
     } == {
-        "2027-spring": ({"value": None}, {"value": "2027-spring"}),
-        "2027-summer": ({"value": "2027-spring"}, {"value": "2027-summer"}),
+        "2027-spring": ({"value": None}, {"value": "2027-spring"}, {"version": 1}),
+        "2027-summer": (
+            {"value": "2027-spring"},
+            {"value": "2027-summer"},
+            {"version": 2},
+        ),
     }
     assert all(audit.actor_user_id == admin.id for audit in audits)
 
