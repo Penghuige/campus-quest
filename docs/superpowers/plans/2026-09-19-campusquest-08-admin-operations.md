@@ -132,7 +132,15 @@ git commit -m "feat: administer student whitelist imports"
 
 - [ ] **Step 1: Write permissions tests**
 
-Teacher without explicit reward-review grant cannot approve. Granted Teacher can review only configured course/task scope. Admin can globally review.
+Teacher without explicit reward-review grant cannot approve. Granted Teacher can review — scope per the OWNER RULING below. Admin can globally review.
+
+> **Owner ruling (PR #5, 2026-09-23 — supersedes the "configured
+> course/task scope" wording above):** a `RewardReviewGrant` is **global
+> over RewardRedemption in V1**. Reason: the current RewardRedemption
+> model carries no course/task ownership dimension, so per-course/task
+> scoping has no join key. Future scoped delegation requires an
+> explicit schema/product change (G13) — do NOT infer scope from
+> unrelated Task data or "fix" the grant back to task scoping.
 
 - [ ] **Step 2: Implement update rules**
 
