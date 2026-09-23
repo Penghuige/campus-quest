@@ -1513,6 +1513,12 @@ NotificationTemplate：
 
 Admin 修改模板。
 
+`enabled` 的语义（owner ruling，PR #5 delta re-review 2026-09-23）：
+
+1. **disabled = 不使用该数据库 override**——回退默认模板；`enabled=false` **不是**关闭通知通道。通道是否发送只由 Task 通知策略（§25.1）与既有的用户/通道资格规则控制，模板行不拥有 channel on/off。
+2. **模板变量为事件变量命名空间**（与 Admin 写入校验同一集合）；事件注册时即以原始 payload 渲染并**冻结各通道消息快照**。
+3. **已创建通知的快照不可变**——后续模板编辑或禁用不会改写已创建的通知与投递内容。
+
 Teacher 不允许任意修改全局短信模板。
 
 模板渲染必须使用受限变量，不执行代码。

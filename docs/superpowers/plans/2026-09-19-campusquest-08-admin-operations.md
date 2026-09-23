@@ -173,6 +173,16 @@ Runtime system values include emoji whitelist, abandon daily limit, `CURRENT_ACA
 
 Each change increments version and records old/new redacted value.
 
+> **Owner ruling on `NotificationTemplate.enabled` (PR #5 delta
+> re-review, 2026-09-23 — mirrors spec §25.5):** `enabled=false` means
+> the database override is not consumed (the default template applies);
+> it does NOT disable the notification channel — channel send/no-send
+> is owned solely by Task notification policy and user/channel
+> eligibility. Templates use the event-variable namespace validated at
+> write time; events freeze their rendered per-channel snapshots at
+> registration, and later template edits/disables never rewrite
+> already-created notifications.
+
 - [ ] **Step 3: Run and commit**
 
 ```bash
