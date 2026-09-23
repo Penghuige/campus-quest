@@ -18,7 +18,10 @@ Every route in this router mounts the family's guard pair (G10):
   seam). This assembly is the W4 footgun's formal closure: the
   transitional env-cached default policy is no longer what production
   requests resolve. Disabled policies pass through; enabled policies
-  refuse peers outside the allowlist with the same 403 envelope.
+  refuse peers outside the allowlist with the same 403 envelope; an
+  UNLOADABLE stored pair fails closed — 403 to every caller plus an
+  ERROR log (PR #5 fix A) — while the system-settings router stays
+  exempt from the guard as the pair's self-repair face.
 
 Transport decisions:
 
@@ -51,6 +54,7 @@ Transport decisions:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -66,6 +70,8 @@ from app.core.admin_network_policy import (
     require_management_network,
 )
 from app.core.clock import Clock
+from app.core.error_codes import ErrorCode
+from app.core.errors import BusinessError
 from app.db.session import get_db_session
 from app.modules.audit.context import AuditContext
 from app.modules.identity.account_admin_service import AccountAdminService
@@ -100,6 +106,15 @@ MAX_PAGE_LIMIT = 50
 # The staff-invitation issuance bucket (app/integrations/rate_limit.py).
 _INVITATION_BUCKET = "staff:invitations"
 
+logger = logging.getLogger(__name__)
+
+# The fail-closed refusal for an UNLOADABLE stored pair (PR #5 fix A):
+# the message names the repair path — the settings surface is exempt
+# from this guard, so the Admin can always reach it.
+_POLICY_UNLOADABLE_MESSAGE = (
+    "管理网络策略配置不可加载，已拒绝所有管理功能访问；请立即通过系统设置修复网络策略"
+)
+
 
 # --- the store-backed management-network guard (W4 footgun closure) ------
 
@@ -118,19 +133,47 @@ async def require_management_network_from_store(
     rows through ``SystemSettingService.get`` and resolves them with
     ``load_management_network_policy`` (store first, per-key env
     fallback — the W4 migration). Policy changes therefore apply
-    without a restart, and the write-time cross-key validation on the
-    settings surface (system router) keeps every stored combination
-    loadable, so this guard can never meet a 500-worthy policy.
+    without a restart, and the aggregate advisory lock on the write
+    path (``SystemSettingService.set_management_network_policy``, PR #5
+    fix A) keeps every stored combination loadable.
+
+    **Fail closed on an unloadable pair** (PR #5 fix A, the terminal
+    review's ruling): a stored pair the resolver rejects — historical
+    residue from before the aggregate lock — is a management incident,
+    not a per-request input problem, so this guard answers the 403
+    envelope to EVERY caller (in-network and out) after an ERROR log
+    naming the offending rows, never a 500. The system-settings router
+    is exempt from this guard (the self-repair face), so the Admin can
+    always reach the API that fixes the pair.
     """
     settings_service = SystemSettingService()
 
     async def load_policy() -> ManagementNetworkPolicy:
         stored_enabled = await settings_service.get(db, MANAGEMENT_NETWORK_ENABLED)
         stored_cidrs = await settings_service.get(db, MANAGEMENT_NETWORK_CIDRS)
-        return load_management_network_policy(
-            stored_enabled=stored_enabled,
-            stored_cidrs=stored_cidrs,
-        )
+        try:
+            return load_management_network_policy(
+                stored_enabled=stored_enabled,
+                stored_cidrs=stored_cidrs,
+            )
+        except ValueError as exc:
+            logger.error(
+                "management-network policy is unloadable — failing closed "
+                "(denying all management access); repair through the "
+                "settings surface: stored_enabled=%r stored_cidrs=%r (%s)",
+                stored_enabled,
+                stored_cidrs,
+                exc,
+            )
+            raise BusinessError(
+                ErrorCode.PERMISSION_DENIED,
+                _POLICY_UNLOADABLE_MESSAGE,
+                status_code=403,
+                details={
+                    "stored_enabled": stored_enabled,
+                    "stored_cidrs": stored_cidrs,
+                },
+            ) from exc
 
     guard = require_management_network(load_policy)
     await guard(request)

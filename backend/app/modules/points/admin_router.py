@@ -250,12 +250,17 @@ class RewardReviewGrantListResponse(BaseModel):
 
 class PointsAdjustmentRequest(BaseModel):
     """One manual wallet correction through the ledger (never a direct
-    wallet write): a non-zero amount plus the mandatory reason."""
+    wallet write): a non-zero amount, the mandatory reason, and the
+    caller-minted ``operation_id`` — the adjustment's stable intent id
+    (PR #5 fix A, P1). A retry after a lost response reuses the SAME
+    id and replays the original entry instead of double-charging; the
+    same id under a different decision is the typed 409."""
 
     model_config = ConfigDict(extra="forbid")
 
     amount: int
     reason: str = Field(min_length=1)
+    operation_id: UUID
 
 
 class NotificationTemplateCreateRequest(BaseModel):
@@ -512,13 +517,18 @@ async def adjust_user_points(
     request: Request,
 ) -> PointsAdjustmentResponse:
     """Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet
-    write); the wallet migration is audited in the same transaction."""
+    write); the wallet migration is audited in the same transaction.
+    The body's ``operation_id`` is the idempotency key: a replay with
+    the same intent returns the original entry (one row, one balance
+    move, one audit row), and the same id under a different decision is
+    the typed 409 CONFLICT (PR #5 fix A, P1)."""
     entry = await service.admin_adjust_points(
         db,
         actor,
         user_id,
         body.amount,
         reason=body.reason,
+        operation_id=body.operation_id,
         audit_context=AuditContext.from_request(request),
     )
     return PointsAdjustmentResponse(

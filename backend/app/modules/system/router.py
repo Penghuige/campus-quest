@@ -6,8 +6,7 @@ registry's full five-key surface).
 
 Endpoints (``require_admin_actor`` — spec §33.4 management 2FA plus the
 Admin-only narrowing the hardening ruling applied to the redemption
-review family; an ACTIVE+TOTP Teacher is 403 — and the router-wide
-store-backed management-network guard, Plan 08 T9's W4 footgun closure):
+review family; an ACTIVE+TOTP Teacher is 403):
 
 ===========  =========================================================
 Method path  Purpose
@@ -32,16 +31,22 @@ PUT          ``/admin/settings/current-academic-term`` — set the term
              already-created redemptions keep their snapshots (spec
              §16.1 — history keeps the term it was created under).
 PUT          ``/admin/settings/emoji-whitelist`` / ``.../abandon-
-             daily-limit`` / ``.../management-network-enabled`` /
-             ``.../management-network-cidrs`` — the registry's other
-             four keys, one typed per-key request schema each (the
-             "one request schema per known key" pattern this router
-             seeded): ``list[str]`` emoji entries (each 1-8 code
-             points, empty list legal), ``int >= 0``, ``bool``, and
-             ``list[str]`` CIDRs. Every write normalizes through the
-             key's registry entry and commits value + audit row as one
-             unit; the response carries the stored canonical value and
-             the row's new ``version``.
+             daily-limit`` — two more registry keys, one typed per-key
+             request schema each (the "one request schema per known
+             key" pattern this router seeded): ``list[str]`` emoji
+             entries (each 1-8 code points, empty list legal) and
+             ``int >= 0``. Every write normalizes through the key's
+             registry entry and commits value + audit row as one unit;
+             the response carries the stored canonical value and the
+             row's new ``version``.
+PUT          ``.../management-network-enabled`` / ``.../management-
+             network-cidrs`` — the policy pair's two keys, each written
+             through ``SystemSettingService.set_management_network_
+             policy`` (the single serial domain): the route only parses
+             its body; the service takes the aggregate advisory lock,
+             resolves the partner key's effective value under it, and
+             refuses any post-write pair the per-request loader could
+             not load (the cross-key 422 — see below).
 ===========  =========================================================
 
 Transport decisions:
@@ -61,16 +66,30 @@ Transport decisions:
   request DTO): the storage service is generic, the value semantics
   are this surface's contract — the Plan 08 pattern of one request
   schema per known key, now covering the full registry.
-- **The management-network cross-key ruling (Plan 08 T9): a write
-  that would leave the policy UNLOADABLE is refused at 422, never
-  stored to blow up at request time.** Enabling
-  ``MANAGEMENT_NETWORK_ENABLED`` with an empty effective CIDR list
-  (store row or env fallback), or emptying ``MANAGEMENT_NETWORK_CIDRS``
-  while the policy is enabled, answers the typed 422 BEFORE any write:
-  the check resolves exactly the post-write pair the per-request
-  loader would resolve (store-first, env-fallback per key), so a
-  stored combination the loader would reject is unwritable — no
-  runtime 500 from this pair, either direction.
+- **The management-network cross-key ruling (Plan 08 T9, hardened in
+    PR #5 fix A): a write that would leave the policy UNLOADABLE is
+    refused at 422, never stored to blow up at request time.** The
+    check lives in ``SystemSettingService.set_management_network_
+    policy`` UNDER the policy's fixed advisory lock: enabling
+    ``MANAGEMENT_NETWORK_ENABLED`` with an empty effective CIDR list
+    (store row or env fallback), or emptying ``MANAGEMENT_NETWORK_
+    CIDRS`` while the policy is enabled, resolves exactly the
+    post-write pair the per-request loader would resolve and answers
+    the typed 422 BEFORE any write. The lock is what makes the check
+    sound — two Admins writing the two keys concurrently serialize,
+    so the second write validates against the first's committed
+    value and no interleaving can store an unloadable pair.
+- **The settings surface is EXEMPT from the management-network guard
+  (the self-repair face — PR #5 fix A's second half).** The identity/
+  points/audit admin routers mount ``require_management_network_
+  from_store`` beside their actor guard; this router deliberately
+  does not. The guard fail-closes when the stored pair is unloadable
+  (historical residue predating the lock), and a policy that refuses
+  an Admin's network would lock that Admin out of the very API
+  needed to repair the setting — the terminal-review wording. The
+  §33.4 Admin 2FA gate still applies to every route here, so the
+  exemption widens reachability only for an Admin who can already
+  authenticate.
 - This router is a composition layer (the tasks-router precedent): it
   reads the setting through ``SystemSettingService`` and resolves the
   effective term through points' ``SystemAcademicTermProvider`` — the
@@ -88,13 +107,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_network_policy import load_management_network_policy
 from app.core.config import get_settings
-from app.core.error_codes import ErrorCode
-from app.core.errors import BusinessError
 from app.db.session import get_db_session
 from app.modules.audit.context import AuditContext
-from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import require_admin_actor
 from app.modules.identity.events import Actor
 from app.modules.points.redemption_service import SystemAcademicTermProvider
@@ -103,8 +118,6 @@ from app.modules.system.service import (
     ABANDON_DAILY_LIMIT,
     CURRENT_ACADEMIC_TERM,
     EMOJI_WHITELIST,
-    MANAGEMENT_NETWORK_CIDRS,
-    MANAGEMENT_NETWORK_ENABLED,
     SYSTEM_SETTING_REGISTRY,
     SystemSettingService,
     normalize_system_setting_value,
@@ -113,9 +126,10 @@ from app.modules.system.service import (
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 AdminActor = Annotated[Actor, Depends(require_admin_actor)]
 
-# Router-wide: the store-backed management-network guard beside every
-# route's AdminActor (the admin family posture, Plan 08 T9).
-router = APIRouter(dependencies=[Depends(require_management_network_from_store)])
+# NO router-wide management-network guard here — the settings surface is
+# the policy's SELF-REPAIR face (see the module docstring); only the
+# §33.4 Admin gate applies, per route through AdminActor.
+router = APIRouter()
 
 
 # --- transport DTOs (explicit field sets) ---------------------------------
@@ -228,47 +242,7 @@ def get_system_setting_service() -> SystemSettingService:
 SystemServiceDep = Annotated[SystemSettingService, Depends(get_system_setting_service)]
 
 
-# --- the write-path helper (cross-key ruling) -----------------------------
-
-
-async def _assert_policy_stays_loadable(
-    db: AsyncSession,
-    service: SystemSettingService,
-    *,
-    key: str,
-    canonical_value: str,
-) -> None:
-    """The management-network cross-key gate (Plan 08 T9): resolve the
-    POST-WRITE pair exactly the per-request loader would and refuse the
-    write when the policy would be enabled with zero networks.
-
-    ``canonical_value`` is the write's own canonical stored form (from
-    ``normalize_system_setting_value``); the OTHER key keeps its current
-    row (or falls back to the env field when no row exists — the W4
-    migration's per-key semantics), so what is checked here is
-    precisely what ``require_management_network_from_store`` would
-    resolve after the write commits. Non-network keys skip the check.
-    """
-    if key == MANAGEMENT_NETWORK_ENABLED:
-        stored_enabled: str | None = canonical_value
-        stored_cidrs: str | None = await service.get(db, MANAGEMENT_NETWORK_CIDRS)
-    elif key == MANAGEMENT_NETWORK_CIDRS:
-        stored_enabled = await service.get(db, MANAGEMENT_NETWORK_ENABLED)
-        stored_cidrs = canonical_value
-    else:
-        return
-    try:
-        load_management_network_policy(
-            stored_enabled=stored_enabled,
-            stored_cidrs=stored_cidrs,
-        )
-    except ValueError as exc:
-        raise BusinessError(
-            ErrorCode.VALIDATION_ERROR,
-            "网络策略配置不合法：启用管理网络限制时必须至少配置一个 CIDR",
-            status_code=422,
-            details={"key": key, "reason": str(exc)},
-        ) from exc
+# --- the write-path helper ------------------------------------------------
 
 
 async def _set_setting(
@@ -281,14 +255,18 @@ async def _set_setting(
     request: Request,
     reason: str | None = None,
 ) -> SystemSettingValueResponse:
-    """The shared write path: normalize (typed 422 for value-shape
-    failures), run the cross-key gate, commit value + audit row (with
-    the optional ``reason`` on the audit row) as one unit, and answer
-    the stored canonical value with the new version."""
+    """The shared write path for the SINGLE-key settings (term excluded —
+    its response is the effective value): normalize (typed 422 for
+    value-shape failures), commit value + audit row (with the optional
+    ``reason`` on the audit row) as one unit, and answer the stored
+    canonical value with the new version.
+
+    The two ``MANAGEMENT_NETWORK_*`` keys deliberately do NOT come
+    through here: their PUTs call ``set_management_network_policy``
+    directly, whose aggregate lock + cross-key gate supersedes this
+    plain write (see the module docstring).
+    """
     _stored_key, canonical = normalize_system_setting_value(key, value)
-    await _assert_policy_stays_loadable(
-        db, service, key=_stored_key, canonical_value=canonical
-    )
     stored = await service.set(
         db,
         actor=actor,
@@ -437,18 +415,20 @@ async def put_management_network_enabled(
     settings_service: SystemServiceDep,
     request: Request,
 ) -> SystemSettingValueResponse:
-    """Turn the management-network restriction on/off. Enabling it with
-    an empty effective CIDR list is the typed 422 (the cross-key
-    ruling — see the module docstring), so the per-request guard can
-    never meet an unloadable policy."""
-    return await _set_setting(
+    """Turn the management-network restriction on/off. The route only
+    parses its body: the service takes the policy's aggregate advisory
+    lock, resolves the CIDR list's effective value under it, and answers
+    the typed 422 when enabling with an empty list — so no interleaving
+    of concurrent policy writes can store an unloadable pair."""
+    result = await settings_service.set_management_network_policy(
         db,
         actor=actor,
-        service=settings_service,
-        key=MANAGEMENT_NETWORK_ENABLED,
-        value=body.value,
-        request=request,
+        enabled=body.value,
         reason=body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
+    return SystemSettingValueResponse(
+        key=result.key, value=result.value, version=result.version
     )
 
 
@@ -464,14 +444,16 @@ async def put_management_network_cidrs(
     request: Request,
 ) -> SystemSettingValueResponse:
     """Set the management-network CIDR allowlist (strict parsing; stored
-    comma-separated canonical). Emptying it while the policy is enabled
-    is the typed 422 (the cross-key ruling's other direction)."""
-    return await _set_setting(
+    comma-separated canonical). Emptying it while the policy is
+    (effectively) enabled is the typed 422 — decided under the same
+    aggregate lock, against the enabled flag's committed value."""
+    result = await settings_service.set_management_network_policy(
         db,
         actor=actor,
-        service=settings_service,
-        key=MANAGEMENT_NETWORK_CIDRS,
-        value=body.value,
-        request=request,
+        cidrs=body.value,
         reason=body.reason,
+        audit_context=AuditContext.from_request(request),
+    )
+    return SystemSettingValueResponse(
+        key=result.key, value=result.value, version=result.version
     )

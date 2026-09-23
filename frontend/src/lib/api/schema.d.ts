@@ -1701,10 +1701,11 @@ export interface paths {
         get?: never;
         /**
          * Put Management Network Enabled
-         * @description Turn the management-network restriction on/off. Enabling it with
-         *     an empty effective CIDR list is the typed 422 (the cross-key
-         *     ruling — see the module docstring), so the per-request guard can
-         *     never meet an unloadable policy.
+         * @description Turn the management-network restriction on/off. The route only
+         *     parses its body: the service takes the policy's aggregate advisory
+         *     lock, resolves the CIDR list's effective value under it, and answers
+         *     the typed 422 when enabling with an empty list — so no interleaving
+         *     of concurrent policy writes can store an unloadable pair.
          */
         put: operations["put_management_network_enabled_api_v1_admin_settings_management_network_enabled_put"];
         post?: never;
@@ -1725,8 +1726,9 @@ export interface paths {
         /**
          * Put Management Network Cidrs
          * @description Set the management-network CIDR allowlist (strict parsing; stored
-         *     comma-separated canonical). Emptying it while the policy is enabled
-         *     is the typed 422 (the cross-key ruling's other direction).
+         *     comma-separated canonical). Emptying it while the policy is
+         *     (effectively) enabled is the typed 422 — decided under the same
+         *     aggregate lock, against the enabled flag's committed value.
          */
         put: operations["put_management_network_cidrs_api_v1_admin_settings_management_network_cidrs_put"];
         post?: never;
@@ -2129,6 +2131,10 @@ export interface paths {
          * Adjust User Points
          * @description Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet
          *     write); the wallet migration is audited in the same transaction.
+         *     The body's ``operation_id`` is the idempotency key: a replay with
+         *     the same intent returns the original entry (one row, one balance
+         *     move, one audit row), and the same id under a different decision is
+         *     the typed 409 CONFLICT (PR #5 fix A, P1).
          */
         post: operations["adjust_user_points_api_v1_admin_users__user_id__points_adjustment_post"];
         delete?: never;
@@ -3379,13 +3385,22 @@ export interface components {
         /**
          * PointsAdjustmentRequest
          * @description One manual wallet correction through the ledger (never a direct
-         *     wallet write): a non-zero amount plus the mandatory reason.
+         *     wallet write): a non-zero amount, the mandatory reason, and the
+         *     caller-minted ``operation_id`` — the adjustment's stable intent id
+         *     (PR #5 fix A, P1). A retry after a lost response reuses the SAME
+         *     id and replays the original entry instead of double-charging; the
+         *     same id under a different decision is the typed 409.
          */
         PointsAdjustmentRequest: {
             /** Amount */
             amount: number;
             /** Reason */
             reason: string;
+            /**
+             * Operation Id
+             * Format: uuid
+             */
+            operation_id: string;
         };
         /**
          * PointsAdjustmentResponse

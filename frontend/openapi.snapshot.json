@@ -3928,7 +3928,7 @@
     "/api/v1/admin/settings/management-network-enabled": {
       "put": {
         "summary": "Put Management Network Enabled",
-        "description": "Turn the management-network restriction on/off. Enabling it with\nan empty effective CIDR list is the typed 422 (the cross-key\nruling — see the module docstring), so the per-request guard can\nnever meet an unloadable policy.",
+        "description": "Turn the management-network restriction on/off. The route only\nparses its body: the service takes the policy's aggregate advisory\nlock, resolves the CIDR list's effective value under it, and answers\nthe typed 422 when enabling with an empty list — so no interleaving\nof concurrent policy writes can store an unloadable pair.",
         "operationId": "put_management_network_enabled_api_v1_admin_settings_management_network_enabled_put",
         "requestBody": {
           "content": {
@@ -3972,7 +3972,7 @@
     "/api/v1/admin/settings/management-network-cidrs": {
       "put": {
         "summary": "Put Management Network Cidrs",
-        "description": "Set the management-network CIDR allowlist (strict parsing; stored\ncomma-separated canonical). Emptying it while the policy is enabled\nis the typed 422 (the cross-key ruling's other direction).",
+        "description": "Set the management-network CIDR allowlist (strict parsing; stored\ncomma-separated canonical). Emptying it while the policy is\n(effectively) enabled is the typed 422 — decided under the same\naggregate lock, against the enabled flag's committed value.",
         "operationId": "put_management_network_cidrs_api_v1_admin_settings_management_network_cidrs_put",
         "requestBody": {
           "content": {
@@ -5109,7 +5109,7 @@
     "/api/v1/admin/users/{user_id}/points-adjustment": {
       "post": {
         "summary": "Adjust User Points",
-        "description": "Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet\nwrite); the wallet migration is audited in the same transaction.",
+        "description": "Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet\nwrite); the wallet migration is audited in the same transaction.\nThe body's ``operation_id`` is the idempotency key: a replay with\nthe same intent returns the original entry (one row, one balance\nmove, one audit row), and the same id under a different decision is\nthe typed 409 CONFLICT (PR #5 fix A, P1).",
         "operationId": "adjust_user_points_api_v1_admin_users__user_id__points_adjustment_post",
         "security": [
           {
@@ -7828,16 +7828,22 @@
             "type": "string",
             "minLength": 1,
             "title": "Reason"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operation Id"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "amount",
-          "reason"
+          "reason",
+          "operation_id"
         ],
         "title": "PointsAdjustmentRequest",
-        "description": "One manual wallet correction through the ledger (never a direct\nwallet write): a non-zero amount plus the mandatory reason."
+        "description": "One manual wallet correction through the ledger (never a direct\nwallet write): a non-zero amount, the mandatory reason, and the\ncaller-minted ``operation_id`` — the adjustment's stable intent id\n(PR #5 fix A, P1). A retry after a lost response reuses the SAME\nid and replays the original entry instead of double-charging; the\nsame id under a different decision is the typed 409."
       },
       "PointsAdjustmentResponse": {
         "properties": {
