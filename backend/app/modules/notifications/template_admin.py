@@ -39,12 +39,14 @@ Design decisions:
   when a summary identifies the change. An idempotent toggle (already
   in the requested state) writes nothing (the staff-invitation replay
   ruling); a refused write writes nothing (nothing happened).
-- **Template rows are not (yet) read by dispatch** — Plan 07 pinned
-  the seam (``templates.render_template(template=...)``), and the
-  render path still resolves from the module seed constants; rows are
-  the Admin-facing surface whose consumption wiring is a later,
-  separately-audited step. This service therefore changes no dispatch
-  behavior; it only makes the rows administrable and audited.
+- **Template rows ARE the dispatch/registration render source (PR #5
+  gfix C closed the seam):** registration consumes the enabled
+  (event_type, IN_APP) row through ``render_template(template=...)``,
+  dispatch consumes enabled (event_type, channel) rows through
+  ``render_snapshot_template`` (disabled = channel off). This service
+  remains the write surface only — it changes no dispatch behavior
+  beyond what the rows themselves now say; the consumption semantics
+  live in the port and the delivery service.
 """
 
 from __future__ import annotations

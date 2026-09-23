@@ -27,14 +27,27 @@ INSIDE their business transaction:
   eligibility is implied by any other channel's eligibility (SMS/EMAIL
   carry strictly harder account requirements), so the IN_APP render
   serves every channel's bookkeeping. Per-channel SMS/EMAIL text is
-  NOT re-rendered here or at dispatch: the provider-side contract
-  (delivery_service) sends the template slug
-  ``event_type.value.lower()`` — e.g. ``revision_required``,
-  ``assignment_deadline_4h``, ``reward_redemption_approved`` — plus
-  the snapshot variables ``{"title", "body"}``, and the provider
-  renders channel-appropriate copy from its own template registry.
-  One render, one snapshot, three channels; a Plan 08 Admin template
-  edit can therefore never rewrite or fork an in-flight message.
+  NOT re-rendered here: at dispatch the delivery service consults the
+  managed (event_type, channel) row and renders it from this snapshot
+  (`templates.render_snapshot_template` — the ports' frozen
+  ``{"title", "body"}`` variable contract); with no managed row the
+  provider call keeps sending the template slug
+  ``event_type.value.lower()`` plus the snapshot variables, and the
+  provider renders channel-appropriate copy from its own template
+  registry. One render, one snapshot; an Admin template edit can
+  therefore never rewrite or fork an in-flight message.
+- **Managed IN_APP templates are consumed HERE (PR #5 gfix C):** the
+  record point queries the (event_type, IN_APP) NotificationTemplate
+  row inside the caller's transaction — an enabled row renders through
+  the ``template=`` seam (its text replaces the seed), no row falls
+  back to `DEFAULT_TEMPLATES` (the G7 seed semantics), and a DISABLED
+  row means the IN_APP channel is OFF for that event type: no IN_APP
+  delivery row is recorded, the snapshot falls back to the seed (pure
+  bookkeeping for the surviving SMS/EMAIL rows), and other channels
+  are untouched. Spec §25.5 names the column but not the disabled
+  semantics; the ruling (gfix-c brief, W4's deferred decision) is
+  "enabled flags a channel switch" — disabled is explicit downgrade,
+  not silent fallback to seed copy the admin turned off.
 - **Render failures raise.** `InvalidTemplateError` /
   `MissingTemplateVariableError` / non-str coercion `TypeError` are
   programming errors (a bad template row or a malformed payload), not
@@ -73,11 +86,16 @@ from app.modules.notifications.enums import (
     NotificationEventType,
 )
 from app.modules.notifications.event_handlers import RecordIntent, build_record_intents
-from app.modules.notifications.models import Notification, NotificationDelivery
+from app.modules.notifications.models import (
+    Notification,
+    NotificationDelivery,
+    NotificationTemplate,
+)
 from app.modules.notifications.service import TaskNotificationPolicy
 from app.modules.notifications.templates import (
     EVENT_VARIABLES,
     RenderedMessage,
+    TemplateText,
     render_template,
 )
 
@@ -198,10 +216,24 @@ class NotificationPort:
         intent: RecordIntent,
         payload: Mapping[str, Any],
     ) -> None:
-        """Persist one intent: render once, insert the logical row,
-        insert the per-channel deliveries — each insert-on-conflict."""
+        """Persist one intent: consult the managed IN_APP template,
+        render once, insert the logical row, insert the per-channel
+        deliveries — each insert-on-conflict."""
 
-        if not intent.channels:
+        managed = await self._in_app_template(session, intent.event_type)
+        channels = intent.channels
+        if managed is not None and not managed.enabled:
+            # Disabled = the IN_APP channel is OFF for this event type
+            # (the gfix-C ruling, module docstring): no IN_APP delivery
+            # row; the snapshot the surviving channels bookkeep falls
+            # back to the seed.
+            channels = tuple(
+                channel
+                for channel in channels
+                if channel is not NotificationChannel.IN_APP
+            )
+            managed = None
+        if not channels:
             # An event with no eligible channel persists nothing (the
             # planner's rule, applied uniformly): no inbox row, no
             # delivery rows.
@@ -212,10 +244,17 @@ class NotificationPort:
             if name in payload
         }
         rendered = render_template(
-            intent.event_type, NotificationChannel.IN_APP, variables
+            intent.event_type,
+            NotificationChannel.IN_APP,
+            variables,
+            template=(
+                TemplateText(title=managed.title, body=managed.template_body)
+                if managed is not None
+                else None
+            ),
         )
         notification_id = await self._insert_notification(session, intent, rendered)
-        for channel in intent.channels:
+        for channel in channels:
             await session.execute(
                 pg_insert(NotificationDelivery)
                 .values(
@@ -235,6 +274,23 @@ class NotificationPort:
                     index_elements=["event_key", "user_id", "channel"]
                 )
             )
+
+    @staticmethod
+    async def _in_app_template(
+        session: AsyncSession, event_type: NotificationEventType
+    ) -> NotificationTemplate | None:
+        """The (event_type, IN_APP) NotificationTemplate row, or None —
+        read through the CALLER's session so the managed-template
+        consult joins the registration transaction (one PG, one commit
+        decision; UNIQUE(event_type, channel) bounds it to one row)."""
+
+        template: NotificationTemplate | None = await session.scalar(
+            select(NotificationTemplate).where(
+                NotificationTemplate.event_type == event_type.value,
+                NotificationTemplate.channel == NotificationChannel.IN_APP.value,
+            )
+        )
+        return template
 
     async def _insert_notification(
         self,
