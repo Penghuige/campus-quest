@@ -157,8 +157,9 @@ class Settings(BaseSettings):
     phone_default_region: str = "CN"
     # Per-student daily abandon cap, counted per BUSINESS_TIMEZONE natural
     # day (spec §8.5: the default is the spec's 2, and the limit is
-    # explicitly configurable). Consumed by `AbandonService`, which receives
-    # the scalar at the composition root.
+    # explicitly configurable). The SEED `AbandonService` falls back to —
+    # the audited ABANDON_DAILY_LIMIT system-settings row is the fact a
+    # deployment moves once an admin sets it (G7 row-over-seed).
     daily_abandon_limit: int = 2
     # Validation worker sandbox bounds (spec §33.3 CPU/内存/时间限制; the
     # plan-04 task-7 parked rulings): every validator executes in a

@@ -202,6 +202,7 @@ from app.modules.community.schemas import (
     ModerationComment,
 )
 from app.modules.community.serializers import serialize_moderation_comment
+from app.modules.community.settings_emoji_whitelist import SystemEmojiWhitelistProvider
 from app.modules.community.vote_service import VoteService
 from app.modules.identity.dependencies import (
     get_business_clock,
@@ -214,6 +215,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     LoggingEventPublisher,
 )
+from app.modules.system.service import EMOJI_WHITELIST, SystemSettingService
 
 __all__ = [
     "compute_hot_score",
@@ -351,8 +353,25 @@ def get_vote_service() -> VoteService:
     return VoteService()
 
 
-def get_reaction_service() -> ReactionService:
-    return ReactionService()
+async def get_reaction_service(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ReactionService:
+    """The production whitelist binding (PR #5 final review fix B): the
+    audited ``system_settings`` EMOJI_WHITELIST row is read ONCE per
+    request on the request's own session, and the provider applies the
+    row-over-seed priority and the wiring-time validation — the rule
+    lives in the provider family, this composition only fetches the
+    value (the ``SystemAcademicTermProvider`` pattern in points/router).
+
+    G7: the row is the FACT, ``DefaultEmojiWhitelistProvider``'s spec
+    §22 eight the INITIAL SEED. The storage read goes through the
+    system module's service (the arrow points IN, the audit-module
+    discipline: this composition root is the layer allowed to see both
+    modules)."""
+    configured = await SystemSettingService().get(db, EMOJI_WHITELIST)
+    return ReactionService(
+        whitelist=SystemEmojiWhitelistProvider(configured_value=configured)
+    )
 
 
 def get_report_service() -> ReportService:

@@ -130,11 +130,14 @@ Other transport decisions
   process-cached; services are assembled per request from injected
   clock/settings/publisher dependencies, so tests override a dependency,
   never service internals. ``Settings``-driven wiring:
-  ``daily_abandon_limit`` + ``business_timezone`` into
-  ``AbandonService``, the ``assignment_import_*`` caps into the importer,
-  ``max_upload_bytes_default`` into ``TaskService``. The rating summary
-  port is the community module's TaskRating-backed adapter (plan 06 task
-  9's wiring), constructed per request over that request's session.
+  ``business_timezone`` into ``AbandonService``, the
+  ``assignment_import_*`` caps into the importer,
+  ``max_upload_bytes_default`` into ``TaskService``; the abandon limit is
+  store-backed — the audited ABANDON_DAILY_LIMIT row over
+  ``Settings.daily_abandon_limit`` (G7 row-over-seed, PR #5 final review
+  fix B). The rating summary port is the community module's
+  TaskRating-backed adapter (plan 06 task 9's wiring), constructed per
+  request over that request's session.
 """
 
 from __future__ import annotations
@@ -175,7 +178,8 @@ from app.modules.identity.events import (
     LoggingEventPublisher,
 )
 from app.modules.notifications.port import NotificationPort
-from app.modules.tasks.abandon_service import AbandonService
+from app.modules.system.service import ABANDON_DAILY_LIMIT, SystemSettingService
+from app.modules.tasks.abandon_service import AbandonService, SystemDailyAbandonLimit
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
 from app.modules.tasks.commands import CreateTask, UpdateTask
@@ -303,16 +307,32 @@ def get_claim_service(clock: ClockDep) -> ClaimService:
     )
 
 
-def get_abandon_service(
+async def get_abandon_service(
     clock: ClockDep,
     settings: AppSettings,
     events: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AbandonService:
+    """The production limit binding (PR #5 final review fix B): the
+    audited ``system_settings`` ABANDON_DAILY_LIMIT row is read ONCE per
+    request on the request's own session, and the provider applies the
+    row-over-seed priority and the wiring-time validation — the rule
+    lives in the provider family, this composition only fetches the
+    value (the ``SystemAcademicTermProvider`` pattern in points/router).
+
+    G7: the row is the FACT, ``Settings.daily_abandon_limit`` (env
+    DAILY_ABANDON_LIMIT, spec §8.5 default of 2) the INITIAL SEED. The
+    storage read goes through the system module's service (the arrow
+    points IN, the audit-module discipline: this composition root is
+    the layer allowed to see both modules)."""
+    configured = await SystemSettingService().get(db, ABANDON_DAILY_LIMIT)
     return AbandonService(
         clock=clock,
         business_timezone=settings.business_timezone,
         events=events,
-        daily_abandon_limit=settings.daily_abandon_limit,
+        daily_abandon_limit=SystemDailyAbandonLimit(
+            configured, settings.daily_abandon_limit
+        ),
     )
 
 

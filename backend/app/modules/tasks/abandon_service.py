@@ -92,6 +92,7 @@ Design decisions and rulings:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -124,6 +125,7 @@ __all__ = [
     "ClaimNotAbandonableError",
     "ClaimNotFoundError",
     "ClaimNotOwnedError",
+    "SystemDailyAbandonLimit",
     "business_day_window",
 ]
 
@@ -268,13 +270,70 @@ def business_day_window(now: datetime, timezone: ZoneInfo) -> tuple[datetime, da
 # --- the service ----------------------------------------------------------------------
 
 
+def _require_daily_limit(limit: int, *, origin: str) -> None:
+    """0 is legal (abandoning disabled — the ABANDON_DAILY_LIMIT
+    registry contract); only a negative cap is a wiring error, and it
+    fails at construction, never mid-request."""
+    if limit < 0:
+        raise ValueError(
+            "daily_abandon_limit must be >= 0 (0 disables abandoning), "
+            f"got {limit} from {origin}"
+        )
+
+
+class SystemDailyAbandonLimit:
+    """The production ``daily_abandon_limit`` provider (PR #5 final
+    review fix B): the audited ``system_settings`` ABANDON_DAILY_LIMIT
+    row over the ``Settings.daily_abandon_limit`` seed.
+
+    Priority — G7: the row is the FACT; the Settings field (env
+    DAILY_ABANDON_LIMIT, spec §8.5 default of 2) is only the INITIAL
+    SEED a deployment boots with, never an override:
+
+    1. row present -> the row's value (0 = abandoning DISABLED: with the
+       cap at 0 even the day's first abandon is over it);
+    2. no row -> the Settings seed.
+
+    The storage read is async but ``AbandonService`` consumes a plain
+    int, so the composition root's dependency resolves the row ONCE per
+    request and builds this callable with the answer (tasks/router.py)
+    — the ``SystemAcademicTermProvider`` shape in points; the priority
+    and validation RULE lives here so no composition root can get it
+    wrong. A present-but-corrupt row (non-decimal text — unreachable
+    through the API, which normalizes, so only direct database edits
+    get there) fails LOUDLY at construction instead of silently
+    falling back to the seed: masking a corrupted setting would
+    quietly re-allow the abandons the Admin believes they disabled."""
+
+    def __init__(self, configured_value: str | None, fallback: int) -> None:
+        if configured_value is None:
+            _require_daily_limit(fallback, origin="the Settings seed")
+            self._limit = fallback
+        else:
+            try:
+                limit = int(configured_value)
+            except ValueError as exc:
+                raise ValueError(
+                    f"ABANDON_DAILY_LIMIT row is not decimal text: {configured_value!r}"
+                ) from exc
+            _require_daily_limit(limit, origin="the ABANDON_DAILY_LIMIT row")
+            self._limit = limit
+
+    def __call__(self) -> int:
+        return self._limit
+
+
 class AbandonService:
     """Abandon a claim and release its assignment (spec §8.5).
 
     ``business_timezone`` is the validated Settings string; it becomes a
     ``ZoneInfo`` once here. ``daily_abandon_limit`` is injectable for
-    tests (production wires ``Settings.daily_abandon_limit``, whose
-    default is the spec §8.5 value of 2).
+    tests as a plain int; production wires the store-backed
+    ``SystemDailyAbandonLimit`` callable (the audited ABANDON_DAILY_LIMIT
+    row over ``Settings.daily_abandon_limit``, whose default is the spec
+    §8.5 value of 2), resolved per ``abandon_claim`` call — 0 is legal
+    and DISABLES abandoning, and a negative answer fails loudly (see
+    ``_daily_limit_now``).
     """
 
     def __init__(
@@ -283,16 +342,28 @@ class AbandonService:
         clock: Clock,
         business_timezone: str,
         events: DomainEventPublisher,
-        daily_abandon_limit: int = DAILY_ABANDON_LIMIT,
+        daily_abandon_limit: int | Callable[[], int] = DAILY_ABANDON_LIMIT,
     ) -> None:
-        if daily_abandon_limit < 1:
-            raise ValueError(
-                f"daily_abandon_limit must be >= 1, got {daily_abandon_limit}"
-            )
+        if not callable(daily_abandon_limit):
+            _require_daily_limit(daily_abandon_limit, origin="the constructor")
+        self._daily_limit: int | Callable[[], int] = daily_abandon_limit
         self._clock = clock
         self._timezone = ZoneInfo(business_timezone)
         self._events = events
-        self._daily_limit = daily_abandon_limit
+
+    def _daily_limit_now(self) -> int:
+        """The effective daily cap for THIS call: the injected provider's
+        answer when one is wired (the store-backed production callable),
+        else the constructor's int — validated >= 0 at each resolution
+        (0 is the DISABLED semantics; a negative answer is a miswired
+        provider and fails loudly instead of silently moving the cap)."""
+        daily_limit = self._daily_limit
+        limit = daily_limit() if callable(daily_limit) else daily_limit
+        if limit < 0:
+            raise ValueError(
+                f"daily abandon limit provider returned a negative limit: {limit}"
+            )
+        return limit
 
     async def abandon_claim(
         self, db: AsyncSession, user_id: UUID, claim_id: UUID
@@ -359,6 +430,7 @@ class AbandonService:
 
         # (3) Daily cap inside the user-row lock (spec §8.5 atomicity).
         window_start, window_end = business_day_window(now, self._timezone)
+        limit = self._daily_limit_now()
         used = await db.scalar(
             select(func.count())
             .select_from(AssignmentClaim)
@@ -369,9 +441,9 @@ class AbandonService:
                 AssignmentClaim.terminal_at < window_end,
             )
         )
-        if (used or 0) >= self._daily_limit:
+        if (used or 0) >= limit:
             raise AbandonLimitReachedError(
-                self._daily_limit,
+                limit,
                 window_start_at=window_start,
                 window_end_at=window_end,
                 business_timezone=self._timezone.key,
