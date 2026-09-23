@@ -10,7 +10,8 @@
     "test:unit": "tsx --test src/__tests__/*.test.ts",
     "test": "npm run test:unit",
     "api:types": "openapi-typescript \"${OPENAPI_URL:-http://localhost:8000/openapi.json}\" -o src/lib/api/schema.d.ts",
-    "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts"
+    "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "^16.3.5",
@@ -18,6 +19,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
