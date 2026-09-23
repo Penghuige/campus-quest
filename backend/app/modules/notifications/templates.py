@@ -43,15 +43,20 @@ that sentence as a manual single-pass scanner — deliberately NOT Jinja,
 
 Seed templates (`DEFAULT_TEMPLATES`) cover all 8 event types x 3
 channels with concise Chinese product copy (spec §25/§25.1; SMS bodies
-stay short for single-segment delivery). They are module constants
-seeded/read at dispatch until Plan 08 lands Admin-editable
-NotificationTemplate rows; the `template=` parameter of
-`render_template` is the seam — the dispatch service will pass a
-`TemplateText` built from the row's `title`/`template_body` when an
-enabled override exists, and the override flows through this exact
-same scanner. An import-time self-check re-validates every seed
-against the whitelists so drift between `EVENT_VARIABLES` and
-`DEFAULT_TEMPLATES` fails at import, not at first render.
+stay short for single-segment delivery). They are the FALLBACK: the
+Plan 08 consumption wiring (PR #5 gfix C) has the registration port
+and the delivery service consult enabled `NotificationTemplate` rows
+first — `render_template`'s `template=` parameter is the seam, and a
+row's `title`/`template_body` flow through this exact same scanner
+(no row, or a disabled one for the snapshot, means the seed renders).
+`render_snapshot_template` is the dispatch-side sibling: a managed
+SMS/EMAIL row renders from the notification snapshot
+(``{"title", "body"}`` — the ports' frozen variable contract) because
+the T1 schema persists no event payload, so the per-event render
+variables exist only at record time. An import-time self-check
+re-validates every seed against the whitelists so drift between
+`EVENT_VARIABLES` and `DEFAULT_TEMPLATES` fails at import, not at
+first render.
 """
 
 from __future__ import annotations
@@ -155,8 +160,8 @@ class UnsafeTemplateMarkupError(TemplateRenderError):
 @dataclass(frozen=True)
 class TemplateText:
     """A template pair as stored on NotificationTemplate (title +
-    template_body). The Plan 08 override seam: dispatch builds one from
-    a row and passes it to `render_template`."""
+    template_body). The managed-row seam: registration and dispatch
+    build one from a row and pass it to the render functions."""
 
     title: str
     body: str
@@ -439,6 +444,41 @@ DEFAULT_TEMPLATES: dict[
 }
 
 
+def _substitute_placeholders(
+    text: str,
+    *,
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    allowed: frozenset[str],
+    variables: Mapping[str, str],
+) -> str:
+    """Substitute ``{name}`` placeholders in `text` — the one scanner
+    every render path shares (see the module docstring's safety
+    argument). `allowed` names the namespace THIS call honors; a
+    placeholder outside it is `InvalidTemplateError`, a name without a
+    value is `MissingTemplateVariableError`, a non-str value a
+    `TypeError`."""
+
+    def _substitute(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if _VARIABLE_NAME_RE.match(name) is None or name not in allowed:
+            raise InvalidTemplateError(event_type, channel, name, allowed)
+        value = variables.get(name)
+        if value is None:
+            raise MissingTemplateVariableError(event_type, channel, name)
+        if not isinstance(value, str):
+            raise TypeError(
+                f"notification template variable {name!r} must be str, "
+                f"got {type(value).__name__}; format dates and numbers "
+                "at the call site"
+            )
+        # Function replacement: `value` is inserted verbatim — no
+        # backreference processing, no second scan.
+        return value
+
+    return _PLACEHOLDER_RE.sub(_substitute, text)
+
+
 def render_template(
     event_type: NotificationEventType,
     channel: NotificationChannel,
@@ -447,7 +487,7 @@ def render_template(
     template: TemplateText | None = None,
 ) -> RenderedMessage:
     """Render the (event_type, channel) message from the seed template
-    or a Plan 08 override (`template=`), substituting whitelisted
+    or a managed-row override (`template=`), substituting whitelisted
     `{name}` placeholders from `variables`.
 
     Raises `InvalidTemplateError` for a non-whitelisted placeholder in
@@ -472,27 +512,85 @@ def render_template(
         template if template is not None else DEFAULT_TEMPLATES[(event_type, channel)]
     )
     allowed = EVENT_VARIABLES[event_type]
-
-    def _substitute(match: re.Match[str]) -> str:
-        name = match.group(1)
-        if _VARIABLE_NAME_RE.match(name) is None or name not in allowed:
-            raise InvalidTemplateError(event_type, channel, name, allowed)
-        value = variables.get(name)
-        if value is None:
-            raise MissingTemplateVariableError(event_type, channel, name)
-        if not isinstance(value, str):
-            raise TypeError(
-                f"notification template variable {name!r} must be str, "
-                f"got {type(value).__name__}; format dates and numbers "
-                "at the call site"
-            )
-        # Function replacement: `value` is inserted verbatim — no
-        # backreference processing, no second scan.
-        return value
-
     return RenderedMessage(
-        title=_PLACEHOLDER_RE.sub(_substitute, source.title),
-        body=_PLACEHOLDER_RE.sub(_substitute, source.body),
+        title=_substitute_placeholders(
+            source.title,
+            event_type=event_type,
+            channel=channel,
+            allowed=allowed,
+            variables=variables,
+        ),
+        body=_substitute_placeholders(
+            source.body,
+            event_type=event_type,
+            channel=channel,
+            allowed=allowed,
+            variables=variables,
+        ),
+    )
+
+
+# --- dispatch-side render of managed SMS/EMAIL rows (PR #5 gfix C) ------------------
+#
+# The T1 schema persists no event payload: the per-event render
+# variables exist only at record time, and dispatch holds the
+# Notification snapshot (title/body). A managed SMS/EMAIL row therefore
+# renders from exactly the variable set the SmsSender/EmailSender ports
+# have always carried — {"title", "body"} — which is also what a real
+# provider-side template registry would substitute from the same port
+# call. Placeholders outside this namespace (e.g. an admin row carrying
+# the record-time {task_title} grammar the W4 write gate still accepts)
+# fail loudly at dispatch instead of shipping mangled copy; see
+# render_snapshot_template.
+
+SNAPSHOT_VARIABLES: frozenset[str] = frozenset({"title", "body"})
+
+
+def render_snapshot_template(
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    template: TemplateText,
+    *,
+    title: str,
+    body: str,
+) -> RenderedMessage:
+    """Render a managed SMS/EMAIL template row at dispatch time from
+    the notification snapshot (`title`/`body` — the ports' frozen
+    variable contract, `SNAPSHOT_VARIABLES`).
+
+    The same scanner and failure classes as `render_template`; only the
+    namespace differs, because the dispatch call site can supply only
+    the snapshot pair. Raises `ValueError` for an unknown event type or
+    channel, `InvalidTemplateError` for a placeholder outside
+    `SNAPSHOT_VARIABLES`, `MissingTemplateVariableError` never in
+    practice (both snapshot values are required `str`s here)."""
+
+    if event_type not in EVENT_VARIABLES:
+        raise ValueError(
+            f"unknown notification event type {event_type!r}; expected one of "
+            f"{sorted(event.value for event in NotificationEventType)}"
+        )
+    if channel not in _ALL_CHANNELS:
+        raise ValueError(
+            f"unknown notification channel {channel!r}; expected one of "
+            f"{sorted(channel.value for channel in NotificationChannel)}"
+        )
+    variables = {"title": title, "body": body}
+    return RenderedMessage(
+        title=_substitute_placeholders(
+            template.title,
+            event_type=event_type,
+            channel=channel,
+            allowed=SNAPSHOT_VARIABLES,
+            variables=variables,
+        ),
+        body=_substitute_placeholders(
+            template.body,
+            event_type=event_type,
+            channel=channel,
+            allowed=SNAPSHOT_VARIABLES,
+            variables=variables,
+        ),
     )
 
 

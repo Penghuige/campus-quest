@@ -4,9 +4,9 @@ T5; spec §25.5): the Admin-only service surface for create / text-edit
 / enable-disable — version bumps on content edits, the typed 409 on
 UNIQUE(event_type, channel), the write-time unsafe-markup gate (V1
 templates are pure ``{name}`` substitution), the same-transaction audit
-rows, and the Plan 07 seam fact: dispatch resolves from the seed
-constants, so template rows (even enabled ones) change no dispatch
-behavior until the consumption wiring lands.
+rows, and the consumption seam fact (gfix C): an enabled stored row IS
+the record-time render source, so template rows change dispatch
+behavior through the port's render, not around it.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ from app.modules.notifications.template_admin import (
     NotificationTemplateAdminService,
     NotificationTemplateConflictError,
 )
-from app.modules.notifications.templates import DEFAULT_TEMPLATES
 
 pytestmark = pytest.mark.integration
 
@@ -534,22 +533,18 @@ async def test_teacher_is_forbidden_on_every_operation(
     assert len(await _audits(db_session, template.id)) == 1
 
 
-# --- the Plan 07 seam: rows do not (yet) drive dispatch -------------------------------
+# --- the consumption seam: rows drive the record-time render --------------------------
 
 
-async def test_dispatch_still_renders_from_seeds_alongside_stored_rows(
+async def test_registration_renders_an_enabled_stored_row(
     db_session: AsyncSession,
 ) -> None:
-    """Pins EXISTING behavior (plan 08: invent nothing): Plan 07's
-    render path resolves from the module seed constants — an ENABLED
-    stored override row changes nothing until the consumption wiring
-    lands (the ``template=`` seam, templates.py). If this test starts
-    failing because dispatch consults rows, the disable semantics need
-    their own specification first."""
+    """Pins the gfix-C wiring: an ENABLED stored (event, IN_APP) row IS
+    the record-time render source (the ``template=`` seam,
+    templates.py) — the notification snapshot carries the managed
+    title/body, not the seed copy."""
     admin = await _actor(db_session, Role.ADMIN)
     service = NotificationTemplateAdminService()
-    # An ENABLED override row for the same (event, channel) pair —
-    # exactly what would drive dispatch once the seam is wired.
     revision_event = NotificationEventType.REVISION_REQUIRED
     await service.create(
         db_session,
@@ -557,7 +552,7 @@ async def test_dispatch_still_renders_from_seeds_alongside_stored_rows(
         event_type=revision_event,
         channel=NotificationChannel.IN_APP,
         title="被覆盖的标题",
-        template_body="被覆盖的正文",
+        template_body="被覆盖的正文：{task_title}——{review_comment}",
     )
     student = User(
         username=f"tpl-student-{uuid4().hex[:8]}",
@@ -592,10 +587,5 @@ async def test_dispatch_still_renders_from_seeds_alongside_stored_rows(
         )
     )
     assert notification is not None
-    seed = DEFAULT_TEMPLATES[(revision_event, NotificationChannel.IN_APP)]
-    assert notification.title == seed.title  # the seed title has no placeholder
-    assert notification.body == seed.body.format(
-        task_title="校园咖啡店客流记录",
-        revision_deadline_at=_NOW.isoformat(),
-        review_comment="第3行缺少时间戳。",
-    )
+    assert notification.title == "被覆盖的标题"
+    assert notification.body == "被覆盖的正文：校园咖啡店客流记录——第3行缺少时间戳。"
