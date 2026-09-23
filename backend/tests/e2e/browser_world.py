@@ -56,6 +56,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E40
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.modules.identity.models import (  # noqa: E402
+    TotpCredential as TotpCredentialRow,
+)
 from tests.e2e.factories import (  # noqa: E402
     clean_world,
     seed_admin_confirmed_totp,
@@ -126,6 +129,7 @@ async def _mint(user_id: UUID) -> str:
 
 
 async def _seed() -> dict[str, Any]:
+    from app.modules.community.models import Comment
     from app.modules.tasks.models import Task
     from app.workers.jobs.project_ranking_update import run_ranking_projection
 
@@ -137,6 +141,13 @@ async def _seed() -> dict[str, Any]:
         student = await seed_student(factory, run=run)
         teacher = await seed_teacher_confirmed_totp(factory, run=run)
         admin = await seed_admin_confirmed_totp(factory, run=run)
+        # Plan 10 task 9: a SECOND student authors the anonymous comment
+        # under privacy test, with a known email so the DOM negative
+        # search covers every identity fact. The PREFIXED run marker
+        # keeps the factories' hex-folded student number/phone distinct
+        # from the primary student's (a suffix would fold identically).
+        author = await seed_student(factory, run=f"d{run}")
+        author_email = f"e2e-author-{run}@school.edu"
 
         # Three independent tasks: A/B each carry one PRE-CLAIMED claim
         # (the deep-link specs consume them), C stays fully open for the
@@ -154,6 +165,65 @@ async def _seed() -> dict[str, Any]:
         claim_a = await seed_claim(factory, task=task_a, student_id=student.user_id)
         claim_b = await seed_claim(factory, task=task_b, student_id=student.user_id)
         item = await seed_reward_item(factory, run=run, point_cost=50)
+
+        # Plan 10 task 9 additions, all world-building (the FLOWS stay
+        # in the specs): the author's email, one pre-existing anonymous
+        # comment on task A as the reveal dialog's target, and a
+        # DEDICATED reveal admin with an EMAIL-SHAPED username plus a
+        # REAL answerable TOTP credential. The staff login form demands
+        # an email-format identifier client-side, and its backend
+        # resolves staff logins BY USERNAME (staff_service:
+        # find_by_username(identifier.lower())) — so an email-shaped
+        # username is the contract both sides accept. The factories'
+        # stand-in secret passes the management guard but cannot ANSWER
+        # a login prompt; this credential is genuine base32 the spec
+        # computes RFC 6238 codes from.
+        from cryptography.fernet import Fernet
+
+        from app.core.security import hash_password
+        from app.modules.identity.enums import Role as SeedRole
+        from app.modules.identity.enums import UserStatus as SeedStatus
+        from app.modules.identity.models import User as UserRow
+        from app.modules.identity.totp import (
+            encrypt_totp_secret,
+            generate_totp_secret,
+        )
+
+        admin_totp_secret = generate_totp_secret()
+        reveal_admin = UserRow(
+            username=f"e2e-admin-{run}@school.edu",
+            password_hash=hash_password("correct-horse-battery"),
+            nickname=f"端到端揭示管理员{run[:4]}",
+            phone_e164=None,
+            role=SeedRole.ADMIN,
+            status=SeedStatus.ACTIVE,
+        )
+        async with factory() as db:
+            author_row = await db.get(UserRow, author.user_id)
+            assert author_row is not None
+            author_row.email_normalized = author_email
+            author_phone = author_row.phone_e164
+            author_nickname = author_row.nickname
+            db.add(reveal_admin)
+            await db.flush()
+            db.add(
+                TotpCredentialRow(
+                    user_id=reveal_admin.id,
+                    secret_encrypted=encrypt_totp_secret(
+                        Fernet(get_settings().totp_encryption_key), admin_totp_secret
+                    ),
+                    confirmed_at=dt.datetime.now(dt.UTC),
+                )
+            )
+            db.add(
+                Comment(
+                    task_id=task_a.task_id,
+                    user_id=author.user_id,
+                    content=f"匿名治理目标{run[:6]}：大家记得提前预约座位",
+                    is_anonymous=True,
+                )
+            )
+            await db.commit()
 
         # Spendable points + the boards the ranking page reads: the
         # world closes one ledger entry and runs the REAL projection
@@ -192,8 +262,14 @@ async def _seed() -> dict[str, Any]:
                 "username": student.username,
                 "password": student.password,
             },
+            "author": {
+                "id": str(author.user_id),
+                "username": author.username,
+                "password": author.password,
+            },
             "teacher_id": str(teacher.user_id),
             "admin_id": str(admin.user_id),
+            "reveal_admin_id": str(reveal_admin.id),
             "task_ids": [str(t.task_id) for t in (task_a, task_b, task_c)],
             "task_open": {
                 "task_id": str(task_c.task_id),
@@ -228,6 +304,26 @@ async def _seed() -> dict[str, Any]:
             "CQ_E2E_ADMIN_ID": str(admin.user_id),
             "CQ_E2E_REWARD_ITEM_ID": str(item.reward_item_id),
             "CQ_E2E_REGISTER_NUMBER": _registered_number(run),
+            # Plan 10 task 9 (community.spec): the task detail URL, the
+            # anonymous-comment author and their DOM-negative-search
+            # secrets, the non-completer (the author never claimed the
+            # open task), and the reveal flow's admin staff-login
+            # contract (identifier + the genuine TOTP secret).
+            "CQ_E2E_TASK_URL": f"/tasks/{task_c.task_id}",
+            "CQ_E2E_AUTHOR_STUDENT": f"{author.username}:{author.password}",
+            "CQ_E2E_AUTHOR_SECRETS": ",".join(
+                (
+                    author_nickname,
+                    author.username,
+                    author_phone or "",
+                    author_email,
+                    str(author.user_id),
+                )
+            ),
+            "CQ_E2E_NON_COMPLETER_STUDENT": f"{author.username}:{author.password}",
+            "CQ_E2E_MODERATION_TASK_PATH": f"/teacher/tasks/{task_a.task_id}",
+            "CQ_E2E_REVEAL_ADMIN": (f"{reveal_admin.username}:correct-horse-battery"),
+            "CQ_E2E_REVEAL_ADMIN_TOTP_SECRET": admin_totp_secret,
         }
         return world
     finally:
@@ -256,6 +352,14 @@ async def _clean(world_path: str) -> dict[str, Any]:
             uuid.UUID(world["admin_id"]),
             uuid.UUID(world["student"]["id"]),
         ]
+        # World-contract fields that landed with plan 10 task 9: absent
+        # in older world files, so teardown stays version-tolerant (a
+        # missing optional member simply contributes no rows).
+        for optional_member in ("reveal_admin_id",):
+            if optional_member in world:
+                user_ids.append(uuid.UUID(world[optional_member]))
+        if "author" in world:
+            user_ids.append(uuid.UUID(world["author"]["id"]))
         # Rows the SPECS created through the real surfaces: the
         # registered student (auth spec, run-derived number), the
         # invitation-accepted staff account (staff-auth spec,

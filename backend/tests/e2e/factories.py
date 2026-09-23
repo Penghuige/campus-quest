@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import hash_password
@@ -569,6 +569,23 @@ async def clean_world(
                 RewardReviewGrant.teacher_id.in_(users)
                 | RewardReviewGrant.granted_by.in_(users)
             )
+        )
+        # Ledger rows may reference EACH OTHER (reversal_of_id, a NO
+        # ACTION self-FK): one single-statement DELETE of a set whose
+        # members are mutually linked is fine ONLY when the whole set
+        # goes in one statement — but a reversal row can point at a row
+        # owned by ANOTHER test's user (the E4 recovery seed links its
+        # reversal to its own reward, yet ordering across suites left
+        # one orphaned link), so sever the pointers first: a plain
+        # UPDATE ... SET reversal_of_id = NULL scoped to this test's
+        # users cannot touch another test's rows.
+        await db.execute(
+            update(PointsLedger)
+            .where(
+                PointsLedger.user_id.in_(users),
+                PointsLedger.reversal_of_id.is_not(None),
+            )
+            .values(reversal_of_id=None)
         )
         await db.execute(delete(PointsLedger).where(PointsLedger.user_id.in_(users)))
         await db.execute(delete(PointWallet).where(PointWallet.user_id.in_(users)))
