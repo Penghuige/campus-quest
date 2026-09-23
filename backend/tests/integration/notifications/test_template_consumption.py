@@ -1,10 +1,12 @@
 # backend/tests/integration/notifications/test_template_consumption.py
 """Managed NotificationTemplate consumption at the registration point
-(PR #5 final-review fix C; spec §25.5).
+(PR #5 final-review fix D, Option A; spec §25.5).
 
 The record point (`NotificationPort._persist_intent`) consults the
-(event_type, IN_APP) template row inside the caller's transaction. The
-owner's four invariants, pinned here on real PostgreSQL:
+(event_type, channel) template rows inside the caller's transaction and
+renders EVERY channel there, with the same event-variable namespace the
+W4 write gate validates. The owner's invariants, pinned here on real
+PostgreSQL:
 
 - **New events consume the CURRENT enabled template**: an Admin text
   edit changes what the NEXT recorded event renders (version 2 copy on
@@ -16,14 +18,18 @@ owner's four invariants, pinned here on real PostgreSQL:
   a rewrite path).
 - **No row → seed fallback** (the G7 seed semantics): the render
   resolves from `DEFAULT_TEMPLATES` exactly as before the wiring.
-- **disabled = the channel is OFF** (the gfix-C ruling): no IN_APP
-  delivery row is recorded — an IN_APP-only recipient persists
-  NOTHING, a multi-channel recipient keeps its SMS/EMAIL rows — and
-  other channels are untouched. Spec §25.5 names the `enabled` column
-  but spells no disabled semantics; the ruling follows W4's deferral
-  ("enabled flags a channel switch"), consistent with the eligibility
-  skip precedent: an explicit downgrade, never a silent seed fallback
-  for copy the admin turned off.
+- **disabled = "no override" (the gfix-D/Option A ruling, overturning
+  gfix-C's channel-off reading)**: a disabled IN_APP row falls back to
+  the seed copy for the snapshot AND the IN_APP delivery row is still
+  recorded — whether a channel sends is the channel policy's decision
+  (spec §25.1 Task toggles; §25 IN_APP fallback), never a template
+  row's. A disabled SMS row is likewise not consumed.
+- **Per-channel frozen snapshots**: an enabled SMS/EMAIL row's
+  finished text (event variables already substituted) freezes into a
+  snapshot Notification row keyed ``event_key + ":" + channel`` and
+  the channel's delivery points at it; the canonical row keeps the
+  IN_APP render, and channels without a consumed row keep pointing at
+  the canonical row (the historic provider contract).
 """
 
 from __future__ import annotations
@@ -65,6 +71,11 @@ _V1_BODY = "管理员副本：《{task_title}》需修改。意见：{review_com
 _V2_TITLE = "提交需要修改（新版）"
 _V2_BODY = "新版副本：《{task_title}》——{review_comment}"
 
+_SMS_V1_TITLE = "短信修改通知"
+_SMS_V1_BODY = "《{task_title}》需修改：{review_comment}"
+_SMS_V2_TITLE = "短信修改通知（新版）"
+_SMS_V2_BODY = "【CampusQuest】《{task_title}》——{review_comment}"
+
 
 def _student(username: str, *, phone: str | None, email: str | None) -> User:
     return User(
@@ -79,10 +90,16 @@ def _student(username: str, *, phone: str | None, email: str | None) -> User:
     )
 
 
-def _template(*, enabled: bool = True, title: str = _V1_TITLE, body: str = _V1_BODY):
+def _template(
+    *,
+    enabled: bool = True,
+    title: str = _V1_TITLE,
+    body: str = _V1_BODY,
+    channel: NotificationChannel = NotificationChannel.IN_APP,
+):
     return NotificationTemplate(
         event_type=_EVENT.value,
-        channel=NotificationChannel.IN_APP.value,
+        channel=channel.value,
         title=title,
         template_body=body,
         enabled=enabled,
@@ -111,10 +128,10 @@ async def _notification(
 
 async def _deliveries(
     db_session: AsyncSession, event_key: str, user_id: object
-) -> list[str]:
+) -> list[NotificationDelivery]:
     return list(
         await db_session.scalars(
-            select(NotificationDelivery.channel)
+            select(NotificationDelivery)
             .where(
                 NotificationDelivery.event_key == event_key,
                 NotificationDelivery.user_id == user_id,
@@ -234,17 +251,18 @@ async def test_no_template_row_falls_back_to_the_seed(
     )
 
 
-# --- disabled = the IN_APP channel is OFF (the gfix-C ruling) ----------------------
+# --- disabled = "no override": seed fallback, channel still records ------------------
 
 
 @pytest.mark.integration
-async def test_disabled_in_app_template_records_no_in_app_delivery(
+async def test_disabled_in_app_template_falls_back_to_seed_and_still_records(
     db_session: AsyncSession,
 ) -> None:
-    """A disabled (event_type, IN_APP) row deactivates the channel: an
-    IN_APP-only recipient persists NOTHING (the no-eligible-channel
-    rule), and the bookkeeping snapshot for surviving channels falls
-    back to the seed copy the admin did not turn off."""
+    """A disabled (event_type, IN_APP) row is simply not consumed: the
+    snapshot falls back to the seed copy AND the IN_APP delivery row is
+    still recorded — an IN_APP-only recipient persists the notification
+    exactly as with no row at all. The send decision belongs to channel
+    policy, never to a template row (the gfix-D/Option A ruling)."""
     in_app_only = _student(f"tpl{uuid4().hex[:8]}", phone=None, email=None)
     multi_channel = _student(
         f"tpl{uuid4().hex[:8]}", phone="+8613800138000", email="multi@example.com"
@@ -259,21 +277,168 @@ async def test_disabled_in_app_template_records_no_in_app_delivery(
     await port.record_event(db_session, key_a, _EVENT, in_app_only.id, _payload())
     await port.record_event(db_session, key_b, _EVENT, multi_channel.id, _payload())
 
-    # IN_APP was the only eligible channel: nothing at all persists.
-    assert await _notification(db_session, key_a, in_app_only.id) is None
-    assert await _deliveries(db_session, key_a, in_app_only.id) == []
-
-    # Other channels are untouched: the logical row still backs the
-    # SMS/EMAIL deliveries, with the seed snapshot as bookkeeping.
-    notification = await _notification(db_session, key_b, multi_channel.id)
+    # IN_APP-only recipient: notification + IN_APP delivery persist, the
+    # snapshot is the seed copy (nothing was suppressed).
+    notification = await _notification(db_session, key_a, in_app_only.id)
     assert notification is not None
     seed = DEFAULT_TEMPLATES[(_EVENT, NotificationChannel.IN_APP)]
+    deadline_iso = (_NOW + timedelta(hours=48)).isoformat()
     assert notification.title == seed.title
-    channels = await _deliveries(db_session, key_b, multi_channel.id)
-    assert channels == ["EMAIL", "SMS"]
-    statuses = await db_session.scalars(
-        select(NotificationDelivery.status).where(
-            NotificationDelivery.event_key == key_b
+    assert notification.body == seed.body.format(
+        task_title="校园咖啡店客流记录",
+        revision_deadline_at=deadline_iso,
+        review_comment="第3行缺少时间戳。",
+    )
+    deliveries = await _deliveries(db_session, key_a, in_app_only.id)
+    assert [delivery.channel for delivery in deliveries] == ["IN_APP"]
+
+    # Multi-channel recipient: all three channels recorded, every
+    # delivery pointing at that event's canonical seed snapshot.
+    multi = await _deliveries(db_session, key_b, multi_channel.id)
+    assert [delivery.channel for delivery in multi] == ["EMAIL", "IN_APP", "SMS"]
+    canonical_b = await _notification(db_session, key_b, multi_channel.id)
+    assert canonical_b is not None
+    assert {delivery.notification_id for delivery in multi} == {canonical_b.id}
+    assert {delivery.status for delivery in multi} == {DeliveryStatus.PENDING.value}
+
+
+# --- per-channel frozen snapshots (Option A) -----------------------------------------
+
+
+@pytest.mark.integration
+async def test_managed_sms_template_freezes_a_per_channel_snapshot(
+    db_session: AsyncSession,
+) -> None:
+    """An enabled (event_type, SMS) row renders AT REGISTRATION with the
+    event-variable namespace (the write gate's own grammar): the
+    finished text — {task_title} already substituted — freezes into a
+    snapshot Notification row keyed ``event_key:SMS``, and the SMS
+    delivery points at it. The canonical row keeps the IN_APP seed
+    render, and channels without a consumed row (EMAIL here) keep the
+    historic contract of pointing at the canonical row."""
+    student = _student(
+        f"tpl{uuid4().hex[:8]}", phone="+8613800138000", email="multi@example.com"
+    )
+    db_session.add(student)
+    db_session.add(
+        _template(
+            channel=NotificationChannel.SMS, title=_SMS_V1_TITLE, body=_SMS_V1_BODY
         )
     )
-    assert set(statuses) == {DeliveryStatus.PENDING.value}
+    await db_session.flush()
+
+    port = NotificationPort(clock=FrozenClock(_NOW))
+    key = f"submission:{uuid4().hex}:revision_required"
+    await port.record_event(db_session, key, _EVENT, student.id, _payload())
+
+    canonical = await _notification(db_session, key, student.id)
+    assert canonical is not None
+    seed = DEFAULT_TEMPLATES[(_EVENT, NotificationChannel.IN_APP)]
+    deadline_iso = (_NOW + timedelta(hours=48)).isoformat()
+    assert canonical.title == seed.title
+    assert canonical.body == seed.body.format(
+        task_title="校园咖啡店客流记录",
+        revision_deadline_at=deadline_iso,
+        review_comment="第3行缺少时间戳。",
+    )
+
+    deliveries = await _deliveries(db_session, key, student.id)
+    by_channel = {delivery.channel: delivery for delivery in deliveries}
+    assert set(by_channel) == {"EMAIL", "IN_APP", "SMS"}
+    # EMAIL and IN_APP ride the canonical row (no managed row consumed).
+    assert by_channel["EMAIL"].notification_id == canonical.id
+    assert by_channel["IN_APP"].notification_id == canonical.id
+
+    # The SMS delivery points at its own frozen snapshot: the row text
+    # with the event variables already substituted.
+    sms_snapshot = await db_session.get(Notification, by_channel["SMS"].notification_id)
+    assert sms_snapshot is not None
+    assert sms_snapshot is not canonical
+    assert sms_snapshot.event_key == f"{key}:SMS"
+    assert sms_snapshot.user_id == student.id
+    assert sms_snapshot.title == _SMS_V1_TITLE
+    assert sms_snapshot.body == "《校园咖啡店客流记录》需修改：第3行缺少时间戳。"
+
+
+@pytest.mark.integration
+async def test_disabled_sms_row_is_not_consumed(
+    db_session: AsyncSession,
+) -> None:
+    """A disabled SMS row means "no override": the SMS delivery keeps
+    the historic contract (canonical row), exactly like a missing row —
+    the channel still sends, with the seed-flavored snapshot."""
+    student = _student(f"tpl{uuid4().hex[:8]}", phone="+8613800138000", email=None)
+    db_session.add(student)
+    db_session.add(
+        _template(
+            channel=NotificationChannel.SMS,
+            enabled=False,
+            title=_SMS_V1_TITLE,
+            body=_SMS_V1_BODY,
+        )
+    )
+    await db_session.flush()
+
+    port = NotificationPort(clock=FrozenClock(_NOW))
+    key = f"submission:{uuid4().hex}:revision_required"
+    await port.record_event(db_session, key, _EVENT, student.id, _payload())
+
+    canonical = await _notification(db_session, key, student.id)
+    assert canonical is not None
+    deliveries = await _deliveries(db_session, key, student.id)
+    by_channel = {delivery.channel: delivery for delivery in deliveries}
+    assert set(by_channel) == {"IN_APP", "SMS"}
+    assert all(delivery.notification_id == canonical.id for delivery in deliveries), (
+        "a disabled row must not freeze a per-channel snapshot"
+    )
+
+
+@pytest.mark.integration
+async def test_channel_snapshot_is_immutable_across_edits(
+    db_session: AsyncSession,
+) -> None:
+    """The per-channel snapshot is frozen at creation: after an Admin
+    edit, even a re-record of the SAME event key keeps the version 1
+    snapshot row (first-write-wins on the suffixed key), while the NEXT
+    event freezes the version 2 copy."""
+    student = _student(f"tpl{uuid4().hex[:8]}", phone="+8613800138000", email=None)
+    db_session.add(student)
+    db_session.add(
+        _template(
+            channel=NotificationChannel.SMS, title=_SMS_V1_TITLE, body=_SMS_V1_BODY
+        )
+    )
+    await db_session.flush()
+
+    port = NotificationPort(clock=FrozenClock(_NOW))
+    key_a = f"submission:{uuid4().hex}:revision_required"
+    await port.record_event(db_session, key_a, _EVENT, student.id, _payload())
+
+    row = await db_session.scalar(
+        select(NotificationTemplate).where(
+            NotificationTemplate.channel == NotificationChannel.SMS.value
+        )
+    )
+    assert row is not None
+    row.title = _SMS_V2_TITLE
+    row.template_body = _SMS_V2_BODY
+    row.version += 1
+    await db_session.flush()
+
+    # The strongest rewrite attempt: the SAME key re-recorded after the
+    # edit, plus a fresh key for the new copy.
+    await port.record_event(db_session, key_a, _EVENT, student.id, _payload())
+    key_b = f"submission:{uuid4().hex}:revision_required"
+    await port.record_event(db_session, key_b, _EVENT, student.id, _payload())
+
+    for key, expected_body in (
+        (key_a, "《校园咖啡店客流记录》需修改：第3行缺少时间戳。"),
+        (key_b, "【CampusQuest】《校园咖啡店客流记录》——第3行缺少时间戳。"),
+    ):
+        deliveries = await _deliveries(db_session, key, student.id)
+        sms = next(d for d in deliveries if d.channel == "SMS")
+        snapshot = await db_session.get(Notification, sms.notification_id)
+        assert snapshot is not None
+        assert snapshot.event_key == f"{key}:SMS"
+        expected_title = _SMS_V1_TITLE if key == key_a else _SMS_V2_TITLE
+        assert (snapshot.title, snapshot.body) == (expected_title, expected_body)

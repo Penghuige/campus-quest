@@ -39,14 +39,19 @@ Design decisions:
   when a summary identifies the change. An idempotent toggle (already
   in the requested state) writes nothing (the staff-invitation replay
   ruling); a refused write writes nothing (nothing happened).
-- **Template rows ARE the dispatch/registration render source (PR #5
-  gfix C closed the seam):** registration consumes the enabled
-  (event_type, IN_APP) row through ``render_template(template=...)``,
-  dispatch consumes enabled (event_type, channel) rows through
-  ``render_snapshot_template`` (disabled = channel off). This service
-  remains the write surface only — it changes no dispatch behavior
-  beyond what the rows themselves now say; the consumption semantics
-  live in the port and the delivery service.
+- **Template rows are consumed at REGISTRATION only (PR #5 gfix D,
+  Option A):** the record point renders every enabled (event_type,
+  channel) row through ``render_template(template=...)`` — the same
+  event-variable grammar this service's write gate validates, so an
+  accepted row is renderable by construction — and freezes the
+  finished text as per-channel snapshot rows; dispatch sends those
+  snapshots and renders nothing. ``enabled=false`` means the override
+  is OFF (the seed / historic contract renders instead), never that
+  the channel stops sending — send decisions belong to the Task
+  channel policy and account eligibility, not to template rows. This
+  service remains the write surface only — it changes no dispatch
+  behavior beyond what the rows themselves say; the consumption
+  semantics live in the port.
 """
 
 from __future__ import annotations

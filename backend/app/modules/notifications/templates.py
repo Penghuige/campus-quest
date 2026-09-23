@@ -19,7 +19,7 @@ that sentence as a manual single-pass scanner — deliberately NOT Jinja,
   `UnsafeTemplateMarkupError`) applies this same grammar — plus the
   ``{{``/``}}``/``{%``/``${`` marker rejection — BEFORE a row can
   persist, so a bad edit fails at write time instead of at the next
-  dispatch.
+  registration.
 - Substitution is one `re.sub` pass with a FUNCTION replacement: the
   function's return string is inserted verbatim (no backreference
   processing, no re-scan). A variable VALUE containing ``{...}`` or
@@ -31,11 +31,12 @@ that sentence as a manual single-pass scanner — deliberately NOT Jinja,
   `InvalidTemplateError` — the template text itself references a
   non-whitelisted placeholder (an Admin problem; Plan 08 surfaces it
   in template editing) — versus `MissingTemplateVariableError` — a
-  whitelisted variable with no value at render time (a caller/dispatch
+  whitelisted variable with no value at render time (a caller/payload
   bug). Both are module-local `ValueError`s on purpose: they are
-  internal service failures that the dispatch layer turns into SKIPPED
-  or FAILED deliveries, not §29 API envelope codes (the registry is
-  frozen by interfaces.md and carries no notification-template code).
+  internal service failures that the registration port either degrades
+  a managed row for or raises on a seed render, not §29 API envelope
+  codes (the registry is frozen by interfaces.md and carries no
+  notification-template code).
 - Values must already be `str`: the renderer never formats dates or
   numbers itself (backend-engineering §11 keeps timezone/locale
   decisions with the caller), so a non-str value is a `TypeError` at
@@ -44,19 +45,21 @@ that sentence as a manual single-pass scanner — deliberately NOT Jinja,
 Seed templates (`DEFAULT_TEMPLATES`) cover all 8 event types x 3
 channels with concise Chinese product copy (spec §25/§25.1; SMS bodies
 stay short for single-segment delivery). They are the FALLBACK: the
-Plan 08 consumption wiring (PR #5 gfix C) has the registration port
-and the delivery service consult enabled `NotificationTemplate` rows
-first — `render_template`'s `template=` parameter is the seam, and a
-row's `title`/`template_body` flow through this exact same scanner
-(no row, or a disabled one for the snapshot, means the seed renders).
-`render_snapshot_template` is the dispatch-side sibling: a managed
-SMS/EMAIL row renders from the notification snapshot
-(``{"title", "body"}`` — the ports' frozen variable contract) because
-the T1 schema persists no event payload, so the per-event render
-variables exist only at record time. An import-time self-check
-re-validates every seed against the whitelists so drift between
-`EVENT_VARIABLES` and `DEFAULT_TEMPLATES` fails at import, not at
-first render.
+registration port consults enabled `NotificationTemplate` rows FIRST
+and renders every channel through `render_template`'s `template=`
+seam — a row's `title`/`template_body` flow through this exact same
+scanner (no row, or a disabled one, means the seed renders). ONE
+namespace everywhere (PR #5 gfix D, Option A): the write gate
+(`validate_admin_template`) and the production render share
+`EVENT_VARIABLES`, and both run while the event payload is still in
+hand — the render happens ONCE per channel at registration and the
+finished text is FROZEN as a snapshot row the dispatch worker merely
+sends. "write gate accepts" therefore implies "production renders"
+structurally: dispatch interprets no template and no event variable,
+so no accepted template can deterministically fail there. An
+import-time self-check re-validates every seed against the whitelists
+so drift between `EVENT_VARIABLES` and `DEFAULT_TEMPLATES` fails at
+import, not at first render.
 """
 
 from __future__ import annotations
@@ -111,7 +114,7 @@ class InvalidTemplateError(TemplateRenderError):
 
 class MissingTemplateVariableError(TemplateRenderError):
     """The template is valid but the render call supplied no value for a
-    whitelisted variable it references. A caller/dispatch bug, not an
+    whitelisted variable it references. A caller/payload bug, not an
     Admin problem."""
 
     def __init__(
@@ -160,8 +163,8 @@ class UnsafeTemplateMarkupError(TemplateRenderError):
 @dataclass(frozen=True)
 class TemplateText:
     """A template pair as stored on NotificationTemplate (title +
-    template_body). The managed-row seam: registration and dispatch
-    build one from a row and pass it to the render functions."""
+    template_body). The managed-row seam: registration builds one from
+    a row and passes it to the render function."""
 
     title: str
     body: str
@@ -530,70 +533,6 @@ def render_template(
     )
 
 
-# --- dispatch-side render of managed SMS/EMAIL rows (PR #5 gfix C) ------------------
-#
-# The T1 schema persists no event payload: the per-event render
-# variables exist only at record time, and dispatch holds the
-# Notification snapshot (title/body). A managed SMS/EMAIL row therefore
-# renders from exactly the variable set the SmsSender/EmailSender ports
-# have always carried — {"title", "body"} — which is also what a real
-# provider-side template registry would substitute from the same port
-# call. Placeholders outside this namespace (e.g. an admin row carrying
-# the record-time {task_title} grammar the W4 write gate still accepts)
-# fail loudly at dispatch instead of shipping mangled copy; see
-# render_snapshot_template.
-
-SNAPSHOT_VARIABLES: frozenset[str] = frozenset({"title", "body"})
-
-
-def render_snapshot_template(
-    event_type: NotificationEventType,
-    channel: NotificationChannel,
-    template: TemplateText,
-    *,
-    title: str,
-    body: str,
-) -> RenderedMessage:
-    """Render a managed SMS/EMAIL template row at dispatch time from
-    the notification snapshot (`title`/`body` — the ports' frozen
-    variable contract, `SNAPSHOT_VARIABLES`).
-
-    The same scanner and failure classes as `render_template`; only the
-    namespace differs, because the dispatch call site can supply only
-    the snapshot pair. Raises `ValueError` for an unknown event type or
-    channel, `InvalidTemplateError` for a placeholder outside
-    `SNAPSHOT_VARIABLES`, `MissingTemplateVariableError` never in
-    practice (both snapshot values are required `str`s here)."""
-
-    if event_type not in EVENT_VARIABLES:
-        raise ValueError(
-            f"unknown notification event type {event_type!r}; expected one of "
-            f"{sorted(event.value for event in NotificationEventType)}"
-        )
-    if channel not in _ALL_CHANNELS:
-        raise ValueError(
-            f"unknown notification channel {channel!r}; expected one of "
-            f"{sorted(channel.value for channel in NotificationChannel)}"
-        )
-    variables = {"title": title, "body": body}
-    return RenderedMessage(
-        title=_substitute_placeholders(
-            template.title,
-            event_type=event_type,
-            channel=channel,
-            allowed=SNAPSHOT_VARIABLES,
-            variables=variables,
-        ),
-        body=_substitute_placeholders(
-            template.body,
-            event_type=event_type,
-            channel=channel,
-            allowed=SNAPSHOT_VARIABLES,
-            variables=variables,
-        ),
-    )
-
-
 # --- write-time validation for Admin template edits (Plan 08 T5) --------------------
 #
 # V1 templates are PURE {name} placeholder substitution (the module
@@ -637,7 +576,7 @@ def validate_admin_template(
     event type (``InvalidTemplateError``, the render-time grammar
     applied BEFORE the row can persist). A template that passes here
     can still fail at render with ``MissingTemplateVariableError`` —
-    that is a dispatch/payload bug, not a template defect, and no
+    that is a payload bug, not a template defect, and no
     write-time check can predict it.
 
     ``channel`` participates in the error context only (the variable

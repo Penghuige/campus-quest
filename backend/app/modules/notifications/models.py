@@ -10,13 +10,23 @@ Design decisions:
   into e.g. `ck_notification_deliveries_channel`; the IN-lists are
   generated from the frozen enums in this module so the Python member
   set and the database boundary cannot drift apart.
-- `Notification` is the logical per-user message: exactly one row per
-  (event_key, user_id). Channel fan-out lives in `NotificationDelivery`
-  (spec §25: services create one logical Notification plus per-channel
-  delivery records). Title and body are rendered snapshots taken when the
-  event is recorded, so a later Admin template edit never rewrites an
-  already-created notification — the same snapshot philosophy as the
-  claim-time task contract snapshots in the tasks module.
+- `Notification` is the logical per-user message: exactly one
+  CANONICAL row per (event_key, user_id). Channel fan-out lives in
+  `NotificationDelivery` (spec §25: services create one logical
+  Notification plus per-channel delivery records). Title and body are
+  rendered snapshots taken when the event is recorded, so a later
+  Admin template edit never rewrites an already-created notification —
+  the same snapshot philosophy as the claim-time task contract
+  snapshots in the tasks module. The table also carries PER-CHANNEL
+  SNAPSHOT rows (PR #5 gfix D, Option A): when registration consumes
+  an enabled managed template for an SMS/EMAIL channel, that channel's
+  finished text freezes into a row keyed `event_key + ":" + channel`
+  (the `:SMS` / `:EMAIL` event-key suffixes are reserved for these
+  rows), and the channel's delivery points at it instead of the
+  canonical row. Snapshot rows carry no IN_APP delivery, so the
+  inbox's §25.2 visibility gate (inbox_service — rows list only with a
+  completed IN_APP delivery) never lists them: they are frozen send
+  payloads, not inbox messages.
 - `UNIQUE(event_key, user_id, channel)` on deliveries is THE idempotency
   boundary (spec §25.3): a duplicate event, a Celery retry, or two
   workers racing to schedule the same send all collapse onto one row per
