@@ -64,7 +64,14 @@ export default defineConfig({
       url: `${backendOrigin}/health/ready`,
       cwd: "../backend",
       env: backendEnv,
-      reuseExistingServer: true,
+      // FAIL CLOSED for the release gate (PR #6 E6 parallel review P1):
+      // a release proof must never silently adopt whatever process
+      // already listens on the port — another checkout's uvicorn (or
+      // another app entirely) would turn the gate green against the
+      // WRONG artifact. Default false; developers opt into reuse for
+      // fast iteration loops with CQ_E2E_REUSE_EXISTING=1.
+      reuseExistingServer:
+        process.env.CQ_E2E_REUSE_EXISTING === "1",
       timeout: 120_000,
     },
     {
@@ -74,7 +81,9 @@ export default defineConfig({
       // development needs next.config.ts's opt-in proxy pointed at the
       // orchestrated backend, or every API call lands on Next itself.
       env: { ...process.env, CQ_DEV_API_PROXY: backendOrigin },
-      reuseExistingServer: true,
+      // Same fail-closed rule as the backend server above.
+      reuseExistingServer:
+        process.env.CQ_E2E_REUSE_EXISTING === "1",
       timeout: 180_000,
     },
   ],
