@@ -31,29 +31,26 @@
  * (staff token, foreign id -> PERMISSION_DENIED) are backend contract,
  * pinned by the S3 router tests.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
+
+import { ensureStudentLogin } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
-const LOGIN_URL = process.env.CQ_E2E_LOGIN_URL ?? `${BASE_URL}/login`;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240002:correct-horse"
 
 test.skip(
   !E2E_ENABLED,
-  "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* fixtures) to run this suite.",
+  "set CQ_E2E=1 (and the CQ_E2E_* fixtures) to run this suite.",
 );
 
-/** Log in through the student login page (T2 flow). */
-async function loginAs(
-  page: import("@playwright/test").Page,
-  credentials: string,
-): Promise<void> {
-  const [username, password] = credentials.split(":");
-  await page.goto(LOGIN_URL);
-  await page.getByLabel("学号").fill(username);
-  await page.getByLabel("密码").fill(password);
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+/**
+ * Open the shared student session (cookie resume; the suite's first run
+ * goes through the real login form — see fixtures.ensureStudentLogin,
+ * which also keeps the whole suite under the auth:login rate limit).
+ */
+async function loginAs(page: import("@playwright/test").Page): Promise<void> {
+  await ensureStudentLogin(page);
 }
 
 test.describe("anonymous visitor (the guard's 401 path)", () => {
@@ -74,7 +71,7 @@ test.describe("inbox render + filter tabs (§28; patterns §4 URL state)", () =>
     "needs CQ_E2E_STUDENT (seeded student credentials); Plan 10's fixture provides them.",
   );
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await loginAs(page);
     await page.goto(`${BASE_URL}/notifications`);
   });
 
@@ -124,7 +121,7 @@ test.describe("owner mark-read (the §28 owner-only surface)", () => {
   test("marking a row read flips it in place and drops it from the unread tab", async ({
     page,
   }) => {
-    await loginAs(page, STUDENT!);
+    await loginAs(page);
     await page.goto(`${BASE_URL}/notifications`);
 
     const unreadRow = page.locator(".notif-item[data-read='false']").first();

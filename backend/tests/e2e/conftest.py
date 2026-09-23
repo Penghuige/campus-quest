@@ -33,6 +33,7 @@ process-wide test-stack env defaults); it is not re-implemented here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -143,3 +144,49 @@ async def db_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_process_wide_singletons() -> AsyncIterator[None]:
+    """Drop every process-wide cached client/engine after each e2e test.
+
+    The production wiring caches its Redis clients, engine, and Celery
+    app in ``lru_cache``d providers (one shared pool per process, by
+    design). pytest-asyncio gives every test a FRESH event loop, so a
+    client born in test N's loop is a dead-loop connection for test N+1
+    — surfaced as ``got Future attached to a different loop`` on the
+    very next route that touches a limiter or publishes through the
+    broker (G6). The composition smoke only needed the celery slots (it
+    is one test per module); the multi-test e2e modules reset the whole
+    set here so no test file has to re-derive it.
+    """
+    yield
+    from celery import _state  # noqa: PLC2701  (test-only restore)
+
+    from app.db.session import get_async_engine, get_async_session_maker
+    from app.modules.community.router import get_community_redis
+    from app.modules.identity.providers import get_identity_redis
+    from app.modules.rankings.router import get_rankings_redis
+    from app.modules.submissions.router import get_submissions_redis
+    from app.modules.tasks.router import get_tasks_redis
+    from app.workers.celery_app import get_celery_app
+
+    for close_and_clear in (
+        get_identity_redis,
+        get_tasks_redis,
+        get_submissions_redis,
+        get_rankings_redis,
+        get_community_redis,
+    ):
+        with contextlib.suppress(Exception):
+            await close_and_clear().aclose()
+        close_and_clear.cache_clear()
+    with contextlib.suppress(Exception):
+        await get_async_engine().dispose()
+    get_async_engine.cache_clear()
+    get_async_session_maker.cache_clear()
+    _state._tls.current_app = None
+    _state.default_app = None
+    # The lifespan binds the cached Celery app whose broker pool belongs
+    # to this test's loop; drop it so the next lifespan builds fresh.
+    get_celery_app.cache_clear()

@@ -49,6 +49,7 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import (
     RecoveryCode,
     StaffInvitation,
+    StudentWhitelist,
     TotpCredential,
     User,
     UserSession,
@@ -72,7 +73,9 @@ from app.modules.submissions.models import (
 )
 from app.modules.tasks.enums import (
     AssignmentAvailability,
+    ClaimStatus,
     DeadlineMode,
+    RewardLockStatus,
     TaskRarity,
     TaskStatus,
     TaskType,
@@ -140,10 +143,17 @@ async def seed_student(
     factory: async_sessionmaker[AsyncSession], *, run: str
 ) -> UserFixture:
     """One ACTIVE STUDENT with a bound phone, committed (visible to the
-    API request transactions and the per-job worker engines alike)."""
+    API request transactions and the per-job worker engines alike).
+
+    The username is a REAL student number's shape — 6-20 ASCII DIGITS
+    (the register flow's own band, and the login form's client mirror):
+    the run marker's first 11 hex chars fold to zero-padded decimal, so
+    usernames stay run-unique AND domain-legal (a hex-lettered handle
+    would be untypable into the student login)."""
+    digits = str(int(run[:11], 16) % 10**11).zfill(11)
     async with factory() as db:
         student = User(
-            username=f"2025{run}001",
+            username=f"2025{digits}001",
             password_hash=hash_password(DEFAULT_PASSWORD),
             nickname=f"端到端同学{run[:4]}",
             phone_e164=_unique_phone(run),
@@ -221,18 +231,23 @@ async def seed_task_with_assignments(
     teacher_id: UUID,
     run: str,
     assignment_count: int = 3,
+    duration_minutes: int = 4320,
 ) -> TaskFixture:
     """One PUBLISHED RELATIVE CSV Task owned by ``teacher_id`` with
     ``assignment_count`` AVAILABLE Assignments, committed.
 
-    The contract matches the composition smoke: 3-day duration (an
-    immediate submission is on-time), 100 base points, CSV-only policy
-    against ``CSV_SUBMISSION_SCHEMA`` — the shape tasks 2-4 build their
-    claim/submit/deadline stories on. Claim-time snapshots (deadline,
+    The contract matches the composition smoke: ``duration_minutes`` (3
+    days by default — an immediate submission is on-time), 100 base
+    points, CSV-only policy against ``CSV_SUBMISSION_SCHEMA`` — the shape
+    tasks 2-4 build their claim/submit/deadline stories on. The deadline
+    flows (task 3) pass a shorter duration so a +2h/+7h late submit is a
+    small clock step, not a multi-day one. Claim-time snapshots (deadline,
     reward policy) stay the claim service's job; nothing is pre-claimed
     here."""
     if assignment_count < 1:
         raise ValueError("assignment_count must be >= 1")
+    if duration_minutes <= 0:
+        raise ValueError("duration_minutes must be positive")
     async with factory() as db:
         now = _now()
         task = Task(
@@ -244,7 +259,7 @@ async def seed_task_with_assignments(
             base_reward_points=100,
             status=TaskStatus.PUBLISHED,
             deadline_mode=DeadlineMode.RELATIVE,
-            duration_minutes=4320,  # 3 days: submitting now is on-time
+            duration_minutes=duration_minutes,
             submission_schema=CSV_SUBMISSION_SCHEMA,
             submission_schema_version=1,
             allowed_file_types=["CSV"],
@@ -297,6 +312,149 @@ async def seed_reward_item(
         )
 
 
+async def seed_admin_confirmed_totp(
+    factory: async_sessionmaker[AsyncSession], *, run: str
+) -> UserFixture:
+    """One ACTIVE ADMIN with a CONFIRMED TOTP credential.
+
+    The admin management surfaces (whitelist import, reward catalogue)
+    and the redemption-review guard both require the confirmed-credential
+    ROW (spec §33.4) — the stand-in secret shape is the teacher
+    factory's; flows that must ANSWER a TOTP prompt do their own setup
+    through the invitation surface instead."""
+    async with factory() as db:
+        admin = User(
+            username=f"a{run}",
+            password_hash=hash_password(DEFAULT_PASSWORD),
+            nickname=f"端到端管理员{run[:4]}",
+            phone_e164=None,
+            role=Role.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        db.add(admin)
+        await db.flush()
+        db.add(
+            TotpCredential(
+                user_id=admin.id,
+                secret_encrypted=f"e2e-totp-stand-in:{run}".encode(),
+                confirmed_at=_now(),
+            )
+        )
+        await db.commit()
+        return UserFixture(
+            user_id=admin.id,
+            username=admin.username,
+            password=DEFAULT_PASSWORD,
+        )
+
+
+async def seed_whitelist_entry(
+    factory: async_sessionmaker[AsyncSession], *, student_number: str
+) -> None:
+    """One ENABLED whitelist row, committed — the register flow's
+    precondition (spec §5.1). World-building only: the whitelist ADMIN
+    CRUD stays behind its own suite."""
+    async with factory() as db:
+        db.add(StudentWhitelist(student_number=student_number, enabled=True))
+        await db.commit()
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimFixture:
+    """One ORM-seeded CLAIMED claim mirroring the claim service's
+    snapshots (claim_service lines: status/deadlines/policy/base/schema
+    version/lock NONE + assignment OCCUPIED)."""
+
+    claim_id: UUID
+    assignment_id: UUID
+    task_id: UUID
+
+
+async def seed_claim(
+    factory: async_sessionmaker[AsyncSession], *, task: TaskFixture, student_id: UUID
+) -> ClaimFixture:
+    """Claim ``task``'s FIRST assignment for ``student_id`` directly
+    through the ORM, committed.
+
+    The browser suite needs a pre-submittable claim the specs can deep
+    link to; driving the real claim route needs the page's login first,
+    so world-building seeds the row with exactly the fields
+    ``ClaimService.claim_random_assignment`` would have written
+    (snapshots via ``compute_claim_deadlines`` + the V1 policy dict),
+    minus its notification intents (inbox tests do not depend on them)."""
+    from app.modules.tasks.claim_service import REWARD_POLICY_SNAPSHOT_V1
+    from app.modules.tasks.deadlines import compute_claim_deadlines
+
+    async with factory() as db:
+        task_row = await db.get(Task, task.task_id)
+        assert task_row is not None
+        assignment = await db.get(Assignment, task.assignment_ids[0])
+        assert assignment is not None
+        claimed_at = _now()
+        deadlines = compute_claim_deadlines(task_row, claimed_at)
+        claim = AssignmentClaim(
+            assignment_id=assignment.id,
+            task_id=task_row.id,
+            user_id=student_id,
+            status=ClaimStatus.CLAIMED,
+            claimed_at=claimed_at,
+            deadline_at=deadlines.deadline_at,
+            grace_deadline_at=deadlines.grace_deadline_at,
+            reward_policy_snapshot=dict(REWARD_POLICY_SNAPSHOT_V1),
+            base_reward_points_snapshot=task_row.base_reward_points,
+            submission_schema_version=task_row.submission_schema_version,
+            reward_lock_status=RewardLockStatus.NONE,
+        )
+        assignment.availability_status = AssignmentAvailability.OCCUPIED
+        db.add(claim)
+        await db.commit()
+        return ClaimFixture(
+            claim_id=claim.id,
+            assignment_id=assignment.id,
+            task_id=task_row.id,
+        )
+
+
+async def seed_points_balance(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    student_id: UUID,
+    amount: int,
+    source_id: UUID,
+) -> datetime:
+    """One ASSIGNMENT_REWARD ledger entry + wallet projection, committed.
+
+    The browser redemption flows need spendable points BEFORE any test
+    runs; the reward EARNING flow itself is the task-2 chain's job, so
+    world-building posts the closing entry directly (the ledger service's
+    exact column shape: ``ASSIGNMENT_CLAIM`` source, balance+ranking
+    effects, effective-at now). Returns the ranking_effective_at the
+    caller should hand the ranking projection."""
+    now = _now()
+    async with factory() as db:
+        db.add(
+            PointsLedger(
+                user_id=student_id,
+                ledger_type="ASSIGNMENT_REWARD",
+                amount=amount,
+                source_type="ASSIGNMENT_CLAIM",
+                source_id=source_id,
+                affects_balance=True,
+                affects_ranking=True,
+                ranking_effective_at=now,
+            )
+        )
+        db.add(
+            PointWallet(
+                user_id=student_id,
+                available_points=amount,
+                earned_points=amount,
+            )
+        )
+        await db.commit()
+    return now
+
+
 async def snapshot_honor_ids(
     factory: async_sessionmaker[AsyncSession],
 ) -> set[UUID]:
@@ -314,6 +472,7 @@ async def clean_world(
     task_ids: Sequence[UUID] = (),
     reward_item_ids: Sequence[UUID] = (),
     honor_ids_before: set[UUID] | None = None,
+    whitelist_numbers: Sequence[str] = (),
 ) -> None:
     """Remove this test's committed rows in FK order, then commit.
 
@@ -324,13 +483,21 @@ async def clean_world(
     self-referencing FKs along the way (sessions' ``replaced_by``,
     ledger ``reversal_of_id``) are plain NO ACTION constraints, so
     single-statement deletes of mutually-linked rows are safe.
+    ``whitelist_numbers`` removes this run's student_whitelist rows (the
+    register-flow precondition the flow itself seeded).
     """
     users = list(user_ids)
     tasks = list(task_ids)
     items = list(reward_item_ids)
-    if not users and not tasks and not items:
+    if not users and not tasks and not items and not whitelist_numbers:
         return
     async with factory() as db:
+        if whitelist_numbers:
+            await db.execute(
+                delete(StudentWhitelist).where(
+                    StudentWhitelist.student_number.in_(list(whitelist_numbers))
+                )
+            )
         claims = select(AssignmentClaim.id).where(AssignmentClaim.task_id.in_(tasks))
         submissions = select(Submission.id).where(Submission.claim_id.in_(claims))
         comments = select(Comment.id).where(

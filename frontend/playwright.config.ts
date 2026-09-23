@@ -1,5 +1,5 @@
 /**
- * CampusQuest Playwright config — Plan 10 Task 1 (E1).
+ * CampusQuest Playwright config — Plan 10 Task 1 (E1), Task 2 (E2).
  *
  * Ruling (E1 brief): the config itself orchestrates BOTH servers — the
  * backend (uvicorn serving create_app) and the frontend (next dev) —
@@ -8,6 +8,11 @@
  * the ports follow the spec defaults (frontend 3000, backend 8000) and
  * are derived from the same CQ_E2E_* variables the specs read, so an
  * override moves the client and the servers together.
+ *
+ * E2 adds the seeded world: globalSetup runs browser_world.py (the
+ * backend e2e factories) BEFORE the workers fork and publishes the
+ * CQ_E2E_* contract through process env; globalTeardown cleans the same
+ * world after every worker exits (e2e/global-setup.ts docstring).
  *
  * The suites themselves stay behind the CQ_E2E=1 guard (the spec-file
  * convention): a bare `npx playwright test` collects them as skipped,
@@ -48,6 +53,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [["list"]],
+  globalSetup: "./e2e/global-setup.ts",
+  globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL: BASE_URL,
   },
@@ -63,6 +70,10 @@ export default defineConfig({
     {
       command: `npx next dev -p ${frontendPort}`,
       url: BASE_URL,
+      // The frontend calls same-origin /api/v1/* (lib/api.ts); local
+      // development needs next.config.ts's opt-in proxy pointed at the
+      // orchestrated backend, or every API call lands on Next itself.
+      env: { ...process.env, CQ_DEV_API_PROXY: backendOrigin },
       reuseExistingServer: true,
       timeout: 180_000,
     },
