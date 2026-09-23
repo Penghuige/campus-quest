@@ -69,6 +69,13 @@ class ErrorCode(StrEnum):
     OTP_TOKEN_INVALID = "OTP_TOKEN_INVALID"
     OTP_RESEND_COOLDOWN = "OTP_RESEND_COOLDOWN"
     RATE_LIMITED = "RATE_LIMITED"
+    # Registered in interfaces.md (not a §29-listed name; Plan 08 T9): the
+    # generic business code for 409 state/conflict refusals — concurrent
+    # ownership (an unfinished cleanup deletion claim), replay-integrity
+    # failures (whitelist confirm digest mismatch / import collisions), and
+    # illegal state transitions (account status, spec §5.7). Never a
+    # substitute for a more specific code the registry already has.
+    CONFLICT = "CONFLICT"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

@@ -77,16 +77,14 @@ class CleanupClaimConflictError(BusinessError):
     claim settles (completion, release, or the takeover's recovery; the
     seconds-to-lease-length window closes on its own).
 
-    ``code`` reuses ``VALIDATION_ERROR`` (the typed-409 precedent the
-    same module family already ships, e.g. SubmissionNotValidatedError):
-    the error-registry contract requires every code to exist in
-    docs/interfaces.md first, and this hardening pass does not touch
-    that frozen registry.
+    ``code`` is ``CONFLICT`` (registered Plan 08 T9): a concurrent
+    ownership refusal at 409, no longer riding ``VALIDATION_ERROR`` —
+    the reuse gap this class's docstring used to document.
     """
 
     def __init__(self, claim_id: UUID, submission_ids: list[UUID]) -> None:
         super().__init__(
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.CONFLICT,
             _CONFLICT_MESSAGE,
             status_code=409,
             details={

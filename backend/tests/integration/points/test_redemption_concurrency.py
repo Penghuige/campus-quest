@@ -947,7 +947,7 @@ async def test_fulfill_is_idempotent_and_records_metadata(
         await service.fulfill_redemption(db_session, admin_actor, fresh.id)
 
 
-# --- the review guard (Admin-only until scoped delegation) ----------------------------
+# --- the review guard (Admin OR granted Teacher; Plan 08 T4) --------------------------
 
 
 @pytest.mark.integration
@@ -955,11 +955,11 @@ async def test_review_guard_rejects_student_and_teacher_actors(
     db_session: AsyncSession,
 ) -> None:
     """Spec §16.1 routes review through the Admin-授权-Teacher channel;
-    the PR #2 hardening ruling narrows the interim guard to ADMIN only
-    (any ACTIVE+TOTP teacher deciding ANY redemption was P0-4 — RewardItem
-    has no owner to scope by, and Plan 08 owns the delegation model). A
-    student AND a teacher actor get PERMISSION_DENIED and nothing
-    changes."""
+    scoped delegation landed (Plan 08 T4), but the grant is explicit —
+    the actors here hold NO reward_review_grants row, so a student AND
+    a grantless teacher both get PERMISSION_DENIED and nothing
+    changes. The granted-teacher flows are pinned in
+    test_reward_admin.py."""
     run = uuid4().hex[:8]
     student = _student(f"2025{run}001")
     teacher = _teacher(f"t{run}001")
@@ -984,8 +984,8 @@ async def test_review_guard_rejects_student_and_teacher_actors(
     assert approve_denied.value.code == ErrorCode.PERMISSION_DENIED
     assert approve_denied.value.status_code == 403
 
-    # The hardening flip: the TEACHER actor is refused on all three
-    # decision paths too — Admin-only until scoped delegation lands.
+    # The delegation flip: a GRANTLESS teacher actor is refused on all
+    # three decision paths (Plan 08 T4 — only a live grant admits).
     with pytest.raises(RedemptionPermissionDeniedError) as teacher_denied:
         await service.approve_redemption(db_session, teacher_actor, redemption.id)
     with pytest.raises(RedemptionPermissionDeniedError):

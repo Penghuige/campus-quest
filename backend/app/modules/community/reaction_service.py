@@ -5,9 +5,11 @@ Design decisions:
 
 - **Whitelist port (spec §22: V1 emoji 从 Admin 配置白名单选择).** The
   allowed set is read through ``EmojiWhitelistPort`` on every call —
-  Plan 08 wires the audited Admin setting behind that seam; until then
-  ``DefaultEmojiWhitelistProvider`` answers with the spec's eight
-  defaults (👍 ❤️ 😂 🎉 😭 👀 🤔 🔥). Membership is exact-string over the
+  the production composition injects the store-backed
+  ``SystemEmojiWhitelistProvider`` (settings_emoji_whitelist.py; PR #5
+  final review fix B), while ``DefaultEmojiWhitelistProvider``'s spec
+  §22 eight (👍 ❤️ 😂 🎉 😭 👀 🤔 🔥) remain the no-row SEED. Membership
+  is exact-string over the
   configured set, which is also what enforces §22's 不允许 HTML 或图片
   reaction: an HTML snippet, an image reference, a multi-emoji
   sequence, a skin-toned variant, or a bare ❤ without VS16 is simply
@@ -116,11 +118,13 @@ class UnknownEmojiError(BusinessError):
 
 
 class EmojiWhitelistPort(Protocol):
-    """The Admin-configured emoji whitelist (spec §22). Plan 08's audited
-    settings store implements this port; ``DefaultEmojiWhitelistProvider``
-    answers until that wiring lands. Sync and cheap by contract — the
-    Plan 08 store is a cached read, and the call sits before any
-    database work so it can never widen a transaction."""
+    """The Admin-configured emoji whitelist (spec §22). The store-backed
+    ``SystemEmojiWhitelistProvider`` (settings_emoji_whitelist.py)
+    implements this port in production — the audited settings row is
+    resolved ONCE per request at the composition root, so this call is
+    sync and cheap by contract, sits before any database work, and can
+    never widen a transaction; ``DefaultEmojiWhitelistProvider`` answers
+    with the seed when no store row exists."""
 
     def allowed(self) -> frozenset[str]: ...
 

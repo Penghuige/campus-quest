@@ -35,7 +35,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, String, Text, func, text
+from sqlalchemy import BigInteger, DateTime, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -61,6 +61,12 @@ class SystemSetting(Base):
     # Deliberately NOT a foreign key: the attribution survives the
     # actor's account deletion (the audit_logs actor ruling).
     updated_by_user_id: Mapped[UUID] = mapped_column()
+    # Plan 08 T5 (0020): per-key change counter — 1 on the first write
+    # (server default), +1 on every subsequent set, mirrored into the
+    # SYSTEM_SETTING_UPDATED audit row's details.version. An observation
+    # of the write path's serialization (see 0020's docstring), not a
+    # CAS guard: settings stay last-writer-wins.
+    version: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), onupdate=func.now()
     )

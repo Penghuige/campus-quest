@@ -547,9 +547,17 @@ async def test_staff_onboarding_until_management_access(
     secret = begun.json()["secret"]
     assert begun.json()["otpauth_uri"].startswith("otpauth://totp/")
 
+    # TOTP codes are generated AT THE FROZEN BUSINESS CLOCK's instant,
+    # never wall-clock ``.now()``: verification runs at the injected
+    # clock (totp.py), so a code minted at real time drifts out of the
+    # ±1-step window once the suite's runtime separates module import
+    # (where ``_T0`` is frozen) from this test (a latent flake the Plan
+    # 08 T9 suite's added runtime made deterministic).
+    totp_code = pyotp.TOTP(secret).at(api_clock.now())
+
     confirmed = await client.post(
         "/api/v1/staff/totp/confirm",
-        json={"code": pyotp.TOTP(secret).now()},
+        json={"code": totp_code},
         headers=_bearer(pending),
     )
     assert confirmed.status_code == 200, confirmed.text
@@ -562,7 +570,7 @@ async def test_staff_onboarding_until_management_access(
         json={
             "email": _STAFF_EMAIL,
             "password": _STAFF_PASSWORD,
-            "totp_code": pyotp.TOTP(secret).now(),
+            "totp_code": totp_code,
         },
     )
     assert staff_session.status_code == 200, staff_session.text

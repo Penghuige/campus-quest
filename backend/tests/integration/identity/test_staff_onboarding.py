@@ -44,6 +44,7 @@ from app.core.security import (
     hash_password,
     hash_refresh_token,
 )
+from app.modules.audit.models import AuditLog
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import (
     STAFF_INVITATION_ACCEPTED,
@@ -61,6 +62,8 @@ from app.modules.identity.models import (
 )
 from app.modules.identity.session_service import SessionService, SessionTokens
 from app.modules.identity.staff_service import (
+    AUDIT_STAFF_INVITATION_ACCEPTED,
+    AUDIT_STAFF_INVITATION_CREATED,
     PendingStaffSession,
     StaffService,
     TotpSetupRequiredError,
@@ -341,6 +344,121 @@ async def test_invitation_is_single_use(db_session: AsyncSession) -> None:
     assert accepted[0].aggregate_type == "User"
     assert accepted[0].aggregate_id == first.user_id
     assert accepted[0].payload["role"] == Role.TEACHER.value
+
+
+@pytest.mark.integration
+async def test_staff_invitation_created_writes_durable_audit_row(
+    db_session: AsyncSession,
+) -> None:
+    # Plan 08 T2 (G12): creating an invitation writes its durable audit
+    # row in the SAME transaction — actor = the inviting Admin, target =
+    # the invitation, snapshot = business facts only (no prior state:
+    # the row is born). The invited email never lands on the audit row
+    # (G11, pinned as a negative assertion): it rests on the invitation
+    # the target_id names. The permission wall is pre-write, so a
+    # non-Admin actor leaves no audit row either.
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    admin = await _seed_user(db_session, username="campus-admin", role=Role.ADMIN)
+
+    issued = await service.create_staff_invitation(
+        db_session, _actor(admin), _TEACHER_EMAIL, Role.TEACHER
+    )
+
+    row = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.action == AUDIT_STAFF_INVITATION_CREATED,
+            AuditLog.target_id == str(issued.invitation.id),
+        )
+    )
+    assert row is not None
+    assert row.actor_user_id == admin.id
+    assert row.actor_role == "ADMIN"
+    assert row.target_type == "staff_invitation"
+    assert row.before_snapshot is None  # a creation: no prior state
+    assert row.after_snapshot == {
+        "role": Role.TEACHER.value,
+        "accepted_at": None,
+        "expires_at": (_T0 + timedelta(hours=_INVITATION_TTL_HOURS)).isoformat(),
+    }
+    assert row.details is None
+    # G11: the audit trail proves WHO invited WHOM-INTO-WHAT by id and
+    # role, never a second copy of the PII itself.
+    assert _TEACHER_EMAIL_NORMALIZED not in str(
+        (row.before_snapshot, row.after_snapshot, row.details, row.reason)
+    )
+
+    student = await _seed_user(db_session, username="student-actor", role=Role.STUDENT)
+    with pytest.raises(BusinessError):
+        await service.create_staff_invitation(
+            db_session, _actor(student), _TEACHER_EMAIL, Role.TEACHER
+        )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.action == AUDIT_STAFF_INVITATION_CREATED,
+                AuditLog.actor_user_id == student.id,
+            )
+        )
+        == 0
+    )
+
+
+@pytest.mark.integration
+async def test_staff_invitation_accept_writes_durable_audit_row(
+    db_session: AsyncSession,
+) -> None:
+    # Plan 08 T2 (G12): acceptance writes its audit row inside the same
+    # transaction — actor = the freshly created staff account (the
+    # holder of the single-use token), actor_role = the granted role
+    # (V1's role-assignment record: no promote/revocation service write
+    # point exists), target = the consumed invitation with its
+    # accepted_at migration. A replayed token fails before any write,
+    # so exactly one row exists for the invitation.
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    admin = await _seed_user(db_session, username="campus-admin", role=Role.ADMIN)
+    issued = await service.create_staff_invitation(
+        db_session, _actor(admin), _TEACHER_EMAIL, Role.TEACHER
+    )
+
+    pending = await service.accept_staff_invitation(db_session, issued.token, _PASSWORD)
+
+    row = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.action == AUDIT_STAFF_INVITATION_ACCEPTED,
+            AuditLog.target_id == str(issued.invitation.id),
+        )
+    )
+    assert row is not None
+    assert row.actor_user_id == pending.user_id
+    assert row.actor_role == Role.TEACHER.value
+    assert row.target_type == "staff_invitation"
+    assert row.before_snapshot == {"accepted_at": None}
+    assert row.after_snapshot == {"accepted_at": _T0.isoformat()}
+    assert row.details is None  # actor and target already name both parties
+    assert _TEACHER_EMAIL_NORMALIZED not in str(
+        (row.before_snapshot, row.after_snapshot, row.details, row.reason)
+    )
+
+    # The idempotent replay is rejected before any write: no second
+    # audit row for the invitation (aligning with the invitation
+    # single-use semantics above).
+    with pytest.raises(BusinessError):
+        await service.accept_staff_invitation(db_session, issued.token, _PASSWORD)
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.action == AUDIT_STAFF_INVITATION_ACCEPTED,
+                AuditLog.target_id == str(issued.invitation.id),
+            )
+        )
+        == 1
+    )
 
 
 async def _accept_on_own_session(

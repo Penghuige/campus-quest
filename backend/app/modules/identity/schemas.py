@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
@@ -165,6 +165,20 @@ class StaffInvitationAcceptRequest(BaseModel):
 
     token: str
     password: str
+
+
+class StaffInvitationCreateRequest(BaseModel):
+    """Issue one staff invitation (§5.8; Plan 08 T9's Admin surface).
+
+    Raw caller input: the email's normalization and the role's
+    TEACHER/ADMIN narrowing belong to ``StaffService
+    .create_staff_invitation``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    role: Role
 
 
 class TotpConfirmRequest(BaseModel):

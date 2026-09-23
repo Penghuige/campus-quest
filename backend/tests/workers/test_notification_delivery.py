@@ -30,6 +30,16 @@ claim-before-send race cannot be simulated on fakes):
   onupdate, so a finalize re-assigning the claim's instant never lets
   the DB clock overwrite it.
 - Not-due deliveries are left PENDING and unclaimed.
+- Managed NotificationTemplate consumption (PR #5 gfix D, Option A):
+  the registration port renders an enabled (event_type, channel) row
+  with the EVENT-variable grammar the write gate validates and FREEZES
+  the finished text as a per-channel snapshot row; dispatch sends
+  whatever its delivery points at — asserted through the DEVELOPMENT
+  LOGGING ADAPTER (V1's only wired provider, spied to record the port
+  call) receiving the fully-rendered text under the historic
+  event-type slug. A DISABLED row or a render failure at registration
+  degrades to the historic snapshot contract (seed copy, provider
+  still called, never a skip and never a deterministic FAILED).
 
 Real commits require real cleanup: every seeded user/notification/
 delivery triple is deleted in teardown (the shared outer-rollback
@@ -40,8 +50,9 @@ committed rows through its own sessions).
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -83,7 +94,9 @@ from app.modules.notifications.enums import (
 from app.modules.notifications.models import (
     Notification,
     NotificationDelivery,
+    NotificationTemplate,
 )
+from app.modules.notifications.port import NotificationPort
 from app.workers.celery_app import create_celery_app
 from app.workers.jobs import send_notification as send_notification_job
 from tests.fakes.integrations import FakeEmailSender, FakeSmsSender
@@ -273,6 +286,138 @@ async def _seeded(
         yield user, notification, delivery
     finally:
         await _cleanup_rows(engine, user, notification, delivery)
+
+
+# --- managed-template row builders (real commits; callers own cleanup) ----------------
+
+
+async def _seed_template(
+    engine: AsyncEngine,
+    *,
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    title: str,
+    body: str,
+    enabled: bool = True,
+) -> NotificationTemplate:
+    """Commit one NotificationTemplate row and return it.
+
+    Real commits like `_seed_rows`: the service under test reads the
+    row through its own sessions. CRITICAL for suite hygiene: the
+    integration tests share this database and consult these rows at
+    registration, so every caller MUST delete its row in teardown — a
+    stray committed template changes other tests' render source."""
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    template = NotificationTemplate(
+        event_type=event_type.value,
+        channel=channel.value,
+        title=title,
+        template_body=body,
+        enabled=enabled,
+        version=1,
+    )
+    async with maker() as session:
+        session.add(template)
+        await session.commit()
+    return template
+
+
+async def _cleanup_template(
+    engine: AsyncEngine, template: NotificationTemplate
+) -> None:
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        await session.execute(
+            delete(NotificationTemplate).where(NotificationTemplate.id == template.id)
+        )
+        await session.commit()
+
+
+@asynccontextmanager
+async def _seeded_template(
+    engine: AsyncEngine,
+    *,
+    event_type: NotificationEventType,
+    channel: NotificationChannel,
+    title: str,
+    body: str,
+    enabled: bool = True,
+) -> AsyncIterator[NotificationTemplate]:
+    template = await _seed_template(
+        engine,
+        event_type=event_type,
+        channel=channel,
+        title=title,
+        body=body,
+        enabled=enabled,
+    )
+    try:
+        yield template
+    finally:
+        await _cleanup_template(engine, template)
+
+
+class _SpySmsSender(LoggingSmsSender):
+    """The development logging adapter with the port call recorded: the
+    assertion surface for WHAT V1's only wired provider received (the
+    adapter itself logs masked recipient + slug only, spec §33.2, so
+    the spy keeps the real send behavior and adds the recording)."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "to": to,
+                "template": template,
+                "variables": dict(variables),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return super().send(
+            to=to,
+            template=template,
+            variables=variables,
+            idempotency_key=idempotency_key,
+        )
+
+
+class _SpyEmailSender(LoggingEmailSender):
+    """The EMAIL sibling of `_SpySmsSender`."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def send(
+        self,
+        *,
+        to: str,
+        template: str,
+        variables: Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "to": to,
+                "template": template,
+                "variables": dict(variables),
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return super().send(
+            to=to,
+            template=template,
+            variables=variables,
+            idempotency_key=idempotency_key,
+        )
 
 
 @pytest.fixture
@@ -927,3 +1072,363 @@ async def test_not_due_delivery_is_left_pending(db_engine: AsyncEngine) -> None:
         assert row.sent_at is None
 
     assert sms.messages == []
+
+
+# --- managed NotificationTemplate consumption (PR #5 gfix D: frozen at registration) --
+
+
+async def _record_rows(
+    engine: AsyncEngine,
+    *,
+    event_type: NotificationEventType,
+    payload: Mapping[str, Any],
+    user_overrides: dict[str, Any] | None = None,
+) -> tuple[
+    User, str, dict[NotificationChannel, NotificationDelivery], list[Notification]
+]:
+    """Record one event through the REAL NotificationPort on a committed
+    session and return the user, the event key, the per-channel delivery
+    rows, and every Notification row registration created (canonical +
+    per-channel snapshots). Real commits like `_seed_rows`: dispatch
+    reads through its own sessions. Callers own `_cleanup_recorded`."""
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    user = _student(**(user_overrides or {}))
+    key = f"submission:{uuid4().hex}:approved"
+    async with maker() as session:
+        session.add(user)
+        await session.flush()
+        port = NotificationPort(clock=FrozenClock(_T0))
+        await port.record_event(session, key, event_type, user.id, dict(payload))
+        await session.flush()
+        deliveries = {
+            NotificationChannel(delivery.channel): delivery
+            for delivery in await session.scalars(
+                select(NotificationDelivery).where(
+                    NotificationDelivery.event_key == key,
+                    NotificationDelivery.user_id == user.id,
+                )
+            )
+        }
+        notifications = list(
+            await session.scalars(
+                select(Notification).where(
+                    Notification.event_key.in_([key, f"{key}:SMS", f"{key}:EMAIL"]),
+                    Notification.user_id == user.id,
+                )
+            )
+        )
+        await session.commit()
+    return user, key, deliveries, notifications
+
+
+async def _cleanup_recorded(engine: AsyncEngine, user: User, event_key: str) -> None:
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        await session.execute(
+            delete(NotificationDelivery).where(
+                NotificationDelivery.event_key == event_key
+            )
+        )
+        await session.execute(
+            delete(Notification).where(
+                Notification.event_key.in_(
+                    [event_key, f"{event_key}:SMS", f"{event_key}:EMAIL"]
+                )
+            )
+        )
+        await session.execute(delete(User).where(User.id == user.id))
+        await session.commit()
+
+
+@asynccontextmanager
+async def _recorded(
+    engine: AsyncEngine,
+    *,
+    event_type: NotificationEventType,
+    payload: Mapping[str, Any],
+    user_overrides: dict[str, Any] | None = None,
+) -> AsyncIterator[
+    tuple[
+        User, str, dict[NotificationChannel, NotificationDelivery], list[Notification]
+    ]
+]:
+    """`_record_rows` with teardown (registration-then-dispatch tests:
+    the freeze happens at record time, so the rows must commit)."""
+    user, key, deliveries, notifications = await _record_rows(
+        engine, event_type=event_type, payload=payload, user_overrides=user_overrides
+    )
+    try:
+        yield user, key, deliveries, notifications
+    finally:
+        await _cleanup_recorded(engine, user, key)
+
+
+def _canonical(key: str, notifications: list[Notification]) -> Notification:
+    """The canonical (un-suffixed) notification among the recorded rows."""
+    return next(n for n in notifications if n.event_key == key)
+
+
+async def test_managed_sms_template_reaches_the_provider_fully_rendered(
+    db_engine: AsyncEngine,
+) -> None:
+    """Re-review check 1 (write-time namespace == runtime namespace):
+    an SMS template carrying the EVENT-variable grammar the write gate
+    accepts ({task_title}, {reward_points}) renders AT REGISTRATION, and
+    dispatch sends the FROZEN product — the logging adapter receives
+    the finished text with the task_title VALUE in it, under the
+    historic event-type slug, and the delivery resolves SENT."""
+    spy = _SpySmsSender()
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=spy,
+        email_sender=_SpyEmailSender(),
+        clock=StepClock(_T0),
+    )
+
+    async with (
+        _seeded_template(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            channel=NotificationChannel.SMS,
+            title="审核通过（短信）",
+            body="《{task_title}》审核通过，{reward_points}积分入账",
+        ),
+        _recorded(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            payload={"task_title": "校园咖啡店客流记录", "reward_points": 30},
+        ) as (user, key, deliveries, notifications),
+    ):
+        delivery = deliveries[NotificationChannel.SMS]
+        # The SMS delivery points at its own frozen snapshot, not the
+        # canonical row (pinned registration-side in the integration
+        # suite; here it explains WHERE the sent text comes from).
+        assert delivery.notification_id != _canonical(key, notifications).id
+
+        result = await service.send(delivery.id, "req-tpl-sms-1")
+        assert result.outcome is SendOutcome.SENT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENT.value
+        assert row.provider_message_id is not None
+        assert row.provider_message_id.startswith("logging:")
+
+    assert len(spy.calls) == 1
+    call = spy.calls[0]
+    assert call["to"] == "+8613800000000"
+    # The historic slug contract: the event type names the provider
+    # template (dispatch consults no template row any more).
+    assert call["template"] == "submission_approved"
+    # The FROZEN per-channel product: the managed text with the event
+    # variables already substituted — NOT the canonical snapshot pair,
+    # and never a deterministic template failure.
+    assert call["variables"] == {
+        "title": "审核通过（短信）",
+        "body": "《校园咖啡店客流记录》审核通过，30积分入账",
+    }
+    assert call["idempotency_key"] == provider_idempotency_key(
+        key, NotificationChannel.SMS, user.id
+    )
+
+
+async def test_managed_email_template_reaches_the_provider_fully_rendered(
+    db_engine: AsyncEngine,
+) -> None:
+    """The EMAIL sibling: same frozen-product contract on the email
+    port."""
+    spy = _SpyEmailSender()
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=_SpySmsSender(),
+        email_sender=spy,
+        clock=StepClock(_T0),
+    )
+
+    async with (
+        _seeded_template(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            channel=NotificationChannel.EMAIL,
+            title="审核通过（邮件）",
+            body="您好：您在《{task_title}》的提交已过审，{reward_points}积分入账。",
+        ),
+        _recorded(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            payload={"task_title": "校园咖啡店客流记录", "reward_points": 30},
+            user_overrides={
+                "phone_e164": None,
+                "email_normalized": "student@campus.example.edu",
+                "email_verified_at": _T0,
+            },
+        ) as (user, key, deliveries, notifications),
+    ):
+        delivery = deliveries[NotificationChannel.EMAIL]
+        assert delivery.notification_id != _canonical(key, notifications).id
+
+        result = await service.send(delivery.id, "req-tpl-email-1")
+        assert result.outcome is SendOutcome.SENT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENT.value
+
+    assert len(spy.calls) == 1
+    call = spy.calls[0]
+    assert call["to"] == "student@campus.example.edu"
+    assert call["template"] == "submission_approved"
+    assert call["variables"] == {
+        "title": "审核通过（邮件）",
+        "body": "您好：您在《校园咖啡店客流记录》的提交已过审，30积分入账。",
+    }
+
+
+async def test_disabled_managed_channel_template_keeps_the_snapshot_contract(
+    db_engine: AsyncEngine,
+) -> None:
+    """Re-review check 2 (dispatch side): a DISABLED (event_type, SMS)
+    row is not an override and NOT a skip — the send decision belongs
+    to channel policy, so the provider IS called and carries the
+    canonical snapshot pair under the event-type slug, exactly like a
+    missing row."""
+    spy = _SpySmsSender()
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=spy,
+        email_sender=_SpyEmailSender(),
+        clock=StepClock(_T0),
+    )
+
+    async with (
+        _seeded_template(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            channel=NotificationChannel.SMS,
+            title="被停用的标题",
+            body="被停用的正文 {task_title}",
+            enabled=False,
+        ),
+        _recorded(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            payload={"task_title": "校园咖啡店客流记录", "reward_points": 30},
+        ) as (_user, key, deliveries, notifications),
+    ):
+        delivery = deliveries[NotificationChannel.SMS]
+        canonical = _canonical(key, notifications)
+        assert delivery.notification_id == canonical.id
+
+        result = await service.send(delivery.id, "req-tpl-off-1")
+        assert result.outcome is SendOutcome.SENT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENT.value
+        assert row.last_error is None
+
+    assert len(spy.calls) == 1
+    call = spy.calls[0]
+    assert call["template"] == "submission_approved"
+    assert call["variables"] == {"title": canonical.title, "body": canonical.body}
+
+
+async def test_disabled_in_app_template_still_dispatches(
+    db_engine: AsyncEngine,
+) -> None:
+    """Re-review check 2 (IN_APP side): a disabled (event_type, IN_APP)
+    row degrades the snapshot to the seed copy at registration but
+    suppresses nothing at dispatch — the delivery completes normally
+    and the message enters the inbox (read_at cleared)."""
+    sms = _SpySmsSender()
+    email = _SpyEmailSender()
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=sms,
+        email_sender=email,
+        clock=StepClock(_T0),
+    )
+
+    async with (
+        _seeded_template(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            channel=NotificationChannel.IN_APP,
+            title="被停用的站内标题",
+            body="被停用的站内正文 {task_title}",
+            enabled=False,
+        ),
+        _recorded(
+            db_engine,
+            event_type=NotificationEventType.SUBMISSION_APPROVED,
+            payload={"task_title": "校园咖啡店客流记录", "reward_points": 30},
+            user_overrides={"phone_e164": None},
+        ) as (_user, key, deliveries, notifications),
+    ):
+        delivery = deliveries[NotificationChannel.IN_APP]
+        canonical = _canonical(key, notifications)
+        # A stale read marker makes the dispatch-time clear observable.
+        maker = async_sessionmaker(db_engine, expire_on_commit=False)
+        async with maker() as session:
+            notification_row = await session.get(Notification, canonical.id)
+            assert notification_row is not None
+            notification_row.read_at = _T0 - timedelta(hours=1)
+            await session.commit()
+
+        result = await service.send(delivery.id, "req-tpl-inapp-off-1")
+        assert result.outcome is SendOutcome.SENT
+        row = await _row(db_engine, delivery.id)
+        assert row.status == DeliveryStatus.SENT.value
+        assert row.last_error is None
+        refreshed = await _notification_row(db_engine, canonical.id)
+        assert refreshed.read_at is None
+
+    assert sms.calls == []
+    assert email.calls == []
+
+
+async def test_registration_render_failure_degrades_without_failing(
+    db_engine: AsyncEngine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Re-review check 3 (the flipped g-C regression): a row the write
+    gate would never accept (a non-whitelisted placeholder, seeded
+    directly into the DB) fails to render AT REGISTRATION — the channel
+    degrades to the historic snapshot contract with an ERROR log, the
+    record does not fail, and dispatch resolves SENT instead of the
+    g-C deterministic FAILED."""
+    spy = _SpySmsSender()
+    service = DeliveryService(
+        session_maker=async_sessionmaker(db_engine, expire_on_commit=False),
+        sms_sender=spy,
+        email_sender=_SpyEmailSender(),
+        clock=StepClock(_T0),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.modules.notifications.port"):
+        async with (
+            _seeded_template(
+                db_engine,
+                event_type=NotificationEventType.SUBMISSION_APPROVED,
+                channel=NotificationChannel.SMS,
+                title="有缺陷的标题",
+                body="坏了：{not_a_variable}",
+            ),
+            _recorded(
+                db_engine,
+                event_type=NotificationEventType.SUBMISSION_APPROVED,
+                payload={"task_title": "校园咖啡店客流记录", "reward_points": 30},
+            ) as (_user, key, deliveries, notifications),
+        ):
+            delivery = deliveries[NotificationChannel.SMS]
+            canonical = _canonical(key, notifications)
+            assert delivery.notification_id == canonical.id
+
+            result = await service.send(delivery.id, "req-tpl-bad-1")
+            assert result.outcome is SendOutcome.SENT
+            row = await _row(db_engine, delivery.id)
+            assert row.status == DeliveryStatus.SENT.value
+
+    assert any(
+        record.message == "notification_registration.template_render_failed"
+        for record in caplog.records
+    )
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["variables"] == {
+        "title": canonical.title,
+        "body": canonical.body,
+    }

@@ -48,16 +48,23 @@ Design decisions:
   PERMISSION_DENIED for the staff guard, VALIDATION_ERROR for the
   shape/state gates (disabled item, closed window, blank reject
   reason, non-reviewable states). No new code was needed.
-- **The review guard is Admin-only until scoped delegation** (PR #2
-  hardening ruling on the P0-4 global-staff finding): spec §16.1 routes
-  review through Admin-授权-Teacher, but RewardItem carries no owner and
-  the授权 model belongs to Plan 08's admin operations — until that
-  scoped delegation lands, every ACTIVE+TOTP TEACHER being able to
-  decide ANY redemption was judged too broad, so the review decisions
-  (approve/reject/fulfill) admit ADMIN only, enforced at BOTH the
-  transport guard and this service gate (the community hard-hide
-  precedent: a wiring slip cannot widen the surface). Scoping re-widens
-  the family here without touching the redemption state machine.
+- **The review guard is Admin OR a grant-holding Teacher — scoped
+  delegation LANDED (Plan 08 T4).** The PR #2 hardening ruling held the
+  decisions to Admin-only until a delegation model existed; the
+  ``reward_review_grants`` table (migration 0021) is that model. Admin
+  reviews globally (spec §4.3); an ACTIVE+TOTP TEACHER holding a live
+  ``REWARD_REVIEW`` grant may decide and queue-read too — the read was
+  widened with the writes by the same ruling's read/write-consistency
+  clause (the queue exposes every requester's identity, so it can never
+  be broader than the decisions). The grant check is one uncached SQL
+  read per request, so an Admin revocation takes effect on the VERY
+  NEXT call. Scope is V1-GLOBAL by the data model: a RewardRedemption
+  carries no course/task dimension to scope a grant by (the plan's
+  per-course wording has no join key; refining it is an owner ruling,
+  G13) — recorded in admin_service.py's module docstring. Enforced at
+  BOTH the transport guard (``require_reward_review_actor``, points
+  router) and this service gate (the community hard-hide precedent: a
+  wiring slip cannot widen the surface).
 - **Transaction ownership (backend-engineering §5).** Each use case
   commits exactly once on success; typed rejections raised while
   holding locks roll back FIRST (releasing the locks promptly, writing
@@ -103,6 +110,7 @@ from app.core.errors import BusinessError
 from app.core.rbac import is_admin, role_value
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.points.enums import LedgerType, RedemptionStatus, ReservationStatus
 from app.modules.points.ledger_service import LedgerService, PostLedgerEntry
@@ -110,6 +118,7 @@ from app.modules.points.models import (
     PointReservation,
     RewardItem,
     RewardRedemption,
+    RewardReviewGrant,
 )
 
 __all__ = [
@@ -120,6 +129,7 @@ __all__ = [
     "REDEMPTION_APPROVE",
     "REDEMPTION_FULFILL",
     "REDEMPTION_REJECT",
+    "REWARD_REVIEW_CAPABILITY",
     "RedemptionLimitReachedError",
     "RedemptionNotFulfillableError",
     "RedemptionNotReviewableError",
@@ -134,6 +144,7 @@ __all__ = [
     "SettingsAcademicTermProvider",
     "StaticAcademicTermProvider",
     "SystemAcademicTermProvider",
+    "has_reward_review_grant",
     "window_open",
 ]
 
@@ -166,7 +177,31 @@ _REDEMPTION_SOURCE: Final[str] = "REWARD_REDEMPTION"
 # configuration failure, not a truncation candidate.
 _TERM_KEY_MAX_LENGTH: Final[int] = 64
 
-_PERMISSION_DENIED_MESSAGE = "只有管理员可以审核与发放兑换"
+_PERMISSION_DENIED_MESSAGE = "只有管理员或获得兑换审阅授权的教师可以审核与发放兑换"
+
+# The one capability a reward_review_grants row may carry (models.py's
+# closed CHECK vocabulary). The lifecycle lives in admin_service
+# (grant/revoke); THIS module owns the reviewer predicate the review
+# guard consumes, so the constant is defined beside its consumer and
+# admin_service imports it from here — one definition, no cycle.
+REWARD_REVIEW_CAPABILITY = "REWARD_REVIEW"
+
+
+async def has_reward_review_grant(db: AsyncSession, teacher_id: UUID) -> bool:
+    """Whether a LIVE REWARD_REVIEW grant row exists for the account.
+
+    One uncached SQL read on the caller's session — no cache, no TTL —
+    which is what makes Admin revocation effective on the very next
+    request (the read/write-consistency clause of the delegation
+    ruling). The guard composes this with the role check itself; a
+    grant row alone never admits a non-TEACHER actor."""
+    grant = await db.scalar(
+        select(RewardReviewGrant.teacher_id).where(
+            RewardReviewGrant.teacher_id == teacher_id,
+            RewardReviewGrant.capability == REWARD_REVIEW_CAPABILITY,
+        )
+    )
+    return grant is not None
 
 
 # --- the academic-term port -----------------------------------------------------------
@@ -401,8 +436,9 @@ class InsufficientPointsError(BusinessError):
 
 
 class RedemptionPermissionDeniedError(BusinessError):
-    """The actor is not ADMIN — the review guard until scoped delegation
-    lands (PR #2 hardening ruling; see the module docstring)."""
+    """The actor may not review redemptions: not ADMIN, and not a
+    TEACHER holding a live REWARD_REVIEW grant (the scoped-delegation
+    guard, Plan 08 T4 — see the module docstring)."""
 
     def __init__(self, actor_id: UUID, role: str | Enum) -> None:
         super().__init__(
@@ -669,7 +705,7 @@ class RedemptionService:
         row — the decision already stands); any other terminal state
         is a typed rejection.
         """
-        self._require_staff(actor)
+        await self._require_reviewer(db, actor)
         redemption = await self._locked_redemption(db, redemption_id)
         status = RedemptionStatus(redemption.status)
         if status is RedemptionStatus.APPROVED:
@@ -841,7 +877,7 @@ class RedemptionService:
         if not reason_text:
             # Before any lock: a shape error, not a state conflict.
             raise RedemptionRejectReasonRequiredError(redemption_id)
-        self._require_staff(actor)
+        await self._require_reviewer(db, actor)
         redemption = await self._locked_redemption(db, redemption_id)
         status = RedemptionStatus(redemption.status)
         if status is RedemptionStatus.REJECTED:
@@ -900,7 +936,7 @@ class RedemptionService:
         a different path) is a typed rejection. Touches no points —
         fulfillment never re-opens the wallet.
         """
-        self._require_staff(actor)
+        await self._require_reviewer(db, actor)
         redemption = await self._locked_redemption(db, redemption_id)
         status = RedemptionStatus(redemption.status)
         if status is RedemptionStatus.FULFILLED:
@@ -991,13 +1027,22 @@ class RedemptionService:
     # -- shared helpers ----------------------------------------------------------------
 
     @staticmethod
-    def _require_staff(actor: Actor) -> None:
-        """The review guard: ADMIN only (PR #2 hardening ruling — see the
-        module docstring for why the staff family narrows before scoped
-        delegation arrives; the transport mounts the matching
-        ``require_admin_actor`` composition)."""
-        if not is_admin(actor.role):
-            raise RedemptionPermissionDeniedError(actor.user_id, actor.role)
+    async def _require_reviewer(db: AsyncSession, actor: Actor) -> None:
+        """The review guard (scoped delegation, Plan 08 T4): ADMIN
+        passes globally; a TEACHER passes only with a live REWARD_REVIEW
+        grant; everyone else — including a grantless Teacher and any
+        Student — is the typed 403. The transport mounts the matching
+        ``require_reward_review_actor`` composition (points router);
+        this gate is the defense-in-depth twin (the hard-hide
+        precedent). The grant read runs on the caller's session so the
+        check shares the request's transaction snapshot."""
+        if is_admin(actor.role):
+            return
+        if actor.role is Role.TEACHER and await has_reward_review_grant(
+            db, actor.user_id
+        ):
+            return
+        raise RedemptionPermissionDeniedError(actor.user_id, actor.role)
 
     @staticmethod
     async def _locked_redemption(

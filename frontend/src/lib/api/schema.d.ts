@@ -354,6 +354,8 @@ export interface paths {
          *
          *     The returned tokens are a real session confined to finishing TOTP
          *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
+         *     The accept writes its durable audit row inside the service's
+         *     transaction, carrying this request's correlation pair (§30).
          */
         post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
         delete?: never;
@@ -1018,11 +1020,11 @@ export interface paths {
          * List Redemption Queue
          * @description The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)
          *     oldest first, with the requester's display nickname through the
-         *     identity directory port and the item name. Admin-only with the
-         *     decision endpoints until scoped delegation lands (PR #2 closure
-         *     review): the queue exposes every requester's identity, and the
-         *     approved rule is "Teacher reviews AUTHORIZED-RELATED redemptions",
-         *     not "every Teacher inspects all applications".
+         *     identity directory port and the item name. Admin globally; a
+         *     granted Teacher reads the same queue (Plan 08 T4) — the read was
+         *     widened WITH the decisions (the ruling's read/write-consistency
+         *     clause: the queue exposes every requester's identity, so it can
+         *     never be broader than the decisions it feeds).
          */
         get: operations["list_redemption_queue_api_v1_teacher_rewards_redemptions_get"];
         put?: never;
@@ -1048,7 +1050,7 @@ export interface paths {
          *     and the status flips to APPROVED (spec §16.2); a replay on an
          *     already-approved row is the idempotent no-op that returns it.
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post"];
         delete?: never;
@@ -1071,7 +1073,7 @@ export interface paths {
          * @description Reject with a mandatory reason: the freeze is released and NO
          *     consumption entry is written (spec §16.2).
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post"];
         delete?: never;
@@ -1094,7 +1096,7 @@ export interface paths {
          * @description Record the physical delivery of an APPROVED redemption (spec
          *     §16.2: approval and delivery are separate transitions).
          *
-         *     Admin-only until scoped delegation (PR #2 hardening ruling).
+         *     Admin globally; granted Teacher (Plan 08 T4 scoped delegation).
          */
         post: operations["fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post"];
         delete?: never;
@@ -1594,6 +1596,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List System Settings
+         * @description Every REGISTERED key's current state, registry order, ``null``
+         *     fields marking "no row" (the reader decides the fallback — the
+         *     provider pattern, G7). Unregistered keys are unrepresentable.
+         */
+        get: operations["list_system_settings_api_v1_admin_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings/current-academic-term": {
         parameters: {
             query?: never;
@@ -1613,10 +1637,598 @@ export interface paths {
          * Put Current Academic Term
          * @description Turn the term: the value row and its audit row commit as one
          *     unit, and every redemption created afterwards snapshots the new
-         *     term (spec §16.1 — existing redemptions keep theirs).
+         *     term (spec §16.1 — existing redemptions keep theirs). The optional
+         *     ``reason`` rides the audit row (blank-after-trim is the typed 422
+         *     at the service gate).
          */
         put: operations["put_current_academic_term_api_v1_admin_settings_current_academic_term_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/emoji-whitelist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Emoji Whitelist
+         * @description Set the emoji allowlist (each entry 1-8 code points; the empty
+         *     list bans all emoji — spec §22). Stored as a JSON array.
+         */
+        put: operations["put_emoji_whitelist_api_v1_admin_settings_emoji_whitelist_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/abandon-daily-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Abandon Daily Limit
+         * @description Set the per-natural-day abandon cap (0 = abandoning disabled;
+         *     spec §12.4). Stored as decimal text.
+         */
+        put: operations["put_abandon_daily_limit_api_v1_admin_settings_abandon_daily_limit_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/management-network-enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Management Network Enabled
+         * @description Turn the management-network restriction on/off. The route only
+         *     parses its body: the service takes the policy's aggregate advisory
+         *     lock, resolves the CIDR list's effective value under it, and answers
+         *     the typed 422 when enabling with an empty list — so no interleaving
+         *     of concurrent policy writes can store an unloadable pair.
+         */
+        put: operations["put_management_network_enabled_api_v1_admin_settings_management_network_enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/management-network-cidrs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Management Network Cidrs
+         * @description Set the management-network CIDR allowlist (strict parsing; stored
+         *     comma-separated canonical). Emptying it while the policy is
+         *     (effectively) enabled is the typed 422 — decided under the same
+         *     aggregate lock, against the enabled flag's committed value.
+         */
+        put: operations["put_management_network_cidrs_api_v1_admin_settings_management_network_cidrs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audit Logs
+         * @description The audit-log page: newest first, equality filters, half-open
+         *     [created_from, created_to) time range (read-only listing built
+         *     inline — the community-router listing precedent).
+         */
+        get: operations["list_audit_logs_api_v1_admin_audit_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/repairs/release-occupied-assignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release Occupied Assignment
+         * @description Put a dangling OCCUPIED Assignment back to AVAILABLE (Claim
+         *     history read, never written; the audited repair commits with the
+         *     command). 404 unknown id; 409 ``CONFLICT`` when the occupancy is
+         *     legitimate or the claim is not release-terminal.
+         */
+        post: operations["release_occupied_assignment_api_v1_admin_repairs_release_occupied_assignment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/repairs/force-fail-delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force Fail Delivery
+         * @description Fail a wedged SENDING delivery (the manual stuck-SENDING
+         *     backstop; the message and its history are untouched). 404 unknown
+         *     id; 409 ``CONFLICT`` for any non-SENDING status.
+         */
+        post: operations["force_fail_delivery_api_v1_admin_repairs_force_fail_delivery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/whitelist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Whitelist
+         * @description The whitelist page, ordered by student number (read-only listing
+         *     built inline — the community-router listing precedent).
+         */
+        get: operations["list_whitelist_api_v1_admin_whitelist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/whitelist/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Whitelist Import
+         * @description Classify every non-blank line; zero writes (preview-then-confirm,
+         *     plan Global Constraints). The digest binds the confirm payload.
+         */
+        post: operations["preview_whitelist_import_api_v1_admin_whitelist_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/whitelist/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Whitelist Import
+         * @description Insert exactly the previewed set, all-or-nothing; a digest
+         *     mismatch or a DB collision is the typed 409 ``CONFLICT``.
+         */
+        post: operations["confirm_whitelist_import_api_v1_admin_whitelist_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/whitelist/{student_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Toggle Whitelist Entry
+         * @description Flip one entry to enabled/disabled; an unknown number is the
+         *     typed 400 with the missing list, an idempotent flip changes
+         *     nothing.
+         */
+        patch: operations["toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description The account directory page with role/status filters (username
+         *     ordering; read-only listing built inline).
+         */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend User
+         * @description ACTIVE -> SUSPENDED (spec §5.7); every other from-state is the
+         *     typed 409 ``CONFLICT`` carrying the observed/requested pair.
+         */
+        post: operations["suspend_user_api_v1_admin_users__user_id__suspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/ban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ban User
+         * @description ACTIVE -> BANNED (spec §5.7).
+         */
+        post: operations["ban_user_api_v1_admin_users__user_id__ban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivate User
+         * @description SUSPENDED/BANNED -> ACTIVE — the Admin unban included (§5.7).
+         */
+        post: operations["reactivate_user_api_v1_admin_users__user_id__reactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Staff Invitation
+         * @description Issue one one-shot staff invitation (Admin-only, rate-limited per
+         *     inviting admin; the service validates the email and the TEACHER/
+         *     ADMIN narrowing and commits the audited row). The token returns
+         *     exactly once.
+         */
+        post: operations["create_staff_invitation_api_v1_staff_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rewards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reward Items
+         * @description The FULL catalogue page for management, disabled rows INCLUDED
+         *     (the student ``GET /rewards`` listing stays the enabled-only shelf;
+         *     no query filter — the whole catalogue, paginated; read-only listing
+         *     built inline — the identity admin-router listing precedent).
+         */
+        get: operations["list_reward_items_api_v1_admin_rewards_get"];
+        put?: never;
+        /**
+         * Create Reward Item
+         * @description Insert one enabled RewardItem (future requests see the new
+         *     economics; open redemptions keep their snapshots) and audit the
+         *     creation in the same transaction.
+         */
+        post: operations["create_reward_item_api_v1_admin_rewards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rewards/{reward_item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Reward Item
+         * @description Apply a partial update under the item row lock; cost/limit/stock
+         *     edits bind FUTURE requests only (the snapshot discipline). Absent
+         *     fields are unchanged, explicit nulls clear the nullable bounds.
+         */
+        patch: operations["update_reward_item_api_v1_admin_rewards__reward_item_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/rewards/{reward_item_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Reward Item
+         * @description enabled -> false (下架), reason mandatory; a replay on an
+         *     already-disabled item is the idempotent no-op.
+         */
+        post: operations["disable_reward_item_api_v1_admin_rewards__reward_item_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/reward-review-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reward Review Grants
+         * @description The live-grant page, newest first: who currently holds the
+         *     REWARD_REVIEW authorization, the granting Admin, and when — the
+         *     teacher's display nickname resolved through the directory port
+         *     inside the service (the module boundary holds on reads).
+         */
+        get: operations["list_reward_review_grants_api_v1_admin_reward_review_grants_get"];
+        put?: never;
+        /**
+         * Grant Reward Review
+         * @description Grant the global REWARD_REVIEW authorization to a Teacher
+         *     (target must be a TEACHER account; a live grant is the typed 409
+         *     ``CONFLICT``). Effective on the review guard's next read.
+         */
+        post: operations["grant_reward_review_api_v1_admin_reward_review_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/reward-review-grants/{teacher_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Reward Review
+         * @description Revoke the authorization (DELETE the grant row; history stays in
+         *     the audit stream). Effective on the review guard's next read; an
+         *     absent grant is the typed 404.
+         */
+        delete: operations["revoke_reward_review_api_v1_admin_reward_review_grants__teacher_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/points-adjustment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adjust User Points
+         * @description Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet
+         *     write); the wallet migration is audited in the same transaction.
+         *     The body's ``operation_id`` is the idempotency key: a replay with
+         *     the same intent returns the original entry (one row, one balance
+         *     move, one audit row), and the same id under a different decision is
+         *     the typed 409 CONFLICT (PR #5 fix A, P1).
+         */
+        post: operations["adjust_user_points_api_v1_admin_users__user_id__points_adjustment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notification-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notification Templates
+         * @description Every template row for administration, disabled ones INCLUDED
+         *     (dispatch-read rows are irrelevant to the management view), ordered
+         *     by the UNIQUE (event_type, channel) pair (read-only listing built
+         *     inline — the identity admin-router listing precedent).
+         */
+        get: operations["list_notification_templates_api_v1_admin_notification_templates_get"];
+        put?: never;
+        /**
+         * Create Notification Template
+         * @description Create the (event_type, channel) template at version 1 — or the
+         *     typed 409 ``CONFLICT`` when one already exists. Unsafe markup and
+         *     unknown placeholders are the typed 422 at write time.
+         */
+        post: operations["create_notification_template_api_v1_admin_notification_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notification-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Notification Template
+         * @description Edit title/body; version bumps by one and both §30 snapshots
+         *     ride the audit row.
+         */
+        patch: operations["update_notification_template_api_v1_admin_notification_templates__template_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/notification-templates/{template_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Notification Template
+         * @description Enable the template (version does not move; an idempotent toggle
+         *     writes nothing).
+         */
+        post: operations["enable_notification_template_api_v1_admin_notification_templates__template_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notification-templates/{template_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Notification Template
+         * @description Disable the template (version does not move; an idempotent toggle
+         *     writes nothing).
+         */
+        post: operations["disable_notification_template_api_v1_admin_notification_templates__template_id__disable_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1662,6 +2274,144 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AbandonDailyLimitSettingRequest
+         * @description The per-natural-day abandon cap (spec §12.4): 0 disables
+         *     abandoning; the registry mirrors the bound.
+         */
+        AbandonDailyLimitSettingRequest: {
+            /** Value */
+            value: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * AccountStatusRequest
+         * @description The mandatory free-text why of one status transition (spec §5.7;
+         *     the service refuses blanks before any read).
+         */
+        AccountStatusRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** AccountStatusResponse */
+        AccountStatusResponse: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+        };
+        /**
+         * AdminNotificationTemplateListResponse
+         * @description Offset-paginated template page, (event_type, channel)-ordered,
+         *     disabled rows INCLUDED — the administration view.
+         */
+        AdminNotificationTemplateListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNotificationTemplateResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** AdminNotificationTemplateResponse */
+        AdminNotificationTemplateResponse: {
+            /** Id */
+            id: string;
+            /** Event Type */
+            event_type: string;
+            /** Channel */
+            channel: string;
+            /** Title */
+            title: string;
+            /** Template Body */
+            template_body: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Version */
+            version: number;
+        };
+        /**
+         * AdminRewardItemListResponse
+         * @description Offset-paginated catalogue page, name-ordered, disabled rows
+         *     INCLUDED — the management view (the student listing's enabled-only
+         *     read is the student surface).
+         */
+        AdminRewardItemListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminRewardItemResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * AdminRewardItemResponse
+         * @description One catalogue row, admin view: every business field including
+         *     the enabled flag and the fulfillment instructions the student
+         *     listing omits.
+         */
+        AdminRewardItemResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Point Cost */
+            point_cost: number;
+            /** Stock */
+            stock: number | null;
+            /** Per User Term Limit */
+            per_user_term_limit: number | null;
+            /** Available From */
+            available_from: string | null;
+            /** Available Until */
+            available_until: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Requires Manual Review */
+            requires_manual_review: boolean;
+            /** Fulfillment Instructions */
+            fulfillment_instructions: string | null;
+        };
+        /** AdminUserListResponse */
+        AdminUserListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminUserResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * AdminUserResponse
+         * @description One account row for the governance listing (G11: governance
+         *     facts only — contact fields stay behind their own surfaces).
+         */
+        AdminUserResponse: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            /** Nickname */
+            nickname: string;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * ApproveResponse
          * @description The §14 approve outcome: the claim's landing state and the single
          *     grant. ``already_reviewed`` is True only on the idempotent replay
@@ -1690,6 +2440,62 @@ export interface components {
         AroundMeResponse: {
             /** Entries */
             entries: components["schemas"]["RankingEntryResponse"][];
+        };
+        /**
+         * AuditLogListResponse
+         * @description Offset-paginated audit page, newest first.
+         */
+        AuditLogListResponse: {
+            /** Items */
+            items: components["schemas"]["AuditLogResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * AuditLogResponse
+         * @description One durable audit row, verbatim (write-side redaction is the
+         *     invariant; nothing is added or removed at read time).
+         */
+        AuditLogResponse: {
+            /** Id */
+            id: string;
+            /** Actor User Id */
+            actor_user_id: string;
+            /** Actor Role */
+            actor_role: string;
+            /** Action */
+            action: string;
+            /** Target Type */
+            target_type: string;
+            /** Target Id */
+            target_id: string;
+            /** Reason */
+            reason: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            } | null;
+            /** Before Snapshot */
+            before_snapshot: {
+                [key: string]: unknown;
+            } | null;
+            /** After Snapshot */
+            after_snapshot: {
+                [key: string]: unknown;
+            } | null;
+            /** Ip Address */
+            ip_address: string | null;
+            /** Request Id */
+            request_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * BoardResponse
@@ -1929,6 +2735,8 @@ export interface components {
         CurrentAcademicTermRequest: {
             /** Value */
             value: string;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * CurrentAcademicTermResponse
@@ -1990,6 +2798,18 @@ export interface components {
             token: string;
         };
         /**
+         * EmojiWhitelistSettingRequest
+         * @description The emoji allowlist (spec §22): each entry 1-8 code points; the
+         *     EMPTY list is legal at the key level (= all emoji banned) — the
+         *     registry's own contract decides, this DTO only types the payload.
+         */
+        EmojiWhitelistSettingRequest: {
+            /** Value */
+            value: string[];
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * FileType
          * @description The closed upload file-type universe (spec §10/§12).
          *
@@ -1998,6 +2818,32 @@ export interface components {
          * @enum {string}
          */
         FileType: "CSV" | "XLSX" | "SQLITE";
+        /** ForceFailDeliveryRequest */
+        ForceFailDeliveryRequest: {
+            /**
+             * Delivery Id
+             * Format: uuid
+             */
+            delivery_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /** ForceFailDeliveryResponse */
+        ForceFailDeliveryResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Last Error */
+            last_error: string;
+            /** Attempts */
+            attempts: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * GrowthResponse
          * @description The §19 growth page answer; every figure is the caller's own.
@@ -2119,6 +2965,32 @@ export interface components {
         LogoutRequest: {
             /** Refresh Token */
             refresh_token?: string | null;
+        };
+        /**
+         * ManagementNetworkCidrsSettingRequest
+         * @description The management-network CIDR allowlist: strict standard-library
+         *     parsing (host bits set are a configuration error); the EMPTY list
+         *     is legal at the key level (= restriction allows nothing, so it may
+         *     only be written while the policy is disabled — the cross-key 422
+         *     otherwise).
+         */
+        ManagementNetworkCidrsSettingRequest: {
+            /** Value */
+            value: string[];
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ManagementNetworkEnabledSettingRequest
+         * @description Whether the management-network restriction is on (spec §33.4
+         *     adjacency). Setting ``true`` with an empty effective CIDR list is
+         *     the cross-key typed 422 (see the module docstring).
+         */
+        ManagementNetworkEnabledSettingRequest: {
+            /** Value */
+            value: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * MePublic
@@ -2281,6 +3153,19 @@ export interface components {
             nickname: string;
         };
         /**
+         * NotificationChannel
+         * @description Delivery channels (spec §25; frozen by interfaces.md).
+         * @enum {string}
+         */
+        NotificationChannel: "SMS" | "EMAIL" | "IN_APP";
+        /**
+         * NotificationEventType
+         * @description Canonical domain event names (spec §25 list plus the
+         *     SUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md).
+         * @enum {string}
+         */
+        NotificationEventType: "ASSIGNMENT_DEADLINE_24H" | "ASSIGNMENT_DEADLINE_4H" | "REVISION_REQUIRED" | "SUBMISSION_APPROVED" | "SUBMISSION_VALIDATION_FAILED" | "REWARD_REDEMPTION_APPROVED" | "REWARD_REDEMPTION_REJECTED" | "ACCOUNT_SECURITY";
+        /**
          * NotificationFailureResponse
          * @description One FAILED delivery for the staff failure query (spec §25.4).
          *
@@ -2373,6 +3258,22 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** NotificationTemplateCreateRequest */
+        NotificationTemplateCreateRequest: {
+            event_type: components["schemas"]["NotificationEventType"];
+            channel: components["schemas"]["NotificationChannel"];
+            /** Title */
+            title: string;
+            /** Template Body */
+            template_body: string;
+        };
+        /** NotificationTemplateUpdateRequest */
+        NotificationTemplateUpdateRequest: {
+            /** Title */
+            title: string;
+            /** Template Body */
+            template_body: string;
         };
         /**
          * OwnedHonorResponse
@@ -2480,6 +3381,42 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /**
+         * PointsAdjustmentRequest
+         * @description One manual wallet correction through the ledger (never a direct
+         *     wallet write): a non-zero amount, the mandatory reason, and the
+         *     caller-minted ``operation_id`` — the adjustment's stable intent id
+         *     (PR #5 fix A, P1). A retry after a lost response reuses the SAME
+         *     id and replays the original entry instead of double-charging; the
+         *     same id under a different decision is the typed 409.
+         */
+        PointsAdjustmentRequest: {
+            /** Amount */
+            amount: number;
+            /** Reason */
+            reason: string;
+            /**
+             * Operation Id
+             * Format: uuid
+             */
+            operation_id: string;
+        };
+        /**
+         * PointsAdjustmentResponse
+         * @description The posted ADMIN_ADJUSTMENT entry: ranking-neutral by
+         *     construction (affects_ranking=false; no ranking-affecting
+         *     adjustment operation exists).
+         */
+        PointsAdjustmentResponse: {
+            /** Ledger Entry Id */
+            ledger_entry_id: string;
+            /** User Id */
+            user_id: string;
+            /** Amount */
+            amount: number;
+            /** Reason */
+            reason: string;
         };
         /**
          * RankingEntryResponse
@@ -2671,6 +3608,29 @@ export interface components {
             phone_token: string;
             /** Password */
             password: string;
+        };
+        /**
+         * ReleaseOccupiedAssignmentRequest
+         * @description The dangling Assignment id plus the mandatory why (the service
+         *     refuses blank reasons before any read).
+         */
+        ReleaseOccupiedAssignmentRequest: {
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /** ReleaseOccupiedAssignmentResponse */
+        ReleaseOccupiedAssignmentResponse: {
+            /** Id */
+            id: string;
+            /** Task Id */
+            task_id: string;
+            /** Availability Status */
+            availability_status: string;
         };
         /**
          * ReportClosureResponse
@@ -2882,6 +3842,44 @@ export interface components {
             revision_deadline_at: string;
         };
         /**
+         * RewardItemCreateRequest
+         * @description The catalogue row to create (starts ENABLED — taking an item off
+         *     the shelf is the dedicated disable transition).
+         */
+        RewardItemCreateRequest: {
+            /** Name */
+            name: string;
+            /** Point Cost */
+            point_cost: number;
+            /** Description */
+            description?: string | null;
+            /** Stock */
+            stock?: number | null;
+            /** Per User Term Limit */
+            per_user_term_limit?: number | null;
+            /** Available From */
+            available_from?: string | null;
+            /** Available Until */
+            available_until?: string | null;
+            /**
+             * Requires Manual Review
+             * @default false
+             */
+            requires_manual_review: boolean;
+            /** Fulfillment Instructions */
+            fulfillment_instructions?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * RewardItemDisableRequest
+         * @description 下架 one item — the dedicated, reason-requiring transition.
+         */
+        RewardItemDisableRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
          * RewardItemResponse
          * @description One catalogue row for the student listing (spec §16/§42). The
          *     admin-only ``fulfillment_instructions``, the enabled flag (always
@@ -2912,6 +3910,81 @@ export interface components {
             /** Window Open */
             window_open: boolean;
         };
+        /**
+         * RewardItemUpdateRequest
+         * @description A partial catalogue update: an ABSENT field leaves the column
+         *     unchanged; an explicit null clears a nullable bound. The route
+         *     translates presence into the service's UNSET discipline.
+         */
+        RewardItemUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Point Cost */
+            point_cost?: number | null;
+            /** Description */
+            description?: string | null;
+            /** Stock */
+            stock?: number | null;
+            /** Per User Term Limit */
+            per_user_term_limit?: number | null;
+            /** Available From */
+            available_from?: string | null;
+            /** Available Until */
+            available_until?: string | null;
+            /** Requires Manual Review */
+            requires_manual_review?: boolean | null;
+            /** Fulfillment Instructions */
+            fulfillment_instructions?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * RewardReviewGrantListResponse
+         * @description Offset-paginated grants page, newest grant first.
+         */
+        RewardReviewGrantListResponse: {
+            /** Items */
+            items: components["schemas"]["RewardReviewGrantResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * RewardReviewGrantRequest
+         * @description Grant the global REWARD_REVIEW authorization to a Teacher; the
+         *     mandatory why rides the audited grant row.
+         */
+        RewardReviewGrantRequest: {
+            /**
+             * Teacher Id
+             * Format: uuid
+             */
+            teacher_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * RewardReviewGrantResponse
+         * @description One live grant row: the teacher (id + display nickname through
+         *     the frozen directory port) plus the grant facts. The grant's
+         *     who/why HISTORY lives in the audit stream, not the row.
+         */
+        RewardReviewGrantResponse: {
+            /** Teacher Id */
+            teacher_id: string;
+            /** Nickname */
+            nickname: string | null;
+            /** Granted By */
+            granted_by: string;
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
+        };
         /** RewardsListResponse */
         RewardsListResponse: {
             /** Items */
@@ -2931,6 +4004,42 @@ export interface components {
             token: string;
             /** Password */
             password: string;
+        };
+        /**
+         * StaffInvitationCreateRequest
+         * @description Issue one staff invitation (§5.8; Plan 08 T9's Admin surface).
+         *
+         *     Raw caller input: the email's normalization and the role's
+         *     TEACHER/ADMIN narrowing belong to ``StaffService
+         *     .create_staff_invitation``.
+         */
+        StaffInvitationCreateRequest: {
+            /** Email */
+            email: string;
+            role: components["schemas"]["Role"];
+        };
+        /**
+         * StaffInvitationResponse
+         * @description One issued invitation. ``token`` is the ONE-TIME capability,
+         *     returned exactly here and never again — the row stores only its
+         *     hash, and no invitation email is wired in V1.
+         */
+        StaffInvitationResponse: {
+            /** Id */
+            id: string;
+            role: components["schemas"]["Role"];
+            /** Token */
+            token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * StaffLoginRequest
@@ -3013,6 +4122,40 @@ export interface components {
             /** Detected Type */
             detected_type: string | null;
             report: components["schemas"]["ValidationReportPayload"] | null;
+        };
+        /**
+         * SystemSettingItemResponse
+         * @description One registered key's current state; ``null`` value/version means
+         *     "no row — the deployment seed or the key's env fallback decides"
+         *     (G7: the store is the fact, the seed bootstraps).
+         */
+        SystemSettingItemResponse: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string | null;
+            /** Version */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /**
+         * SystemSettingValueResponse
+         * @description One applied write: the stored canonical value and the row's new
+         *     per-key change counter (0020).
+         */
+        SystemSettingValueResponse: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
+            /** Version */
+            version: number;
+        };
+        /** SystemSettingsListResponse */
+        SystemSettingsListResponse: {
+            /** Items */
+            items: components["schemas"]["SystemSettingItemResponse"][];
         };
         /**
          * TaskCardResponse
@@ -3617,6 +4760,130 @@ export interface components {
             spendable_points: number;
             /** Point Debt */
             point_debt: number;
+        };
+        /**
+         * WhitelistConfirmRequest
+         * @description The previewed importable set plus its digest (all-or-nothing).
+         */
+        WhitelistConfirmRequest: {
+            /** Confirm Token */
+            confirm_token: string;
+            /**
+             * Enable
+             * @default true
+             */
+            enable: boolean;
+            /** Student Numbers */
+            student_numbers: string[];
+        };
+        /** WhitelistConfirmResponse */
+        WhitelistConfirmResponse: {
+            /** Created */
+            created: number;
+            /** Enable */
+            enable: boolean;
+        };
+        /** WhitelistCountsResponse */
+        WhitelistCountsResponse: {
+            /** Total Rows */
+            total_rows: number;
+            /** Importable */
+            importable: number;
+            /** Duplicate In File */
+            duplicate_in_file: number;
+            /** Duplicate In Db */
+            duplicate_in_db: number;
+            /** Full Width Digits */
+            full_width_digits: number;
+            /** Invalid Characters */
+            invalid_characters: number;
+            /** Invalid Length */
+            invalid_length: number;
+        };
+        /**
+         * WhitelistEntryResponse
+         * @description One whitelist row: the number plus its enabled state.
+         */
+        WhitelistEntryResponse: {
+            /** Id */
+            id: string;
+            /** Student Number */
+            student_number: string;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Disabled At */
+            disabled_at: string | null;
+        };
+        /**
+         * WhitelistListResponse
+         * @description Offset-paginated whitelist page, number-ordered.
+         */
+        WhitelistListResponse: {
+            /** Items */
+            items: components["schemas"]["WhitelistEntryResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * WhitelistPreviewRequest
+         * @description The raw import text (one student number per line; the service
+         *     owns decode, trimming, and every row verdict).
+         */
+        WhitelistPreviewRequest: {
+            /** Content */
+            content: string;
+        };
+        /**
+         * WhitelistPreviewResponse
+         * @description The preview verdict: per-row decisions, counts, and the digest
+         *     the confirm payload must carry back verbatim.
+         */
+        WhitelistPreviewResponse: {
+            /** Total Rows */
+            total_rows: number;
+            /** Decisions */
+            decisions: components["schemas"]["WhitelistRowDecisionResponse"][];
+            counts: components["schemas"]["WhitelistCountsResponse"];
+            /** Importable */
+            importable: string[];
+            /** Confirm Token */
+            confirm_token: string;
+        };
+        /** WhitelistRowDecisionResponse */
+        WhitelistRowDecisionResponse: {
+            /** Row Number */
+            row_number: number;
+            /** Code */
+            code: string;
+            /** Student Number */
+            student_number: string | null;
+        };
+        /**
+         * WhitelistToggleRequest
+         * @description Flip one entry (enable or disable); the free-text why rides the
+         *     per-entry audit rows.
+         */
+        WhitelistToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** WhitelistToggleResponse */
+        WhitelistToggleResponse: {
+            /** Student Number */
+            student_number: string;
+            /** Toggled */
+            toggled: boolean;
         };
         /** ReviewQueueResponse */
         app__modules__points__router__ReviewQueueResponse: {
@@ -6113,6 +7380,26 @@ export interface operations {
             };
         };
     };
+    list_system_settings_api_v1_admin_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingsListResponse"];
+                };
+            };
+        };
+    };
     get_current_academic_term_api_v1_admin_settings_current_academic_term_get: {
         parameters: {
             query?: never;
@@ -6153,6 +7440,972 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentAcademicTermResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_emoji_whitelist_api_v1_admin_settings_emoji_whitelist_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmojiWhitelistSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingValueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_abandon_daily_limit_api_v1_admin_settings_abandon_daily_limit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbandonDailyLimitSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingValueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_management_network_enabled_api_v1_admin_settings_management_network_enabled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagementNetworkEnabledSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingValueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_management_network_cidrs_api_v1_admin_settings_management_network_cidrs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagementNetworkCidrsSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingValueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_logs_api_v1_admin_audit_logs_get: {
+        parameters: {
+            query?: {
+                action?: string | null;
+                actor_user_id?: string | null;
+                target_type?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_occupied_assignment_api_v1_admin_repairs_release_occupied_assignment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseOccupiedAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseOccupiedAssignmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    force_fail_delivery_api_v1_admin_repairs_force_fail_delivery_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceFailDeliveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForceFailDeliveryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_whitelist_api_v1_admin_whitelist_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_whitelist_import_api_v1_admin_whitelist_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhitelistPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_whitelist_import_api_v1_admin_whitelist_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhitelistConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                student_number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhitelistToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistToggleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                role?: components["schemas"]["Role"] | null;
+                status?: components["schemas"]["UserStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspend_user_api_v1_admin_users__user_id__suspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ban_user_api_v1_admin_users__user_id__ban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reactivate_user_api_v1_admin_users__user_id__reactivate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_staff_invitation_api_v1_staff_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffInvitationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffInvitationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reward_items_api_v1_admin_rewards_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRewardItemListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_reward_item_api_v1_admin_rewards_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardItemCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRewardItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_reward_item_api_v1_admin_rewards__reward_item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reward_item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardItemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRewardItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_reward_item_api_v1_admin_rewards__reward_item_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reward_item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardItemDisableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRewardItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reward_review_grants_api_v1_admin_reward_review_grants_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardReviewGrantListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_reward_review_api_v1_admin_reward_review_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardReviewGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_reward_review_api_v1_admin_reward_review_grants__teacher_id__delete: {
+        parameters: {
+            query: {
+                reason: string;
+            };
+            header?: never;
+            path: {
+                teacher_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjust_user_points_api_v1_admin_users__user_id__points_adjustment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PointsAdjustmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointsAdjustmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notification_templates_api_v1_admin_notification_templates_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_notification_template_api_v1_admin_notification_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationTemplateCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_notification_template_api_v1_admin_notification_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationTemplateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_notification_template_api_v1_admin_notification_templates__template_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_notification_template_api_v1_admin_notification_templates__template_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNotificationTemplateResponse"];
                 };
             };
             /** @description Validation Error */

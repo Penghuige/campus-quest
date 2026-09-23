@@ -132,7 +132,15 @@ git commit -m "feat: administer student whitelist imports"
 
 - [ ] **Step 1: Write permissions tests**
 
-Teacher without explicit reward-review grant cannot approve. Granted Teacher can review only configured course/task scope. Admin can globally review.
+Teacher without explicit reward-review grant cannot approve. Granted Teacher can review — scope per the OWNER RULING below. Admin can globally review.
+
+> **Owner ruling (PR #5, 2026-09-23 — supersedes the "configured
+> course/task scope" wording above):** a `RewardReviewGrant` is **global
+> over RewardRedemption in V1**. Reason: the current RewardRedemption
+> model carries no course/task ownership dimension, so per-course/task
+> scoping has no join key. Future scoped delegation requires an
+> explicit schema/product change (G13) — do NOT infer scope from
+> unrelated Task data or "fix" the grant back to task scoping.
 
 - [ ] **Step 2: Implement update rules**
 
@@ -164,6 +172,16 @@ Student/Teacher cannot mutate global settings. Invalid emoji-list type rejected.
 Runtime system values include emoji whitelist, abandon daily limit, `CURRENT_ACADEMIC_TERM` (non-empty stable key such as `2026-fall`), and management-network policy toggles/CIDRs. Changing `CURRENT_ACADEMIC_TERM` affects only future RewardRedemption snapshots and must be audited. NotificationTemplate remains its dedicated typed model from Plan 07, but its Admin create/update/enable operations are implemented in this task and emit AuditLog.
 
 Each change increments version and records old/new redacted value.
+
+> **Owner ruling on `NotificationTemplate.enabled` (PR #5 delta
+> re-review, 2026-09-23 — mirrors spec §25.5):** `enabled=false` means
+> the database override is not consumed (the default template applies);
+> it does NOT disable the notification channel — channel send/no-send
+> is owned solely by Task notification policy and user/channel
+> eligibility. Templates use the event-variable namespace validated at
+> write time; events freeze their rendered per-channel snapshots at
+> registration, and later template edits/disables never rewrite
+> already-created notifications.
 
 - [ ] **Step 3: Run and commit**
 

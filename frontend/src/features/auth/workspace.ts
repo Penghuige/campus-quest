@@ -57,3 +57,29 @@ export function teacherWorkspaceGate(role: Role): TeacherWorkspaceGate {
   }
   return { kind: "staff" };
 }
+
+/**
+ * The admin shell's gate (Plan 09 Task 10): `kind: "admin"` is the ONLY
+ * branch that may mount the /admin workspace — a TEACHER session gets
+ * `staff-guidance` carrying the teacher workspace path and a STUDENT
+ * session gets `student-guidance`. The shell renders ONLY the guidance
+ * panel in both mismatch cases (design §10), so the six admin pages —
+ * and therefore every /admin API island inside them — never mount for a
+ * non-admin session: zero admin API calls fire (the plan's step-1
+ * privilege test). Backend `require_admin_actor` remains the authority;
+ * this gate is the no-wasted-requests UX mirror.
+ */
+export type AdminWorkspaceGate =
+  | { kind: "admin" }
+  | { kind: "staff-guidance"; workspacePath: string }
+  | { kind: "student-guidance"; workspacePath: string };
+
+export function adminWorkspaceGate(role: Role): AdminWorkspaceGate {
+  if (role === "ADMIN") {
+    return { kind: "admin" };
+  }
+  if (role === "TEACHER") {
+    return { kind: "staff-guidance", workspacePath: TEACHER_LANDING_PATH };
+  }
+  return { kind: "student-guidance", workspacePath: STUDENT_LANDING_PATH };
+}

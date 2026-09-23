@@ -93,6 +93,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.core.error_codes import ErrorCode
 from app.integrations.errors import TemporaryProviderError
 from app.modules.files.cleanup_service import (
     CleanupSummary,
@@ -660,6 +661,7 @@ def test_held_claim_rejects_protection_then_release_admits_it_again() -> None:
         with pytest.raises(CleanupClaimConflictError) as conflict:
             asyncio.run(_guard())
         assert conflict.value.status_code == 409
+        assert conflict.value.code == ErrorCode.CONFLICT
         assert conflict.value.details["submission_ids"] == [
             str(world.submission_ids["due"])
         ]

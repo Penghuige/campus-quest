@@ -157,8 +157,9 @@ class Settings(BaseSettings):
     phone_default_region: str = "CN"
     # Per-student daily abandon cap, counted per BUSINESS_TIMEZONE natural
     # day (spec §8.5: the default is the spec's 2, and the limit is
-    # explicitly configurable). Consumed by `AbandonService`, which receives
-    # the scalar at the composition root.
+    # explicitly configurable). The SEED `AbandonService` falls back to —
+    # the audited ABANDON_DAILY_LIMIT system-settings row is the fact a
+    # deployment moves once an admin sets it (G7 row-over-seed).
     daily_abandon_limit: int = 2
     # Validation worker sandbox bounds (spec §33.3 CPU/内存/时间限制; the
     # plan-04 task-7 parked rulings): every validator executes in a
@@ -195,6 +196,19 @@ class Settings(BaseSettings):
     # are this timestamp heuristic over `updated_at`, not a lease column.
     notification_dispatch_batch_limit: int = 500
     notification_dispatch_stale_sending_seconds: int = 900
+    # Stuck-SENDING automatic recovery monitor (Plan 08 W5a carry, the
+    # aged-SENDING ruling): how long a delivery may sit in SENDING
+    # before the ``workers.recover_stuck_sending`` beat flips it to
+    # RETRYABLE for re-dispatch. Distinct from (and shorter than) the
+    # dispatcher's re-enqueue heuristic above ON PURPOSE: the monitor
+    # is the STATE-side path (SENDING -> RETRYABLE, one conditional
+    # UPDATE) that hands the row back to the ordinary due scan, while
+    # the dispatcher's branch remains the re-enqueue path; sized above
+    # any healthy provider call (the send service holds no row lock
+    # across provider I/O, but a slow call still owns its SENDING
+    # lease), so a live sender is never scooped. The recovery's
+    # per-beat batch rides ``notification_dispatch_batch_limit``.
+    notification_sending_stuck_threshold_seconds: int = 600
     # Beat cadences (PR #2 hardening, MERGE_CARRIES item 4): how often the
     # Celery beat fires each scheduled scan. The dispatch scan keeps the
     # §25.4 ~1-minute retry rung honest; the expiry scan judges hour-scale
@@ -202,6 +216,7 @@ class Settings(BaseSettings):
     # limits (the *_batch_limit / scan LIMIT constants) stay the burst
     # bound — a slower cadence only delays work, never enlarges it.
     notification_dispatch_scan_interval_seconds: int = 60
+    notification_sending_stuck_scan_interval_seconds: int = 60
     claim_expiry_scan_interval_seconds: int = 60
     file_cleanup_scan_interval_seconds: int = 900
     # Cleanup deletion-claim lease (PR #2 hardening pass 5a, P0-2): how
@@ -241,6 +256,22 @@ class Settings(BaseSettings):
     # dispatch is safe by the validation service's own tx1 gates (see
     # the requeue job's docstring).
     uploaded_dispatch_grace_seconds: int = 120
+    # Optional management-network restriction for staff/admin surfaces
+    # (Plan 08 T8 step 4). DEPRECATED transitional fallback (Plan 08 T5):
+    # the policy's home is the audited system_settings store — keys
+    # MANAGEMENT_NETWORK_ENABLED / MANAGEMENT_NETWORK_CIDRS — resolved
+    # store-first by app/core/admin_network_policy.py. These env fields
+    # survive ONLY as the per-key fallback while no store row exists,
+    # so deployments configured against them keep working through the
+    # transition; they WILL BE REMOVED BEFORE THE V1 RELEASE (the
+    # fields and the loader's fallbacks go together — do not build new
+    # deployment configuration on them). ``management_network_cidrs``
+    # is comma-separated CIDRs parsed by app/core/admin_network_policy.py
+    # (standard-library ipaddress; an invalid entry fails policy
+    # construction loudly). Disabled (the default) is pure pass-through
+    # — 2FA/RBAC still apply.
+    management_network_enabled: bool = False
+    management_network_cidrs: str = ""
 
     @field_validator("business_timezone")
     @classmethod
@@ -302,8 +333,24 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("notification_sending_stuck_threshold_seconds")
+    @classmethod
+    def _validate_notification_sending_stuck_threshold_seconds(cls, value: int) -> int:
+        # A zero threshold would flip every live in-flight claim to
+        # RETRYABLE on every beat — re-dispatching healthy sends and
+        # racing their finalizes. The threshold must sit strictly above
+        # a healthy send's whole lifetime (no upper bound: a longer one
+        # only delays recovery, which the manual force-fail command
+        # backstops).
+        if value < 1:
+            raise ValueError(
+                "notification_sending_stuck_threshold_seconds must be >= 1 second"
+            )
+        return value
+
     @field_validator(
         "notification_dispatch_scan_interval_seconds",
+        "notification_sending_stuck_scan_interval_seconds",
         "claim_expiry_scan_interval_seconds",
         "file_cleanup_scan_interval_seconds",
         "stale_validating_scan_interval_seconds",

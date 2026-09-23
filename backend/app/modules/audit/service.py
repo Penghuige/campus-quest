@@ -18,6 +18,13 @@ instead of a Python-side instant.
 Module boundaries: this module imports nothing from the domain modules
 — the dependency arrow points IN (community/points/identity import the
 writer), so audit can never be coupled back to a caller.
+
+Defense in depth (Plan 08 T1): every structured payload column
+(``details``, ``before_snapshot``, ``after_snapshot``) is forced
+through :func:`app.modules.audit.redaction.redact` — a key naming a
+secret is replaced with ``"[REDACTED]"`` at any nesting depth — so the
+append-only row cannot persist a credential even if a caller hands one
+over (see redaction.py; ``reason`` is free text and exempt).
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditLog
+from app.modules.audit.redaction import redact
 from app.modules.identity.events import Actor
 
 __all__ = ["AuditLogWriter"]
@@ -71,6 +79,14 @@ class AuditLogWriter:
         Both stay NULL for access-style actions that mutate nothing.
         ``ip_address``/``request_id`` come from the caller's
         ``AuditContext`` when one exists; NULL on non-HTTP callers.
+
+        Defense in depth (Plan 08 T1): ``details``/``before_snapshot``/
+        ``after_snapshot`` are FORCED through :func:`redact` before the
+        row is built — any key naming a secret (password/otp/refresh
+        token/totp secret/recovery codes/...) becomes ``"[REDACTED]"``
+        at any nesting depth, so a caller's hand-built safe snapshot is
+        a premise the writer no longer needs. ``reason`` stays as given
+        (free text, not a structured value).
         """
         row = AuditLog(
             actor_user_id=actor.user_id,
@@ -79,12 +95,12 @@ class AuditLogWriter:
             target_type=target_type,
             target_id=target_id,
             reason=reason,
-            details=dict(details) if details is not None else None,
+            details=redact(details) if details is not None else None,
             before_snapshot=(
-                dict(before_snapshot) if before_snapshot is not None else None
+                redact(before_snapshot) if before_snapshot is not None else None
             ),
             after_snapshot=(
-                dict(after_snapshot) if after_snapshot is not None else None
+                redact(after_snapshot) if after_snapshot is not None else None
             ),
             ip_address=ip_address,
             request_id=request_id,

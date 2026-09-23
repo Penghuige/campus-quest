@@ -86,11 +86,15 @@ policy skips from provider sends. Skip sources: the T2
 since routing — e.g. the email was unverified or the account became
 BANNED; the re-check applies account-level rules, and for deadline
 events a default TaskNotificationPolicy because task-level toggles
-belong to routing time, not dispatch time), and the T3 dispatch-time
+belong to routing time, not dispatch time) and the T3 dispatch-time
 suppression predicate `should_send_reminder` (a claim that has moved
 to VALIDATING/UNDER_REVIEW/COMPLETED/ABANDONED/EXPIRED, or whose
 assignment_claim row is gone, cancels the ordinary reminder — spec
-§25.2 "未发送的普通 DDL 提醒必须取消/跳过"). The claim-status read is
+§25.2 "未发送的普通 DDL 提醒必须取消/跳过"). Managed template rows are
+NOT a skip source (PR #5 gfix D): enabled=false means the override is
+off — the registration port already fell back to the seed/historic
+text — and whether a channel sends is the channel policy's decision,
+never a template row's. The claim-status read is
 injected as `claim_status_resolver` because this module must not
 import tasks at runtime (notifications -> identity only); the worker
 job wires the real reader, tests wire fakes.
@@ -101,23 +105,28 @@ dispatch calls no provider at all — it marks the delivery SENT and
 clears notification.read_at (completing delivery is the moment the
 message officially enters the inbox, unread). SMS/EMAIL: through the
 SmsSender/EmailSender ports. The provider call passes `to`, a stable
-template id (the event type slug, e.g. "assignment_deadline_4h"), the
-notification snapshot as variables ({"title", "body"}), and the
-idempotency key
+template id, the message variables, and the idempotency key
 
     {event_key}:{CHANNEL}:{user_id}
 
-e.g. "claim:<uuid>:deadline_4h:SMS:<uuid>". Per-channel text is NOT
-re-rendered at dispatch: the T1 schema persists no event payload, so
-the per-event render variables exist only at record time (T5 renders
-the snapshot); the ports' frozen contract renders the final message
-provider-side from the template id + variables (app/integrations/
-sms.py, email.py). On success the row records the receipt the sender
-returned, or NULL when the adapter surfaces none: the development-only
-logging adapters return a "logging:"-prefixed id so a recorded SENT
-delivery is distinguishable from a real provider send at a glance
-(config.py's production guard keeps the logging provider out of
-production); the test fakes return no receipt.
+e.g. "claim:<uuid>:deadline_4h:SMS:<uuid>". The template id is always
+``event_type.value.lower()`` (e.g. "assignment_deadline_4h") and the
+variables are the ``{"title", "body"}`` pair of the NOTIFICATION ROW
+THE DELIVERY POINTS AT — which, for a channel whose managed template
+was consumed at registration (gfix D), is the per-channel snapshot
+row carrying that channel's finished text, and otherwise the canonical
+IN_APP snapshot the provider renders channel-appropriate copy from
+via its own registry. NOTHING is rendered at dispatch: no template
+row is consulted, no event variable is interpreted, so an accepted
+admin template cannot deterministically fail here (the Accepted ⇒
+renderable invariant is the registration port's, enforced while the
+payload was still in hand). On success
+the row records the receipt the sender returned, or NULL when the
+adapter surfaces none: the development-only logging adapters return a
+"logging:"-prefixed id so a recorded SENT delivery is distinguishable
+from a real provider send at a glance (config.py's production guard
+keeps the logging provider out of production); the test fakes return
+no receipt.
 
 Provider sends happen with NO row lock or session held (§7: the lock
 spans only the tiny state transitions, never external I/O).
@@ -152,7 +161,10 @@ from app.modules.notifications.enums import (
     NotificationChannel,
     NotificationEventType,
 )
-from app.modules.notifications.models import Notification, NotificationDelivery
+from app.modules.notifications.models import (
+    Notification,
+    NotificationDelivery,
+)
 from app.modules.notifications.service import (
     DEADLINE_REMINDER_EVENTS,
     ChannelDecision,
@@ -421,6 +433,11 @@ class DeliveryService:
                 channel=channel,
                 attempts=delivery.attempts,
                 scheduled_at=delivery.scheduled_at,
+                # The notification row this delivery points at IS the
+                # frozen message (gfix D): the canonical snapshot, or
+                # the per-channel snapshot a consumed managed template
+                # froze at registration. No template consult happens
+                # here — nothing is rendered at dispatch.
                 title=notification.title,
                 body=notification.body,
                 phone_e164=user.phone_e164,
@@ -448,6 +465,7 @@ class DeliveryService:
     async def _dispatch_skip_token(self, claimed: _Claim, now: datetime) -> str | None:
         """The "skipped:<token>" marker when dispatch policy cancels the
         send, or None when the delivery should proceed."""
+
         if claimed.channel_skip_reason is not None:
             return f"{SKIPPED_LAST_ERROR_PREFIX}{claimed.channel_skip_reason}"
 
@@ -476,6 +494,11 @@ class DeliveryService:
         idempotency_key = provider_idempotency_key(
             claimed.event_key, claimed.channel, claimed.user_id
         )
+        # The frozen message: whatever snapshot row the delivery points
+        # at (the per-channel product a consumed managed template froze
+        # at registration, or the canonical snapshot). Nothing is
+        # rendered here — the historic template id + variable contract
+        # carries the finished text to the provider port.
         template_id = claimed.event_type.value.lower()
         variables: dict[str, str] = {"title": claimed.title, "body": claimed.body}
         receipt: str | None = None

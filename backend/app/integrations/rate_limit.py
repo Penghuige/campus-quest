@@ -105,6 +105,12 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="comments:vote", limit=30, window_seconds=60),
         RateLimitRule(bucket="comments:reaction", limit=30, window_seconds=60),
         RateLimitRule(bucket="comments:report", limit=5, window_seconds=60),
+        # Staff invitation issuance (Plan 08 T9): per inviting Admin.
+        # Each invitation mints a one-time capability and records an
+        # audited row, so hammering the endpoint spends audit noise and
+        # token material; the role/target validation lives in the staff
+        # service.
+        RateLimitRule(bucket="staff:invitations", limit=20, window_seconds=3600),
     )
 }
 

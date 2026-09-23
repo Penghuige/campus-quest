@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 
+from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import require_active_staff_actor
 from app.modules.identity.events import Actor
 from app.modules.identity.providers import (
@@ -71,6 +72,7 @@ async def staff_login(
 async def accept_staff_invitation(
     body: StaffInvitationAcceptRequest,
     response: Response,
+    request: Request,
     staff: Annotated[StaffService, Depends(get_staff_service)],
     settings: AppSettings,
     db: DbSession,
@@ -79,8 +81,15 @@ async def accept_staff_invitation(
 
     The returned tokens are a real session confined to finishing TOTP
     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
+    The accept writes its durable audit row inside the service's
+    transaction, carrying this request's correlation pair (§30).
     """
-    pending = await staff.accept_staff_invitation(db, body.token, body.password)
+    pending = await staff.accept_staff_invitation(
+        db,
+        body.token,
+        body.password,
+        audit_context=AuditContext.from_request(request),
+    )
     return _token_pair_response(response, pending.tokens, settings)
 
 

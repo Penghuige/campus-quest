@@ -681,7 +681,7 @@
     "/api/v1/auth/staff/invitations/accept": {
       "post": {
         "summary": "Accept Staff Invitation",
-        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.",
+        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.\nThe accept writes its durable audit row inside the service's\ntransaction, carrying this request's correlation pair (§30).",
         "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -2254,7 +2254,7 @@
     "/api/v1/teacher/rewards/redemptions": {
       "get": {
         "summary": "List Redemption Queue",
-        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name. Admin-only with the\ndecision endpoints until scoped delegation lands (PR #2 closure\nreview): the queue exposes every requester's identity, and the\napproved rule is \"Teacher reviews AUTHORIZED-RELATED redemptions\",\nnot \"every Teacher inspects all applications\".",
+        "description": "The review queue: pending redemptions (REQUESTED/UNDER_REVIEW)\noldest first, with the requester's display nickname through the\nidentity directory port and the item name. Admin globally; a\ngranted Teacher reads the same queue (Plan 08 T4) — the read was\nwidened WITH the decisions (the ruling's read/write-consistency\nclause: the queue exposes every requester's identity, so it can\nnever be broader than the decisions it feeds).",
         "operationId": "list_redemption_queue_api_v1_teacher_rewards_redemptions_get",
         "security": [
           {
@@ -2313,7 +2313,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/approve": {
       "post": {
         "summary": "Approve Redemption",
-        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec §16.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Approve: the freeze becomes one negative REWARD_REDEMPTION entry\nand the status flips to APPROVED (spec §16.2); a replay on an\nalready-approved row is the idempotent no-op that returns it.\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "approve_redemption_api_v1_teacher_rewards_redemptions__redemption_id__approve_post",
         "security": [
           {
@@ -2359,7 +2359,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/reject": {
       "post": {
         "summary": "Reject Redemption",
-        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec §16.2).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Reject with a mandatory reason: the freeze is released and NO\nconsumption entry is written (spec §16.2).\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "reject_redemption_api_v1_teacher_rewards_redemptions__redemption_id__reject_post",
         "security": [
           {
@@ -2415,7 +2415,7 @@
     "/api/v1/teacher/rewards/redemptions/{redemption_id}/fulfill": {
       "post": {
         "summary": "Fulfill Redemption",
-        "description": "Record the physical delivery of an APPROVED redemption (spec\n§16.2: approval and delivery are separate transitions).\n\nAdmin-only until scoped delegation (PR #2 hardening ruling).",
+        "description": "Record the physical delivery of an APPROVED redemption (spec\n§16.2: approval and delivery are separate transitions).\n\nAdmin globally; granted Teacher (Plan 08 T4 scoped delegation).",
         "operationId": "fulfill_redemption_api_v1_teacher_rewards_redemptions__redemption_id__fulfill_post",
         "security": [
           {
@@ -3747,6 +3747,30 @@
         }
       }
     },
+    "/api/v1/admin/settings": {
+      "get": {
+        "summary": "List System Settings",
+        "description": "Every REGISTERED key's current state, registry order, ``null``\nfields marking \"no row\" (the reader decides the fallback — the\nprovider pattern, G7). Unregistered keys are unrepresentable.",
+        "operationId": "list_system_settings_api_v1_admin_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/settings/current-academic-term": {
       "get": {
         "summary": "Get Current Academic Term",
@@ -3772,7 +3796,7 @@
       },
       "put": {
         "summary": "Put Current Academic Term",
-        "description": "Turn the term: the value row and its audit row commit as one\nunit, and every redemption created afterwards snapshots the new\nterm (spec §16.1 — existing redemptions keep theirs).",
+        "description": "Turn the term: the value row and its audit row commit as one\nunit, and every redemption created afterwards snapshots the new\nterm (spec §16.1 — existing redemptions keep theirs). The optional\n``reason`` rides the audit row (blank-after-trim is the typed 422\nat the service gate).",
         "operationId": "put_current_academic_term_api_v1_admin_settings_current_academic_term_put",
         "requestBody": {
           "content": {
@@ -3811,6 +3835,1580 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/settings/emoji-whitelist": {
+      "put": {
+        "summary": "Put Emoji Whitelist",
+        "description": "Set the emoji allowlist (each entry 1-8 code points; the empty\nlist bans all emoji — spec §22). Stored as a JSON array.",
+        "operationId": "put_emoji_whitelist_api_v1_admin_settings_emoji_whitelist_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmojiWhitelistSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingValueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/settings/abandon-daily-limit": {
+      "put": {
+        "summary": "Put Abandon Daily Limit",
+        "description": "Set the per-natural-day abandon cap (0 = abandoning disabled;\nspec §12.4). Stored as decimal text.",
+        "operationId": "put_abandon_daily_limit_api_v1_admin_settings_abandon_daily_limit_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonDailyLimitSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingValueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/settings/management-network-enabled": {
+      "put": {
+        "summary": "Put Management Network Enabled",
+        "description": "Turn the management-network restriction on/off. The route only\nparses its body: the service takes the policy's aggregate advisory\nlock, resolves the CIDR list's effective value under it, and answers\nthe typed 422 when enabling with an empty list — so no interleaving\nof concurrent policy writes can store an unloadable pair.",
+        "operationId": "put_management_network_enabled_api_v1_admin_settings_management_network_enabled_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementNetworkEnabledSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingValueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/settings/management-network-cidrs": {
+      "put": {
+        "summary": "Put Management Network Cidrs",
+        "description": "Set the management-network CIDR allowlist (strict parsing; stored\ncomma-separated canonical). Emptying it while the policy is\n(effectively) enabled is the typed 422 — decided under the same\naggregate lock, against the enabled flag's committed value.",
+        "operationId": "put_management_network_cidrs_api_v1_admin_settings_management_network_cidrs_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementNetworkCidrsSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingValueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "summary": "List Audit Logs",
+        "description": "The audit-log page: newest first, equality filters, half-open\n[created_from, created_to) time range (read-only listing built\ninline — the community-router listing precedent).",
+        "operationId": "list_audit_logs_api_v1_admin_audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor User Id"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Type"
+            }
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "name": "created_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/repairs/release-occupied-assignment": {
+      "post": {
+        "summary": "Release Occupied Assignment",
+        "description": "Put a dangling OCCUPIED Assignment back to AVAILABLE (Claim\nhistory read, never written; the audited repair commits with the\ncommand). 404 unknown id; 409 ``CONFLICT`` when the occupancy is\nlegitimate or the claim is not release-terminal.",
+        "operationId": "release_occupied_assignment_api_v1_admin_repairs_release_occupied_assignment_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseOccupiedAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseOccupiedAssignmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/repairs/force-fail-delivery": {
+      "post": {
+        "summary": "Force Fail Delivery",
+        "description": "Fail a wedged SENDING delivery (the manual stuck-SENDING\nbackstop; the message and its history are untouched). 404 unknown\nid; 409 ``CONFLICT`` for any non-SENDING status.",
+        "operationId": "force_fail_delivery_api_v1_admin_repairs_force_fail_delivery_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForceFailDeliveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForceFailDeliveryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/whitelist": {
+      "get": {
+        "summary": "List Whitelist",
+        "description": "The whitelist page, ordered by student number (read-only listing\nbuilt inline — the community-router listing precedent).",
+        "operationId": "list_whitelist_api_v1_admin_whitelist_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhitelistListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/whitelist/preview": {
+      "post": {
+        "summary": "Preview Whitelist Import",
+        "description": "Classify every non-blank line; zero writes (preview-then-confirm,\nplan Global Constraints). The digest binds the confirm payload.",
+        "operationId": "preview_whitelist_import_api_v1_admin_whitelist_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhitelistPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhitelistPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/whitelist/confirm": {
+      "post": {
+        "summary": "Confirm Whitelist Import",
+        "description": "Insert exactly the previewed set, all-or-nothing; a digest\nmismatch or a DB collision is the typed 409 ``CONFLICT``.",
+        "operationId": "confirm_whitelist_import_api_v1_admin_whitelist_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhitelistConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhitelistConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/whitelist/{student_number}": {
+      "patch": {
+        "summary": "Toggle Whitelist Entry",
+        "description": "Flip one entry to enabled/disabled; an unknown number is the\ntyped 400 with the missing list, an idempotent flip changes\nnothing.",
+        "operationId": "toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Student Number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhitelistToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhitelistToggleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "summary": "List Users",
+        "description": "The account directory page with role/status filters (username\nordering; read-only listing built inline).",
+        "operationId": "list_users_api_v1_admin_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UserStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/suspend": {
+      "post": {
+        "summary": "Suspend User",
+        "description": "ACTIVE -> SUSPENDED (spec §5.7); every other from-state is the\ntyped 409 ``CONFLICT`` carrying the observed/requested pair.",
+        "operationId": "suspend_user_api_v1_admin_users__user_id__suspend_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/ban": {
+      "post": {
+        "summary": "Ban User",
+        "description": "ACTIVE -> BANNED (spec §5.7).",
+        "operationId": "ban_user_api_v1_admin_users__user_id__ban_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/reactivate": {
+      "post": {
+        "summary": "Reactivate User",
+        "description": "SUSPENDED/BANNED -> ACTIVE — the Admin unban included (§5.7).",
+        "operationId": "reactivate_user_api_v1_admin_users__user_id__reactivate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/staff/invitations": {
+      "post": {
+        "summary": "Create Staff Invitation",
+        "description": "Issue one one-shot staff invitation (Admin-only, rate-limited per\ninviting admin; the service validates the email and the TEACHER/\nADMIN narrowing and commits the audited row). The token returns\nexactly once.",
+        "operationId": "create_staff_invitation_api_v1_staff_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffInvitationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffInvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/rewards": {
+      "get": {
+        "summary": "List Reward Items",
+        "description": "The FULL catalogue page for management, disabled rows INCLUDED\n(the student ``GET /rewards`` listing stays the enabled-only shelf;\nno query filter — the whole catalogue, paginated; read-only listing\nbuilt inline — the identity admin-router listing precedent).",
+        "operationId": "list_reward_items_api_v1_admin_rewards_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRewardItemListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Reward Item",
+        "description": "Insert one enabled RewardItem (future requests see the new\neconomics; open redemptions keep their snapshots) and audit the\ncreation in the same transaction.",
+        "operationId": "create_reward_item_api_v1_admin_rewards_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewardItemCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRewardItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/rewards/{reward_item_id}": {
+      "patch": {
+        "summary": "Update Reward Item",
+        "description": "Apply a partial update under the item row lock; cost/limit/stock\nedits bind FUTURE requests only (the snapshot discipline). Absent\nfields are unchanged, explicit nulls clear the nullable bounds.",
+        "operationId": "update_reward_item_api_v1_admin_rewards__reward_item_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reward_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Reward Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewardItemUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRewardItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/rewards/{reward_item_id}/disable": {
+      "post": {
+        "summary": "Disable Reward Item",
+        "description": "enabled -> false (下架), reason mandatory; a replay on an\nalready-disabled item is the idempotent no-op.",
+        "operationId": "disable_reward_item_api_v1_admin_rewards__reward_item_id__disable_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reward_item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Reward Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewardItemDisableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRewardItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reward-review-grants": {
+      "get": {
+        "summary": "List Reward Review Grants",
+        "description": "The live-grant page, newest first: who currently holds the\nREWARD_REVIEW authorization, the granting Admin, and when — the\nteacher's display nickname resolved through the directory port\ninside the service (the module boundary holds on reads).",
+        "operationId": "list_reward_review_grants_api_v1_admin_reward_review_grants_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardReviewGrantListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Grant Reward Review",
+        "description": "Grant the global REWARD_REVIEW authorization to a Teacher\n(target must be a TEACHER account; a live grant is the typed 409\n``CONFLICT``). Effective on the review guard's next read.",
+        "operationId": "grant_reward_review_api_v1_admin_reward_review_grants_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewardReviewGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reward-review-grants/{teacher_id}": {
+      "delete": {
+        "summary": "Revoke Reward Review",
+        "description": "Revoke the authorization (DELETE the grant row; history stays in\nthe audit stream). Effective on the review guard's next read; an\nabsent grant is the typed 404.",
+        "operationId": "revoke_reward_review_api_v1_admin_reward_review_grants__teacher_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "teacher_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Teacher Id"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Reason"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/points-adjustment": {
+      "post": {
+        "summary": "Adjust User Points",
+        "description": "Post one ADMIN_ADJUSTMENT ledger entry (never a direct wallet\nwrite); the wallet migration is audited in the same transaction.\nThe body's ``operation_id`` is the idempotency key: a replay with\nthe same intent returns the original entry (one row, one balance\nmove, one audit row), and the same id under a different decision is\nthe typed 409 CONFLICT (PR #5 fix A, P1).",
+        "operationId": "adjust_user_points_api_v1_admin_users__user_id__points_adjustment_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointsAdjustmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointsAdjustmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notification-templates": {
+      "get": {
+        "summary": "List Notification Templates",
+        "description": "Every template row for administration, disabled ones INCLUDED\n(dispatch-read rows are irrelevant to the management view), ordered\nby the UNIQUE (event_type, channel) pair (read-only listing built\ninline — the identity admin-router listing precedent).",
+        "operationId": "list_notification_templates_api_v1_admin_notification_templates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Notification Template",
+        "description": "Create the (event_type, channel) template at version 1 — or the\ntyped 409 ``CONFLICT`` when one already exists. Unsafe markup and\nunknown placeholders are the typed 422 at write time.",
+        "operationId": "create_notification_template_api_v1_admin_notification_templates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTemplateCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notification-templates/{template_id}": {
+      "patch": {
+        "summary": "Update Notification Template",
+        "description": "Edit title/body; version bumps by one and both §30 snapshots\nride the audit row.",
+        "operationId": "update_notification_template_api_v1_admin_notification_templates__template_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTemplateUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notification-templates/{template_id}/enable": {
+      "post": {
+        "summary": "Enable Notification Template",
+        "description": "Enable the template (version does not move; an idempotent toggle\nwrites nothing).",
+        "operationId": "enable_notification_template_api_v1_admin_notification_templates__template_id__enable_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notification-templates/{template_id}/disable": {
+      "post": {
+        "summary": "Disable Notification Template",
+        "description": "Disable the template (version does not move; an idempotent toggle\nwrites nothing).",
+        "operationId": "disable_notification_template_api_v1_admin_notification_templates__template_id__disable_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/health/live": {
@@ -3854,6 +5452,365 @@
   },
   "components": {
     "schemas": {
+      "AbandonDailyLimitSettingRequest": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "AbandonDailyLimitSettingRequest",
+        "description": "The per-natural-day abandon cap (spec §12.4): 0 disables\nabandoning; the registry mirrors the bound."
+      },
+      "AccountStatusRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "AccountStatusRequest",
+        "description": "The mandatory free-text why of one status transition (spec §5.7;\nthe service refuses blanks before any read)."
+      },
+      "AccountStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "role",
+          "status"
+        ],
+        "title": "AccountStatusResponse"
+      },
+      "AdminNotificationTemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNotificationTemplateResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AdminNotificationTemplateListResponse",
+        "description": "Offset-paginated template page, (event_type, channel)-ordered,\ndisabled rows INCLUDED — the administration view."
+      },
+      "AdminNotificationTemplateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "template_body": {
+            "type": "string",
+            "title": "Template Body"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "channel",
+          "title",
+          "template_body",
+          "enabled",
+          "version"
+        ],
+        "title": "AdminNotificationTemplateResponse"
+      },
+      "AdminRewardItemListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRewardItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AdminRewardItemListResponse",
+        "description": "Offset-paginated catalogue page, name-ordered, disabled rows\nINCLUDED — the management view (the student listing's enabled-only\nread is the student surface)."
+      },
+      "AdminRewardItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "point_cost": {
+            "type": "integer",
+            "title": "Point Cost"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
+          },
+          "per_user_term_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per User Term Limit"
+          },
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "available_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Until"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "requires_manual_review": {
+            "type": "boolean",
+            "title": "Requires Manual Review"
+          },
+          "fulfillment_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fulfillment Instructions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "point_cost",
+          "stock",
+          "per_user_term_limit",
+          "available_from",
+          "available_until",
+          "enabled",
+          "requires_manual_review",
+          "fulfillment_instructions"
+        ],
+        "title": "AdminRewardItemResponse",
+        "description": "One catalogue row, admin view: every business field including\nthe enabled flag and the fulfillment instructions the student\nlisting omits."
+      },
+      "AdminUserListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AdminUserListResponse"
+      },
+      "AdminUserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "nickname",
+          "role",
+          "status",
+          "created_at"
+        ],
+        "title": "AdminUserResponse",
+        "description": "One account row for the governance listing (G11: governance\nfacts only — contact fields stay behind their own surfaces)."
+      },
       "ApproveResponse": {
         "properties": {
           "claim_id": {
@@ -3913,6 +5870,160 @@
         ],
         "title": "AroundMeResponse",
         "description": "The caller's neighborhood, numbered with GLOBAL board ranks — a\nslice of the board, never a re-ranked mini-board."
+      },
+      "AuditLogListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AuditLogListResponse",
+        "description": "Offset-paginated audit page, newest first."
+      },
+      "AuditLogResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "title": "Actor User Id"
+          },
+          "actor_role": {
+            "type": "string",
+            "title": "Actor Role"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "type": "string",
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "before_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Snapshot"
+          },
+          "after_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Snapshot"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "actor_user_id",
+          "actor_role",
+          "action",
+          "target_type",
+          "target_id",
+          "reason",
+          "details",
+          "before_snapshot",
+          "after_snapshot",
+          "ip_address",
+          "request_id",
+          "created_at"
+        ],
+        "title": "AuditLogResponse",
+        "description": "One durable audit row, verbatim (write-side redaction is the\ninvariant; nothing is added or removed at read time)."
       },
       "BoardResponse": {
         "properties": {
@@ -4379,6 +6490,17 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "additionalProperties": false,
@@ -4481,6 +6603,35 @@
         "title": "EmailVerifyRequest",
         "description": "Confirm an email binding with the token from the message (§5.5)."
       },
+      "EmojiWhitelistSettingRequest": {
+        "properties": {
+          "value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "EmojiWhitelistSettingRequest",
+        "description": "The emoji allowlist (spec §22): each entry 1-8 code points; the\nEMPTY list is legal at the key level (= all emoji banned) — the\nregistry's own contract decides, this DTO only types the payload."
+      },
       "FileType": {
         "type": "string",
         "enum": [
@@ -4490,6 +6641,62 @@
         ],
         "title": "FileType",
         "description": "The closed upload file-type universe (spec §10/§12).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it."
+      },
+      "ForceFailDeliveryRequest": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Delivery Id"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "reason"
+        ],
+        "title": "ForceFailDeliveryRequest"
+      },
+      "ForceFailDeliveryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_error": {
+            "type": "string",
+            "title": "Last Error"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "last_error",
+          "attempts",
+          "updated_at"
+        ],
+        "title": "ForceFailDeliveryResponse"
       },
       "GrowthResponse": {
         "properties": {
@@ -4792,6 +6999,61 @@
         "type": "object",
         "title": "LogoutRequest",
         "description": "Logout one session; cookie-carried tokens need no body."
+      },
+      "ManagementNetworkCidrsSettingRequest": {
+        "properties": {
+          "value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "ManagementNetworkCidrsSettingRequest",
+        "description": "The management-network CIDR allowlist: strict standard-library\nparsing (host bits set are a configuration error); the EMPTY list\nis legal at the key level (= restriction allows nothing, so it may\nonly be written while the policy is disabled — the cross-key 422\notherwise)."
+      },
+      "ManagementNetworkEnabledSettingRequest": {
+        "properties": {
+          "value": {
+            "type": "boolean",
+            "title": "Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "ManagementNetworkEnabledSettingRequest",
+        "description": "Whether the management-network restriction is on (spec §33.4\nadjacency). Setting ``true`` with an empty effective CIDR list is\nthe cross-key typed 422 (see the module docstring)."
       },
       "MePublic": {
         "properties": {
@@ -5113,6 +7375,31 @@
         "title": "NicknameUpdateRequest",
         "description": "Change the account nickname (spec §5.3)."
       },
+      "NotificationChannel": {
+        "type": "string",
+        "enum": [
+          "SMS",
+          "EMAIL",
+          "IN_APP"
+        ],
+        "title": "NotificationChannel",
+        "description": "Delivery channels (spec §25; frozen by interfaces.md)."
+      },
+      "NotificationEventType": {
+        "type": "string",
+        "enum": [
+          "ASSIGNMENT_DEADLINE_24H",
+          "ASSIGNMENT_DEADLINE_4H",
+          "REVISION_REQUIRED",
+          "SUBMISSION_APPROVED",
+          "SUBMISSION_VALIDATION_FAILED",
+          "REWARD_REDEMPTION_APPROVED",
+          "REWARD_REDEMPTION_REJECTED",
+          "ACCOUNT_SECURITY"
+        ],
+        "title": "NotificationEventType",
+        "description": "Canonical domain event names (spec §25 list plus the\nSUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md)."
+      },
       "NotificationFailureResponse": {
         "properties": {
           "id": {
@@ -5291,6 +7578,56 @@
         ],
         "title": "NotificationItemResponse",
         "description": "One inbox message: the logical Notification's own fields only."
+      },
+      "NotificationTemplateCreateRequest": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/components/schemas/NotificationEventType"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/NotificationChannel"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "template_body": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Template Body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_type",
+          "channel",
+          "title",
+          "template_body"
+        ],
+        "title": "NotificationTemplateCreateRequest"
+      },
+      "NotificationTemplateUpdateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "template_body": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Template Body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "template_body"
+        ],
+        "title": "NotificationTemplateUpdateRequest"
       },
       "OwnedHonorResponse": {
         "properties": {
@@ -5480,6 +7817,63 @@
         ],
         "title": "PhoneTokenResponse",
         "description": "The single-use proof minted by a verified challenge (spec §5.4)."
+      },
+      "PointsAdjustmentRequest": {
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "reason",
+          "operation_id"
+        ],
+        "title": "PointsAdjustmentRequest",
+        "description": "One manual wallet correction through the ledger (never a direct\nwallet write): a non-zero amount, the mandatory reason, and the\ncaller-minted ``operation_id`` — the adjustment's stable intent id\n(PR #5 fix A, P1). A retry after a lost response reuses the SAME\nid and replays the original entry instead of double-charging; the\nsame id under a different decision is the typed 409."
+      },
+      "PointsAdjustmentResponse": {
+        "properties": {
+          "ledger_entry_id": {
+            "type": "string",
+            "title": "Ledger Entry Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ledger_entry_id",
+          "user_id",
+          "amount",
+          "reason"
+        ],
+        "title": "PointsAdjustmentResponse",
+        "description": "The posted ADMIN_ADJUSTMENT entry: ranking-neutral by\nconstruction (affects_ranking=false; no ranking-affecting\nadjustment operation exists)."
       },
       "RankingEntryResponse": {
         "properties": {
@@ -5860,6 +8254,52 @@
         "title": "RegisterRequest",
         "description": "Register one whitelisted student (spec §5.1-5.4)."
       },
+      "ReleaseOccupiedAssignmentRequest": {
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assignment Id"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "assignment_id",
+          "reason"
+        ],
+        "title": "ReleaseOccupiedAssignmentRequest",
+        "description": "The dangling Assignment id plus the mandatory why (the service\nrefuses blank reasons before any read)."
+      },
+      "ReleaseOccupiedAssignmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "availability_status": {
+            "type": "string",
+            "title": "Availability Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "availability_status"
+        ],
+        "title": "ReleaseOccupiedAssignmentResponse"
+      },
       "ReportClosureResponse": {
         "properties": {
           "id": {
@@ -6231,6 +8671,127 @@
         "title": "RevisionRequiredResponse",
         "description": "The claim state after 退回/判无效: REVISION_REQUIRED with the §11.4\nrevision deadline. ``reward_lock_status`` distinguishes the two —\npreserved PROVISIONAL versus cancelled INVALIDATED."
       },
+      "RewardItemCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "point_cost": {
+            "type": "integer",
+            "title": "Point Cost"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
+          },
+          "per_user_term_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per User Term Limit"
+          },
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "available_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Until"
+          },
+          "requires_manual_review": {
+            "type": "boolean",
+            "title": "Requires Manual Review",
+            "default": false
+          },
+          "fulfillment_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fulfillment Instructions"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "point_cost"
+        ],
+        "title": "RewardItemCreateRequest",
+        "description": "The catalogue row to create (starts ENABLED — taking an item off\nthe shelf is the dedicated disable transition)."
+      },
+      "RewardItemDisableRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RewardItemDisableRequest",
+        "description": "下架 one item — the dedicated, reason-requiring transition."
+      },
       "RewardItemResponse": {
         "properties": {
           "id": {
@@ -6324,6 +8885,219 @@
         "title": "RewardItemResponse",
         "description": "One catalogue row for the student listing (spec §16/§42). The\nadmin-only ``fulfillment_instructions``, the enabled flag (always\ntrue in this listing), and the dormant\n``requires_manual_review`` column (V1 reviews every redemption\nmanually; PR #2 hardening G13 方案一) stay server-side."
       },
+      "RewardItemUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "point_cost": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Cost"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
+          },
+          "per_user_term_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per User Term Limit"
+          },
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "available_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Until"
+          },
+          "requires_manual_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Manual Review"
+          },
+          "fulfillment_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fulfillment Instructions"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RewardItemUpdateRequest",
+        "description": "A partial catalogue update: an ABSENT field leaves the column\nunchanged; an explicit null clears a nullable bound. The route\ntranslates presence into the service's UNSET discipline."
+      },
+      "RewardReviewGrantListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RewardReviewGrantResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "RewardReviewGrantListResponse",
+        "description": "Offset-paginated grants page, newest grant first."
+      },
+      "RewardReviewGrantRequest": {
+        "properties": {
+          "teacher_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Teacher Id"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "teacher_id",
+          "reason"
+        ],
+        "title": "RewardReviewGrantRequest",
+        "description": "Grant the global REWARD_REVIEW authorization to a Teacher; the\nmandatory why rides the audited grant row."
+      },
+      "RewardReviewGrantResponse": {
+        "properties": {
+          "teacher_id": {
+            "type": "string",
+            "title": "Teacher Id"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "granted_by": {
+            "type": "string",
+            "title": "Granted By"
+          },
+          "granted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Granted At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "teacher_id",
+          "nickname",
+          "granted_by",
+          "granted_at"
+        ],
+        "title": "RewardReviewGrantResponse",
+        "description": "One live grant row: the teacher (id + display nickname through\nthe frozen directory port) plus the grant facts. The grant's\nwho/why HISTORY lives in the audit stream, not the row."
+      },
       "RewardsListResponse": {
         "properties": {
           "items": {
@@ -6368,6 +9142,61 @@
         ],
         "title": "StaffInvitationAcceptRequest",
         "description": "Trade the single-use invitation token for a staff account (§5.8)."
+      },
+      "StaffInvitationCreateRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "StaffInvitationCreateRequest",
+        "description": "Issue one staff invitation (§5.8; Plan 08 T9's Admin surface).\n\nRaw caller input: the email's normalization and the role's\nTEACHER/ADMIN narrowing belong to ``StaffService\n.create_staff_invitation``."
+      },
+      "StaffInvitationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "token",
+          "expires_at",
+          "created_at"
+        ],
+        "title": "StaffInvitationResponse",
+        "description": "One issued invitation. ``token`` is the ONE-TIME capability,\nreturned exactly here and never again — the row stores only its\nhash, and no invitation email is wired in V1."
       },
       "StaffLoginRequest": {
         "properties": {
@@ -6514,6 +9343,100 @@
         ],
         "title": "SubmissionValidationResponse",
         "description": "The owner's view of one submission's machine-validation outcome\n(spec §11.1, §12.4): status projections plus the persisted report —\n``None`` while the run has not reached a terminal state."
+      },
+      "SystemSettingItemResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "version",
+          "updated_at"
+        ],
+        "title": "SystemSettingItemResponse",
+        "description": "One registered key's current state; ``null`` value/version means\n\"no row — the deployment seed or the key's env fallback decides\"\n(G7: the store is the fact, the seed bootstraps)."
+      },
+      "SystemSettingValueResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "version"
+        ],
+        "title": "SystemSettingValueResponse",
+        "description": "One applied write: the stored canonical value and the row's new\nper-key change counter (0020)."
+      },
+      "SystemSettingsListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SystemSettingItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "SystemSettingsListResponse"
       },
       "TaskCardResponse": {
         "properties": {
@@ -7926,6 +10849,308 @@
         ],
         "title": "WalletResponse",
         "description": "The wallet strip (spec §15.1/§16.2): the projection's figures\nplus the spendable derivation, CLAMPED for display (see the module\ndocstring): available/spendable never render below 0 and the\noverdraft rides as the explicit ``point_debt``."
+      },
+      "WhitelistConfirmRequest": {
+        "properties": {
+          "confirm_token": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Confirm Token"
+          },
+          "enable": {
+            "type": "boolean",
+            "title": "Enable",
+            "default": true
+          },
+          "student_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Student Numbers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirm_token",
+          "student_numbers"
+        ],
+        "title": "WhitelistConfirmRequest",
+        "description": "The previewed importable set plus its digest (all-or-nothing)."
+      },
+      "WhitelistConfirmResponse": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "enable": {
+            "type": "boolean",
+            "title": "Enable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "created",
+          "enable"
+        ],
+        "title": "WhitelistConfirmResponse"
+      },
+      "WhitelistCountsResponse": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "importable": {
+            "type": "integer",
+            "title": "Importable"
+          },
+          "duplicate_in_file": {
+            "type": "integer",
+            "title": "Duplicate In File"
+          },
+          "duplicate_in_db": {
+            "type": "integer",
+            "title": "Duplicate In Db"
+          },
+          "full_width_digits": {
+            "type": "integer",
+            "title": "Full Width Digits"
+          },
+          "invalid_characters": {
+            "type": "integer",
+            "title": "Invalid Characters"
+          },
+          "invalid_length": {
+            "type": "integer",
+            "title": "Invalid Length"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_rows",
+          "importable",
+          "duplicate_in_file",
+          "duplicate_in_db",
+          "full_width_digits",
+          "invalid_characters",
+          "invalid_length"
+        ],
+        "title": "WhitelistCountsResponse"
+      },
+      "WhitelistEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "student_number",
+          "enabled",
+          "created_at",
+          "disabled_at"
+        ],
+        "title": "WhitelistEntryResponse",
+        "description": "One whitelist row: the number plus its enabled state."
+      },
+      "WhitelistListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WhitelistEntryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "WhitelistListResponse",
+        "description": "Offset-paginated whitelist page, number-ordered."
+      },
+      "WhitelistPreviewRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "WhitelistPreviewRequest",
+        "description": "The raw import text (one student number per line; the service\nowns decode, trimming, and every row verdict)."
+      },
+      "WhitelistPreviewResponse": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/WhitelistRowDecisionResponse"
+            },
+            "type": "array",
+            "title": "Decisions"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/WhitelistCountsResponse"
+          },
+          "importable": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Importable"
+          },
+          "confirm_token": {
+            "type": "string",
+            "title": "Confirm Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_rows",
+          "decisions",
+          "counts",
+          "importable",
+          "confirm_token"
+        ],
+        "title": "WhitelistPreviewResponse",
+        "description": "The preview verdict: per-row decisions, counts, and the digest\nthe confirm payload must carry back verbatim."
+      },
+      "WhitelistRowDecisionResponse": {
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "title": "Row Number"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "student_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Student Number"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row_number",
+          "code",
+          "student_number"
+        ],
+        "title": "WhitelistRowDecisionResponse"
+      },
+      "WhitelistToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "WhitelistToggleRequest",
+        "description": "Flip one entry (enable or disable); the free-text why rides the\nper-entry audit rows."
+      },
+      "WhitelistToggleResponse": {
+        "properties": {
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "toggled": {
+            "type": "boolean",
+            "title": "Toggled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "student_number",
+          "toggled"
+        ],
+        "title": "WhitelistToggleResponse"
       },
       "app__modules__points__router__ReviewQueueResponse": {
         "properties": {
