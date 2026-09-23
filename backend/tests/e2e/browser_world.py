@@ -51,7 +51,7 @@ from db_guard import apply_integration_env_defaults  # noqa: E402
 apply_integration_env_defaults()
 
 import redis.asyncio as aioredis  # noqa: E402
-from sqlalchemy import delete, select  # noqa: E402
+from sqlalchemy import delete, func, or_, select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
@@ -60,6 +60,7 @@ from app.modules.identity.models import (  # noqa: E402
     TotpCredential as TotpCredentialRow,
 )
 from tests.e2e.factories import (  # noqa: E402
+    DEFAULT_PASSWORD,
     clean_world,
     seed_admin_confirmed_totp,
     seed_claim,
@@ -85,6 +86,29 @@ _GOOD_CSV = (
 #: failed-validation spec's report/retry assertions.
 _BAD_CSV = b"platform,date\nxiaohongshu,2026-09-21\n"
 
+#: The §12.4 report shape the validation worker persists for
+#: `_GOOD_CSV` (the 13-key `report_to_json` contract the review-queue
+#: DTO validates against) — the seeded review target carries it so the
+#: queue row's validation badge reads like a real machine verdict.
+_GOOD_CSV_REPORT: dict[str, Any] = {
+    "parser_version": "csv-2",
+    "file_type": "CSV",
+    "row_count": 2,
+    "detected_columns": ["url", "title"],
+    "missing_required_columns": [],
+    "extra_columns": [],
+    "type_error_counts": {},
+    "null_ratios": {"url": 0.0, "title": 0.0},
+    "duplicate_counts": {},
+    "warnings": [],
+    "errors": [],
+    "duration_ms": 3.0,
+    "preview_rows": [
+        ["https://example.com/note/1", "第一条"],
+        ["https://example.com/note/2", "第二条"],
+    ],
+}
+
 
 def _factory() -> async_sessionmaker[AsyncSession]:
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -102,6 +126,33 @@ def _registered_number(run: str) -> str:
     REAL flow (6-20 ASCII digits; prefix "3" keeps it clear of the
     factories' "2025..." namespace and of the whitelist sweep)."""
     return f"3{int(run, 16) % 10**15}"
+
+
+def _answerable_staff_row(username: str, nickname: str, role: Any) -> tuple[Any, str]:
+    """One ACTIVE staff account (NOT yet session-bound) plus the genuine
+    base32 TOTP secret its CONFIRMED credential will store.
+
+    The PR #6 browser staff contract (final review P1): the teacher and
+    admin suites log in through the REAL staff form — password plus a
+    TOTP code the spec computes RFC 6238-style from this secret — so the
+    seeded credential must be answerable, unlike the factories'
+    stand-in. The caller encrypts the secret with the backend's own
+    ``encrypt_totp_secret`` in the same transaction that adds the rows.
+    """
+    from app.core.security import hash_password
+    from app.modules.identity.enums import UserStatus as SeedStatus
+    from app.modules.identity.models import User as UserRow
+    from app.modules.identity.totp import generate_totp_secret
+
+    user = UserRow(
+        username=username,
+        password_hash=hash_password(DEFAULT_PASSWORD),
+        nickname=nickname,
+        phone_e164=None,
+        role=role,
+        status=SeedStatus.ACTIVE,
+    )
+    return user, generate_totp_secret()
 
 
 async def _mint(user_id: UUID) -> str:
@@ -178,25 +229,43 @@ async def _seed() -> dict[str, Any]:
         # stand-in secret passes the management guard but cannot ANSWER
         # a login prompt; this credential is genuine base32 the spec
         # computes RFC 6238 codes from.
+        #
+        # PR #6 final review P1 (task 3): the same shape now also seeds
+        # the answerable BROWSER STAFF the teacher/admin suites log in
+        # as — teacher A (CQ_E2E_STAFF, also exported as CQ_E2E_TEACHER
+        # for admin.spec's privilege negative), an unrelated teacher B
+        # (CQ_E2E_STAFF2), and the operations admin (CQ_E2E_ADMIN).
         from cryptography.fernet import Fernet
 
-        from app.core.security import hash_password
         from app.modules.identity.enums import Role as SeedRole
-        from app.modules.identity.enums import UserStatus as SeedStatus
         from app.modules.identity.models import User as UserRow
-        from app.modules.identity.totp import (
-            encrypt_totp_secret,
-            generate_totp_secret,
-        )
+        from app.modules.identity.totp import encrypt_totp_secret
 
-        admin_totp_secret = generate_totp_secret()
-        reveal_admin = UserRow(
-            username=f"e2e-admin-{run}@school.edu",
-            password_hash=hash_password("correct-horse-battery"),
-            nickname=f"端到端揭示管理员{run[:4]}",
-            phone_e164=None,
-            role=SeedRole.ADMIN,
-            status=SeedStatus.ACTIVE,
+        reveal_admin, reveal_admin_secret = _answerable_staff_row(
+            f"e2e-admin-{run}@school.edu",
+            f"端到端揭示管理员{run[:4]}",
+            SeedRole.ADMIN,
+        )
+        browser_teacher, browser_teacher_secret = _answerable_staff_row(
+            f"e2e-teacher-{run}@school.edu",
+            f"端到端浏览器教师{run[:4]}",
+            SeedRole.TEACHER,
+        )
+        browser_teacher2, browser_teacher2_secret = _answerable_staff_row(
+            f"e2e-teacher2-{run}@school.edu",
+            f"端到端浏览器教师乙{run[:4]}",
+            SeedRole.TEACHER,
+        )
+        browser_admin, browser_admin_secret = _answerable_staff_row(
+            f"e2e-ops-admin-{run}@school.edu",
+            f"端到端运营管理员{run[:4]}",
+            SeedRole.ADMIN,
+        )
+        answerable_staff = (
+            (reveal_admin, reveal_admin_secret),
+            (browser_teacher, browser_teacher_secret),
+            (browser_teacher2, browser_teacher2_secret),
+            (browser_admin, browser_admin_secret),
         )
         async with factory() as db:
             author_row = await db.get(UserRow, author.user_id)
@@ -204,17 +273,19 @@ async def _seed() -> dict[str, Any]:
             author_row.email_normalized = author_email
             author_phone = author_row.phone_e164
             author_nickname = author_row.nickname
-            db.add(reveal_admin)
+            for user_row, _ in answerable_staff:
+                db.add(user_row)
             await db.flush()
-            db.add(
-                TotpCredentialRow(
-                    user_id=reveal_admin.id,
-                    secret_encrypted=encrypt_totp_secret(
-                        Fernet(get_settings().totp_encryption_key), admin_totp_secret
-                    ),
-                    confirmed_at=dt.datetime.now(dt.UTC),
+            for user_row, secret in answerable_staff:
+                db.add(
+                    TotpCredentialRow(
+                        user_id=user_row.id,
+                        secret_encrypted=encrypt_totp_secret(
+                            Fernet(get_settings().totp_encryption_key), secret
+                        ),
+                        confirmed_at=dt.datetime.now(dt.UTC),
+                    )
                 )
-            )
             db.add(
                 Comment(
                     task_id=task_a.task_id,
@@ -244,6 +315,123 @@ async def _seed() -> dict[str, Any]:
             request_id=f"e2e-browser-seed-{run}",
         )
 
+        # --- PR #6 final review P1 (task 3): the operational state the
+        # teacher/admin specs assert against, derived from the specs'
+        # own assertions ------------------------------------------------
+        #
+        # teacher.spec's review queue needs a VALIDATED-but-undecided
+        # submission on a task the BROWSER teacher owns (the queue is
+        # owner-scoped); admin.spec needs a REQUESTED redemption with
+        # its ACTIVE freeze (the reject/approve -> fulfill chain) and
+        # an ACTIVE student row to suspend-and-restore. The
+        # claimant/redeemer is a DEDICATED run-prefixed student: the
+        # primary student already holds claims A and B and the
+        # actionable-claim quota (3) must stay open for
+        # task-claim.spec's UI claim.
+        from app.core.security import hash_password
+        from app.modules.identity.enums import UserStatus as SeedStatus
+        from app.modules.points.models import PointReservation, RewardRedemption
+        from app.modules.submissions.models import Submission as SubmissionRow
+        from app.modules.system.models import SystemSetting
+        from app.modules.tasks.enums import (
+            ClaimStatus,
+            RewardLockStatus,
+        )
+        from app.modules.tasks.models import AssignmentClaim
+
+        task_r = await seed_task_with_assignments(
+            factory, teacher_id=browser_teacher.id, run=f"{run}r", assignment_count=1
+        )
+        # Hex-digit prefix "e" (the author's "d" discipline): the
+        # factories fold the marker's leading chars as HEX into the
+        # student number/phone, so the prefix must be a hex digit.
+        redeemer = await seed_student(factory, run=f"e{run}")
+        claim_r = await seed_claim(factory, task=task_r, student_id=redeemer.user_id)
+        await seed_points_balance(
+            factory,
+            student_id=redeemer.user_id,
+            amount=item.point_cost,
+            source_id=claim_r.claim_id,
+        )
+        async with factory() as db:
+            # The snapshot the settings spec mutates and teardown
+            # restores (CURRENT_ACADEMIC_TERM row-or-seed priority, the
+            # SystemAcademicTermProvider rule) — also the seeded
+            # redemption's term_key source.
+            term_row = await db.get(SystemSetting, "CURRENT_ACADEMIC_TERM")
+            term_before = term_row.value if term_row is not None else None
+            term_key = (
+                term_before
+                if term_before is not None
+                else get_settings().current_academic_term
+            )
+
+            # The post-validation shape the review queue reads (§12.4):
+            # the machine verdict locked the on-time 100% tier
+            # PROVISIONALLY and moved the claim to UNDER_REVIEW, the
+            # submission to VALIDATED/PENDING_REVIEW with the persisted
+            # report — seed_claim's CLAIMED/NONE rows adjusted to that
+            # state.
+            claim_row = await db.get(AssignmentClaim, claim_r.claim_id)
+            assert claim_row is not None
+            now = dt.datetime.now(dt.UTC)
+            claim_row.status = ClaimStatus.UNDER_REVIEW
+            claim_row.reward_lock_status = RewardLockStatus.PROVISIONAL
+            claim_row.reward_tier_locked = 100
+            claim_row.locked_reward_points = claim_row.base_reward_points_snapshot
+            claim_row.reward_locked_at = now
+            submission_r = SubmissionRow(
+                claim_id=claim_row.id,
+                version=1,
+                object_key=f"submissions/{claim_row.id}/{uuid.uuid4()}",
+                original_filename="e2e-review-queue.csv",
+                declared_type="CSV",
+                detected_type="CSV",
+                file_size=len(_GOOD_CSV),
+                submitted_at=now,
+                validation_status="VALIDATED",
+                review_status="PENDING_REVIEW",
+                validation_report=_GOOD_CSV_REPORT,
+                retention_until=now + dt.timedelta(days=180),
+            )
+            db.add(submission_r)
+            await db.flush()
+            claim_row.latest_submission_id = submission_r.id
+
+            # The redemption request exactly as `request_redemption`
+            # leaves it (REQUESTED + ACTIVE freeze, term/price
+            # snapshotted) — the admin queue's first row.
+            redemption = RewardRedemption(
+                user_id=redeemer.user_id,
+                reward_item_id=item.reward_item_id,
+                status="REQUESTED",
+                term_key=term_key,
+                points=item.point_cost,
+            )
+            db.add(redemption)
+            await db.flush()
+            db.add(
+                PointReservation(
+                    user_id=redeemer.user_id,
+                    redemption_id=redemption.id,
+                    points=item.point_cost,
+                    status="ACTIVE",
+                )
+            )
+
+            # The admin users page's suspend target, located by its
+            # run-unique handle (the spec's row locator).
+            suspended_student = UserRow(
+                username=f"e2e-suspended-student-{run}",
+                password_hash=hash_password(DEFAULT_PASSWORD),
+                nickname=f"停用目标同学{run[:4]}",
+                phone_e164=None,
+                role=SeedRole.STUDENT,
+                status=SeedStatus.ACTIVE,
+            )
+            db.add(suspended_student)
+            await db.commit()
+
         async with factory() as db:
             task_c_row = await db.get(Task, task_c.task_id)
             assert task_c_row is not None
@@ -270,7 +458,18 @@ async def _seed() -> dict[str, Any]:
             "teacher_id": str(teacher.user_id),
             "admin_id": str(admin.user_id),
             "reveal_admin_id": str(reveal_admin.id),
-            "task_ids": [str(t.task_id) for t in (task_a, task_b, task_c)],
+            # PR #6 task 3: the answerable browser staff (their TOTP
+            # secrets never persist in the world FILE — only the env
+            # contract below carries them, and teardown needs just ids).
+            "browser_teacher_id": str(browser_teacher.id),
+            "browser_teacher2_id": str(browser_teacher2.id),
+            "browser_admin_id": str(browser_admin.id),
+            "redeemer_id": str(redeemer.user_id),
+            "suspended_student_id": str(suspended_student.id),
+            "review_task_id": str(task_r.task_id),
+            "pending_redemption_id": str(redemption.id),
+            "term_before": term_before,
+            "task_ids": [str(t.task_id) for t in (task_a, task_b, task_c, task_r)],
             "task_open": {
                 "task_id": str(task_c.task_id),
                 "title": task_c_title,
@@ -323,7 +522,19 @@ async def _seed() -> dict[str, Any]:
             "CQ_E2E_NON_COMPLETER_STUDENT": f"{author.username}:{author.password}",
             "CQ_E2E_MODERATION_TASK_PATH": f"/teacher/tasks/{task_a.task_id}",
             "CQ_E2E_REVEAL_ADMIN": (f"{reveal_admin.username}:correct-horse-battery"),
-            "CQ_E2E_REVEAL_ADMIN_TOTP_SECRET": admin_totp_secret,
+            "CQ_E2E_REVEAL_ADMIN_TOTP_SECRET": reveal_admin_secret,
+            # PR #6 task 3: the browser staff's staff-login contracts
+            # (identifier:password + the genuine base32 secret). teacher
+            # A doubles as CQ_E2E_TEACHER (admin.spec's privilege
+            # negative) and the ops admin as CQ_E2E_ADMIN.
+            "CQ_E2E_STAFF": f"{browser_teacher.username}:{DEFAULT_PASSWORD}",
+            "CQ_E2E_STAFF_TOTP_SECRET": browser_teacher_secret,
+            "CQ_E2E_STAFF2": f"{browser_teacher2.username}:{DEFAULT_PASSWORD}",
+            "CQ_E2E_STAFF2_TOTP_SECRET": browser_teacher2_secret,
+            "CQ_E2E_TEACHER": f"{browser_teacher.username}:{DEFAULT_PASSWORD}",
+            "CQ_E2E_TEACHER_TOTP_SECRET": browser_teacher_secret,
+            "CQ_E2E_ADMIN": f"{browser_admin.username}:{DEFAULT_PASSWORD}",
+            "CQ_E2E_ADMIN_TOTP_SECRET": browser_admin_secret,
         }
         return world
     finally:
@@ -338,7 +549,8 @@ async def _clean(world_path: str) -> dict[str, Any]:
     from app.modules.rankings.periods import business_day, business_month
     from app.modules.rankings.redis_projection import ALL_TIME_KEY
     from app.modules.submissions.models import UploadIntent
-    from app.modules.tasks.models import AssignmentClaim
+    from app.modules.system.models import SystemSetting
+    from app.modules.tasks.models import AssignmentClaim, Task
 
     world = json.loads(Path(world_path).read_text(encoding="utf-8"))
     run = world["run"]
@@ -352,21 +564,53 @@ async def _clean(world_path: str) -> dict[str, Any]:
             uuid.UUID(world["admin_id"]),
             uuid.UUID(world["student"]["id"]),
         ]
-        # World-contract fields that landed with plan 10 task 9: absent
-        # in older world files, so teardown stays version-tolerant (a
+        # World-contract fields that landed with later tasks: absent in
+        # older world files, so teardown stays version-tolerant (a
         # missing optional member simply contributes no rows).
-        for optional_member in ("reveal_admin_id",):
+        for optional_member in (
+            "reveal_admin_id",
+            "browser_teacher_id",
+            "browser_teacher2_id",
+            "browser_admin_id",
+            "redeemer_id",
+            "suspended_student_id",
+        ):
             if optional_member in world:
                 user_ids.append(uuid.UUID(world[optional_member]))
         if "author" in world:
             user_ids.append(uuid.UUID(world["author"]["id"]))
+        # Tasks the teacher suite created through the REAL UI (the
+        # create -> import -> publish flow) exist only as rows — sweep
+        # them by owner (the browser staff teachers) so clean_world's
+        # FK-ordered deletion covers them with everything else.
+        ui_task_owners = [
+            uuid.UUID(world[key])
+            for key in ("browser_teacher_id", "browser_teacher2_id")
+            if key in world
+        ]
+        if ui_task_owners:
+            async with factory() as db:
+                task_ids.extend(
+                    (
+                        await db.execute(
+                            select(Task.id).where(
+                                Task.owner_teacher_id.in_(ui_task_owners),
+                                Task.id.not_in(task_ids),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
         # Rows the SPECS created through the real surfaces: the
         # registered student (auth spec, run-derived number), the
         # invitation-accepted staff account (staff-auth spec,
-        # run-prefixed email as username), the whitelist entry, and the
-        # audit rows the run's staff actors appended through the real
-        # APIs (audit_logs carry no FKs — nothing else removes them, and
-        # the whitelist-admin suite asserts on a clean audit table).
+        # run-prefixed email as username), the whitelist entries (the
+        # auth spec's register number plus the admin import spec's
+        # 9-digit stamp entries), and the audit rows the run's staff
+        # actors appended through the real APIs (audit_logs carry no
+        # FKs — nothing else removes them, and the whitelist-admin
+        # suite asserts on a clean audit table).
         register_prefix = _registered_number(run)
         async with factory() as db:
             drift = (
@@ -385,17 +629,57 @@ async def _clean(world_path: str) -> dict[str, Any]:
             user_ids.extend(row for row in drift if row not in user_ids)
             await db.execute(
                 delete(StudentWhitelist).where(
-                    StudentWhitelist.student_number.like(f"{register_prefix}%")
+                    (StudentWhitelist.student_number.like(f"{register_prefix}%"))
+                    | (
+                        # the whitelist-import spec's confirmed row is a
+                        # 9-digit Date.now stamp — run-unique, never a
+                        # factory number (11+ digits) or the register
+                        # prefix (16 digits)
+                        StudentWhitelist.student_number.regexp_match("^[0-9]{9}$")
+                    )
                 )
             )
             await db.commit()
 
-        staff_actor_ids = [uuid.UUID(world["teacher_id"]), uuid.UUID(world["admin_id"])]
+        # PR #6 final review P2 (task 4): ONE source list for the audit
+        # cleanup — every account this run seeded or the specs created
+        # (the drift sweep included) may appear as an AuditLog actor:
+        # the reveal admin (COMMUNITY_IDENTITY_REVEAL — the row class
+        # the previous hand-trimmed [teacher, admin] list left behind),
+        # the browser staff, the whitelist/settings admins, and the
+        # invited staff's own STAFF_INVITATION_ACCEPTED row. The
+        # user-targeted family (USER_SUSPENDED/_REACTIVATED, points
+        # adjustments) names this run's users in target_id, so the
+        # delete covers both dimensions and the zero-assertion at the
+        # end of the clean pins them empty.
+        staff_actor_ids = list(user_ids)
+        actor_target_ids = [str(user_id) for user_id in user_ids]
         async with factory() as db:
-            await db.execute(
-                delete(AuditLog).where(AuditLog.actor_user_id.in_(staff_actor_ids))
-            )
+            removed["audit_rows"] = (
+                await db.execute(
+                    delete(AuditLog).where(
+                        or_(
+                            AuditLog.actor_user_id.in_(staff_actor_ids),
+                            AuditLog.target_id.in_(actor_target_ids),
+                        )
+                    )
+                )
+            ).rowcount
             await db.commit()
+
+        # The settings spec's term edit is GLOBAL state: restore the
+        # pre-run row exactly (value, or the row's meaningful absence —
+        # "never configured here; use the deployment seed").
+        if "term_before" in world:
+            term_before = world["term_before"]
+            async with factory() as db:
+                term_row = await db.get(SystemSetting, "CURRENT_ACADEMIC_TERM")
+                if term_before is None:
+                    if term_row is not None:
+                        await db.delete(term_row)
+                elif term_row is not None:
+                    term_row.value = term_before
+                await db.commit()
 
         # S3 objects this run PUT (guarded: absent objects raise, §27).
         storage = S3ObjectStorage(get_settings())
@@ -428,6 +712,31 @@ async def _clean(world_path: str) -> dict[str, Any]:
             reward_item_ids=[uuid.UUID(world["reward_item_id"])],
             honor_ids_before=honors_before,
         )
+
+        # Teardown regression (PR #6 task 4): with every removal done,
+        # not one AuditLog row may still name THIS run as actor or as a
+        # user-target — the reveal flow's rows are the family that used
+        # to survive a green-looking teardown. A non-zero count fails
+        # the clean (and so the gate) instead of rotting the shared
+        # stack for the next suite.
+        async with factory() as db:
+            audit_survivors = int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(AuditLog)
+                    .where(
+                        or_(
+                            AuditLog.actor_user_id.in_(staff_actor_ids),
+                            AuditLog.target_id.in_(actor_target_ids),
+                        )
+                    )
+                )
+            )
+        if audit_survivors:
+            raise SystemExit(
+                f"browser_world clean: {audit_survivors} audit row(s) still name "
+                "this run's actors or user-targets — teardown is incomplete"
+            )
 
         # Boards: remove only THIS student's member (never another
         # suite's entries); emptied ZSETs vanish on their own.

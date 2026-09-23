@@ -1,29 +1,33 @@
 /**
- * CampusQuest teacher workspace e2e — Plan 09 Task 9.
+ * CampusQuest teacher workspace e2e — Plan 09 Task 9, wired to the
+ * runner and seeded for real by Plan 10's world (PR #6 final review:
+ * the CQ_E2E_STAFF* contract below is the browser_world export, so
+ * every test RUNS under the gate — the release gate asserts this
+ * suite at zero skips).
  *
- * STATUS: SPEC ONLY — NOT WIRED TO A RUNNER YET (the T2-T8 guard
- * pattern). Playwright is installed by Plan 10; until then this file
- * stays invisible to the gates (`tsconfig.json` includes only `src/**`,
- * ESLint globally ignores `e2e/**`, `next build` never touches it).
- * Every test is skipped unless CQ_E2E=1.
+ * Every test is skipped unless CQ_E2E=1 (the suite-wide convention),
+ * so importing the file can never depend on a live backend during
+ * ordinary development.
  *
- * Environment contract (defaults work against local dev servers):
+ * Environment contract (the seeded world's; defaults work against the
+ * orchestrated local servers):
  * - CQ_E2E=1                enable the suite (required);
  * - CQ_E2E_BASE_URL         frontend origin (default http://localhost:3000);
  * - CQ_E2E_STAFF_LOGIN_URL  staff login page (default $CQ_E2E_BASE_URL/staff/login);
  * - CQ_E2E_STAFF            pre-seeded TEACHER credentials
- *                           "email:password" (required; Plan 10's fixture
- *                           seeds the account);
- * - CQ_E2E_STAFF_TOTP_SECRET  base32 TOTP secret of that account
- *                           (required: staff login demands the second
- *                           factor; the code is computed IN-TEST via
- *                           node:crypto RFC 6238 — the T8 staff-auth
- *                           spec's helper, what a real authenticator
- *                           shows for the same secret).
+ *                           "email:password" + CQ_E2E_STAFF_TOTP_SECRET
+ *                           (the run's answerable browser teacher — the
+ *                           code is computed IN-TEST via node:crypto
+ *                           RFC 6238, what a real authenticator shows
+ *                           for the same secret);
+ * - CQ_E2E_STAFF2 / CQ_E2E_STAFF2_TOTP_SECRET  an UNRELATED second
+ *                           teacher for the access-denied negative (F6);
+ * - CQ_E2E_STUDENT          a seeded student for the role-negative.
  *
  * Brief flow: task-create -> import (preview/confirm) -> publish, plus
  * the review-decision surfaces' gating copy (mandatory note/reason, the
- * invalidate warning) against a queue the fixture seeds.
+ * invalidate warning) against the VALIDATED queue row the fixture
+ * seeds on the browser teacher's own task.
  */
 import { createHmac } from "node:crypto";
 
@@ -44,11 +48,9 @@ test.skip(
   "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
-const flowReady = STAFF !== undefined && STAFF_TOTP_SECRET !== undefined;
-test.skip(
-  !flowReady,
-  "teacher flow needs CQ_E2E_STAFF (seeded teacher credentials) and CQ_E2E_STAFF_TOTP_SECRET (the account's base32 TOTP secret); Plan 10's fixture provides both.",
-);
+// The staff contract itself is a HARD requirement now (PR #6 final
+// review): the world always provides it, and a missing export must
+// fail the suite — never read as a skip the gate would have to catch.
 
 /** RFC 4648 base32 (the TOTP secret alphabet) -> bytes. */
 function base32Decode(input: string): Buffer {
@@ -86,7 +88,11 @@ function totpCode(secret: string, atMs: number = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** Log in through the staff login page (T8 surface) with password + TOTP. */
+/** Staff login through the real form; retries across a 30s step rollover.
+ * The success wait is the NEGATED login URL (community.spec's proven
+ * shape): an unanchored `BASE_URL/` match would also match /staff/login
+ * itself and let the test navigate away while the login POST is still
+ * in flight — aborting it and landing the next page anonymous. */
 async function loginAsStaff(
   page: import("@playwright/test").Page,
   credentials: string,
@@ -96,14 +102,26 @@ async function loginAsStaff(
   await page.goto(STAFF_LOGIN_URL);
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
-  await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/`));
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    try {
+      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      return;
+    } catch {
+      // A slow hop can carry the submit across the step boundary —
+      // recompute the code exactly like a real user would.
+    }
+  }
+  await expect(page).not.toHaveURL(/\/staff\/login/);
 }
 
-/** The §7.1 CSV payload: a valid row plus a duplicate-in-file error row. */
+/** The §7.1 CSV payload: a valid row plus a duplicate-in-file error row.
+ * The platform must be one of the closed import vocabulary
+ * (xiaohongshu/douyin/zhihu) — the historical "weibo" row hit
+ * UNSUPPORTED_PLATFORM on its first real run. */
 function assignmentsCsv(): string {
-  return "platform,keyword\nweibo,图书馆\nweibo,图书馆\n";
+  return "platform,keyword\nxiaohongshu,图书馆\nxiaohongshu,图书馆\n";
 }
 
 test.describe("teacher workspace (brief: create -> import -> publish)", () => {
@@ -141,6 +159,11 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // Detail: import flow (spec §7.1 preview -> explicit confirm -> summary).
     await row.getByRole("link").click();
+    // Settle the navigation BEFORE reading the URL: page.url() right
+    // after the link click still names the list page (Playwright does
+    // not auto-wait for link navigations), and the unrelated-teacher
+    // negative below deep-links exactly this value.
+    await expect(page).toHaveURL(/\/teacher\/tasks\/.+/);
     const detailUrl = page.url();
     await page.getByLabel("任务单元导入").scrollIntoViewIfNeeded();
     await page.locator("#assignment-import-file").setInputFiles({
@@ -183,10 +206,6 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // F6: an UNRELATED teacher (no ownership/collaboration) opening this
     // task's detail gets the access-denied panel, not broken sections.
-    test.skip(
-      STAFF2 === undefined || STAFF2_TOTP_SECRET === undefined,
-      "the unrelated-teacher check needs CQ_E2E_STAFF2 + CQ_E2E_STAFF2_TOTP_SECRET (a second seeded teacher); Plan 10's fixture provides them.",
-    );
     const context = await browser.newContext();
     const other = await context.newPage();
     await loginAsStaff(other, STAFF2!, STAFF2_TOTP_SECRET!);
@@ -199,13 +218,8 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
   });
 
   test("student session gets the permission-denied panel, not broken controls", async ({
-    page,
     browser,
   }) => {
-    test.skip(
-      process.env.CQ_E2E_STUDENT === undefined,
-      "needs CQ_E2E_STUDENT (seeded student credentials) for the negative check",
-    );
     // The teacher session from beforeEach navigated; open a student context.
     const context = await browser.newContext();
     const studentPage = await context.newPage();
@@ -214,6 +228,9 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await studentPage.getByLabel("学号").fill(username);
     await studentPage.getByLabel("密码").fill(password);
     await studentPage.getByRole("button", { name: "登录", exact: true }).click();
+    // Wait for the login to actually LAND before navigating (the same
+    // in-flight-abort race the staff helper above guards against).
+    await expect(studentPage).not.toHaveURL(/\/login/, { timeout: 10_000 });
     await studentPage.goto(`${BASE_URL}/teacher/tasks`);
     await expect(
       studentPage.getByText("教师工作台仅对教师与管理员开放"),

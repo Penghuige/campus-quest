@@ -32,7 +32,24 @@
 #                          (run through docker compose exec; default
 #                          campusquest)
 #   CQ_MIGRATE_ADMIN_DB     psql maintenance database (default campusquest)
+#
+# Self-test mode (PR #6 final review P1): `--self-test` runs the same
+# recreate -> upgrade cycle, then requires the schema assertor to FAIL
+# when a sentinel table/index that nothing creates is appended to the
+# expected lists — proving the assertor itself detects missing objects
+# (the pre-fix VALUES form checked only each list's first item and
+# passed exactly that bug). Exits 0 only when the sentinel run fails as
+# it must.
 set -euo pipefail
+
+# `--self-test`: prove the schema assertor itself works (see the header).
+SELF_TEST=0
+if [ "${1:-}" = "--self-test" ]; then
+  SELF_TEST=1
+elif [ $# -gt 0 ]; then
+  echo "unknown argument: $1 (only --self-test is supported)" >&2
+  exit 2
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/infra/docker-compose.yml"
@@ -91,22 +108,42 @@ psql_migrate() {
     psql -v ON_ERROR_STOP=1 -U "$PG_ADMIN_USER" -d "$MIGRATE_DB_NAME" "$@"
 }
 
+# One row per list item (PR #6 final review P1): the old
+# `VALUES ('a','b',...)` form produced ONE row with N columns, so the
+# alias t(name) exposed only the FIRST item and everything after it was
+# silently unchecked. unnest(ARRAY[...]) yields exactly one row per
+# item; assert_schema's row-count check below is the regression that
+# fails the run if a future edit reintroduces a row-losing generator.
 table_list_sql() {
   local quoted
   quoted="$(printf "'%s'," "${KEY_TABLES[@]}")"
   quoted="${quoted%,}"
-  printf "SELECT t.name FROM (VALUES (%s)) AS t(name)" "$quoted"
+  printf "SELECT t.name FROM unnest(ARRAY[%s]::text[]) AS t(name)" "$quoted"
 }
 
 unique_index_list_sql() {
   local quoted
   quoted="$(printf "'%s'," "${KEY_UNIQUE_INDEXES[@]}")"
   quoted="${quoted%,}"
-  printf "SELECT i.name FROM (VALUES (%s)) AS i(name)" "$quoted"
+  printf "SELECT i.name FROM unnest(ARRAY[%s]::text[]) AS i(name)" "$quoted"
+}
+
+# The generated list SQL must yield exactly one row per expected item —
+# a generator that drops rows (the VALUES bug shape) fails here before
+# any missing-object verdict can read as green.
+assert_list_row_count() {
+  local kind="$1" list_sql="$2" expected="$3" label="$4" actual
+  actual="$(psql_migrate -At -c "SELECT count(*) FROM (${list_sql}) AS s(name)")"
+  if [ "$actual" != "$expected" ]; then
+    echo "FAIL [$label]: the ${kind} list SQL yielded ${actual} rows but ${expected} items are expected — the list-to-SQL generator is dropping entries" >&2
+    return 1
+  fi
 }
 
 assert_schema() {
   local label="$1"
+
+  assert_list_row_count "table" "$(table_list_sql)" "${#KEY_TABLES[@]}" "$label"
 
   local table_csv
   table_csv="$(psql_migrate -At -c "
@@ -118,6 +155,8 @@ assert_schema() {
     return 1
   fi
   echo "ok [$label]: all ${#KEY_TABLES[@]} key tables exist"
+
+  assert_list_row_count "unique-index" "$(unique_index_list_sql)" "${#KEY_UNIQUE_INDEXES[@]}" "$label"
 
   local index_csv
   index_csv="$(psql_migrate -At -c "
@@ -172,6 +211,28 @@ echo "ok: alembic upgrade head"
 
 # 3. schema assertions.
 assert_schema "after upgrade"
+
+# 3'. self-test exit (PR #6 final review P1): with the assertor proven
+#     GREEN on the real schema, require it to go RED when a sentinel
+#     object nothing creates joins the expected lists — run in a
+#     subshell so the appended sentinels never leak into anything else.
+#     A passing sentinel run means the assertor is not actually
+#     checking the list (the pre-fix VALUES bug), and the self-test
+#     fails the whole script.
+if [ "$SELF_TEST" -eq 1 ]; then
+  if (
+    KEY_TABLES+=("zz_selftest_missing_table")
+    KEY_UNIQUE_INDEXES+=("zz_selftest_missing_index")
+    assert_schema "self-test"
+  ); then
+    echo "FAIL: self-test — assert_schema PASSED despite expecting zz_selftest_missing_table/zz_selftest_missing_index; the missing-object assertor is not live" >&2
+    exit 1
+  fi
+  echo "ok: self-test — assert_schema fails on a missing sentinel table/index (the assertor detects missing objects)"
+  psql_admin -c "DROP DATABASE IF EXISTS \"$MIGRATE_DB_NAME\""
+  echo "== verify-migrations: SELF-TEST PASS =="
+  exit 0
+fi
 
 # 4. downgrade base — attempted; a chain without downgrade support is
 #    recorded, not fatal, and the database is recreated so step 5 still

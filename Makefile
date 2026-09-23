@@ -27,6 +27,10 @@ verify: lint-backend
 #
 # `make release-gate` runs, in this order (plan 10 task 11 step 1):
 #
+#   0. test-database bootstrap     (release-test-db; idempotent
+#      `alembic upgrade head` on campusquest_test — the integration/e2e
+#      suites need a migrated schema and nothing else creates it on
+#      fresh compose volumes)
 #   1. backend unit tests            (backend-unit)
 #   2. backend integration tests     (backend-integration; real
 #      PostgreSQL/Redis/MinIO, S3 + composition smokes ON)
@@ -74,7 +78,16 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
 
 .PHONY: backend-unit backend-integration backend-worker backend-e2e \
         migration-verify frontend-typecheck frontend-lint frontend-unit \
-        frontend-build playwright-e2e release-gate
+        frontend-build playwright-e2e release-test-db release-gate
+
+# The gate's self-bootstrapping first step (PR #6 final review P1): the
+# integration and e2e suites assume a MIGRATED campusquest_test and
+# nothing else creates one on fresh compose volumes (the init script
+# only CREATEs the empty database). `alembic upgrade head` is a no-op
+# when the schema is already at head, so the target is idempotent and
+# costs one version query on warm stacks.
+release-test-db:
+	cd backend && $(TEST_STACK_ENV) uv run alembic upgrade head
 
 backend-unit:
 	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit -v
@@ -105,6 +118,12 @@ frontend-build:
 
 playwright-e2e:
 	cd frontend && CQ_E2E=1 npm run test:e2e
+	# unexpected-skip guard (PR #6 final review P1): the teacher/admin
+	# suites must RUN, not silently skip — a missing world export would
+	# otherwise read as a green gate with two suites absent. The JSON
+	# report the run just wrote is the evidence; exit 1 on any skip.
+	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: backend-unit backend-integration backend-worker backend-e2e migration-verify \
-              frontend-typecheck frontend-lint frontend-unit frontend-build playwright-e2e
+release-gate: release-test-db backend-unit backend-integration backend-worker \
+              backend-e2e migration-verify frontend-typecheck frontend-lint \
+              frontend-unit frontend-build playwright-e2e

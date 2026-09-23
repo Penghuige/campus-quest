@@ -66,9 +66,20 @@ docker compose -f infra/docker-compose.yml up -d
 make release-gate
 ```
 
-The gate is twelve ordered steps (Makefile `release-gate`); steps 11–12
-(ranking rebuild, concurrency gate) run inside the backend e2e suite
-(`tests/e2e/test_ranking_recovery.py`, `tests/e2e/test_concurrency_gate.py`)
+The gate self-bootstraps its test database: the chain's FIRST step
+(`release-test-db`) runs an idempotent `alembic upgrade head` against
+`campusquest_test` (the TEST_STACK_ENV default), so a brand-new compose
+stack with empty volumes goes straight into `make release-gate` — fresh
+volumes → `up -d` → gate exit 0 is the Task-1 release proof. A
+pre-migrated database makes the step a no-op version check.
+
+The gate is thirteen ordered steps (Makefile `release-gate`); the
+playwright step additionally asserts zero skipped tests in the
+teacher/admin suites (`frontend/scripts/assert-e2e-no-skips.mjs` — a
+missing world export reads as skips, never as a silent green). Steps
+12–13 (ranking rebuild, concurrency gate) run inside the backend e2e
+suite (`tests/e2e/test_ranking_recovery.py`,
+`tests/e2e/test_concurrency_gate.py`)
 — see the Makefile comment for the full mapping. `CQ_S3_SMOKE=1` and
 `CQ_COMPOSITION_SMOKE=1` are set by the integration target itself, so the
 real-stack smokes never silently skip inside the gate.
@@ -159,11 +170,11 @@ make sure no other Playwright/pytest session is seeding worlds into
 
 ### Known coverage gaps at V1 (not blockers, tracked)
 
-- `frontend/e2e/admin.spec.ts` / `teacher.spec.ts` operations flows stay
-  skipped until the staff-fixture contract (`CQ_E2E_TEACHER` /
-  `CQ_E2E_ADMIN` + base32 TOTP world exports) lands; the reveal
-  integration path they would cover is already exercised in
-  community.spec (E4 report).
+- `frontend/e2e/admin.spec.ts` / `teacher.spec.ts` operations flows run
+  for real since the staff-fixture contract landed (`CQ_E2E_STAFF` /
+  `CQ_E2E_STAFF2` / `CQ_E2E_TEACHER` / `CQ_E2E_ADMIN` + base32 TOTP
+  world exports, browser_world.py); the release gate's playwright step
+  asserts both suites at zero skips.
 - V1 ships logging-only SMS/Email adapters by design; real-provider
   delivery is a post-V1 deployment check (row 22).
 - **Flake watch (E5, root cause narrowed, fix pending owner decision):**

@@ -52,7 +52,15 @@ export default defineConfig({
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [["list"]],
+  // The JSON report (PR #6 final review P1) feeds the release gate's
+  // unexpected-skip assertion (scripts/assert-e2e-no-skips.mjs): the
+  // teacher/admin suites must RUN their tests, and a world export that
+  // went missing has to fail the gate instead of quietly reading as a
+  // green run with two absent suites. test-results/ is gitignored.
+  reporter: [
+    ["list"],
+    ["json", { outputFile: "test-results/report.json" }],
+  ],
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   use: {
