@@ -22,6 +22,14 @@ Coverage map:
 - **Cross-key ruling:** enabling the policy with an empty effective
   CIDR list is the typed 422 at WRITE time (both directions of the
   pair), and nothing is stored for a refused write.
+- **PR #5 fix A:** the settings surface is EXEMPT from the network
+  guard (the self-repair face — reachable while the policy refuses the
+  peer, and the repair closes the loop), and an UNLOADABLE stored pair
+  (historical residue, seeded by direct row inserts) fails closed as
+  the 403 envelope, never a 500. The manual points adjustment is
+  idempotent by the body's ``operation_id`` (replay returns the
+  original entry; a reused id under a different decision is the typed
+  409; a missing id is the 422).
 - **The assembled surfaces:** whitelist preview -> confirm -> toggle
   with audit rows; the audit-log search with filters and pagination;
   account status transitions with the typed 409 ``CONFLICT``; reward
@@ -33,6 +41,7 @@ Coverage map:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -42,8 +51,8 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.clock import FrozenClock
 from app.core.error_codes import ErrorCode
@@ -65,6 +74,7 @@ from app.modules.system.models import SystemSetting
 from app.modules.system.service import (
     MANAGEMENT_NETWORK_CIDRS,
     MANAGEMENT_NETWORK_ENABLED,
+    MANAGEMENT_NETWORK_POLICY_LOCK,
     SYSTEM_SETTING_REGISTRY,
     SystemSettingService,
 )
@@ -254,7 +264,11 @@ def _endpoint_table(teacher_id: UUID, student_id: UUID, user_id: UUID) -> list[A
         (
             "POST",
             f"{_API}/admin/users/{student_id}/points-adjustment",
-            {"amount": 10, "reason": "人工补正"},
+            {
+                "amount": 10,
+                "reason": "人工补正",
+                "operation_id": str(uuid4()),
+            },
         ),
         ("GET", f"{_API}/admin/settings", None),
         ("PUT", f"{_API}/admin/settings/emoji-whitelist", {"value": ["🎓"]}),
@@ -374,14 +388,35 @@ async def test_unauthenticated_admin_call_is_401(
 # --- the store-backed management-network guard (W4 footgun closure) -------------------
 
 
-async def _set_store_setting(
-    db: AsyncSession, actor_user_id: Any, key: str, value: Any
+async def _seed_policy(
+    db: AsyncSession, actor_user_id: Any, *, cidrs: list[str], enabled: bool
 ) -> None:
+    """Seed a LEGAL policy pair through the pair's one write path (PR #5
+    fix A): CIDRs first (the env flag is disabled in this environment,
+    so each intermediate pair stays loadable), then the flag."""
     from app.modules.identity.events import Actor
 
-    await SystemSettingService().set(
-        db, actor=Actor(user_id=actor_user_id, role=Role.ADMIN), key=key, value=value
+    service = SystemSettingService()
+    await service.set_management_network_policy(
+        db, actor=Actor(user_id=actor_user_id, role=Role.ADMIN), cidrs=cidrs
     )
+    await service.set_management_network_policy(
+        db, actor=Actor(user_id=actor_user_id, role=Role.ADMIN), enabled=enabled
+    )
+
+
+async def _seed_residue_setting_rows(
+    db: AsyncSession, actor_user_id: Any, *, enabled: str, cidrs: str
+) -> None:
+    """Insert the two policy rows DIRECTLY, bypassing the write path —
+    the historical-residue shape the aggregate lock made unwritable but
+    the loader must still survive (fail closed, never 500)."""
+    for key, value in (
+        (MANAGEMENT_NETWORK_ENABLED, enabled),
+        (MANAGEMENT_NETWORK_CIDRS, cidrs),
+    ):
+        db.add(SystemSetting(key=key, value=value, updated_by_user_id=actor_user_id))
+    await db.flush()
 
 
 async def test_enabled_network_policy_refuses_out_of_network_admin(
@@ -393,11 +428,8 @@ async def test_enabled_network_policy_refuses_out_of_network_admin(
     stored enabled=true + 10.0.0.0/8 row is what the guard resolves —
     the default 127.0.0.1 transport peer is OUT of network and the
     Admin gets the network 403, while an in-network peer passes."""
-    await _set_store_setting(
-        db_session, admin_world["admin"].id, MANAGEMENT_NETWORK_CIDRS, ["10.0.0.0/8"]
-    )
-    await _set_store_setting(
-        db_session, admin_world["admin"].id, MANAGEMENT_NETWORK_ENABLED, True
+    await _seed_policy(
+        db_session, admin_world["admin"].id, cidrs=["10.0.0.0/8"], enabled=True
     )
 
     async with httpx.AsyncClient(
@@ -436,8 +468,8 @@ async def test_disabled_network_policy_passes_through(
     db_session: AsyncSession,
     admin_world: dict[str, Any],
 ) -> None:
-    await _set_store_setting(
-        db_session, admin_world["admin"].id, MANAGEMENT_NETWORK_ENABLED, False
+    await _seed_policy(
+        db_session, admin_world["admin"].id, cidrs=["10.0.0.0/8"], enabled=False
     )
     response = await client.get(
         f"{_API}/admin/users", headers=admin_world["admin_headers"]
@@ -445,7 +477,146 @@ async def test_disabled_network_policy_passes_through(
     assert response.status_code == 200
 
 
+# --- the settings surface: the policy's self-repair face (PR #5 fix A) ----------------
+
+
+async def test_settings_surface_is_exempt_from_the_network_guard(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_world: dict[str, Any],
+) -> None:
+    """A policy that refuses this client's network still answers the
+    settings surface (the terminal-review ruling: the Admin must reach
+    "the API needed to repair the setting") — while the GUARDED admin
+    family keeps refusing the same peer. The §33.4 Admin gate still
+    applies to the settings routes (the teacher matrix above pins the
+    403 on every settings URL)."""
+    # 203.0.113.0/24 excludes the default 127.0.0.1 transport peer.
+    await _seed_policy(
+        db_session, admin_world["admin"].id, cidrs=["203.0.113.0/24"], enabled=True
+    )
+
+    guarded = await client.get(
+        f"{_API}/admin/users", headers=admin_world["admin_headers"]
+    )
+    assert guarded.status_code == 403
+
+    settings = await client.get(
+        f"{_API}/admin/settings", headers=admin_world["admin_headers"]
+    )
+    assert settings.status_code == 200, settings.text
+    # The repair itself: readmit this peer's network through the exempt
+    # surface, then the guarded family admits it again — the self-repair
+    # loop closes end to end.
+    repair = await client.put(
+        f"{_API}/admin/settings/management-network-cidrs",
+        json={"value": ["127.0.0.0/8", "203.0.113.0/24"]},
+        headers=admin_world["admin_headers"],
+    )
+    assert repair.status_code == 200, repair.text
+    recovered = await client.get(
+        f"{_API}/admin/users", headers=admin_world["admin_headers"]
+    )
+    assert recovered.status_code == 200, recovered.text
+
+
+async def test_unloadable_residue_fails_closed_but_settings_stay_repairable(
+    api_app: FastAPI,
+    db_session: AsyncSession,
+    admin_world: dict[str, Any],
+) -> None:
+    """Historical residue (an unloadable pair stored before the
+    aggregate lock — seeded by direct row inserts): the guard FAILS
+    CLOSED — the 403 PERMISSION_DENIED envelope to every caller,
+    in-network included, never a 500 — while the exempt settings
+    surface stays reachable and can repair the pair (PR #5 fix A's
+    two halves in one loop)."""
+    await _seed_residue_setting_rows(
+        db_session, admin_world["admin"].id, enabled="true", cidrs=""
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app, client=("10.1.2.3", 123)),
+        base_url="http://test",
+    ) as inside:
+        guarded = await inside.get(
+            f"{_API}/admin/users", headers=admin_world["admin_headers"]
+        )
+    assert guarded.status_code == 403, guarded.text
+    assert guarded.json()["error"]["code"] == ErrorCode.PERMISSION_DENIED
+    assert "不可加载" in guarded.json()["error"]["message"]
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app), base_url="http://test"
+    ) as local:
+        settings = await local.get(
+            f"{_API}/admin/settings", headers=admin_world["admin_headers"]
+        )
+        assert settings.status_code == 200, settings.text
+        # The repair goes through the aggregate write path and is judged
+        # against the residue's own values (enabled=true + the new list).
+        repair = await local.put(
+            f"{_API}/admin/settings/management-network-cidrs",
+            json={"value": ["10.0.0.0/8"]},
+            headers=admin_world["admin_headers"],
+        )
+        assert repair.status_code == 200, repair.text
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app, client=("10.1.2.3", 123)),
+        base_url="http://test",
+    ) as inside_after:
+        recovered = await inside_after.get(
+            f"{_API}/admin/users", headers=admin_world["admin_headers"]
+        )
+    assert recovered.status_code == 200, recovered.text
+
+
 # --- the settings cross-key ruling ----------------------------------------------------
+
+
+async def test_settings_face_stays_reachable_while_the_policy_lock_is_held(
+    api_app: FastAPI,
+    db_session: AsyncSession,
+    db_engine: AsyncEngine,
+    admin_world: dict[str, Any],
+) -> None:
+    """PR #5 fix A: while another real connection holds the policy's
+    aggregate advisory lock, the settings face stays REACHABLE — its
+    reads take no policy lock (GET answers 200) — while a policy WRITE
+    serializes behind the holder and completes only after it releases
+    (observed without cancelling the request: the write task stays
+    pending until the holder's transaction ends)."""
+    holder = await db_engine.connect()
+    try:
+        await holder.execute(
+            text("SELECT pg_advisory_xact_lock(:lock)"),
+            {"lock": MANAGEMENT_NETWORK_POLICY_LOCK},
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api_app), base_url="http://test"
+        ) as local:
+            reachable = await local.get(
+                f"{_API}/admin/settings", headers=admin_world["admin_headers"]
+            )
+            assert reachable.status_code == 200, reachable.text
+
+            write = asyncio.create_task(
+                local.put(
+                    f"{_API}/admin/settings/management-network-enabled",
+                    json={"value": False},
+                    headers=admin_world["admin_headers"],
+                )
+            )
+            done, pending = await asyncio.wait({write}, timeout=0.5)
+            assert not done, "the policy write completed while the lock was held"
+            assert pending == {write}
+
+            await holder.rollback()  # ends the holder's transaction: release
+            response = await write
+            assert response.status_code == 200, response.text
+    finally:
+        await holder.close()
 
 
 async def test_enabling_network_policy_without_cidrs_is_refused_at_write_time(
@@ -476,11 +647,8 @@ async def test_emptying_cidrs_while_enabled_is_refused_at_write_time(
     db_session: AsyncSession,
     admin_world: dict[str, Any],
 ) -> None:
-    await _set_store_setting(
-        db_session, admin_world["admin"].id, MANAGEMENT_NETWORK_CIDRS, ["10.0.0.0/8"]
-    )
-    await _set_store_setting(
-        db_session, admin_world["admin"].id, MANAGEMENT_NETWORK_ENABLED, True
+    await _seed_policy(
+        db_session, admin_world["admin"].id, cidrs=["10.0.0.0/8"], enabled=True
     )
 
     response = await in_network_client.put(
@@ -617,7 +785,11 @@ async def test_audit_log_search_filters_and_paginates(
     admin_world: dict[str, Any],
 ) -> None:
     headers = admin_world["admin_headers"]
-    # Seed two distinct audit actions through the real write paths.
+    # Seed two distinct audit actions through the real write paths. A
+    # third harness row makes the page assertions self-sufficient: the
+    # shared database's COMMITTED audit rows are also visible to the
+    # search (read-committed), and a scrubbed database must not fail
+    # the ">= 3" floor.
     put = await client.put(
         f"{_API}/admin/settings/abandon-daily-limit",
         json={"value": 1},
@@ -630,6 +802,9 @@ async def test_audit_log_search_filters_and_paginates(
         headers=headers,
     )
     await _append_audit_row(db_session, admin_world["admin"], "PROBE_ACTION")
+    # A DISTINCT action name: the actor+action filter below pins exactly
+    # the first probe row.
+    await _append_audit_row(db_session, admin_world["admin"], "PROBE_ACTION_2")
 
     unfiltered = await client.get(f"{_API}/admin/audit-logs", headers=headers)
     assert unfiltered.status_code == 200
@@ -1030,10 +1205,15 @@ async def test_points_adjustment_posts_through_the_ledger(
 ) -> None:
     headers = admin_world["admin_headers"]
     student_id = admin_world["student"].id
+    operation_id = uuid4()
 
     adjusted = await client.post(
         f"{_API}/admin/users/{student_id}/points-adjustment",
-        json={"amount": 50, "reason": "人工补正"},
+        json={
+            "amount": 50,
+            "reason": "人工补正",
+            "operation_id": str(operation_id),
+        },
         headers=headers,
     )
     assert adjusted.status_code == 200, adjusted.text
@@ -1048,6 +1228,8 @@ async def test_points_adjustment_posts_through_the_ledger(
         )
     )
     assert [row.ledger_type for row in ledger_rows] == [LedgerType.ADMIN_ADJUSTMENT]
+    # The caller's intent id IS the entry's source id (PR #5 fix A).
+    assert ledger_rows[0].source_id == operation_id
     # Ranking-neutral by construction (plan review focus 4).
     assert ledger_rows[0].affects_balance is True
     assert ledger_rows[0].affects_ranking is False
@@ -1058,17 +1240,101 @@ async def test_points_adjustment_posts_through_the_ledger(
 
     zero = await client.post(
         f"{_API}/admin/users/{student_id}/points-adjustment",
-        json={"amount": 0, "reason": "零金额"},
+        json={
+            "amount": 0,
+            "reason": "零金额",
+            "operation_id": str(uuid4()),
+        },
         headers=headers,
     )
     assert zero.status_code == 422
 
     unknown = await client.post(
         f"{_API}/admin/users/{uuid4()}/points-adjustment",
-        json={"amount": 5, "reason": "不存在的账号"},
+        json={
+            "amount": 5,
+            "reason": "不存在的账号",
+            "operation_id": str(uuid4()),
+        },
         headers=headers,
     )
     assert unknown.status_code == 404
+
+
+async def test_points_adjustment_is_idempotent_per_operation_id(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    admin_world: dict[str, Any],
+) -> None:
+    """PR #5 fix A (P1, G8): the body's ``operation_id`` is the
+    adjustment's idempotency key. A retry with the SAME id and intent
+    replays the original entry — one ledger row, one balance move, one
+    audit row; the same id under a DIFFERENT decision is the typed 409
+    CONFLICT; a body without the id is the framework 422."""
+    headers = admin_world["admin_headers"]
+    student_id = admin_world["student"].id
+    operation_id = uuid4()
+    payload = {
+        "amount": 7,
+        "reason": "活动补偿",
+        "operation_id": str(operation_id),
+    }
+
+    first = await client.post(
+        f"{_API}/admin/users/{student_id}/points-adjustment",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    replay = await client.post(
+        f"{_API}/admin/users/{student_id}/points-adjustment",
+        json=payload,
+        headers=headers,
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["ledger_entry_id"] == first.json()["ledger_entry_id"]
+
+    rows = list(
+        await db_session.scalars(
+            select(PointsLedger).where(PointsLedger.source_id == operation_id)
+        )
+    )
+    assert len(rows) == 1
+    wallet = await db_session.get(PointWallet, student_id)
+    assert wallet is not None and wallet.available_points == 7
+    assert (
+        await _audit_count(db_session, admin_world["admin"].id, "ADMIN_POINTS_ADJUSTED")
+        == 1
+    )
+
+    conflict = await client.post(
+        f"{_API}/admin/users/{student_id}/points-adjustment",
+        json={
+            "amount": 9,
+            "reason": "另一个决定",
+            "operation_id": str(operation_id),
+        },
+        headers=headers,
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"]["code"] == ErrorCode.CONFLICT
+    assert conflict.json()["error"]["details"]["operation_id"] == str(operation_id)
+    # The refused re-decision wrote nothing.
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(PointsLedger)
+            .where(PointsLedger.user_id == student_id)
+        )
+        == 1
+    )
+
+    missing_id = await client.post(
+        f"{_API}/admin/users/{student_id}/points-adjustment",
+        json={"amount": 5, "reason": "缺少操作 ID"},
+        headers=headers,
+    )
+    assert missing_id.status_code == 422
 
 
 # --- notification templates -----------------------------------------------------------

@@ -29,17 +29,28 @@ Scenario map (the plan's steps, verbatim semantics):
 - **Overdraft legality:** a downward adjustment past zero leaves the
   wallet NEGATIVE (the migration-0012 ruling — the manual correction
   channel is the case that rule was written for).
+- **Idempotency by ``operation_id`` (PR #5 fix A, P1; G8):** the
+  caller's stable intent UUID is the entry's source id, so a replay
+  with the same id and the same canonical intent returns the ORIGINAL
+  entry (exactly one row, one balance move, one audit row) instead of
+  double-charging a lost response's retry; the same id under a
+  different decision (user/amount/reason) is the typed 409 CONFLICT.
+  A genuinely concurrent same-id race — two independent real-PG
+  sessions (G15) — still lands on exactly one row: the loser's insert
+  dies on UNIQUE(source_type, source_id, ledger_type) inside a
+  savepoint and recovers onto the replay path.
 """
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
@@ -53,6 +64,7 @@ from app.modules.identity.models import User
 from app.modules.points.admin_service import (
     AUDIT_ADMIN_POINTS_ADJUSTED,
     AdminReasonRequiredError,
+    PointsAdjustmentOperationConflictError,
     PointsAdjustmentTargetNotFoundError,
     PointsAdminService,
 )
@@ -155,12 +167,14 @@ async def test_adjustment_moves_wallet_but_never_the_boards(
     assert boards_before == {"daily": 300, "monthly": 300, "all": 300}
 
     dispatcher = _RecordingDispatcher()
+    operation_id = uuid4()
     entry = await _service(dispatcher).admin_adjust_points(
         db_session,
         _actor(admin),
         student.id,
         500,
         reason="活动补偿",
+        operation_id=operation_id,
         audit_context=AuditContext(request_id="req-adj-1", ip_address="10.0.0.9"),
     )
 
@@ -184,7 +198,9 @@ async def test_adjustment_moves_wallet_but_never_the_boards(
     assert entry.operator_id == admin.id
     assert entry.reason == "活动补偿"
     assert entry.source_type == LedgerType.ADMIN_ADJUSTMENT.value
-    assert entry.source_id is not None  # its own source event
+    # The caller's intent id IS the source id (PR #5 fix A: the
+    # adjustment's idempotency key).
+    assert entry.source_id == operation_id
     rows = (
         await db_session.scalars(
             select(PointsLedger).where(
@@ -217,20 +233,35 @@ async def test_adjustment_gates_refuse_before_anything_is_written(
 
     with pytest.raises(BusinessError) as role_denied:
         await service.admin_adjust_points(
-            db_session, _actor(teacher), student.id, 500, reason="教师越权"
+            db_session,
+            _actor(teacher),
+            student.id,
+            500,
+            reason="教师越权",
+            operation_id=uuid4(),
         )
     assert role_denied.value.code == ErrorCode.PERMISSION_DENIED
     assert role_denied.value.status_code == 403
 
     with pytest.raises(AdminReasonRequiredError) as blank:
         await service.admin_adjust_points(
-            db_session, _actor(admin), student.id, 500, reason="\t "
+            db_session,
+            _actor(admin),
+            student.id,
+            500,
+            reason="\t ",
+            operation_id=uuid4(),
         )
     assert blank.value.status_code == 400
 
     with pytest.raises(PointsAdjustmentTargetNotFoundError) as unknown:
         await service.admin_adjust_points(
-            db_session, _actor(admin), UUID(int=55), 500, reason="未知账号"
+            db_session,
+            _actor(admin),
+            UUID(int=55),
+            500,
+            reason="未知账号",
+            operation_id=uuid4(),
         )
     assert unknown.value.status_code == 404
 
@@ -238,7 +269,12 @@ async def test_adjustment_gates_refuse_before_anything_is_written(
     # lock (validate before touch).
     with pytest.raises(InvalidLedgerEntryError) as zero:
         await service.admin_adjust_points(
-            db_session, _actor(admin), student.id, 0, reason="零金额"
+            db_session,
+            _actor(admin),
+            student.id,
+            0,
+            reason="零金额",
+            operation_id=uuid4(),
         )
     assert zero.value.status_code == 422
 
@@ -283,6 +319,7 @@ async def test_adjustment_commits_its_audit_row_in_the_same_transaction(
         student.id,
         500,
         reason="活动补偿",
+        operation_id=uuid4(),
         audit_context=AuditContext(request_id="req-adj-2", ip_address="10.0.0.9"),
     )
 
@@ -335,7 +372,12 @@ async def test_downward_adjustment_may_overdraft_the_wallet(
     await db_session.commit()
 
     entry = await _service(_RecordingDispatcher()).admin_adjust_points(
-        db_session, _actor(admin), student.id, -300, reason="误发冲减"
+        db_session,
+        _actor(admin),
+        student.id,
+        -300,
+        reason="误发冲减",
+        operation_id=uuid4(),
     )
 
     assert entry.amount == -300
@@ -348,3 +390,180 @@ async def test_downward_adjustment_may_overdraft_the_wallet(
         "monthly": 100,
         "all": 100,
     }
+
+
+# --- idempotency by operation_id (PR #5 fix A, P1; G8) --------------------------------
+
+
+async def test_same_operation_id_and_intent_replays_the_original_entry(
+    db_session: AsyncSession,
+) -> None:
+    """The retry after a lost response reuses the operation id and gets
+    the ORIGINAL entry back: one ledger row, one balance move, one
+    audit row — never a double charge."""
+    admin = await _seed_user(db_session, username="adj-idem-adm-0010", role=Role.ADMIN)
+    student = await _seed_user(
+        db_session, username="adj-idem-stu-0011", role=Role.STUDENT
+    )
+    service = _service(_RecordingDispatcher())
+    actor = _actor(admin)
+    operation_id = uuid4()
+
+    first = await service.admin_adjust_points(
+        db_session, actor, student.id, 500, reason="活动补偿", operation_id=operation_id
+    )
+    replayed = await service.admin_adjust_points(
+        db_session, actor, student.id, 500, reason="活动补偿", operation_id=operation_id
+    )
+
+    assert replayed.id == first.id
+    rows = (
+        await db_session.scalars(
+            select(PointsLedger).where(PointsLedger.source_id == operation_id)
+        )
+    ).all()
+    assert len(rows) == 1
+    wallet = await _wallet(db_session, student.id)
+    assert wallet is not None and wallet.available_points == 500
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(
+                AuditLog.actor_user_id == admin.id,
+                AuditLog.action == AUDIT_ADMIN_POINTS_ADJUSTED,
+            )
+        )
+        == 1
+    )
+
+
+async def test_same_operation_id_under_a_different_decision_is_conflict(
+    db_session: AsyncSession,
+) -> None:
+    """The id names ONE decision: reusing it with a different user,
+    amount, or trimmed reason is the typed 409, and nothing is
+    written."""
+    admin = await _seed_user(db_session, username="adj-conf-adm-0012", role=Role.ADMIN)
+    student = await _seed_user(
+        db_session, username="adj-conf-stu-0013", role=Role.STUDENT
+    )
+    other = await _seed_user(
+        db_session, username="adj-conf-stu-0014", role=Role.STUDENT
+    )
+    service = _service(_RecordingDispatcher())
+    actor = _actor(admin)
+    operation_id = uuid4()
+    await service.admin_adjust_points(
+        db_session, actor, student.id, 500, reason="活动补偿", operation_id=operation_id
+    )
+
+    for user_id, amount, reason in (
+        (student.id, 600, "活动补偿"),  # different amount
+        (student.id, 500, "另一个原因"),  # different reason
+        (other.id, 500, "活动补偿"),  # different target
+    ):
+        with pytest.raises(PointsAdjustmentOperationConflictError) as conflict:
+            await service.admin_adjust_points(
+                db_session,
+                actor,
+                user_id,
+                amount,
+                reason=reason,
+                operation_id=operation_id,
+            )
+        assert conflict.value.status_code == 409
+        assert conflict.value.code == ErrorCode.CONFLICT
+        assert conflict.value.details["operation_id"] == str(operation_id)
+
+    rows = (
+        await db_session.scalars(
+            select(PointsLedger).where(PointsLedger.source_id == operation_id)
+        )
+    ).all()
+    assert len(rows) == 1 and rows[0].amount == 500
+    wallet = await _wallet(db_session, student.id)
+    assert wallet is not None and wallet.available_points == 500
+    assert await _wallet(db_session, other.id) is None
+
+
+async def test_concurrent_same_operation_id_race_lands_on_one_entry(
+    db_engine: AsyncEngine,
+) -> None:
+    """G15: two independent REAL-PG sessions post the SAME operation id
+    at once — the UNIQUE(source_type, source_id, ledger_type) race
+    decides inside the database; the savepoint-bounded loser recovers
+    onto the replay path. Exactly one entry, one balance move, one
+    audit row, and both calls return the same entry id.
+
+    Committed sessions (the rollback harness cannot cross-transaction
+    race); the committed rows are cleaned up in ``finally``.
+    """
+    maker = async_sessionmaker(db_engine, expire_on_commit=False)
+    suffix = uuid4().hex[:6]
+    async with maker() as seed_session:
+        admin = await _seed_user(
+            seed_session, username=f"adj-race-adm-{suffix}", role=Role.ADMIN
+        )
+        student = await _seed_user(
+            seed_session, username=f"adj-race-stu-{suffix}", role=Role.STUDENT
+        )
+        await seed_session.commit()  # the racing sessions must see the rows
+    actor = Actor(user_id=admin.id, role=Role.ADMIN)
+    service = _service(_RecordingDispatcher())
+    operation_id = uuid4()
+
+    async def _adjust() -> PointsLedger:
+        async with maker() as session:
+            return await service.admin_adjust_points(
+                session,
+                actor,
+                student.id,
+                500,
+                reason="并发同号",
+                operation_id=operation_id,
+            )
+
+    try:
+        first, second = await asyncio.gather(_adjust(), _adjust())
+        assert first.id == second.id
+
+        async with maker() as check:
+            rows = (
+                await check.scalars(
+                    select(PointsLedger).where(PointsLedger.source_id == operation_id)
+                )
+            ).all()
+            assert len(rows) == 1
+            wallet = await check.get(PointWallet, student.id)
+            assert wallet is not None and wallet.available_points == 500
+            audits = int(
+                await check.scalar(
+                    select(func.count())
+                    .select_from(AuditLog)
+                    .where(
+                        AuditLog.action == AUDIT_ADMIN_POINTS_ADJUSTED,
+                        AuditLog.target_id == str(student.id),
+                    )
+                )
+            )
+            assert audits == 1
+    finally:
+        # Test garbage collection only (this test commits for real).
+        async with maker() as cleanup:
+            await cleanup.execute(
+                delete(AuditLog).where(
+                    AuditLog.action == AUDIT_ADMIN_POINTS_ADJUSTED,
+                    AuditLog.target_id == str(student.id),
+                )
+            )
+            await cleanup.execute(
+                delete(PointsLedger).where(PointsLedger.source_id == operation_id)
+            )
+            await cleanup.execute(
+                delete(PointWallet).where(PointWallet.user_id == student.id)
+            )
+            await cleanup.execute(
+                delete(User).where(User.id.in_([admin.id, student.id]))
+            )
+            await cleanup.commit()

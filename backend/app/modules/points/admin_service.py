@@ -53,6 +53,19 @@ Design decisions:
   resolves to: none exists, ranking can never move through this
   channel. An optional ranking mode would need an owner ruling plus a
   period-attribution rule; the tests pin the isolation.
+- **The adjustment is idempotent by ``operation_id``** (PR #5
+  final-review fix A, P1; G8 at-least-once needs business idempotency):
+  the caller's stable intent UUID is the entry's ``source_id``, so
+  ``UNIQUE(source_type, source_id, ledger_type)`` makes one operation
+  id one ledger row — a response lost to a network blip and retried
+  with the SAME id replays the ORIGINAL entry (no second row, no
+  second wallet move, no second audit row) instead of double-charging.
+  A replay carrying a DIFFERENT canonical intent (user/amount/reason)
+  under a used id is the typed 409 CONFLICT: the id names a decision,
+  and re-deciding under it would launder the audit trail. The
+  savepoint-bounded insert keeps a genuine concurrent same-id race on
+  the same recovery path (the grant_reward_review /
+  grant_assignment_reward precedent).
 - **The adjustment's audit snapshots read under the wallet row lock**
   (the reversal discipline): the wallet is locked through the module's
   one ``locked_or_created_wallet`` before the before-read, so a
@@ -75,7 +88,7 @@ from datetime import datetime
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +122,8 @@ __all__ = [
     "AdminReasonRequiredError",
     "DuplicateRewardReviewGrantError",
     "PointsAdminService",
+    "PointsAdjustmentOperationConflictError",
+    "PointsAdjustmentTargetNotFoundError",
     "RewardAdminService",
     "RewardItemChanges",
     "RewardItemValidationError",
@@ -146,11 +161,17 @@ _NOT_TEACHER_MESSAGE = "审阅授权只能授予教师账号"
 _DUPLICATE_GRANT_MESSAGE = "该教师已持有兑换审阅授权"
 _GRANT_MISSING_MESSAGE = "该教师未持有兑换审阅授权"
 _ADJUST_TARGET_MISSING_MESSAGE = "积分调整目标账号不存在"
+_OPERATION_ID_CONFLICT_MESSAGE = "该操作 ID 已用于不同的积分调整"
 
 # The PK a racing second grant loses to (models.py); only its violation
 # is translated into the typed duplicate conflict (backend-engineering
 # §7: only the expected constraint is converted).
 _GRANT_PK = "pk_reward_review_grants"
+
+# The ledger's idempotency constraint (models.py; ledger_service's
+# _SOURCE_TRIPLE_UQ): a same-operation_id race loses to exactly this
+# one, and only its violation takes the replay path.
+_SOURCE_TRIPLE_UQ = "uq_points_ledger_source_type_source_id_ledger_type"
 
 
 # --- the update command -------------------------------------------------
@@ -265,6 +286,20 @@ class PointsAdjustmentTargetNotFoundError(BusinessError):
         )
 
 
+class PointsAdjustmentOperationConflictError(BusinessError):
+    """The operation id was already spent on a DIFFERENT adjustment (PR
+    #5 fix A, P1): a replay must carry the same canonical intent — the
+    id is the decision's name, not a slot to re-decide in."""
+
+    def __init__(self, operation_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.CONFLICT,
+            _OPERATION_ID_CONFLICT_MESSAGE,
+            status_code=409,
+            details={"operation_id": str(operation_id)},
+        )
+
+
 # --- shared internals ----------------------------------------------------
 
 
@@ -287,6 +322,35 @@ def _require_reason(reason: str | None) -> str:
     if not reason_text:
         raise AdminReasonRequiredError()
     return reason_text
+
+
+def _replayed_adjustment(
+    existing: PointsLedger,
+    *,
+    operation_id: UUID,
+    user_id: UUID,
+    amount: int,
+    reason_text: str,
+) -> PointsLedger:
+    """The replay verdict for an already-applied operation id (G8): the
+    SAME canonical intent (target user, amount, trimmed reason — the
+    fields the caller's decision fixed) returns the ORIGINAL entry and
+    writes nothing; anything else is the typed 409 — an operation id
+    names one decision, and a different decision under it would launder
+    the audit trail."""
+    if (
+        existing.user_id == user_id
+        and existing.amount == amount
+        and (existing.reason or "") == reason_text
+    ):
+        logger.info(
+            "admin points adjustment replay operation_id=%s returns the "
+            "existing entry %s (nothing written)",
+            operation_id,
+            existing.id,
+        )
+        return existing
+    raise PointsAdjustmentOperationConflictError(operation_id)
 
 
 def _snapshot_value(value: object) -> object:
@@ -759,6 +823,7 @@ class PointsAdminService:
         amount: int,
         *,
         reason: str,
+        operation_id: UUID,
         audit_context: AuditContext | None = None,
     ) -> PointsLedger:
         """Post one ADMIN_ADJUSTMENT entry through the ledger and audit
@@ -771,15 +836,38 @@ class PointsAdminService:
         see the module docstring). Zero amounts are the ledger's typed
         422; the wallet may overdraft negative on a downward correction
         (the migration-0012 ruling). Commits exactly once.
+
+        Idempotency (PR #5 fix A, P1; G8): ``operation_id`` is the
+        caller's stable intent id and becomes the entry's
+        ``source_id``. A replay with the SAME id and the SAME canonical
+        intent (user, amount, trimmed reason) returns the ORIGINAL
+        entry and writes nothing — the retry after a lost response
+        cannot double-charge. The same id with a DIFFERENT intent is
+        the typed 409 ``CONFLICT``. A genuine concurrent same-id race
+        loses to ``UNIQUE(source_type, source_id, ledger_type)`` inside
+        a savepoint and recovers onto the same replay path.
         """
         _require_admin(actor)
         reason_text = _require_reason(reason)
         # Friendly-first (backend-engineering §6): the zero-amount gate
-        # is the ledger's own typed 422, answered BEFORE the directory
-        # read and the wallet lock — post_entry's _validate stays the
-        # backstop.
+        # is the ledger's own typed 422, answered BEFORE the replay
+        # lookup, the directory read, and the wallet lock — post_entry's
+        # _validate stays the backstop.
         if amount == 0:
             raise InvalidLedgerEntryError("amount", "积分流水金额必须是非零整数")
+
+        # The replay lookup (G8): the operation id IS the ledger's
+        # source id, so an already-applied adjustment answers from the
+        # fact, spending no wallet lock and writing nothing.
+        existing = await db.scalar(self._adjustment_filter(operation_id))
+        if existing is not None:
+            return _replayed_adjustment(
+                existing,
+                operation_id=operation_id,
+                user_id=user_id,
+                amount=amount,
+                reason_text=reason_text,
+            )
 
         target_role = await self._directory.get_role(db, user_id)
         if target_role is None:
@@ -793,21 +881,47 @@ class PointsAdminService:
         wallet = await self._ledger.locked_or_created_wallet(db, user_id)
         balance_before = wallet.available_points
 
-        entry = await self._ledger.post_entry(
-            db,
-            PostLedgerEntry(
+        try:
+            # The savepoint bounds the same-operation_id race loser's
+            # damage: the UNIQUE violation aborts only this insert,
+            # leaving the transaction usable for the recovery read (the
+            # grant_assignment_reward precedent).
+            async with db.begin_nested():
+                entry = await self._ledger.post_entry(
+                    db,
+                    PostLedgerEntry(
+                        user_id=user_id,
+                        ledger_type=LedgerType.ADMIN_ADJUSTMENT,
+                        amount=amount,
+                        source_type=LedgerType.ADMIN_ADJUSTMENT.value,
+                        # The caller's stable intent id — the triple's
+                        # idempotency key (models.py; PR #5 fix A).
+                        source_id=operation_id,
+                        affects_balance=True,
+                        affects_ranking=False,
+                        operator_id=actor.user_id,
+                        reason=reason_text,
+                    ),
+                )
+        except IntegrityError as exc:
+            if _SOURCE_TRIPLE_UQ not in str(exc):
+                raise  # unknown database failure, not our idempotency race
+            # The wallet lock serialized us behind the winner's commit,
+            # so the row is visible now. Expire savepoint-scoped state
+            # (the never-inserted pending entry, the wallet snapshot)
+            # before re-reading, then answer through the replay path.
+            db.expire_all()
+            winner = await db.scalar(self._adjustment_filter(operation_id))
+            if winner is None:
+                raise
+            await db.commit()  # release the wallet lock; nothing was written
+            return _replayed_adjustment(
+                winner,
+                operation_id=operation_id,
                 user_id=user_id,
-                ledger_type=LedgerType.ADMIN_ADJUSTMENT,
                 amount=amount,
-                # models.py: an ADMIN_ADJUSTMENT is its own source event
-                # — the service mints the unique source id.
-                source_type=LedgerType.ADMIN_ADJUSTMENT.value,
-                affects_balance=True,
-                affects_ranking=False,
-                operator_id=actor.user_id,
-                reason=reason_text,
-            ),
-        )
+                reason_text=reason_text,
+            )
         balance_after = wallet.available_points
         await self._audit.append(
             db,
@@ -827,9 +941,21 @@ class PointsAdminService:
         )
         await db.commit()
         logger.info(
-            "admin points adjusted actor_id=%s user_id=%s amount=%s",
+            "admin points adjusted actor_id=%s user_id=%s amount=%s operation_id=%s",
             actor.user_id,
             user_id,
             amount,
+            operation_id,
         )
         return entry
+
+    @staticmethod
+    def _adjustment_filter(operation_id: UUID) -> Select[tuple[PointsLedger]]:
+        """The one-per-operation adjustment lookup: the operation id as
+        the ADMIN_ADJUSTMENT source triple — the UNIQUE constraint's
+        read-side twin (the _claim_reward_filter shape)."""
+        return select(PointsLedger).where(
+            PointsLedger.source_type == LedgerType.ADMIN_ADJUSTMENT.value,
+            PointsLedger.source_id == operation_id,
+            PointsLedger.ledger_type == LedgerType.ADMIN_ADJUSTMENT.value,
+        )

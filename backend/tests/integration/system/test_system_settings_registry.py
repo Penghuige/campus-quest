@@ -10,6 +10,12 @@ Drives ``SystemSettingService`` directly (the storage-layer contract;
 the router surface stays T9's) with the rollback-harness session:
 rejected writes leave no row and no audit row; accepted writes store
 exactly the canonical spelling the registry defines.
+
+The two ``MANAGEMENT_NETWORK_*`` keys are written through
+``set_management_network_policy`` — their ONLY write path since PR #5
+fix A (``set`` refuses them; the pair's cross-key invariant is checked
+under the aggregate advisory lock). The tests below therefore seed the
+partner key first whenever the pair under test must stay loadable.
 """
 
 from __future__ import annotations
@@ -200,6 +206,16 @@ async def test_invalid_abandon_limit_is_typed_422(
 # --- MANAGEMENT_NETWORK_ENABLED / _CIDRS ----------------------------------------------
 
 
+async def _set_policy(db: AsyncSession, actor: Actor, **kwargs: object) -> object:
+    """The pair's one write path (PR #5 fix A): thin wrapper so the
+    tests read as the routes do."""
+    return await SystemSettingService().set_management_network_policy(
+        db,
+        actor=actor,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
 @pytest.mark.parametrize(
     ("value", "stored"),
     [(True, "true"), (False, "false")],
@@ -208,27 +224,42 @@ async def test_network_enabled_stores_canonical_flag(
     db_session: AsyncSession, value: bool, stored: str
 ) -> None:
     actor = await _admin(db_session)
+    # enabled=true needs a non-empty effective CIDR list: seed the
+    # partner row first (the aggregate path validates the PAIR).
+    await _set_policy(db_session, actor, cidrs=["10.0.0.0/8"])
 
-    result = await SystemSettingService().set(
-        db_session, actor=actor, key=MANAGEMENT_NETWORK_ENABLED, value=value
-    )
+    result = await _set_policy(db_session, actor, enabled=value)
 
-    assert result == stored
+    assert result.value == stored
+    assert result.key == MANAGEMENT_NETWORK_ENABLED
 
 
-@pytest.mark.parametrize("value", ["true", 1, None])
+@pytest.mark.parametrize("value", ["true", 1])
 async def test_non_bool_network_enabled_is_typed_422(
     db_session: AsyncSession, value: object
 ) -> None:
     actor = await _admin(db_session)
 
     with pytest.raises(BusinessError) as exc_info:
-        await SystemSettingService().set(
-            db_session, actor=actor, key=MANAGEMENT_NETWORK_ENABLED, value=value
-        )
+        await _set_policy(db_session, actor, enabled=value)  # type: ignore[arg-type]
 
     assert exc_info.value.status_code == 422
     assert await _row(db_session, MANAGEMENT_NETWORK_ENABLED) is None
+
+
+async def test_policy_write_requires_a_key(
+    db_session: AsyncSession,
+) -> None:
+    """Neither key provided is the typed 422 — the aggregate path is a
+    write path, not a no-op."""
+    actor = await _admin(db_session)
+
+    with pytest.raises(BusinessError) as exc_info:
+        await _set_policy(db_session, actor)
+
+    assert exc_info.value.status_code == 422
+    assert await _row(db_session, MANAGEMENT_NETWORK_ENABLED) is None
+    assert await _row(db_session, MANAGEMENT_NETWORK_CIDRS) is None
 
 
 async def test_network_cidrs_store_canonical_comma_separated(
@@ -236,32 +267,29 @@ async def test_network_cidrs_store_canonical_comma_separated(
 ) -> None:
     actor = await _admin(db_session)
 
-    stored = await SystemSettingService().set(
+    result = await _set_policy(
         db_session,
-        actor=actor,
-        key=MANAGEMENT_NETWORK_CIDRS,
-        value=["10.0.0.0/8", "192.168.1.7", "2001:db8::/48"],
+        actor,
+        cidrs=["10.0.0.0/8", "192.168.1.7", "2001:db8::/48"],
     )
 
     # Bare IPs canonicalize to /32; v6 keeps its compressed spelling.
-    assert stored == "10.0.0.0/8,192.168.1.7/32,2001:db8::/48"
+    assert result.value == "10.0.0.0/8,192.168.1.7/32,2001:db8::/48"
     row = await _row(db_session, MANAGEMENT_NETWORK_CIDRS)
-    assert row is not None and row.value == stored
+    assert row is not None and row.value == result.value
     # The full CIDR list rides the audit snapshot — non-sensitive
     # infrastructure fact, never a truncated summary (Plan 08 T5).
     audits = await _audits(db_session, MANAGEMENT_NETWORK_CIDRS)
     assert len(audits) == 1
-    assert audits[0].after_snapshot == {"value": stored}
+    assert audits[0].after_snapshot == {"value": result.value}
 
 
 async def test_empty_network_cidrs_is_legal(db_session: AsyncSession) -> None:
     actor = await _admin(db_session)
 
-    stored = await SystemSettingService().set(
-        db_session, actor=actor, key=MANAGEMENT_NETWORK_CIDRS, value=[]
-    )
+    result = await _set_policy(db_session, actor, cidrs=[])
 
-    assert stored == ""
+    assert result.value == ""
 
 
 @pytest.mark.parametrize(
@@ -279,14 +307,68 @@ async def test_invalid_network_cidrs_is_typed_422(
     actor = await _admin(db_session)
 
     with pytest.raises(BusinessError) as exc_info:
-        await SystemSettingService().set(
-            db_session, actor=actor, key=MANAGEMENT_NETWORK_CIDRS, value=value
-        )
+        await _set_policy(db_session, actor, cidrs=value)  # type: ignore[arg-type]
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.details["key"] == MANAGEMENT_NETWORK_CIDRS
     assert await _row(db_session, MANAGEMENT_NETWORK_CIDRS) is None
     assert await _audits(db_session, MANAGEMENT_NETWORK_CIDRS) == []
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "seed_cidrs"),
+    [
+        ({"enabled": True}, None),  # no row, env fallback empty
+        ({"cidrs": []}, "10.0.0.0/8"),  # emptying under an enabled pair
+    ],
+)
+async def test_unloadable_policy_pair_is_refused_at_write_time(
+    db_session: AsyncSession,
+    kwargs: dict[str, object],
+    seed_cidrs: str | None,
+) -> None:
+    """The cross-key gate lives INSIDE the aggregate path now: enabling
+    with an empty effective list, or emptying the list while enabled,
+    is the typed 422 and stores nothing (PR #5 fix A keeps the pair
+    loadable from every direction)."""
+    actor = await _admin(db_session)
+    if seed_cidrs is not None:
+        await _set_policy(db_session, actor, cidrs=[seed_cidrs])
+        await _set_policy(db_session, actor, enabled=True)
+
+    with pytest.raises(BusinessError) as exc_info:
+        await _set_policy(db_session, actor, **kwargs)  # type: ignore[arg-type]
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
+    # The refused write stored nothing and audited nothing.
+    if "enabled" in kwargs:
+        assert await _row(db_session, MANAGEMENT_NETWORK_ENABLED) is None
+    else:
+        row = await _row(db_session, MANAGEMENT_NETWORK_CIDRS)
+        assert row is not None and row.value == seed_cidrs
+
+
+async def test_plain_set_refuses_the_policy_keys(
+    db_session: AsyncSession,
+) -> None:
+    """The single serial domain has no side door: ``set`` answers the
+    typed 422 for both policy keys (PR #5 fix A)."""
+    actor = await _admin(db_session)
+
+    for key in (MANAGEMENT_NETWORK_ENABLED, MANAGEMENT_NETWORK_CIDRS):
+        with pytest.raises(BusinessError) as exc_info:
+            await SystemSettingService().set(
+                db_session,
+                actor=actor,
+                key=key,
+                value=False if key == MANAGEMENT_NETWORK_ENABLED else [],
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.details["key"] == key
+
+    assert await _row(db_session, MANAGEMENT_NETWORK_ENABLED) is None
+    assert await _row(db_session, MANAGEMENT_NETWORK_CIDRS) is None
 
 
 # --- the unregistered-key guard --------------------------------------------------
@@ -338,18 +420,17 @@ async def test_store_keys_win_over_env_and_absent_keys_fall_back(
     written via the audited store drive the policy; keys with no row
     resolve from the (deprecated) env fields."""
     actor = await _admin(db_session)
-    service = SystemSettingService()
-    await service.set(
-        db_session, actor=actor, key=MANAGEMENT_NETWORK_ENABLED, value=True
-    )
-    await service.set(
+    # The pair's one write path: CIDRs first (the env flag is disabled
+    # in this environment, so the pair stays loadable), then the flag.
+    await _set_policy(
         db_session,
-        actor=actor,
-        key=MANAGEMENT_NETWORK_CIDRS,
-        value=["10.20.0.0/16"],
+        actor,
+        cidrs=["10.20.0.0/16"],
     )
+    await _set_policy(db_session, actor, enabled=True)
     settings = _env_settings(monkeypatch, enabled="false", cidrs="203.0.113.0/24")
 
+    service = SystemSettingService()
     stored_enabled = await service.get(db_session, MANAGEMENT_NETWORK_ENABLED)
     stored_cidrs = await service.get(db_session, MANAGEMENT_NETWORK_CIDRS)
     assert stored_enabled == "true"

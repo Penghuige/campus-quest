@@ -59,6 +59,21 @@ What else the service owns:
   ``details.version``. An optimistic observation of the serialized
   write path — NOT a CAS contract (0020's docstring); last-writer-wins
   is unchanged.
+- **The ``MANAGEMENT_NETWORK_*`` pair has ONE write path —
+  ``set_management_network_policy`` (PR #5 final-review fix A, P0).**
+  The two keys are one policy, but the admin surface writes them one
+  key at a time, and the cross-key invariant (enabled=true requires a
+  non-empty effective CIDR list) reads the OTHER key — so the check is
+  only sound under mutual exclusion. The method takes a fixed
+  transaction-scoped ``pg_advisory_xact_lock`` before reading the
+  partner key's effective value (store row or env fallback), refuses
+  any post-write pair the per-request loader could not load, and
+  commits value + audit row + lock release as one unit. The plain
+  ``set`` REFUSES the two policy keys: an unlocked second write path
+  is exactly the cross-key race the advisory lock exists to close
+  (two concurrent single-key writes used to validate against stale
+  partner values and commit an unloadable pair, wedging every guarded
+  admin surface on the loader's ValueError).
 - **``MANAGEMENT_NETWORK_*`` values are non-sensitive by design and
   ride the snapshots in full** (Plan 08 T5): a CIDR allowlist is
   infrastructure fact, not PII — the full list lands in
@@ -70,22 +85,26 @@ What else the service owns:
 Module boundaries: like ``audit``, this module imports nothing from the
 domain modules — the arrow points IN (points' composition reads the
 setting; the admin router writes it). The management-network policy
-RESOLVER (``app.core.admin_network_policy``) likewise knows the stored
-value FORMS but not this module: composition reads the rows here and
-hands the raw strings to the resolver (store-first, env-fallback).
+RESOLVER (``app.core.admin_network_policy``) still knows the stored
+value FORMS but not this module (core never imports app.modules), and
+the aggregate policy write path composes it the same way every reader
+does: rows read here, raw strings handed to the resolver, store-first
+with per-key env fallback.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import json
-from collections.abc import Callable, Mapping
-from typing import Any, cast
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Final, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.admin_network_policy import load_management_network_policy
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.audit.context import AuditContext
@@ -99,8 +118,10 @@ __all__ = [
     "EMOJI_WHITELIST",
     "MANAGEMENT_NETWORK_CIDRS",
     "MANAGEMENT_NETWORK_ENABLED",
+    "MANAGEMENT_NETWORK_POLICY_LOCK",
     "SYSTEM_SETTING_REGISTRY",
     "SYSTEM_SETTING_UPDATED",
+    "ManagementNetworkPolicyWriteResult",
     "SystemSettingService",
     "SystemSettingValueError",
     "normalize_system_setting_value",
@@ -154,6 +175,49 @@ _DETAILS_VALUE_PREVIEW_MAX = 120
 # The blank-reason refusal message (the reject-reason precedent's shape:
 # a provided reason must survive its trim).
 _REASON_BLANK_MESSAGE = "系统设置修改原因不能为空白"
+
+# The MANAGEMENT_NETWORK_* pair's SINGLE SERIAL DOMAIN (PR #5 final-review
+# fix A, P0): both keys describe one policy, but the routes write them one
+# key at a time, so the cross-key invariant (enabled=true requires a
+# non-empty effective CIDR list) can only be checked against the OTHER
+# key's current value under mutual exclusion. Every policy write takes
+# this TRANSACTION-scoped advisory lock before reading the partner key,
+# so two concurrent single-key writes serialize: the second validates
+# against the first's COMMITTED value, and an unloadable pair (for
+# example enabled=true with cidrs=[]) is unwritable, not merely
+# unlikely. A single lock has no ordering to get wrong (no deadlock),
+# and pg_advisory_xact_lock releases automatically at commit/rollback.
+#
+# The literal is hashtext('management_network_policy') = 120969870,
+# evaluated on the project's PostgreSQL 16 — ANY fixed bigint keeps the
+# writers agreed (the number is a rendezvous key, not a hash contract),
+# but the provenance is recorded so a future second advisory lock in
+# this module picks a different, equally documented literal.
+MANAGEMENT_NETWORK_POLICY_LOCK: Final[int] = 120969870
+
+#: The two keys the aggregate policy write path owns; ``set`` refuses
+#: them so no caller can bypass the lock and the cross-key gate.
+_POLICY_KEYS: Final[frozenset[str]] = frozenset(
+    {MANAGEMENT_NETWORK_ENABLED, MANAGEMENT_NETWORK_CIDRS}
+)
+
+# The typed refusals of the aggregate policy path.
+_POLICY_KEYS_REQUIRED_MESSAGE = "必须提供要修改的策略键（enabled 或 cidrs 之一）"
+_POLICY_KEY_MESSAGE = "网络策略键必须通过 set_management_network_policy 整体校验写入"
+_POLICY_UNLOADABLE_MESSAGE = (
+    "网络策略配置不合法：启用管理网络限制时必须至少配置一个 CIDR"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ManagementNetworkPolicyWriteResult:
+    """One applied policy-key write: the changed key, its stored
+    canonical value, and the row's new per-key change counter (0020) —
+    the settings PUT response's exact facts."""
+
+    key: str
+    value: str
+    version: int
 
 
 def _normalized_reason(reason: str | None) -> str | None:
@@ -372,6 +436,12 @@ class SystemSettingService:
         conflict-decided insert or locked update, flush, audit, one
         commit (§5; see the write-path comment for the race pattern).
 
+        The two ``MANAGEMENT_NETWORK_*`` keys are REFUSED here: they are
+        one policy split across two rows, and writing either without the
+        aggregate cross-key gate is exactly how an unloadable pair gets
+        stored — ``set_management_network_policy`` is their only write
+        path (the single serial domain; PR #5 fix A).
+
         ``value`` is the CALLER's typed value, validated and normalized
         through the key's registry entry (unregistered keys are the
         typed 422). ``reason`` is the write's optional free-text why
@@ -387,24 +457,157 @@ class SystemSettingService:
         lost first-write race: the loser reads the winner's committed
         value under the row lock, so the audit chain stays connected."""
         stored_key, stored_value = normalize_system_setting_value(key, value)
+        if stored_key in _POLICY_KEYS:
+            # Validate-before-touch shape kept: the refusal spends no
+            # lock and writes nothing, and names the one legal path.
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _POLICY_KEY_MESSAGE,
+                status_code=422,
+                details={"key": stored_key},
+            )
         # Validate-before-touch: a refused reason spends no insert, no
         # lock, and leaks no key existence (the _require_reason rule).
         reason_text = _normalized_reason(reason)
-        # Chain-true first write (owner round-5 P1): the race decides
-        # INSIDE the database. INSERT ... ON CONFLICT DO NOTHING
-        # RETURNING — the winner (a row returned) created the key in
-        # THIS transaction, so previous is None by construction and the
-        # version is the server default's 1. The loser (no row
-        # returned: a concurrent transaction committed this key while
-        # this one waited on the conflict) then locks the winner's
-        # committed row FOR UPDATE and reads the TRUE previous before
-        # updating, so the audited chain stays connected (None→X, X→Y)
-        # even under a lost first-write race — and the version keeps
-        # counting every applied write (1, 2, ...). The pass-4 UPSERT
-        # shape pre-read the old value and audited a stale None→Y for
-        # the loser — the owner ruled that unacceptable: under
-        # concurrency the audit migration must not be false
-        # (quality-gates §16/G12).
+        await self._store_and_audit(
+            db,
+            actor=actor,
+            stored_key=stored_key,
+            stored_value=stored_value,
+            reason_text=reason_text,
+            audit_context=audit_context,
+        )
+        await db.commit()
+        return stored_value
+
+    async def set_management_network_policy(
+        self,
+        db: AsyncSession,
+        *,
+        actor: Actor,
+        enabled: bool | None = None,
+        cidrs: Sequence[str] | None = None,
+        reason: str | None = None,
+        audit_context: AuditContext | None = None,
+    ) -> ManagementNetworkPolicyWriteResult:
+        """Write ONE key of the ``MANAGEMENT_NETWORK_*`` pair inside the
+        policy's single serial domain (PR #5 final-review fix A, P0).
+
+        Exactly one of ``enabled`` / ``cidrs`` must be provided (``None``
+        means "leave that key at its current effective value"); the
+        method resolves the OTHER key's EFFECTIVE value — its store row,
+        or the deprecated env field while no row exists (the W4
+        per-key migration) — so what it validates is precisely the pair
+        the per-request guard would resolve after the commit:
+
+        1. normalize the provided value (typed 422, before any lock);
+        2. ``pg_advisory_xact_lock(MANAGEMENT_NETWORK_POLICY_LOCK)`` —
+           transaction-scoped, one fixed key, no deadlock ordering;
+        3. read the partner key's effective value UNDER that lock;
+        4. build the post-write pair and load it through
+           ``load_management_network_policy`` — enabled=true with an
+           empty network list is the typed 422 here, so an unloadable
+           pair is unwritable from any direction;
+        5. store the changed key and its audit row and commit ONCE (the
+           lock releases with the commit, making the validated pair
+           visible atomically).
+
+        The first write to a key overrides its env fallback by creating
+        the row (the W4 migration's move-to-store semantics). Returns
+        the changed key's stored canonical value and new version.
+        """
+        provided: dict[str, Any] = {}
+        if enabled is not None:
+            provided[MANAGEMENT_NETWORK_ENABLED] = enabled
+        if cidrs is not None:
+            provided[MANAGEMENT_NETWORK_CIDRS] = list(cidrs)
+        if not provided:
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _POLICY_KEYS_REQUIRED_MESSAGE,
+                status_code=422,
+                details={"field": "enabled/cidrs"},
+            )
+        # Validate-before-touch: a refused value or reason spends no
+        # advisory lock and no row read.
+        reason_text = _normalized_reason(reason)
+        canonical = {
+            key: normalize_system_setting_value(key, value)[1]
+            for key, value in provided.items()
+        }
+        # THE aggregate lock (see MANAGEMENT_NETWORK_POLICY_LOCK): every
+        # policy writer rendezvouses here, so the partner-key read below
+        # cannot interleave with another writer's validate-then-commit.
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock)"),
+            {"lock": MANAGEMENT_NETWORK_POLICY_LOCK},
+        )
+        # The post-write pair exactly as the guard resolves it: the
+        # changed key's canonical value, the partner's row-or-env value.
+        stored_enabled = canonical.get(
+            MANAGEMENT_NETWORK_ENABLED,
+            await self.get(db, MANAGEMENT_NETWORK_ENABLED),
+        )
+        stored_cidrs = canonical.get(
+            MANAGEMENT_NETWORK_CIDRS,
+            await self.get(db, MANAGEMENT_NETWORK_CIDRS),
+        )
+        try:
+            load_management_network_policy(
+                stored_enabled=stored_enabled,
+                stored_cidrs=stored_cidrs,
+            )
+        except ValueError as exc:
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _POLICY_UNLOADABLE_MESSAGE,
+                status_code=422,
+                details={"key": next(iter(canonical)), "reason": str(exc)},
+            ) from exc
+        changed_key, changed_value = next(iter(canonical.items()))
+        new_version = await self._store_and_audit(
+            db,
+            actor=actor,
+            stored_key=changed_key,
+            stored_value=changed_value,
+            reason_text=reason_text,
+            audit_context=audit_context,
+        )
+        await db.commit()  # value + audit row + lock release: one unit
+        return ManagementNetworkPolicyWriteResult(
+            key=changed_key, value=changed_value, version=new_version
+        )
+
+    async def _store_and_audit(
+        self,
+        db: AsyncSession,
+        *,
+        actor: Actor,
+        stored_key: str,
+        stored_value: str,
+        reason_text: str | None,
+        audit_context: AuditContext | None,
+    ) -> int:
+        """The locked upsert plus the ``SYSTEM_SETTING_UPDATED`` audit
+        append, flush-only — the caller owns the commit (so the aggregate
+        policy path can hold the advisory lock across the whole unit).
+        Returns the write's new ``version`` (0020).
+
+        Chain-true first write (owner round-5 P1): the race decides
+        INSIDE the database. INSERT ... ON CONFLICT DO NOTHING
+        RETURNING — the winner (a row returned) created the key in
+        THIS transaction, so previous is None by construction and the
+        version is the server default's 1. The loser (no row
+        returned: a concurrent transaction committed this key while
+        this one waited on the conflict) then locks the winner's
+        committed row FOR UPDATE and reads the TRUE previous before
+        updating, so the audited chain stays connected (None→X, X→Y)
+        even under a lost first-write race — and the version keeps
+        counting every applied write (1, 2, ...). The pass-4 UPSERT
+        shape pre-read the old value and audited a stale None→Y for
+        the loser — the owner ruled that unacceptable: under
+        concurrency the audit migration must not be false
+        (quality-gates §16/G12)."""
         inserted = await db.execute(
             pg_insert(SystemSetting)
             .values(
@@ -454,5 +657,4 @@ class SystemSettingService:
             ip_address=audit_context.ip_address if audit_context else None,
             request_id=audit_context.request_id if audit_context else None,
         )
-        await db.commit()  # value + audit row: one unit (§5)
-        return stored_value
+        return new_version
