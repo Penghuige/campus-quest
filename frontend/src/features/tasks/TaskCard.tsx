@@ -24,17 +24,16 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
   const rarity = rarityView(card.rarity);
   const deadline = deadlineView(card, nowMs);
   return (
-    <article className="task-card">
-      <div className="task-card-top">
-        <h3 className="task-card-title">
-          <Link href={`/tasks/${card.id}`}>{card.title}</Link>
-        </h3>
-        <span className="rarity-badge" data-rarity={rarity.rarity}>
-          {rarity.label}
-        </span>
-      </div>
+    // Plan 11 §9 task cards: the title owns the card; rarity demotes to
+    // a compact left keyline (data-rarity) with its TEXT label in the
+    // metadata row (§4: color never carries rarity alone).
+    <article className="task-card" data-rarity={rarity.rarity}>
+      <h3 className="task-card-title">
+        <Link href={`/tasks/${card.id}`}>{card.title}</Link>
+      </h3>
       <p className="task-card-reward">基础 {card.base_reward_points} 积分</p>
       <div className="task-card-meta">
+        <span>{rarity.label}</span>
         <span suppressHydrationWarning>{deadline.line}</span>
         <span className="meta-num">{availabilityText(card.assignments_available)}</span>
         <span suppressHydrationWarning>{ratingText(card.rating)}</span>

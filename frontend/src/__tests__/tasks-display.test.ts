@@ -11,6 +11,7 @@ import { describe, test } from "node:test";
 import {
   availabilityText,
   claimRewardLine,
+  claimStepView,
   claimStatusView,
   deadlineView,
   isActiveClaim,
@@ -194,5 +195,59 @@ describe("claim reward line (§42 non-punitive overdue copy)", () => {
 
   test("at/after grace: window closed", () => {
     assert.equal(claimRewardLine(base, deadline, grace, grace), "提交窗口已关闭");
+  });
+});
+
+// --- claimStepView (Plan 11 §9 progress strip) ---------------------------------
+
+describe("claimStepView (the five-step progress strip)", () => {
+  test("every in-flight status maps to exactly one current step", () => {
+    // COMPLETED is terminal (its own test below): all done, no current.
+    const cases: Array<[string, number]> = [
+      ["CLAIMED", 2],
+      ["VALIDATING", 3],
+      ["UNDER_REVIEW", 4],
+      ["REVISION_REQUIRED", 2],
+    ];
+    for (const [status, currentIndex] of cases) {
+      const view = claimStepView(status);
+      assert.equal(view.linear, true, status);
+      assert.equal(view.steps.length, 5, status);
+      assert.equal(
+        view.steps.filter((step) => step.state === "current").length,
+        1,
+        `${status}: exactly one current step`,
+      );
+      assert.equal(
+        view.steps[currentIndex - 1].state,
+        "current",
+        `${status}: step ${currentIndex} is current`,
+      );
+      // Everything before current is done; everything after is future.
+      view.steps.forEach((step, index) => {
+        const expected = index < currentIndex - 1 ? "done" : index === currentIndex - 1 ? "current" : "future";
+        assert.equal(step.state, expected, `${status}: step ${index + 1}`);
+      });
+    }
+  });
+
+  test("COMPLETED is all-done with no current step", () => {
+    const view = claimStepView("COMPLETED");
+    assert.equal(view.steps.every((step) => step.state === "done"), true);
+  });
+
+  test("non-linear terminal states render no strip", () => {
+    for (const status of ["ABANDONED", "EXPIRED", "SOMETHING_NEW"]) {
+      const view = claimStepView(status);
+      assert.equal(view.linear, false, status);
+      assert.equal(view.steps.length, 0, status);
+    }
+  });
+
+  test("step labels ride in the fixed order", () => {
+    assert.deepEqual(
+      claimStepView("CLAIMED").steps.map((step) => step.label),
+      ["领取", "提交", "校验", "审核", "完成"],
+    );
   });
 });

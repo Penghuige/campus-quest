@@ -712,6 +712,89 @@ body {
   color: var(--subtle-foreground);
 }
 
+/* --- claim progress strip (Plan 11 §9: the state machine visible) -------------
+ *
+ * Horizontal five-step strip: current step strong (primary dot + bold),
+ * done steps quiet (primary-tinted dot + muted text), future subtle
+ * (hollow dot + subtle text). Connectors ride ::before on every step
+ * except the first, colored by whether the PREVIOUS step completed. */
+
+.claim-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Connector: a quiet line before every step but the first. */
+.claim-step::before {
+  content: "";
+  width: var(--space-4);
+  height: 2px;
+  margin-right: var(--space-1);
+  background: var(--border);
+}
+
+.claim-step:first-child::before {
+  display: none;
+}
+
+/* A completed step's incoming connector is filled. */
+.claim-step[data-state="done"]::before,
+.claim-step[data-state="current"]::before {
+  background: color-mix(in oklab, var(--primary) 45%, var(--border));
+}
+
+.claim-step-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-1);
+}
+
+.claim-step[data-state="done"] .claim-step-dot {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--surface-1));
+  background: color-mix(in oklab, var(--primary) 35%, var(--surface-1));
+}
+
+.claim-step[data-state="current"] .claim-step-dot {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.claim-step-label {
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+}
+
+.claim-step[data-state="done"] .claim-step-label {
+  color: var(--muted-foreground);
+}
+
+.claim-step[data-state="current"] .claim-step-label {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+@media (max-width: 26rem) {
+  /* Narrow: connectors shrink instead of the labels wrapping. */
+  .claim-step::before {
+    width: var(--space-2);
+  }
+}
+
 /* --- student bottom navigation (narrow band; frozen 5-slot contract) -------- */
 
 @media (max-width: 40rem) {
@@ -1149,12 +1232,27 @@ body {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  /* Plan 11 §9: compact rarity keyline (NORMAL stays quiet — the label
+     in the metadata row always carries rarity semantics; §4). */
+  border-left: 3px solid var(--border-strong);
   /* Plan 11 §14: the 1px hover lift + keyline change interactive cards
      take; transform/opacity only (cheap, reduced-motion safe). */
   transition:
     border-color var(--duration-fast) var(--ease-standard),
     transform var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.task-card[data-rarity="RARE"] {
+  border-left-color: var(--rarity-rare);
+}
+
+.task-card[data-rarity="EPIC"] {
+  border-left-color: var(--rarity-epic);
+}
+
+.task-card[data-rarity="LEGENDARY"] {
+  border-left-color: var(--rarity-legendary);
 }
 
 .task-card:hover,
