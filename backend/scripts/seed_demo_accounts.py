@@ -5,7 +5,8 @@ DATABASE_URL pointing at the compose PostgreSQL, REDIS_URL, S3_*, BUSINESS_TIMEZ
   uv run python scripts/seed_demo_accounts.py
 
 Creates:
-- STUDENTS: student01..student20, password "student-demo-2026", ACTIVE
+- STUDENTS: student numbers 20250001..20250020 (numeric-only; the login
+  form enforces 6-20 digits), password "student-demo-2026", ACTIVE
 - ADMIN: admin@campus.example.edu, password "admin-demo-2026", with a
   CONFIRMED TOTP credential (fixed demo secret, printed with the
   otpauth URI and the current code) so management endpoints' 2FA
@@ -58,7 +59,7 @@ async def main() -> None:
 
     async with maker() as session:
         for index in range(1, 21):
-            username = f"student{index:02d}"
+            username = f"2025{index:04d}"
             exists = await session.scalar(
                 select(User.id).where(User.username == username)
             )
