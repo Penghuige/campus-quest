@@ -38,6 +38,19 @@ npx playwright test visual-capture.spec.ts
 > the allowlist once) and takes the backend on ANY free port via
 > `CQ_E2E_API_URL=http://localhost:8100/api/v1` — no coordination
 > with any long-running demo stack.
+>
+> Second collision mode (root cause found in Next's own lockfile
+> code): Next 16 allows ONE `next dev` per project directory — the
+> running server holds an flock on `.next/dev/lock`, and a second
+> `next dev` in the same directory exits 1 ("You can access the
+> existing server at …"). A HUMAN-preview `next dev -p 3002` from
+> this worktree therefore blocks the suite's webServer regardless of
+> port. Discipline: never run a preview `next dev` and the suite from
+> the same directory at the same time (stop the preview, run the
+> suite, restart), and pass BOTH `CQ_E2E_BASE_URL` and
+> `CQ_E2E_API_URL` explicitly on every suite invocation. A stable
+> human preview should prefer `next build && next start` (no dev
+> lockfile; remember rewrites bake at build time).
 
 Full set: 19 screens × 3 passes = 57 captures. The five screens below
 are committed here as the durable baseline record (the full set

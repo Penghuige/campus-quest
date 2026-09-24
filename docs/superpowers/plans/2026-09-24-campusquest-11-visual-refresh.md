@@ -161,6 +161,53 @@ Capture desktop + 375x812 before/after screenshots in PR.
 
 ## Task 5 — Task + Claim + Submission surfaces
 
+### Mid-pass review rulings (owner, 2026-09-24, head `d927889`)
+
+P1 (completed with this review round): task detail puts description
+BEFORE the claim action (source order = narrow reading order; wide
+grid adds the decision column); `.claim-panel` is NEUTRAL assignment
+identity (surface-brand + neutral border) — success/status semantics
+live only on badges/timeline/banner; a revision banner precedes the
+assignment facts and owns visual priority.
+
+P2 priorities folded into the remaining tasks (review's own list):
+
+- Task 5: card affordance consistency (whole-card hover vs
+  title-only click: whole-card link or quiet 查看详情 + reduced hover);
+  revision strip reads as a loop-back (重新提交 label or adjacent
+  老师退回修改 context); upload+validation become ONE stateful
+  workflow surface (idle → uploading → validating → failed
+  [errors first, diagnostics/preview after] → passed [report
+  collapsed by default]) — hierarchy, not decoration.
+- Task 6: rewards/growth leave the equal-metric grammar (one dominant
+  spendable balance + next-reward progress; earned/frozen/debt quiet;
+  reward tiles with icon/cost/availability/CTA; growth = one 本月
+  story + compact secondary). Profile becomes compact rows with
+  expand-to-edit (no form wall; auth semantics unchanged). Rankings:
+  restrained top-3 distinction + strong 我 anchor (no podium).
+  Notifications: spacing/unread weight/event grouping; no new badges.
+- Task 7: review queue row = task + platform/keyword identity + ONE
+  workflow state; version/validation/reward-tier as quiet metadata;
+  consistent timestamp; detail pane owns full validation context;
+  wide screens keep the three review actions in a stable/sticky
+  action region.
+- Task 8: filters become a compact toolbar (not boxed panels); UUID
+  truncated/copyable, never wrapped; role/status compact; row height
+  normalized; actions never inflate rows; audit follows the same
+  toolbar grammar; destructive ops stay explicit dialogs.
+
+Cross-page rule (apply before styling EVERY detail page): (1) what
+should the user notice first? (2) what must be read before the
+primary action? (3) identity/context vs semantic status — never the
+same visual treatment; (4) what can become quiet metadata instead of
+another badge/card/panel?
+
+Review verdict recorded: macro direction kept; continue the branch;
+next gains are detail-surface IA and density, NOT another global
+token pass; fold-back to design-system/patterns stays a merge-time
+requirement.
+
+
 - [ ] improve task card hierarchy;
 - [ ] improve task detail metadata;
 - [ ] add state-progress/timeline presentation for Claim/Submission;

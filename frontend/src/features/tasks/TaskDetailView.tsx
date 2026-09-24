@@ -135,43 +135,51 @@ export function TaskDetailView({ taskId }: { taskId: string }) {
           ) : null}
         </div>
       </div>
-      <dl className="task-facts">
-        <div className="fact-row">
-          <dt className="fact-label">基础奖励</dt>
-          <dd className="fact-value">{detail.base_reward_points} 积分</dd>
+      {/* Plan 11 mid-pass review P1: the decision information comes
+          BEFORE the claim action (patterns §8 archetype). Source order
+          is the narrow reading order — 说明 → 事实 → CTA; the wide grid
+          places the decision column beside the description. */}
+      <div className="task-detail-body">
+        <section className="section" aria-label="任务说明">
+          <h2 className="section-title">任务说明</h2>
+          <p className="task-description">{detail.description}</p>
+        </section>
+        <div className="task-decision">
+          <dl className="task-facts">
+            <div className="fact-row">
+              <dt className="fact-label">基础奖励</dt>
+              <dd className="fact-value">{detail.base_reward_points} 积分</dd>
+            </div>
+            <div className="fact-row">
+              <dt className="fact-label">截止方式</dt>
+              <dd className="fact-value">{deadline.modeLabel}</dd>
+            </div>
+            <div className="fact-row">
+              <dt className="fact-label">
+                {fixedDeadline !== null ? "截止时间" : "提交时限"}
+              </dt>
+              <dd className="fact-value">
+                <span
+                  className="deadline-line"
+                  data-urgency={deadline.urgency}
+                  suppressHydrationWarning
+                >
+                  {deadline.line}
+                </span>
+              </dd>
+            </div>
+            <div className="fact-row">
+              <dt className="fact-label">可领取</dt>
+              <dd className="fact-value">{availabilityText(detail.assignments_available)}</dd>
+            </div>
+          </dl>
+          <ClaimButton
+            taskId={detail.id}
+            existingClaim={detail.my_claim}
+            onClaimed={refreshAfterClaim}
+          />
         </div>
-        <div className="fact-row">
-          <dt className="fact-label">截止方式</dt>
-          <dd className="fact-value">{deadline.modeLabel}</dd>
-        </div>
-        <div className="fact-row">
-          <dt className="fact-label">
-            {fixedDeadline !== null ? "截止时间" : "提交时限"}
-          </dt>
-          <dd className="fact-value">
-            <span
-              className="deadline-line"
-              data-urgency={deadline.urgency}
-              suppressHydrationWarning
-            >
-              {deadline.line}
-            </span>
-          </dd>
-        </div>
-        <div className="fact-row">
-          <dt className="fact-label">可领取</dt>
-          <dd className="fact-value">{availabilityText(detail.assignments_available)}</dd>
-        </div>
-      </dl>
-      <ClaimButton
-        taskId={detail.id}
-        existingClaim={detail.my_claim}
-        onClaimed={refreshAfterClaim}
-      />
-      <section className="section" aria-label="任务说明">
-        <h2 className="section-title">任务说明</h2>
-        <p className="task-description">{detail.description}</p>
-      </section>
+      </div>
     </div>
   );
 }

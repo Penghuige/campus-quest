@@ -1335,6 +1335,42 @@ body {
   align-content: start;
 }
 
+/* Plan 11 mid-pass review P1: description before decision. Narrow keeps
+   the source order (说明 → 事实 → CTA); wide puts the decision column
+   (facts + claim action) beside the description. */
+.task-detail-body {
+  display: grid;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.task-decision {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: stretch;
+}
+
+@media (min-width: 48rem) {
+  .task-detail {
+    max-width: 56rem;
+  }
+
+  .task-detail-body {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+  }
+
+  .task-detail-body .task-description-block,
+  .task-detail-body .section {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .task-decision {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 .task-detail-title {
   margin: 0;
   font-size: var(--text-lg);
@@ -1402,14 +1438,16 @@ body {
   font-weight: 550;
 }
 
-/* After-allocation panel — the ONLY student surface that shows the assigned
-   platform/keyword (spec §42); success tone, structured facts inside. */
+/* The assignment identity panel — platform/keyword/claim-time are
+   NEUTRAL facts (Plan 11 mid-pass review P1: identity is not workflow
+   status; the success tone lives only in the allocation status copy
+   and the state badge/timeline, never on this surface). */
 .claim-panel {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: var(--success-muted);
-  border: 1px solid var(--success);
+  background: var(--surface-brand);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 
