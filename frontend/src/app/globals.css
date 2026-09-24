@@ -23,7 +23,7 @@
   --overlay: oklch(98% 0.004 90);
   /* Brand wash (§5 "one soft brand wash token"): the ONLY page-level
      tint the refresh allows — hero/progress emphasis, never a page bg. */
-  --surface-brand: oklch(96.6% 0.024 255);
+  --surface-brand: oklch(96% 0.03 258);
 
   /* text — hues aligned to the warm ground; near-neutral by design. */
   --foreground: oklch(26% 0.015 75);
@@ -35,11 +35,11 @@
      only interactive/selected states earn stronger keylines). */
   --border: oklch(91.5% 0.007 90);
   --border-strong: oklch(82% 0.01 90);
-  --focus-ring: oklch(52% 0.15 258);
+  --focus-ring: oklch(50% 0.18 264);
 
   /* semantic */
-  --primary: oklch(52% 0.15 258);
-  --primary-strong: oklch(46% 0.15 258);
+  --primary: oklch(50% 0.18 264);
+  --primary-strong: oklch(44% 0.18 264);
   --primary-foreground: oklch(99% 0.004 250);
   --success: oklch(52% 0.13 152);
   --success-muted: oklch(96.5% 0.03 152);
@@ -645,9 +645,12 @@ body {
     top: 0;
     height: 100dvh;
     padding: var(--space-5) var(--space-3);
-    background: color-mix(in oklab, var(--background) 55%, var(--surface-1));
-    border-right: 1px solid var(--border);
-    /* Quieter than the content: no shadow, muted links (§4.1). */
+    /* INK identity (Plan 11 direction shoot-out, owner pick): the dark
+       sidebar carries the product's visual identity; the content area
+       stays warm paper. Quieter than the content in WEIGHT, bolder in
+       tone — light links, brand-tinted active keyline. */
+    background: oklch(21% 0.018 262);
+    border-right: 1px solid oklch(28% 0.02 262);
   }
 
   /* The top bar keeps context + actions only — brand and nav live in
@@ -663,7 +666,7 @@ body {
   padding: 0 var(--space-2);
   font-weight: 650;
   letter-spacing: -0.01em;
-  color: var(--foreground);
+  color: oklch(97% 0.004 90);
   text-decoration: none;
 }
 
@@ -679,23 +682,24 @@ body {
   min-height: 2.5rem;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
+  color: oklch(73% 0.015 90);
   font-size: var(--text-sm);
   font-weight: 500;
   text-decoration: none;
 }
 
 .side-nav a:hover {
-  background: var(--surface-1);
-  color: var(--foreground);
+  background: oklch(26% 0.02 262);
+  color: oklch(97% 0.004 90);
 }
 
 /* Frozen contract: brand-tinted background + keyline, distinguishable
-   from hover and from focus-visible. */
+   from hover and from focus-visible. On the ink sidebar the tint is a
+   light wash of primary over the dark rail (AA against 21% L). */
 .side-nav a[aria-current="page"] {
-  color: var(--primary);
-  background: color-mix(in oklab, var(--primary) 9%, var(--surface-1));
-  box-shadow: inset 2px 0 0 var(--primary);
+  color: oklch(86% 0.08 264);
+  background: oklch(28% 0.035 264);
+  box-shadow: inset 2px 0 0 oklch(72% 0.13 264);
   font-weight: 600;
 }
 
@@ -712,7 +716,7 @@ body {
   margin-top: auto;
   padding: 0 var(--space-2);
   font-size: var(--text-2xs);
-  color: var(--subtle-foreground);
+  color: oklch(62% 0.015 90);
 }
 
 /* --- claim progress strip (Plan 11 §9: the state machine visible) -------------
@@ -809,8 +813,10 @@ body {
     z-index: 20;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    background: var(--surface-1);
-    border-top: 1px solid var(--border);
+    /* INK identity on the narrow band: the same dark rail the wide
+       sidebar carries, so mobile keeps the product's identity. */
+    background: oklch(21% 0.018 262);
+    border-top: 1px solid oklch(28% 0.02 262);
     /* Safe-area rule (frozen contract): the nav's own padding includes
        the inset, and the main content's bottom padding below clears
        the nav's full height — the fixed bar never covers an action. */
@@ -825,14 +831,14 @@ body {
     min-height: 3rem;
     padding: var(--space-1) var(--space-1);
     border-radius: var(--radius-sm);
-    color: var(--muted-foreground);
+    color: oklch(73% 0.015 90);
     font-size: var(--text-2xs);
     font-weight: 500;
     text-decoration: none;
   }
 
   .app-bottomnav a[aria-current="page"] {
-    color: var(--primary);
+    color: oklch(86% 0.08 264);
     font-weight: 600;
   }
 
@@ -912,9 +918,10 @@ body {
 
 .page-title {
   margin: 0;
-  /* Plan 11 §6: page title steps up to the xl rung — larger, stronger,
-     tighter; section titles keep the md rung so pages regain hierarchy. */
-  font-size: var(--text-xl);
+  /* Plan 11 §6 + ink direction: page title steps up to the xl rung —
+     larger, stronger, tighter; section titles keep the md rung so
+     pages regain hierarchy. */
+  font-size: 1.625rem;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
@@ -983,7 +990,7 @@ body {
 
 .hero-title {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: 1.625rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 1.3;
@@ -1088,7 +1095,10 @@ body {
 }
 
 .metric-value {
-  font-size: var(--text-lg);
+  /* Ink direction: the numerals ARE the content on student surfaces —
+     they step to the display rung (tabular, slightly tightened). */
+  font-size: var(--text-2xl);
+  letter-spacing: -0.01em;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
