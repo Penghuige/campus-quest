@@ -315,11 +315,18 @@ Review each for:
 - [ ] Playwright;
 - [ ] fresh `make release-gate`;
 - [ ] PR screenshot comparison posted;
-- [ ] **durable design-source migration:** fold every accepted Plan 11
+- [x] **durable design-source migration:** fold every accepted Plan 11
       rule back into `frontend-design-system.md` (token/surface/motion
       grammar) and update `frontend-patterns.md` where the shell or
       page archetypes changed; mark the refresh brief as absorbed so
       `AGENTS.md`-directed agents cannot reintroduce the old visual
       grammar (frontend G17 — no merge-carry documentation).
+
+> Merge ruling (owner, 2026-09-24): main absorbs the branch after the
+> token + shell + dashboard + task-surface batches with the fold-back
+> done ("检查没问题直接更新到 main"). Tasks 6–11 (rewards/rankings/
+> community/notifications polish, teacher/admin workstations, final
+> visual regression pass) continue as follow-up branches under this
+> plan; the mid-pass review P2 rulings recorded above govern them.
 
 Only then mark the visual-refresh PR Ready.

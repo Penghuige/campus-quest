@@ -1,8 +1,16 @@
 # CampusQuest Visual Refresh Brief
 
-> Status: post-E6 visual-only workstream.
+> Status: **ABSORBED (2026-09-24)** — the accepted rules of this brief
+> now live in `docs/quality/frontend-design-system.md` and
+> `docs/quality/frontend-patterns.md` (token groups, three-band shell,
+> identity-vs-status, card/button rules, archetype updates). This file
+> is the historical record of the refresh direction; new frontend work
+> follows the two source documents, not this brief.
 >
-> Branch: `design/visual-refresh-v1`
+> Branch: `design/visual-refresh-v1` (merged to main early by owner
+> instruction after the shell/dashboard/task-surface batches; the
+> remaining workstream tasks continue as follow-up branches under the
+> same implementation plan).
 >
 > Intent: materially improve visual quality **without changing product semantics, API contracts, routing, authorization, or business state machines**.
 
