@@ -1,13 +1,16 @@
 /**
- * CampusQuest admin workspace e2e — Plan 09 Task 10.
+ * CampusQuest admin workspace e2e — Plan 09 Task 10, wired to the
+ * runner and seeded for real by Plan 10's world (PR #6 final review:
+ * the CQ_E2E_TEACHER/CQ_E2E_ADMIN contracts below are the
+ * browser_world exports, so every test RUNS under the gate — the
+ * release gate asserts this suite at zero skips).
  *
- * STATUS: SPEC ONLY — NOT WIRED TO A RUNNER YET (the T2-T9 guard
- * pattern). Playwright is installed by Plan 10; until then this file
- * stays invisible to the gates (`tsconfig.json` includes only `src/**`,
- * ESLint globally ignores `e2e/**`, `next build` never touches it).
- * Every test is skipped unless CQ_E2E=1.
+ * Every test is skipped unless CQ_E2E=1 (the suite-wide convention),
+ * so importing the file can never depend on a live backend during
+ * ordinary development.
  *
- * Environment contract (defaults work against local dev servers):
+ * Environment contract (the seeded world's; defaults work against the
+ * orchestrated local servers):
  * - CQ_E2E=1                enable the suite (required);
  * - CQ_E2E_BASE_URL         frontend origin (default http://localhost:3000);
  * - CQ_E2E_STAFF_LOGIN_URL  staff login page (default $CQ_E2E_BASE_URL/staff/login);
@@ -18,7 +21,9 @@
  *                           admin API calls);
  * - CQ_E2E_ADMIN            pre-seeded ADMIN credentials
  *                           "email:password" + CQ_E2E_ADMIN_TOTP_SECRET
- *                           (the operational flows).
+ *                           (the operational flows: the world seeds
+ *                           the pending redemption, the suspend-target
+ *                           student, and the review-queue row).
  *
  * Brief flow: privilege navigation (teacher denied on /admin/whitelist,
  * no admin data request fires), whitelist import preview/confirm,
@@ -41,6 +46,10 @@ test.skip(
   !E2E_ENABLED,
   "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
+
+// The staff contract itself is a HARD requirement now (PR #6 final
+// review): the world always provides it, and a missing export must
+// fail the suite — never read as a skip the gate would have to catch.
 
 /** RFC 4648 base32 (the TOTP secret alphabet) -> bytes. */
 function base32Decode(input: string): Buffer {
@@ -78,7 +87,11 @@ function totpCode(secret: string, atMs: number = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** Log in through the staff login page (T8 surface) with password + TOTP. */
+/** Staff login through the real form; retries across a 30s step rollover.
+ * The success wait is the NEGATED login URL (community.spec's proven
+ * shape): an unanchored `BASE_URL/` match would also match /staff/login
+ * itself and let the test navigate away while the login POST is still
+ * in flight — aborting it and landing the next page anonymous. */
 async function loginAsStaff(
   page: Page,
   credentials: string,
@@ -88,19 +101,24 @@ async function loginAsStaff(
   await page.goto(STAFF_LOGIN_URL);
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
-  await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/`));
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    try {
+      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      return;
+    } catch {
+      // A slow hop can carry the submit across the step boundary —
+      // recompute the code exactly like a real user would.
+    }
+  }
+  await expect(page).not.toHaveURL(/\/staff\/login/);
 }
 
 test.describe("admin workspace privilege navigation (plan step 1)", () => {
   test("a teacher opening /admin/whitelist gets guidance and ZERO admin API calls", async ({
     page,
   }) => {
-    test.skip(
-      TEACHER === undefined || TEACHER_TOTP_SECRET === undefined,
-      "needs CQ_E2E_TEACHER + CQ_E2E_TEACHER_TOTP_SECRET (a seeded teacher); Plan 10's fixture provides both.",
-    );
     await loginAsStaff(page, TEACHER!, TEACHER_TOTP_SECRET!);
 
     // Arm the recorder BEFORE the first /admin navigation: the gate must
@@ -125,10 +143,6 @@ test.describe("admin workspace privilege navigation (plan step 1)", () => {
 
 test.describe("admin workspace operations (brief: whitelist / users / redemptions / settings)", () => {
   test.beforeEach(async ({ page }) => {
-    test.skip(
-      ADMIN === undefined || ADMIN_TOTP_SECRET === undefined,
-      "needs CQ_E2E_ADMIN + CQ_E2E_ADMIN_TOTP_SECRET (a seeded admin); Plan 10's fixture provides both.",
-    );
     await loginAsStaff(page, ADMIN!, ADMIN_TOTP_SECRET!);
   });
 
@@ -152,6 +166,11 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     await page.getByRole("button", { name: /确认导入 1 行/ }).click();
     await expect(page.getByText(/已成功导入 1 个学号/)).toBeVisible();
 
+    // The import section and the entries listing are independent: the
+    // listing loads once on mount and does not auto-refresh on confirm
+    // (the toggle path's own refresh contract) — reload to read the
+    // durable row back.
+    await page.reload();
     // The new entry appears in the listing with the 启用 badge.
     await expect(page.locator("tr", { hasText: `${stamp}1` }).getByText("启用")).toBeVisible();
   });
@@ -201,7 +220,10 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     const approve = page.locator("dialog[aria-labelledby='redemption-approve-title']");
     await expect(approve.getByText(/将扣减积分并进入待发放状态/)).toBeVisible();
     await approve.getByRole("button", { name: "确认通过" }).click();
-    await expect(page.getByText("已批准 · 待发放")).toBeVisible();
+    // .first(): after approval the badge renders on BOTH the queue row
+    // and the selected detail — the strict-mode ambiguity would fail
+    // the otherwise-correct wait.
+    await expect(page.getByText("已批准 · 待发放").first()).toBeVisible();
 
     await page.getByRole("button", { name: "标记已发放" }).click();
     const fulfill = page.locator("dialog[aria-labelledby='redemption-fulfill-title']");

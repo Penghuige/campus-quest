@@ -8,8 +8,9 @@ import nextTypescript from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTypescript,
-  // e2e/ holds the Plan 09 Task 2 Playwright spec, written ahead of the
-  // runner: @playwright/test is installed by Plan 10, and until then ESLint
-  // cannot resolve its import. tsconfig already excludes the directory.
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "e2e/**"]),
+  // e2e/ holds the Playwright specs + shared fixtures. @playwright/test
+  // is installed (Plan 10 E1), so the directory is linted; tsc still
+  // skips it (tsconfig includes only src/** — Playwright transpiles the
+  // specs itself), and `next build` never touches files outside src/app.
+  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);

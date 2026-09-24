@@ -1,50 +1,89 @@
 /**
- * CampusQuest auth e2e — Plan 09 Task 2 (registration + login flows).
+ * CampusQuest auth e2e — Plan 09 Task 2 (registration + login flows);
+ * wired to the runner by Plan 10 Task 2.
  *
- * STATUS: SPEC ONLY — NOT WIRED TO A RUNNER YET.
- *
- * Skip guard: Playwright itself is installed by Plan 10 (this stream's
- * frontend has no `@playwright/test` dependency and no `test:e2e` script
- * yet). Until then this file must stay invisible to the gates:
- * - `tsconfig.json` includes only `src/**` + `.next/**`, so `tsc` skips it;
- * - `eslint.config.mjs` lists `e2e/**` in globalIgnores for the same reason;
- * - `next build` never touches files outside `src/app`.
- * Once Plan 10 installs Playwright, remove the eslint ignore, add the
- * `test:e2e` script, and run with `CQ_E2E=1` — every test below is skipped
- * unless that flag is set, so importing the file can never depend on a live
- * backend during ordinary development.
+ * Skip guard: every test below is skipped unless CQ_E2E=1, so importing
+ * the file can never depend on a live backend during ordinary
+ * development.
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1            enable the suite (required);
  * - CQ_E2E_BASE_URL     frontend origin   (default http://localhost:3000);
  * - CQ_E2E_API_URL      backend API root  (default http://localhost:8000/api/v1);
- * - CQ_E2E_OTP_CODE     the fixed dev SMS code the fake sender issues
- *                       (Plan 10's fixture contract; default 000000);
- * - CQ_E2E_SEED_URL     whitelist-seeding endpoint the fixture provides
- *                       (default $CQ_E2E_API_URL/admin/whitelist — the admin
- *                       surface lands with its own stream; adjust there).
+ * - CQ_E2E_RUN / CQ_E2E_REGISTER_NUMBER / CQ_E2E_ADMIN_ID — the seeded
+ *   world's contract (e2e/global-setup.ts + backend browser_world.py):
+ *   a run-unique student number to register and the admin id used to
+ *   mint the whitelist-import token.
+ *
+ * Plan 10 wiring: the whitelist is seeded through the REAL admin API
+ * (preview -> confirm, a minted admin bearer — the two-step the admin
+ * surface owns), and the SMS code is recovered from the REAL Redis OTP
+ * challenge record (browser_world.py otp-code: the production service
+ * persists only the HMAC digest, so the probe brute-forces the closed
+ * 6-digit space with the same settings secret). No fixed dev code, no
+ * fixture endpoint.
  */
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, request, test, type APIRequestContext } from "@playwright/test";
+
+import { mintToken, recoverOtpCode } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
-const OTP_CODE = process.env.CQ_E2E_OTP_CODE ?? "000000";
-const SEED_URL = process.env.CQ_E2E_SEED_URL ?? `${API_URL}/admin/whitelist`;
+const RUN = process.env.CQ_E2E_RUN;
+const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
 
-test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
+test.skip(!E2E_ENABLED, "set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
 
-/** Unique-enough student number per run: 9 digits starting with the epoch minute. */
-function freshStudentNumber(): string {
-  return String(Date.now()).slice(-9);
+const worldReady = RUN !== undefined && ADMIN_ID !== undefined;
+test.skip(
+  !worldReady,
+  "registration flow needs the seeded world (CQ_E2E_RUN + CQ_E2E_ADMIN_ID); Plan 10's global setup provides both.",
+);
+
+/** The run-unique student number the world reserved for this flow. */
+const STUDENT_NUMBER =
+  process.env.CQ_E2E_REGISTER_NUMBER ??
+  `3${String(Date.now()).slice(-9)}`;
+
+/** Run-unique CN mobile number (the shared-stack OTP/rate keys are
+ * phone-scoped, so a stable phone would collide across reruns). */
+function freshPhone(): string {
+  const digits = String(
+    Number.parseInt((RUN ?? "0").slice(0, 8), 16) % 10 ** 8,
+  ).padStart(8, "0");
+  return `139${digits}`;
 }
 
-/** Seed the registration whitelist for one student number (Plan 10 fixture). */
-async function seedWhitelist(api: APIRequestContext, studentNumber: string): Promise<void> {
-  const response = await api.post(SEED_URL, { data: { student_number: studentNumber } });
+/** Any never-registered numeric handle for the failure-copy tests. */
+function freshStudentNumber(): string {
+  return `9${String(Date.now()).slice(-9)}`;
+}
+
+/** Seed the registration whitelist through the REAL admin API. */
+async function seedWhitelist(api: APIRequestContext): Promise<void> {
+  const adminToken = mintToken(ADMIN_ID!);
+  const auth = { Authorization: `Bearer ${adminToken}` };
+  const preview = await api.post(`${API_URL}/admin/whitelist/preview`, {
+    headers: auth,
+    data: { content: `${STUDENT_NUMBER}\n` },
+  });
   expect(
-    response.ok(),
-    `whitelist seeding failed (${response.status()}); check CQ_E2E_SEED_URL and the Plan 10 fixture`,
+    preview.ok(),
+    `whitelist preview failed (${preview.status()}): ${await preview.text()}`,
+  ).toBe(true);
+  const body = (await preview.json()) as { confirm_token: string };
+  const confirmed = await api.post(`${API_URL}/admin/whitelist/confirm`, {
+    headers: auth,
+    data: {
+      confirm_token: body.confirm_token,
+      enable: true,
+      student_numbers: [STUDENT_NUMBER],
+    },
+  });
+  expect(
+    confirmed.ok(),
+    `whitelist confirm failed (${confirmed.status()}): ${await confirmed.text()}`,
   ).toBe(true);
 }
 
@@ -52,7 +91,10 @@ test.describe("student registration and login", () => {
   let api: APIRequestContext;
 
   test.beforeAll(async () => {
-    api = await test.request.newContext({ baseURL: API_URL });
+    // The module-level `request` factory (NOT the per-test fixture,
+    // which is already a context) — the E1-recorded fix for the old
+    // `test.request` misuse.
+    api = await request.newContext({ baseURL: BASE_URL });
   });
 
   test.afterAll(async () => {
@@ -60,19 +102,21 @@ test.describe("student registration and login", () => {
   });
 
   test("registers with phone OTP and lands on home after login", async ({ page }) => {
-    const studentNumber = freshStudentNumber();
-    await seedWhitelist(api, studentNumber);
+    await seedWhitelist(api);
+    const phone = freshPhone();
 
     await page.goto(`${BASE_URL}/register`);
-    await page.getByLabel("学号").fill(studentNumber);
+    await page.getByLabel("学号").fill(STUDENT_NUMBER);
     await page.getByLabel("昵称").fill("测试同学");
-    await page.getByLabel("手机号").fill("13800138000");
+    await page.getByLabel("手机号").fill(phone);
     await page.getByRole("button", { name: "获取验证码" }).click();
 
     // The resend control enters its cooldown countdown (visible seconds).
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
 
-    await page.getByLabel("短信验证码").fill(OTP_CODE);
+    // The real OTP challenge is now in Redis; recover its code.
+    const code = recoverOtpCode(`+86${phone}`);
+    await page.getByLabel("短信验证码").fill(code);
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("button", { name: "注册", exact: true }).click();
 
@@ -81,7 +125,7 @@ test.describe("student registration and login", () => {
     await expect(page.getByText("注册成功，请使用学号登录。")).toBeVisible();
 
     // Login with the fresh credentials -> student home.
-    await page.getByLabel("学号").fill(studentNumber);
+    await page.getByLabel("学号").fill(STUDENT_NUMBER);
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -93,7 +137,8 @@ test.describe("student registration and login", () => {
     await page.getByLabel("密码").fill("wrong-password");
     await page.getByRole("button", { name: "登录", exact: true }).click();
 
-    await expect(page.getByRole("alert")).toContainText("学号或密码不正确");
+    // (.first(): Next's route announcer also carries role=alert.)
+    await expect(page.getByRole("alert").first()).toContainText("学号或密码不正确");
   });
 
   test("client convenience validation blocks obviously invalid input without a request", async ({ page }) => {

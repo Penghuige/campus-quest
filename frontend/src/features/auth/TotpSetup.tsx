@@ -26,7 +26,13 @@
  *   staff login requires the fresh second factor.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { SectionSkeleton } from "@/components/ui/sectionStates";
 import { isApiError } from "@/lib/errors";
@@ -75,23 +81,41 @@ export function TotpSetup({ accessToken }: TotpSetupProps) {
   // button just bumps `seed` (the click handler resets the step; this
   // effect only STARTS the fetch — the lint-driven state shape every
   // other data island in this codebase uses).
+  //
+  // SINGLE-FLIGHT per generation (the E5 flake watch, fixed): the
+  // backend ROTATES the stored unconfirmed secret on every begin, and
+  // the last begin to REACH THE SERVER owns what confirm verifies. Two
+  // begins in flight (React StrictMode's dev double-effect; any
+  // duplicate effect run) can reach the server in the reverse order to
+  // their dispatch on a slow first hop, leaving the page displaying one
+  // begin's secret while the server stores the other's — every confirm
+  // code is then rejected with no recovery. The dispatch guard keys on
+  // the effect's own dependency identity (refs survive StrictMode's
+  // simulated remount), so only a genuine retry (`seed`) or a new
+  // `accessToken` begins again; each response then applies only while
+  // ITS generation is still current, which replaces the per-run
+  // `cancelled` flag (that flag would discard the sole surviving
+  // fetch's response: the run that started it was cleaned up by the
+  // remount).
+  const begunGeneration = useRef<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
+    const generation = `${seed}#${accessToken}`;
+    if (begunGeneration.current === generation) {
+      return;
+    }
+    begunGeneration.current = generation;
     beginTotpSetup(accessToken).then(
       (setup) => {
-        if (!cancelled) {
+        if (begunGeneration.current === generation) {
           setStep({ kind: "entry", provisioning: totpProvisioningView(setup) });
         }
       },
       (error: unknown) => {
-        if (!cancelled) {
+        if (begunGeneration.current === generation) {
           setStep({ kind: "load-failed", error });
         }
       },
     );
-    return () => {
-      cancelled = true;
-    };
   }, [accessToken, seed]);
 
   function retryBegin() {

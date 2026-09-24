@@ -32,17 +32,32 @@
  * - CQ_E2E_NON_COMPLETER_STUDENT  seeded student who never COMPLETED a
  *                               claim on the task (optional; drives the
  *                               strict RATING_NOT_ELIGIBLE copy test).
+ * - CQ_E2E_REVEAL_ADMIN          seeded ADMIN credentials
+ *                               "username:password" for the staff login
+ *                               (the reveal flow; Plan 10's fixture
+ *                               seeds the account with an answerable
+ *                               TOTP credential).
+ * - CQ_E2E_REVEAL_ADMIN_TOTP_SECRET  that admin's genuine base32 TOTP
+ *                               secret (the RFC 6238 code is computed
+ *                               in-test via node:crypto).
+ * - CQ_E2E_MODERATION_TASK_PATH  the /teacher/tasks/<id> deep link to
+ *                               the task whose moderation view carries
+ *                               the pre-seeded anonymous comment the
+ *                               reveal dialog targets.
  *
  * PRIVACY PIN under test (spec §21.4/§40): an anonymous comment is
  * 匿名用户 on student surfaces — the author's nickname, student number,
  * phone, email, and user id appear NEITHER in rendered text NOR in the
  * DOM source.
  */
-import { expect, test } from "@playwright/test";
+import { createHmac } from "node:crypto";
+
+import { ensureStudentLogin, expect, test } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
 const LOGIN_URL = process.env.CQ_E2E_LOGIN_URL ?? `${BASE_URL}/login`;
+const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240002:correct-horse"
 const AUTHOR_STUDENT = process.env.CQ_E2E_AUTHOR_STUDENT;
@@ -51,6 +66,9 @@ const AUTHOR_SECRETS = (process.env.CQ_E2E_AUTHOR_SECRETS ?? "")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
 const NON_COMPLETER = process.env.CQ_E2E_NON_COMPLETER_STUDENT;
+const REVEAL_ADMIN = process.env.CQ_E2E_REVEAL_ADMIN;
+const REVEAL_ADMIN_TOTP_SECRET = process.env.CQ_E2E_REVEAL_ADMIN_TOTP_SECRET;
+const MODERATION_TASK_PATH = process.env.CQ_E2E_MODERATION_TASK_PATH;
 
 test.skip(
   !E2E_ENABLED,
@@ -76,6 +94,66 @@ async function loginAs(
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
 }
 
+/** RFC 4648 base32 (the TOTP secret alphabet) -> bytes. */
+function base32Decode(input: string): Buffer {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const char of input.toUpperCase().replace(/=+$/, "")) {
+    const index = alphabet.indexOf(char);
+    if (index === -1) {
+      throw new Error(`non-base32 character in secret: ${char}`);
+    }
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
+/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits). */
+function totpCode(secret: string, atMs: number = Date.now()): string {
+  const counter = Math.floor(atMs / 30_000);
+  const block = Buffer.alloc(8);
+  block.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", base32Decode(secret)).update(block).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    digest[offset + 3];
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+/** Staff login through the real form; retries across a 30s step rollover. */
+async function loginAsStaff(
+  page: import("@playwright/test").Page,
+  credentials: string,
+  totpSecret: string,
+): Promise<void> {
+  const [username, password] = credentials.split(":");
+  await page.goto(STAFF_LOGIN_URL);
+  await page.getByLabel("邮箱").fill(username);
+  await page.getByLabel("密码").fill(password);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    try {
+      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      return;
+    } catch {
+      // A slow hop can carry the submit across the step boundary —
+      // recompute the code exactly like a real user would.
+    }
+  }
+  await expect(page).not.toHaveURL(/\/staff\/login/);
+}
+
 /** Unique marker so repeated runs never match stale comments. */
 function marker(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}`;
@@ -92,15 +170,18 @@ test.describe("anonymous comment DOM privacy (spec §21.4/§40) — brief step 1
   }) => {
     const content = marker("匿名端到端");
 
-    // Context A: the author posts ONE anonymous comment.
+    // Context A: the author posts ONE anonymous comment. The identity
+    // options are styled with hidden native inputs (globals.css
+    // `.identity-option input`), so the interaction clicks the visible
+    // label text — exactly what a user does.
     const authorContext = await browser.newContext();
     const authorPage = await authorContext.newPage();
     await loginAs(authorPage, AUTHOR_STUDENT!);
     await authorPage.goto(TASK_URL!);
     await authorPage
       .getByRole("radiogroup", { name: "发布身份" })
-      .getByLabel("匿名", { exact: true })
-      .check();
+      .getByText("匿名", { exact: true })
+      .click();
     await expect(authorPage.getByText(/将以「匿名用户」身份发布/)).toBeVisible();
     await authorPage
       .getByLabel("评论内容", { exact: true })
@@ -113,7 +194,7 @@ test.describe("anonymous comment DOM privacy (spec §21.4/§40) — brief step 1
     // Context B: ANOTHER student opens the same task.
     const viewerContext = await browser.newContext();
     const viewerPage = await viewerContext.newPage();
-    await loginAs(viewerPage, STUDENT!);
+    await ensureStudentLogin(viewerPage);
     await viewerPage.goto(TASK_URL!);
 
     const section = viewerPage.getByLabel("任务评论");
@@ -144,7 +225,7 @@ test.describe("anonymous comment DOM privacy (spec §21.4/§40) — brief step 1
 
 test.describe("composer: explicit identity + preview (§21.4)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
   });
 
@@ -152,10 +233,11 @@ test.describe("composer: explicit identity + preview (§21.4)", () => {
     page,
   }) => {
     const identity = page.getByRole("radiogroup", { name: "发布身份" });
+    // Hidden native inputs: assert STATE on the input, ACT on the label.
     await expect(identity.getByLabel("公开昵称")).toBeChecked();
     await expect(page.getByText(/将以公开昵称/)).toBeVisible();
 
-    await identity.getByLabel("匿名", { exact: true }).check();
+    await identity.getByText("匿名", { exact: true }).click();
     await expect(page.getByText(/将以「匿名用户」身份发布/)).toBeVisible();
     await expect(page.getByText(/不显示你的昵称/)).toBeVisible();
   });
@@ -183,7 +265,7 @@ test.describe("composer: explicit identity + preview (§21.4)", () => {
 
 test.describe("two-level threading (§21.2)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
   });
 
@@ -227,7 +309,7 @@ test.describe("two-level threading (§21.2)", () => {
 
 test.describe("votes and reactions (§22)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
     // Ensure at least one comment exists to act on.
     const content = marker("互动评论");
@@ -262,17 +344,22 @@ test.describe("votes and reactions (§22)", () => {
       .getByRole("button", { name: "表情 🔥" });
     await fire.click();
     await expect(fire).toHaveAttribute("aria-pressed", "true");
-    await expect(fire.getByText("1")).toBeVisible();
+    // The product renders the count span only for COUNTED emojis
+    // (Reactions.tsx: `count !== null`), so the added verdict renders
+    // the count 1 —
+    await expect(fire.locator(".reaction-count")).toHaveText("1");
 
+    // — and the toggle-off removes the span entirely (a zero-count
+    // emoji carries no count text).
     await fire.click();
     await expect(fire).toHaveAttribute("aria-pressed", "false");
-    await expect(fire.getByText("0")).toBeVisible();
+    await expect(fire.locator(".reaction-count")).toHaveCount(0);
   });
 });
 
 test.describe("report (§23: filing removes nothing)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
   });
 
@@ -288,7 +375,8 @@ test.describe("report (§23: filing removes nothing)", () => {
     await article.getByRole("button", { name: "举报", exact: true }).click();
     const dialog = page.locator("dialog.dialog");
     await expect(dialog).toBeVisible();
-    await dialog.getByLabel("骚扰辱骂").check();
+    // Hidden native radios (the identity-option pattern): click the label.
+    await dialog.getByText("骚扰辱骂", { exact: true }).click();
     await dialog.getByRole("button", { name: "提交举报" }).click();
 
     await expect(dialog.getByRole("heading", { name: "举报已提交" })).toBeVisible();
@@ -316,7 +404,7 @@ test.describe("report (§23: filing removes nothing)", () => {
 
 test.describe("rating (§20: completer-only, aggregate public)", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
   });
 
@@ -325,8 +413,15 @@ test.describe("rating (§20: completer-only, aggregate public)", () => {
   }) => {
     const section = page.getByLabel("任务评分");
     await expect(section).toBeVisible();
-    // Aggregate (暂无评分 while unrated) never blocks the picker.
-    await section.getByRole("radio", { name: "4 星" }).check();
+    // Aggregate (暂无评分 while unrated) never blocks the picker. The
+    // star radios are hidden native inputs (globals.css
+    // `.star-option input`): act on the visible star LABEL (1-5 in
+    // order; 4 星 = the fourth label).
+    await section
+      .getByRole("radiogroup", { name: "选择星级" })
+      .locator("label")
+      .nth(3)
+      .click();
     // Either the viewer completed a claim (echo success) or the typed
     // completer-gate copy renders — silence would be the bug.
     await expect(
@@ -344,7 +439,11 @@ test.describe("rating (§20: completer-only, aggregate public)", () => {
     await loginAs(page, NON_COMPLETER!);
     await page.goto(TASK_URL!);
     const section = page.getByLabel("任务评分");
-    await section.getByRole("radio", { name: "5 星" }).check();
+    await section
+      .getByRole("radiogroup", { name: "选择星级" })
+      .locator("label")
+      .nth(4)
+      .click();
     await expect(section.getByRole("alert")).toContainText(
       "完成任务后才能评价该任务",
     );
@@ -353,7 +452,7 @@ test.describe("rating (§20: completer-only, aggregate public)", () => {
 
 test.describe("sort tabs + narrow viewport", () => {
   test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT!);
+    await ensureStudentLogin(page);
     await page.goto(TASK_URL!);
   });
 
@@ -382,5 +481,56 @@ test.describe("sort tabs + narrow viewport", () => {
         await expect(first.getByRole("button", { name: "回复", exact: true })).toBeVisible();
       }
     });
+  });
+});
+
+test.describe("admin identity reveal on the moderation surface (spec §21.4; plan 10 task 9)", () => {
+  test.skip(
+    REVEAL_ADMIN === undefined ||
+      REVEAL_ADMIN_TOTP_SECRET === undefined ||
+      MODERATION_TASK_PATH === undefined,
+    "needs CQ_E2E_REVEAL_ADMIN + CQ_E2E_REVEAL_ADMIN_TOTP_SECRET + CQ_E2E_MODERATION_TASK_PATH (a seeded admin with an answerable TOTP and a task carrying an anonymous comment); Plan 10's fixture provides all three.",
+  );
+
+  test("the listing stays anonymous; the dialog demands a reason, then reveals and records the audit", async ({
+    page,
+  }) => {
+    await loginAsStaff(page, REVEAL_ADMIN!, REVEAL_ADMIN_TOTP_SECRET!);
+    await page.goto(MODERATION_TASK_PATH!);
+
+    // The ADMIN normal listing is as anonymous as the teacher's: the
+    // row shows 匿名用户 plus the pseudonymous key, never identity.
+    const section = page.getByLabel("社区与举报");
+    await expect(section).toBeVisible();
+    const anonymousRow = section.locator(".moderation-item", { hasText: "匿名治理目标" });
+    await expect(anonymousRow).toBeVisible();
+    await expect(anonymousRow.locator(".comment-author")).toHaveText("匿名用户");
+    await expect(anonymousRow.locator(".moderation-key")).toBeVisible();
+    await expect(anonymousRow.getByText("学号")).toHaveCount(0);
+
+    // Open the reveal dialog on that row.
+    await anonymousRow.getByRole("button", { name: "揭示身份" }).click();
+    const dialog = page.locator("dialog[aria-labelledby='reveal-identity-title']");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/每次调用都会记入审计日志/)).toBeVisible();
+
+    // Blank reason: the mirrored mandatory-reason rejection, no request.
+    await dialog.getByRole("button", { name: "确认揭示身份" }).click();
+    await expect(dialog.getByText("追溯原因必填（将记入审计日志）")).toBeVisible();
+
+    // A real reason reveals the identity FROM THE API RESPONSE ONLY,
+    // with the audit-recording copy beside it.
+    await dialog.getByLabel("追溯原因").fill("e2e：治理投诉核查匿名评论作者身份");
+    await dialog.getByRole("button", { name: "确认揭示身份" }).click();
+    const revealed = dialog.getByRole("status");
+    await expect(revealed).toContainText("身份已揭示（本次揭示已记入审计日志）");
+    await expect(revealed.getByText("学号")).toBeVisible();
+    await expect(revealed.locator(".mono")).not.toBeEmpty();
+
+    // The moderation LISTING after the reveal is still anonymous — a
+    // reveal is an audited access event, never a listing state change.
+    await dialog.getByRole("button", { name: "关闭" }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(anonymousRow.locator(".comment-author")).toHaveText("匿名用户");
   });
 });

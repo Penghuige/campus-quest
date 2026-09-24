@@ -387,7 +387,14 @@ function ReportDialog({
     setFieldError(null);
     setBusy(true);
     try {
-      await reportComment(comment.id, draft);
+      // Send ONLY the wire fields: `draft` is the validated view object
+      // and carries its `ok: true` discriminator, which the backend's
+      // extra="forbid" report body rejects with 422 (found by the
+      // plan-10 e2e report flow — the first run against the real API).
+      await reportComment(comment.id, {
+        category: draft.category,
+        note: draft.note,
+      });
       setDone(true);
     } catch (error) {
       const view = describeCommunityError(error);

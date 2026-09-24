@@ -37,6 +37,7 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 markers = [
     "integration: requires a real PostgreSQL test database; select with 'pytest -m integration'",
+    "e2e: full-system committed-mode suite (CQ_E2E=1); select with 'pytest -m e2e'",
 ]
 
 [tool.ruff]

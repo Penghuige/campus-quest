@@ -33,11 +33,10 @@
  * platform/keyword the student ever sees is the one the server allocated
  * to their own claim, and it appears only AFTER the claim succeeds.
  */
-import { expect, test } from "@playwright/test";
+import { ensureStudentLogin, expect, test } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
-const LOGIN_URL = process.env.CQ_E2E_LOGIN_URL ?? `${BASE_URL}/login`;
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
 const EMPTY_TASK_URL = process.env.CQ_E2E_EMPTY_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
@@ -50,14 +49,12 @@ test.skip(
   "claim flow needs CQ_E2E_TASK_URL (a published task with AVAILABLE assignments) and CQ_E2E_STUDENT (seeded credentials); Plan 10's fixture provides both.",
 );
 
-/** Log in through the student login page (T2 flow). */
+/** Open the shared student's session through the suite's resume chain
+ * (the backend's auth:login window — 10 form attempts / 5 min per
+ * username — is a real bound a whole-suite run trips; the login UX
+ * itself stays owned by auth.spec). */
 async function loginAsStudent(page: import("@playwright/test").Page): Promise<void> {
-  const [username, password] = (STUDENT ?? "").split(":");
-  await page.goto(LOGIN_URL);
-  await page.getByLabel("学号").fill(username);
-  await page.getByLabel("密码").fill(password);
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+  await ensureStudentLogin(page);
 }
 
 test.describe("student task claim", () => {
@@ -69,11 +66,33 @@ test.describe("student task claim", () => {
     await page.goto(TASK_URL!);
 
     // Spec §42: cards/details carry counts, never an assignment list.
-    await expect(page.getByText("可领取")).toBeVisible();
+    // exact: the definition TERM is "可领取" and its value "可领取 N 个"
+    // also substring-matches a bare getByText.
+    await expect(page.getByText("可领取", { exact: true })).toBeVisible();
     await expect(page.locator("[data-assignments-list]")).toHaveCount(0);
     await expect(page.locator("input[name='assignment_id']")).toHaveCount(0);
     // The assigned platform/keyword panel is absent pre-allocation.
     await expect(page.locator(".claim-panel")).toHaveCount(0);
+  });
+
+  test.describe("mobile 375x812", () => {
+    test.use({ viewport: { width: 375, height: 812 } });
+
+    test("claim CTA is visible without scroll-hunt", async ({ page }) => {
+      // Runs BEFORE the claiming test below: once THIS student holds a
+      // claim on the task, the same-task rule replaces the CTA with
+      // the claim panel (the world's task carries only one claim slot
+      // per student).
+      await page.goto(TASK_URL!);
+
+      const cta = page.getByRole("button", { name: "领取任务" });
+      await expect(cta).toBeVisible();
+      await expect(cta).toBeInViewport();
+      // Single-column card grid on the narrow workload class.
+      await page.goto(`${BASE_URL}/tasks`);
+      const firstCard = page.locator(".task-card").first();
+      await expect(firstCard).toBeVisible();
+    });
   });
 
   test("claim allocates server-side and reveals only the user's assignment", async ({ page }) => {
@@ -90,8 +109,10 @@ test.describe("student task claim", () => {
     // Still no assignment list or id input anywhere on the page.
     await expect(page.locator("[data-assignments-list]")).toHaveCount(0);
     await expect(page.locator("input[name='assignment_id']")).toHaveCount(0);
-    // Server-authoritative deadline copy rides the panel (UX-only display).
-    await expect(panel.getByText(/截止/)).toBeVisible();
+    // Server-authoritative deadline copy rides the panel (UX-only
+    // display). The panel carries TWO 截止 texts (deadline line + the
+    // grace note), so the pin targets the deadline line itself.
+    await expect(panel.locator(".deadline-line")).toBeVisible();
   });
 
   test("conflict shows typed copy and stays retry-friendly", async ({ page }) => {
@@ -104,21 +125,5 @@ test.describe("student task claim", () => {
     await expect(page.getByRole("alert")).toContainText("当前没有可领取的任务单元");
     // Retry-friendly: the button re-enables so another attempt is possible.
     await expect(page.getByRole("button", { name: "领取任务" })).toBeEnabled();
-  });
-
-  test.describe("mobile 375x812", () => {
-    test.use({ viewport: { width: 375, height: 812 } });
-
-    test("claim CTA is visible without scroll-hunt", async ({ page }) => {
-      await page.goto(TASK_URL!);
-
-      const cta = page.getByRole("button", { name: "领取任务" });
-      await expect(cta).toBeVisible();
-      await expect(cta).toBeInViewport();
-      // Single-column card grid on the narrow workload class.
-      await page.goto(`${BASE_URL}/tasks`);
-      const firstCard = page.locator(".task-card").first();
-      await expect(firstCard).toBeVisible();
-    });
   });
 });
