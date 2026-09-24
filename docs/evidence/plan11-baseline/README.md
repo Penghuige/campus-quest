@@ -28,6 +28,17 @@ npx playwright test visual-capture.spec.ts
 # repeat with CQ_E2E_VIEWPORT=mobile, then + CQ_E2E_REDUCED_MOTION=1
 ```
 
+> Port rule (learned the hard way): the browser only talks to the
+> frontend origin (same-origin `/api/v1` via the dev proxy); the one
+> cross-origin request is the presigned PUT straight to MinIO, whose
+> CORS allowlist (`MINIO_API_CORS_ALLOW_ORIGIN`, default 3000) checks
+> the FRONTEND origin only — the backend port never enters CORS. So:
+> the capture spec (no uploads) runs on any free port pair; a FULL
+> suite with real upload flows pins the frontend to 3000 (or extends
+> the allowlist once) and takes the backend on ANY free port via
+> `CQ_E2E_API_URL=http://localhost:8100/api/v1` — no coordination
+> with any long-running demo stack.
+
 Full set: 19 screens × 3 passes = 57 captures. The five screens below
 are committed here as the durable baseline record (the full set
 regenerates with the command above).

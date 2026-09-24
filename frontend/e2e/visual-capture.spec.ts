@@ -133,11 +133,32 @@ function recordManifest(entry: ManifestEntry): void {
  * back to the main landmark) plus a settle delay, then capture the
  * full page. The settle delay absorbs dev-mode hydration and late
  * data paints without asserting on any business content.
+ *
+ * Wrong-artifact guard (post-incident hardening): on authenticated
+ * pages the shot is only valid if THIS pass's navigation landmark
+ * actually rendered (sidebar on desktop, bottom nav on mobile). A
+ * stale/leaked dev server serving an older build would fail here
+ * instead of silently producing "evidence" of the wrong layout.
  */
-async function capture(page: Page, name: string, route: string, account: string): Promise<void> {
+async function capture(
+  page: Page,
+  name: string,
+  route: string,
+  account: string,
+  authenticated = true,
+): Promise<void> {
   await page.goto(`${BASE_URL}${route}`);
   const anchor = page.locator(".page-head, main").first();
   await expect(anchor).toBeVisible({ timeout: 15_000 });
+  if (authenticated) {
+    // Desktop: every shell renders the sidebar. Narrow: the student
+    // shell renders the bottom nav, the staff shells the menu button.
+    const nav =
+      VIEWPORT === "desktop"
+        ? page.locator(".app-sidebar")
+        : page.locator(".app-bottomnav, .app-menubtn");
+    await expect(nav.first()).toBeVisible({ timeout: 5_000 });
+  }
   await page.waitForTimeout(800);
   const file = `${PASS}/${name}.png`;
   await page.screenshot({ path: join(CAPTURE_DIR!, file), fullPage: true });
@@ -180,9 +201,9 @@ async function staffLogin(
 
 test.describe("visual capture — anonymous auth surfaces", () => {
   test("auth screens", async ({ page }) => {
-    await capture(page, "auth-login", "/login", "anonymous");
-    await capture(page, "auth-register", "/register", "anonymous");
-    await capture(page, "auth-staff-login", "/staff/login", "anonymous");
+    await capture(page, "auth-login", "/login", "anonymous", false);
+    await capture(page, "auth-register", "/register", "anonymous", false);
+    await capture(page, "auth-staff-login", "/staff/login", "anonymous", false);
   });
 });
 

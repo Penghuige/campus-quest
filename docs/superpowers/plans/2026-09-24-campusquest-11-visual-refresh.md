@@ -86,24 +86,31 @@ Acceptance:
 
 Routes do not change; this contract freezes reachability and hierarchy.
 
-**Student desktop sidebar** (8 items, two groups):
+**Student desktop sidebar** (route-true amendment, implementation-time):
 
-- primary: 首页 Home · 任务 Tasks · 我的任务 Claims · 排行榜 Ranking · 积分奖励 Rewards · 社区 Community
+> The originally frozen 8-item list assumed `/claims` and `/community`
+> routes; V1 has neither (the claims list is the dashboard's
+> active-claims section, community threads live on task detail).
+> Adding those routes is product scope OUTSIDE this presentation-only
+> workstream, so the contract ships with the real routes:
+
+- primary: 首页 Home · 任务 Tasks · 排行榜 Ranking · 积分奖励 Rewards
 - secondary (bottom of sidebar): 通知 Notifications · 我的 Profile
+- 我的任务 stays anchored on the dashboard (its only list surface);
+  社区 stays anchored on task detail.
 
 **Student bottom navigation** (exactly 5 slots, narrow only):
 
-首页 Home · 任务 Tasks · 我的任务 Claims · 排行榜 Ranking · 我的 Profile
+首页 Home · 任务 Tasks · 排行榜 Ranking · 积分奖励 Rewards · 我的 Profile
 
 **Overflow destinations** (reachable, not in bottom nav):
 
 - 通知 Notifications — top-bar bell with unread badge (always visible), plus Profile entry;
-- 积分奖励 Rewards — entry on the Profile screen;
-- 社区 Community — entry on the Profile screen.
+- 我的任务 / 社区 — dashboard and task-detail anchors respectively (no first-class route in V1).
 
-**Teacher/Admin narrow:** hamburger menu sheet containing the *full*
-staff navigation list (nothing is demoted beyond opening the sheet);
-content stays list/table-first; no bottom navigation.
+**Teacher/Admin desktop:** shared sidebar geometry with role items
+(teacher: 审核队列 · 任务管理; admin: the six existing admin routes);
+narrow (<40rem) collapses to the hamburger menu sheet below.
 
 **Active state:** exactly one item per nav landmark carries
 `aria-current="page"`; its visual state (brand-tinted background +
@@ -121,12 +128,12 @@ content `padding-bottom` ≥ (bottom-nav total height including inset) +
 
 ### Work
 
-- [ ] desktop sidebar;
-- [ ] shared route item primitive;
-- [ ] active/hover/focus states per the contract above;
-- [ ] top context/header grammar;
-- [ ] Student narrow bottom navigation per the 5-slot contract;
-- [ ] Teacher/Admin narrow menu sheet per the contract.
+- [x] desktop sidebar;
+- [x] shared route item primitive;
+- [x] active/hover/focus states per the contract above;
+- [x] top context/header grammar;
+- [x] Student narrow bottom navigation per the 5-slot contract;
+- [x] Teacher/Admin narrow menu sheet per the contract.
 
 Constraints:
 

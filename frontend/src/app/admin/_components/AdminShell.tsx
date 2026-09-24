@@ -22,17 +22,28 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
+import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
+import {
+  GiftIcon,
+  InboxIcon,
+  ReviewIcon,
+  TasksIcon,
+  UserIcon,
+} from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { adminWorkspaceGate } from "@/features/auth/workspace";
 
 const NAV_ITEMS = [
-  { href: "/admin/users", label: "用户与账户" },
-  { href: "/admin/whitelist", label: "注册白名单" },
-  { href: "/admin/rewards", label: "奖励目录" },
-  { href: "/admin/redemptions", label: "兑换审核" },
-  { href: "/admin/audit", label: "审计日志" },
-  { href: "/admin/system", label: "系统设置" },
+  { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
+  { href: "/admin/whitelist", label: "注册白名单", icon: <TasksIcon /> },
+  { href: "/admin/rewards", label: "奖励目录", icon: <GiftIcon /> },
+  { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },
+  { href: "/admin/audit", label: "审计日志", icon: <InboxIcon /> },
+  { href: "/admin/system", label: "系统设置", icon: <TasksIcon /> },
 ] as const;
+
+const SIDEBAR_GROUPS = [{ label: "管理后台", items: NAV_ITEMS }] as const;
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
@@ -125,29 +136,36 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="app-topbar">
-        <div className="app-topbar-inner">
-          <span className="app-brand">CampusQuest</span>
-          <nav className="app-nav" aria-label="管理后台导航">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="app-topbar-actions">
-            <span className="app-user" title={state.me.nickname}>
-              {state.me.nickname}
-              <span className="staff-role-tag">管理员</span>
-            </span>
+      <WorkspaceSidebar
+        brand={{ href: "/admin/users", label: "CampusQuest" }}
+        groups={SIDEBAR_GROUPS}
+      />
+      <div className="app-body">
+        <header className="app-topbar">
+          <div className="app-topbar-inner">
+            <span className="app-brand">CampusQuest</span>
+            <nav className="app-nav" aria-label="管理后台导航">
+              {NAV_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <div className="app-topbar-actions">
+              <span className="app-user" title={state.me.nickname}>
+                {state.me.nickname}
+                <span className="staff-role-tag">管理员</span>
+              </span>
+              <StaffMenuSheet label="管理后台菜单" items={NAV_ITEMS} />
+            </div>
           </div>
-        </div>
-      </header>
-      <main className="app-main">{children}</main>
+        </header>
+        <main className="app-main">{children}</main>
+      </div>
     </div>
   );
 }

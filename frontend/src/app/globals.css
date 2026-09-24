@@ -596,6 +596,229 @@ body {
   }
 }
 
+/* --- Plan 11 Task 3: three-band navigation shell (brief §4) ------------------
+ *
+ * Wide (≥64rem): quiet sidebar owns the primary navigation; the top
+ * bar degrades to a context/actions strip. Medium (40–64rem): the
+ * horizontal top nav keeps every destination. Narrow (<40rem): the
+ * student bottom nav (5 fixed slots) or the staff menu sheet.
+ *
+ * The :has guard keeps the sidebar-less gate/loading/anonymous shell
+ * branches single-column — they never render the grid. */
+
+.app-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Sidebar hidden below the wide band; the other bands own navigation. */
+.app-sidebar {
+  display: none;
+}
+
+.app-bottomnav,
+.app-menubtn {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .app-shell:has(> .app-sidebar) {
+    display: grid;
+    grid-template-columns: 14.5rem minmax(0, 1fr);
+  }
+
+  .app-shell:has(> .app-sidebar) > .app-body {
+    grid-column: 2;
+  }
+
+  .app-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    padding: var(--space-5) var(--space-3);
+    background: color-mix(in oklab, var(--background) 55%, var(--surface-1));
+    border-right: 1px solid var(--border);
+    /* Quieter than the content: no shadow, muted links (§4.1). */
+  }
+
+  /* The top bar keeps context + actions only — brand and nav live in
+     the sidebar, so they step out of the strip. Scoped to shells that
+     actually render the sidebar (the gate/loading branches keep theirs). */
+  .app-shell:has(> .app-sidebar) .app-topbar .app-nav,
+  .app-shell:has(> .app-sidebar) .app-topbar .app-brand {
+    display: none;
+  }
+}
+
+.app-sidebar-brand {
+  padding: 0 var(--space-2);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.side-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.side-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.side-nav a:hover {
+  background: var(--surface-1);
+  color: var(--foreground);
+}
+
+/* Frozen contract: brand-tinted background + keyline, distinguishable
+   from hover and from focus-visible. */
+.side-nav a[aria-current="page"] {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 9%, var(--surface-1));
+  box-shadow: inset 2px 0 0 var(--primary);
+  font-weight: 600;
+}
+
+.side-nav a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.side-nav svg {
+  flex: none;
+}
+
+.app-sidebar-footer {
+  margin-top: auto;
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+}
+
+/* --- student bottom navigation (narrow band; frozen 5-slot contract) -------- */
+
+@media (max-width: 40rem) {
+  .app-bottomnav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--surface-1);
+    border-top: 1px solid var(--border);
+    /* Safe-area rule (frozen contract): the nav's own padding includes
+       the inset, and the main content's bottom padding below clears
+       the nav's full height — the fixed bar never covers an action. */
+    padding: var(--space-1) var(--space-2)
+      calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-bottomnav a {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-height: 3rem;
+    padding: var(--space-1) var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .app-bottomnav a[aria-current="page"] {
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .app-bottomnav a:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* Bottom band: the horizontal top nav and staff menu button trade
+     places with the band's own navigation surfaces. */
+  .app-topbar .app-nav {
+    display: none;
+  }
+
+  .app-menubtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  /* The content reservation the contract requires: nav height (3rem
+     items + padding ≈ 4rem) + inset + 16px breathing room. */
+  .app-main {
+    padding-bottom: calc(
+      4rem + env(safe-area-inset-bottom, 0px) + var(--space-4)
+    );
+  }
+}
+
+/* --- staff menu sheet (narrow band; full navigation list) -------------------- */
+
+.app-menusheet {
+  width: min(18rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.app-menusheet-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.app-menusheet-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: var(--text-md);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.app-menusheet-nav a:hover {
+  background: var(--surface-2);
+}
+
+.app-menusheet-nav a[aria-current="page"] {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 9%, var(--surface-1));
+  font-weight: 600;
+}
+
 .page-head {
   display: grid;
   gap: var(--space-1);
