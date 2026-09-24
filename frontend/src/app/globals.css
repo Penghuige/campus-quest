@@ -674,15 +674,19 @@ body {
   }
 
   /* Wide workspace: the rail owns the shell. The former full-width
-     topbar collapses into a small local action cluster aligned with the
-     page header, removing the legacy "sidebar + global bar" frame. */
+     topbar collapses into a slim TRANSPARENT in-flow row holding only
+     the floating action pill (right-aligned) — no band, no border, and
+     occlusion-proof BY CONSTRUCTION: the review round found the
+     absolute-positioned variant sitting on top of the task-detail
+     title row and the teacher queue's first card, because "content
+     must avoid the top-right corner" cannot be guaranteed across
+     arbitrary pages. In flow, layout reserves the pill's own line —
+     the pill keeps its floating look, at the cost of one ~3rem row. */
   .app-shell:has(> .app-sidebar) .app-topbar {
-    position: absolute;
-    top: var(--space-5);
-    right: max(
-      var(--space-4),
-      calc((100vw - 14.5rem - 64rem) / 2 + var(--space-4))
-    );
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-3) var(--space-4) 0;
     z-index: 11;
     background: transparent;
     border-bottom: 0;
@@ -704,7 +708,6 @@ body {
 
   .app-shell:has(> .app-sidebar) .page-head {
     min-height: var(--control-height);
-    padding-right: 13rem;
   }
 }
 
