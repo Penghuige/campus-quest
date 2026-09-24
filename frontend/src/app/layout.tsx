@@ -23,6 +23,19 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
+      <head>
+        {/* Theme shoot-out switch (Plan 11 direction pass): `?theme=ink|
+            cream|scale` opts the page into a CSS token variant; absent
+            param = the merged default look. Runs before paint so there
+            is no flash; pure presentation, removed or folded into the
+            chosen direction when the shoot-out concludes. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=new URLSearchParams(location.search).get('theme');if(t){document.documentElement.dataset.theme=t}}catch(e){}",
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

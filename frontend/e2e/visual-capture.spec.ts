@@ -48,6 +48,8 @@ const VIEWPORTS = {
 
 const PASS = `${VIEWPORT}${REDUCED_MOTION ? "-reduced-motion" : ""}`;
 const OUT_DIR = CAPTURE_DIR ? join(CAPTURE_DIR, PASS) : "";
+/** Theme shoot-out: append ?theme=X to every route when set (default off). */
+const THEME = process.env.CQ_E2E_THEME;
 
 test.use({
   viewport: VIEWPORTS[VIEWPORT],
@@ -147,7 +149,9 @@ async function capture(
   account: string,
   authenticated = true,
 ): Promise<void> {
-  await page.goto(`${BASE_URL}${route}`);
+  const themedRoute =
+    route + (THEME ? `${route.includes("?") ? "&" : "?"}theme=${THEME}` : "");
+  await page.goto(`${BASE_URL}${themedRoute}`);
   const anchor = page.locator(".page-head, main").first();
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   if (authenticated) {

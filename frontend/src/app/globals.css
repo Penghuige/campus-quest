@@ -599,6 +599,100 @@ body {
   }
 }
 
+/* --- Plan 11 theme shoot-out (direction pass) ---------------------------------
+ *
+ * Three opt-in token variants on the SAME DOM (`?theme=ink|cream|scale`
+ * → data-theme on <html>; absent = the merged default). The point is to
+ * choose a direction from side-by-side screens, not to debate adjectives.
+ * The chosen variant's values fold into the :root contract (and the
+ * design-system doc) when the shoot-out concludes; the others retire.
+ *
+ * Shared by all three: a braver DISPLAY SCALE — page titles and metric
+ * numerals step up two rungs (the #1 dated tell is timid scale contrast). */
+
+[data-theme="ink"] .page-title,
+[data-theme="cream"] .page-title,
+[data-theme="scale"] .page-title,
+[data-theme="ink"] .hero-title,
+[data-theme="cream"] .hero-title,
+[data-theme="scale"] .hero-title {
+  font-size: 1.625rem;
+}
+
+[data-theme="ink"] .metric-value,
+[data-theme="cream"] .metric-value,
+[data-theme="scale"] .metric-value {
+  font-size: var(--text-2xl);
+  letter-spacing: -0.01em;
+}
+
+/* A — ink: dark sidebar carries the identity; content stays warm paper;
+   the primary gets one notch more saturated and does REAL work. */
+
+[data-theme="ink"] {
+  --primary: oklch(50% 0.18 264);
+  --surface-brand: oklch(96% 0.03 258);
+}
+
+[data-theme="ink"] .app-sidebar {
+  background: oklch(21% 0.018 262);
+  border-right-color: oklch(28% 0.02 262);
+}
+
+[data-theme="ink"] .app-sidebar-brand {
+  color: oklch(97% 0.004 90);
+}
+
+[data-theme="ink"] .side-nav a {
+  color: oklch(73% 0.015 90);
+}
+
+[data-theme="ink"] .side-nav a:hover {
+  background: oklch(26% 0.02 262);
+  color: oklch(97% 0.004 90);
+}
+
+[data-theme="ink"] .side-nav a[aria-current="page"] {
+  color: oklch(86% 0.08 264);
+  background: oklch(28% 0.035 264);
+  box-shadow: inset 2px 0 0 oklch(72% 0.13 264);
+}
+
+[data-theme="ink"] .app-sidebar-footer {
+  color: oklch(62% 0.015 90);
+}
+
+/* B — cream: a tinted warm world; the accent shifts to a confident
+   warm orange used sparingly; borders yield to soft elevation. */
+
+[data-theme="cream"] {
+  --background: oklch(96.6% 0.013 95);
+  --surface-1: oklch(99.2% 0.005 95);
+  --surface-2: oklch(95.2% 0.016 95);
+  --surface-brand: oklch(95.4% 0.032 88);
+  --border: oklch(90% 0.016 95);
+  --foreground: oklch(24% 0.02 80);
+  --primary: oklch(55% 0.155 45);
+  --primary-strong: oklch(49% 0.155 45);
+}
+
+[data-theme="cream"] .panel,
+[data-theme="cream"] .task-card,
+[data-theme="cream"] .claim-panel,
+[data-theme="cream"] .notif-item {
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+/* C — scale: today's palette, unchanged; only the display scale above
+   plus elevation replaces some border weight. */
+
+[data-theme="scale"] .panel,
+[data-theme="scale"] .task-card {
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
 /* --- Plan 11 Task 3: three-band navigation shell (brief §4) ------------------
  *
  * Wide (≥64rem): quiet sidebar owns the primary navigation; the top
