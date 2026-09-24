@@ -294,6 +294,9 @@ body {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
+  /* Buttons are buttons even when they are links (hero CTA, shell
+     CTAs): never the anchor underline, whatever the element. */
+  text-decoration: none;
   transition:
     background-color var(--duration-fast) ease,
     border-color var(--duration-fast) ease;
