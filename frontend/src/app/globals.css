@@ -15,21 +15,26 @@
  */
 
 :root {
-  /* surface */
-  --background: oklch(97.5% 0.004 250);
+  /* surface — Plan 11 §5: warm-neutral ground (less blue-grey than the
+     V1 hue-250 paper); surfaces carry hierarchy, borders stay quiet. */
+  --background: oklch(97.4% 0.005 90);
   --surface-1: oklch(100% 0 0);
-  --surface-2: oklch(96% 0.005 250);
-  --overlay: oklch(98% 0.004 250);
+  --surface-2: oklch(96.2% 0.006 90);
+  --overlay: oklch(98% 0.004 90);
+  /* Brand wash (§5 "one soft brand wash token"): the ONLY page-level
+     tint the refresh allows — hero/progress emphasis, never a page bg. */
+  --surface-brand: oklch(96.6% 0.024 255);
 
-  /* text */
-  --foreground: oklch(26% 0.02 260);
-  --muted-foreground: oklch(50% 0.02 260);
-  --subtle-foreground: oklch(60% 0.015 260);
-  --inverse-foreground: oklch(98% 0.004 250);
+  /* text — hues aligned to the warm ground; near-neutral by design. */
+  --foreground: oklch(26% 0.015 75);
+  --muted-foreground: oklch(50% 0.015 75);
+  --subtle-foreground: oklch(60% 0.012 75);
+  --inverse-foreground: oklch(98.5% 0.004 90);
 
-  /* border */
-  --border: oklch(90% 0.008 260);
-  --border-strong: oklch(78% 0.012 260);
+  /* border — softer than V1 (§7: background contrast before border;
+     only interactive/selected states earn stronger keylines). */
+  --border: oklch(91.5% 0.007 90);
+  --border-strong: oklch(82% 0.01 90);
   --focus-ring: oklch(52% 0.15 258);
 
   /* semantic */
@@ -45,14 +50,19 @@
   --danger-muted: oklch(96.5% 0.025 27);
   --info: oklch(52% 0.12 240);
 
-  /* shape */
+  /* shape — §7: slightly rounder large panels; pills stay a badge-only
+     shape (999px inline where used). */
   --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
 
-  /* shadow (elevation is secondary to border + surface; §7) */
-  --shadow-xs: 0 1px 2px oklch(26% 0.02 260 / 0.06);
-  --shadow-sm: 0 1px 3px oklch(26% 0.02 260 / 0.1), 0 1px 2px oklch(26% 0.02 260 / 0.06);
+  /* shadow (elevation is secondary to border + surface; §7) — one
+     raised level for dialog/popover/hero objects (§5 surface-raised). */
+  --shadow-xs: 0 1px 2px oklch(26% 0.015 75 / 0.05);
+  --shadow-sm: 0 1px 2px oklch(26% 0.015 75 / 0.05),
+    0 2px 6px oklch(26% 0.015 75 / 0.07);
+  --shadow-raised: 0 1px 2px oklch(26% 0.015 75 / 0.04),
+    0 4px 12px oklch(26% 0.015 75 / 0.07);
 
   /* spacing scale (few values, consistently reused; §6) */
   --space-1: 0.25rem;
@@ -72,8 +82,12 @@
   --text-base: 1rem;
   --text-lg: 1.375rem;
   /* Icon glyphs (T6 fold): the star picker's 1.5rem star joins the scale
-     instead of a one-off literal (§3 token-first). */
+     instead of a one-off literal (§3 token-first). Doubles as the page
+     title step (Plan 11 §6: page title slightly larger and stronger). */
   --text-xl: 1.5rem;
+  /* Display/hero (Plan 11 §6): rare — the Student dashboard's
+     next-action hero is the only planned consumer. */
+  --text-2xl: 1.875rem;
 
   /* rarity accents (§4: restrained, recognizable; accent ONLY — never a
      page-wide background, and the text label always renders alongside).
@@ -92,6 +106,15 @@
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
     sans-serif;
   --duration-fast: 150ms;
+  /* Plan 11 §14 motion contract: 120–180ms surface/opacity/transform
+     transitions; --lift-hover is the 1–2px hover lift interactive cards
+     may take. Everything obeys prefers-reduced-motion (see base). */
+  --duration-slow: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --lift-hover: -1px;
+
+  /* Modal scrim: foreground-tinted translucency (dialog/popover only). */
+  --overlay-scrim: oklch(26% 0.015 75 / 0.3);
 }
 
 /* --- base ----------------------------------------------------------------- */
@@ -580,9 +603,11 @@ body {
 
 .page-title {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  /* Plan 11 §6: page title steps up to the xl rung — larger, stronger,
+     tighter; section titles keep the md rung so pages regain hierarchy. */
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 .page-subtitle {
@@ -792,12 +817,29 @@ body {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  transition: border-color var(--duration-fast) ease;
+  /* Plan 11 §14: the 1px hover lift + keyline change interactive cards
+     take; transform/opacity only (cheap, reduced-motion safe). */
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .task-card:hover,
 .task-card:focus-within {
   border-color: var(--border-strong);
+  transform: translateY(var(--lift-hover));
+  box-shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card {
+    transition: none;
+  }
+  .task-card:hover,
+  .task-card:focus-within {
+    transform: none;
+  }
 }
 
 .task-card-top {
@@ -1331,8 +1373,8 @@ body {
 /* Dialogs get the one stronger elevation (design §7); the shadow token
    joins the shared contract (§3 token-first). */
 :root {
-  --shadow-dialog: 0 10px 30px oklch(26% 0.02 260 / 0.16),
-    0 2px 8px oklch(26% 0.02 260 / 0.08);
+  --shadow-dialog: 0 12px 32px oklch(26% 0.015 75 / 0.14),
+    0 2px 8px oklch(26% 0.015 75 / 0.07);
 }
 
 /* Reward shelf grid + card (§8 card archetype; token-only values). */
@@ -1408,7 +1450,7 @@ body {
 }
 
 .dialog::backdrop {
-  background: oklch(26% 0.02 260 / 0.32);
+  background: var(--overlay-scrim);
 }
 
 .dialog-body {
