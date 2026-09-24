@@ -1,13 +1,11 @@
 /**
- * Task Card (spec §42; design-system §8/§9): title, rarity badge (a LOCAL
- * accent — never a page-wide treatment), base reward, deadline mode +
- * remaining time, availability COUNT (never an assignment list), and the
- * aggregate rating, with the display-only near-cutoff hint.
+ * Task Card (spec §42; design-system §8/§9): title, rarity accent,
+ * base reward, deadline mode + remaining time, availability COUNT
+ * (never an assignment list), and aggregate rating.
  *
- * Presentational and time-explicit: `nowMs` comes from the parent island.
- * Text derived from `now` opts out of hydration comparison via
- * `suppressHydrationWarning` (server and client legitimately render at
- * different instants; the values are display-only per §42).
+ * The title link is visually stretched across the card so the hover
+ * affordance matches the real hit area. Rarity remains a text + color
+ * cue; color never carries meaning alone.
  */
 import Link from "next/link";
 
@@ -24,20 +22,28 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
   const rarity = rarityView(card.rarity);
   const deadline = deadlineView(card, nowMs);
   return (
-    // Plan 11 §9 task cards: the title owns the card; rarity demotes to
-    // a compact left keyline (data-rarity) with its TEXT label in the
-    // metadata row (§4: color never carries rarity alone).
     <article className="task-card" data-rarity={rarity.rarity}>
-      <h3 className="task-card-title">
-        <Link href={`/tasks/${card.id}`}>{card.title}</Link>
-      </h3>
-      <p className="task-card-reward">基础 {card.base_reward_points} 积分</p>
+      <div className="task-card-head">
+        <h3 className="task-card-title">
+          <Link href={`/tasks/${card.id}`}>{card.title}</Link>
+        </h3>
+        <span className="task-card-rarity" data-rarity={rarity.rarity}>
+          {rarity.label}
+        </span>
+      </div>
+
+      <p className="task-card-reward">
+        <span>基础</span>
+        <strong>{card.base_reward_points}</strong>
+        <span className="task-card-reward-unit">积分</span>
+      </p>
+
       <div className="task-card-meta">
-        <span>{rarity.label}</span>
         <span suppressHydrationWarning>{deadline.line}</span>
         <span className="meta-num">{availabilityText(card.assignments_available)}</span>
         <span suppressHydrationWarning>{ratingText(card.rating)}</span>
       </div>
+
       {deadline.urgency === "near" ? (
         <span className="badge badge-warning">临近截止</span>
       ) : null}

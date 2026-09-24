@@ -96,6 +96,15 @@ export function InboxIcon(props: IconProps) {
   );
 }
 
+export function BellIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M5.5 8.5a4.5 4.5 0 0 1 9 0c0 4 1.5 4.7 1.5 4.7H4s1.5-.7 1.5-4.7Z" />
+      <path d="M8.2 15.2a2 2 0 0 0 3.6 0" />
+    </StrokeIcon>
+  );
+}
+
 export function MenuIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>
