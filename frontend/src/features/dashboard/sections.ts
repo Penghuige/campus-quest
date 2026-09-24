@@ -152,6 +152,73 @@ export function claimsSummaryView(claims: MyClaimDto[]): ClaimsSummaryView {
   };
 }
 
+// --- next-action hero ------------------------------------------------------------
+
+export interface NextActionView {
+  kind: "revision" | "active";
+  claimId: string;
+  taskTitle: string;
+  /**
+   * The active claim's server deadline (ISO). Revision claims carry no
+   * deadline in the /me/claims DTO yet — null there (the copy explains
+   * the state instead).
+   */
+  deadlineAt: string | null;
+}
+
+/**
+ * The dashboard hero's single "当前最重要" (brief §9: the next action
+ * should visually dominate). A teacher-returned revision outranks
+ * everything — someone is waiting on you; otherwise the earliest
+ * ISO-deadline open claim; null when the student holds no open work.
+ * Pure presentation choice over server statuses and deadlines.
+ */
+export function nextActionView(claims: MyClaimDto[]): NextActionView | null {
+  const { active, revision } = claimsSummaryView(claims);
+  if (revision.length > 0) {
+    const first = revision[0];
+    return {
+      kind: "revision",
+      claimId: first.claim_id,
+      taskTitle: first.task_title,
+      deadlineAt: null,
+    };
+  }
+  const withDeadline = active
+    .filter((claim) => typeof claim.deadline_at === "string")
+    .sort((a, b) =>
+      a.deadline_at.localeCompare(b.deadline_at),
+    );
+  const pick = withDeadline[0] ?? active[0] ?? null;
+  if (pick === null) {
+    return null;
+  }
+  return {
+    kind: "active",
+    claimId: pick.claim_id,
+    taskTitle: pick.task_title,
+    deadlineAt: pick.deadline_at ?? null,
+  };
+}
+
+/**
+ * Dashboard discovery dedup: hide cards the student already holds an
+ * OPEN claim on (the baseline audit showed the same task twice —
+ * once in 我的任务, again in 最新任务). Presentation-only filter over
+ * server data; the task square keeps the full listing.
+ */
+export function withoutClaimedTasks<T extends { id: string }>(
+  cards: T[],
+  claims: MyClaimDto[],
+): T[] {
+  const claimed = new Set(
+    claims
+      .filter((claim) => isActiveClaim(claim.status) || isRevisionClaim(claim.status))
+      .map((claim) => claim.task_id),
+  );
+  return cards.filter((card) => !claimed.has(card.id));
+}
+
 // --- monthly rank snapshot -----------------------------------------------------
 
 export interface RankSnapshotEntryView {
