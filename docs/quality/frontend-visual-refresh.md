@@ -137,12 +137,15 @@ Rules:
 For Student narrow view:
 
 - top bar: product mark + context + notification/avatar;
-- bottom navigation: 4–5 most-used destinations;
-- overflow / profile holds secondary destinations;
+- bottom navigation: fixed 5-slot contract (see the frozen navigation
+  contract in the implementation plan, Task 3 preconditions — normative);
+- overflow / profile holds secondary destinations (exact list frozen there);
 - important task action stays near thumb reach;
 - no horizontally wrapped desktop nav.
 
-Teacher/Admin mobile can remain simplified list-first rather than attempting full workstation parity.
+Teacher/Admin mobile is a simplified full-list menu sheet (hamburger),
+list-first content, no bottom navigation — exact behavior frozen in the
+same plan contract.
 
 ## 5. Color direction
 
@@ -394,7 +397,13 @@ Visual work MUST NOT change:
 - role/permission gates;
 - auth/token flows;
 - task/claim/submission state semantics;
-- data-testid values used by E2E unless tests are updated solely for structural DOM changes;
+- the E2E selector contract: before touching any screen, run the
+  selector-contract inventory in the implementation plan (Task 1b).
+  Behavior/accessibility contracts (roles, names, labels, accessible
+  dialogs, action copy that tests assert) are preserved as-is; a pure
+  structural locator may only be replaced by an equally strong locator,
+  and no business/privacy/RBAC assertion may be deleted or weakened to
+  fit a new DOM;
 - user-visible product wording unless the visual layout makes a small copy adjustment necessary.
 
 Preferred change order:
@@ -427,7 +436,24 @@ This keeps the later integration close to “CSS + shell + presentation composit
 
 ## 17. Visual acceptance checklist
 
-Before declaring the visual refresh complete, capture screenshots for:
+### 17.0 Evidence matrix (applies to every screenshot below)
+
+Before/after screenshots are only comparable when captured under the
+same fixed matrix. Every evidence capture (baseline in plan Task 1 and
+final pass in plan Task 11) uses:
+
+- **browser:** Chromium (canonical evidence pass; no cross-browser matrix required);
+- **viewports:** mobile `375x812` and desktop `1440x900`, both named explicitly in the artifact;
+- **world:** the seeded Plan 10 browser world (same fixtures, same
+  accounts, same operational state) for the *before* and the *after* of
+  a given screen — never two different application states;
+- **route + state:** each screenshot names the exact route and the
+  seeded account/state that produced it;
+- **time:** deadline/countdown/rank screens are captured under the e2e
+  harness's controlled clock (fixed server time), so urgency rendering
+  is deterministic rather than wall-clock dependent;
+- **motion:** one additional capture pass with `prefers-reduced-motion`
+  enabled; reduced-motion rendering must remain complete and legible.
 
 ### Student
 - dashboard desktop + 375x812;
@@ -478,4 +504,10 @@ The refresh is complete when:
 - no domain behavior changed;
 - E2E selectors remain stable or are deliberately updated;
 - typecheck/lint/unit/build/Playwright pass;
-- fresh `make release-gate` passes after the final visual commit.
+- fresh `make release-gate` passes after the final visual commit;
+- the accepted Plan 11 rules are folded back into the durable design
+  sources: `frontend-design-system.md` absorbs the token/surface/motion
+  grammar, `frontend-patterns.md` absorbs the new shell and page
+  archetypes, and this brief is then marked absorbed (historical) so no
+  future agent can follow repository instructions back into the old
+  visual grammar — the frontend equivalent of G17 merge-carry discipline.

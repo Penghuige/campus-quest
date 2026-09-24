@@ -24,10 +24,40 @@
 
 - [ ] Rebase onto latest main after PR #6 merges.
 - [ ] Run current app against seeded E2E world.
-- [ ] Capture baseline screenshots for the visual acceptance list.
+- [ ] Capture baseline screenshots for the visual acceptance list,
+      under the brief §17.0 evidence matrix (Chromium; 375x812 and
+      1440x900; same seeded world; named route/account/state; fixed
+      clock for deadline/countdown screens; one reduced-motion pass).
 - [ ] Record the 5 most visibly weak screens before changing code.
 
 Expected output: a short PR comment with baseline screenshots and the exact screens chosen for first-pass redesign.
+
+## Task 1b — Freeze the E2E selector contract
+
+The Plan 10 browser suite does not rely only on `data-testid`; it pins
+behavior through role/name/label selectors plus structural hooks. A
+visual shell rewrite is exactly where those locators move, so this task
+runs **after the Task 1 rebase and before any visual code (Task 2+)**:
+
+- [ ] Inventory every Plan 10 Playwright locator/assertion for each
+      screen the refresh will touch. Known structural hooks to start
+      from: `.task-card`, `.claim-panel`, `.deadline-line`,
+      `.page-head`, `.review-item`, `.review-pair`, `.review-tier`,
+      dialog ids / accessible labels, and exact action copy.
+- [ ] Classify each as **behavior/accessibility contract** (roles,
+      accessible names, labels, dialog semantics, asserted copy,
+      business/privacy/RBAC assertions) vs **pure structural locator**.
+- [ ] Record the inventory in the PR (comment or committed doc table)
+      so reviewers can diff against it.
+- [ ] Implementation rule: behavior/accessibility contracts are
+      preserved as-is; a pure structural locator may only be replaced
+      by an equally strong locator/assertion — never delete or weaken
+      a business/privacy/RBAC assertion to fit the new DOM.
+- [ ] Gate cadence: zero-skip Playwright after every major surface
+      batch (shell, Student milestone, Teacher, Admin, auth), and the
+      full fresh `make release-gate` after the shell, after the
+      Student milestone, after Teacher/Admin, and at the end — not
+      only once at the end.
 
 ## Task 2 — Refresh tokens and global visual rhythm
 
@@ -52,21 +82,58 @@ Acceptance:
 
 ## Task 3 — Build the navigation shell
 
-Work:
+### Frozen navigation contract (normative — no Agent discretion)
+
+Routes do not change; this contract freezes reachability and hierarchy.
+
+**Student desktop sidebar** (8 items, two groups):
+
+- primary: 首页 Home · 任务 Tasks · 我的任务 Claims · 排行榜 Ranking · 积分奖励 Rewards · 社区 Community
+- secondary (bottom of sidebar): 通知 Notifications · 我的 Profile
+
+**Student bottom navigation** (exactly 5 slots, narrow only):
+
+首页 Home · 任务 Tasks · 我的任务 Claims · 排行榜 Ranking · 我的 Profile
+
+**Overflow destinations** (reachable, not in bottom nav):
+
+- 通知 Notifications — top-bar bell with unread badge (always visible), plus Profile entry;
+- 积分奖励 Rewards — entry on the Profile screen;
+- 社区 Community — entry on the Profile screen.
+
+**Teacher/Admin narrow:** hamburger menu sheet containing the *full*
+staff navigation list (nothing is demoted beyond opening the sheet);
+content stays list/table-first; no bottom navigation.
+
+**Active state:** exactly one item per nav landmark carries
+`aria-current="page"`; its visual state (brand-tinted background +
+keyline) must be distinguishable from hover and from focus-visible.
+
+**Keyboard/focus:** nav items are real links in standard tab order;
+focus-visible ring ≥ 2px with AA contrast; the staff menu sheet traps
+focus and closes on Escape; the bottom nav is a `<nav>` landmark with
+plainly focusable links (no JS-only activation).
+
+**Safe-area rule:** the bottom nav's own padding includes
+`env(safe-area-inset-bottom)`; every page under the Student shell gets
+content `padding-bottom` ≥ (bottom-nav total height including inset) +
+16px, so the fixed nav can never cover a primary action.
+
+### Work
 
 - [ ] desktop sidebar;
 - [ ] shared route item primitive;
-- [ ] active/hover/focus states;
+- [ ] active/hover/focus states per the contract above;
 - [ ] top context/header grammar;
-- [ ] Student narrow bottom navigation;
-- [ ] Teacher/Admin narrow fallback.
+- [ ] Student narrow bottom navigation per the 5-slot contract;
+- [ ] Teacher/Admin narrow menu sheet per the contract.
 
 Constraints:
 
 - no route changes;
-- notification/profile actions remain reachable;
+- notification/profile actions remain reachable (per the overflow contract);
 - no hidden permission bypasses;
-- no E2E behavior changes.
+- no E2E behavior changes (Task 1b inventory governs selector moves).
 
 ## Task 4 — Student dashboard first-pass redesign
 
@@ -156,6 +223,12 @@ Optional: add one lightweight local illustration only if it clearly improves the
 
 ## Task 11 — Visual regression pass
 
+All captures use the brief §17.0 evidence matrix (Chromium; 375x812 +
+1440x900; the same seeded Plan 10 world used for the Task 1 baseline;
+named route/account/state; fixed clock for deadline/countdown screens;
+one reduced-motion pass). Before/after pairs must come from the same
+world and state.
+
 Required screenshots:
 
 - Student dashboard desktop/mobile;
@@ -187,6 +260,12 @@ Review each for:
 - [ ] production build;
 - [ ] Playwright;
 - [ ] fresh `make release-gate`;
-- [ ] PR screenshot comparison posted.
+- [ ] PR screenshot comparison posted;
+- [ ] **durable design-source migration:** fold every accepted Plan 11
+      rule back into `frontend-design-system.md` (token/surface/motion
+      grammar) and update `frontend-patterns.md` where the shell or
+      page archetypes changed; mark the refresh brief as absorbed so
+      `AGENTS.md`-directed agents cannot reintroduce the old visual
+      grammar (frontend G17 — no merge-carry documentation).
 
 Only then mark the visual-refresh PR Ready.
