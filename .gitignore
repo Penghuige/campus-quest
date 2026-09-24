@@ -19,6 +19,11 @@ next-env.d.ts
 *.tsbuildinfo
 npm-debug.log*
 
+# Playwright e2e run artifacts (reports, traces, videos, results)
+test-results/
+playwright-report/
+blob-report/
+
 # Environment / secrets
 .env
 .env.*
