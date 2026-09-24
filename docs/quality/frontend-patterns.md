@@ -170,45 +170,50 @@ For these, wait for authoritative server confirmation.
 
 ~~~text
 Page title / greeting
-┌ Requires attention ───────────────────────┐
-│ active claim / revision / deadline        │
-└───────────────────────────────────────────┘
-
+┌ 当前最重要 (next-action hero — the ONE dominant element) ┐
+│ revision > earliest-deadline claim > discovery CTA        │
+└───────────────────────────────────────────────────────────┘
 Points + next reward progress     Month rank
 Growth summary                    Around-me preview
 
-Available tasks
-Recent notifications
+Available tasks (deduped against open claims)
+Recent notifications preview
 ~~~
 
-Do not make six equal KPI cards the first screen.
+Do not make six equal KPI cards the first screen. The hero is the
+only page-level `--surface-brand` consumer (Plan 11).
 
 ### Task detail
 
 ~~~text
 title + rarity + rating
-description
-reward / deadline model / file requirements
-availability summary
-primary Claim action
+任务说明 / requirements          reward / deadline / availability
+                                [领取任务]
 community section
 ~~~
 
-Before claim, Assignment payloads are hidden.
+The decision information precedes the claim action (Plan 11 owner
+review P1): source order is the narrow reading order (title →
+description → facts → CTA); ≥48rem places the decision column beside
+the description. Before claim, Assignment payloads are hidden.
 
 ### Claim and Submission detail
 
 ~~~text
-task + assigned platform/keyword
+task title + status badge + five-step progress strip
+[revision banner FIRST when a revision is required]
+assignment identity panel (NEUTRAL surface — identity ≠ status)
 deadline + current backend reward
-status timeline
-upload/version area
+status timeline (the strip)
+upload/version area (one stateful workflow surface)
 validation report
 review/revision note
 secondary abandon action when allowed
 ~~~
 
-The validation report should prioritize errors first, then warnings, then successful checks.
+The neutral assignment panel and the progress strip are Plan 11
+rulings; the validation report should prioritize errors first, then
+warnings, then successful checks.
 
 ### Rankings
 

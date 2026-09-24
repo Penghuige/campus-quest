@@ -20,19 +20,29 @@ import {
   SectionHeading,
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
-import { useSection } from "@/components/ui/useSection";
+import { useSection, type SectionState } from "@/components/ui/useSection";
 import { listRewards, myWallet, type WalletDto } from "@/features/points/api";
 import { monthlyBoard, type BoardDto } from "@/features/rankings/api";
+import { listNotifications } from "@/features/notifications/api";
 import { formatDeadlineSummary, parseServerInstant } from "@/lib/time";
-import { listMyClaims, listTasks, type MyClaimDto } from "@/features/tasks/api";
+import {
+  listMyClaims,
+  listTasks,
+  type MyClaimDto,
+  type MyClaimsPageDto,
+  type TaskCardDto,
+} from "@/features/tasks/api";
 import { claimStatusView } from "@/features/tasks/display";
 import { TaskCard } from "@/features/tasks/TaskCard";
 import { useNow } from "@/features/tasks/useNow";
 
 import {
   claimsSummaryView,
+  nextActionView,
   rankSnapshotView,
   walletShelfView,
+  withoutClaimedTasks,
+  type NextActionView,
   type RewardsShelf,
 } from "./sections";
 
@@ -40,29 +50,107 @@ import {
  * (spec §8.2), so the first page of 10 always covers every open claim. */
 const CLAIMS_PAGE_LIMIT = 10;
 const TASKS_PREVIEW_LIMIT = 3;
+const NOTIFICATIONS_PREVIEW_LIMIT = 3;
 
 export function DashboardView() {
   const now = useNow(60_000);
+  // Claims feed BOTH the hero and the discovery dedup, so the fetch
+  // lives here (one request, one triad) instead of inside a section.
+  const claims = useSection(() => listMyClaims({ limit: CLAIMS_PAGE_LIMIT }));
 
   return (
     <>
-      <ClaimsSection now={now} />
+      <HeroSection state={claims.state} retry={claims.retry} now={now} />
       <div className="dashboard-columns">
         <PointsProgressSection />
         <RankSection />
       </div>
-      <TasksPreviewSection now={now} />
+      <ClaimsSection state={claims.state} retry={claims.retry} now={now} />
+      <TasksPreviewSection
+        now={now}
+        claims={claims.state.status === "ready" ? claims.state.data.items : []}
+      />
+      <NotificationsPreviewSection />
     </>
   );
 }
 
-// --- 进行中 / 待修改 claims ------------------------------------------------------
+// --- hero: the one "当前最重要" next action ---------------------------------------
 
-function ClaimsSection({ now }: { now: number }) {
-  const { state, retry } = useSection(() =>
-    listMyClaims({ limit: CLAIMS_PAGE_LIMIT }),
+function HeroSection({
+  state,
+  retry,
+  now,
+}: {
+  state: SectionState<MyClaimsPageDto>;
+  retry: () => void;
+  now: number;
+}) {
+  if (state.status === "loading") {
+    return (
+      <section className="hero hero-loading" aria-label="当前最重要" aria-busy="true">
+        <span className="skeleton skeleton-line" style={{ width: "30%" }} />
+        <span className="skeleton skeleton-line" style={{ width: "55%" }} />
+        <span className="skeleton skeleton-line" data-width="narrow" />
+      </section>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <section className="hero" aria-label="当前最重要">
+        <SectionError error={state.error} onRetry={retry} />
+      </section>
+    );
+  }
+  const next = nextActionView(state.data.items);
+  if (next === null) {
+    return (
+      <section className="hero" aria-label="当前最重要">
+        <p className="hero-eyebrow">开始今天的学习</p>
+        <h2 className="hero-title">领取第一个任务，开始攒积分</h2>
+        <p className="hero-line">完成任务获得积分，兑换你想要的奖励</p>
+        <Link className="btn btn-primary hero-cta" href="/tasks">
+          浏览任务
+        </Link>
+      </section>
+    );
+  }
+  return <HeroAction next={next} now={now} />;
+}
+
+function HeroAction({ next, now }: { next: NextActionView; now: number }) {
+  return (
+    <section className="hero" aria-label="当前最重要">
+      <p className="hero-eyebrow">
+        {next.kind === "revision" ? "老师退回修改，奖励档位已保留" : "进行中 · 最早截止"}
+      </p>
+      <h2 className="hero-title">{next.taskTitle}</h2>
+      {next.kind === "active" && next.deadlineAt !== null ? (
+        <p className="hero-line" suppressHydrationWarning>
+          截止 {formatDeadlineSummary(parseServerInstant(next.deadlineAt), now)}
+        </p>
+      ) : null}
+      <Link
+        className="btn btn-primary hero-cta"
+        href={`/claims/${next.claimId}`}
+      >
+        {next.kind === "revision" ? "去修改提交" : "继续提交"}
+      </Link>
+    </section>
   );
+}
 
+// --- 进行中 / 待修改 claims（hero 之后剩余的行）----------------------------------
+
+function ClaimsSection({
+  state,
+  retry,
+  now,
+}: {
+  state: SectionState<MyClaimsPageDto>;
+  retry: () => void;
+  now: number;
+}) {
   return (
     <section className="section" aria-label="我的任务">
       <SectionHeading title="我的任务" />
@@ -78,12 +166,16 @@ function ClaimsSection({ now }: { now: number }) {
 }
 
 function ClaimsBody({ claims, now }: { claims: MyClaimDto[]; now: number }) {
-  const { active, revision } = claimsSummaryView(claims);
-  if (active.length === 0 && revision.length === 0) {
+  const hero = nextActionView(claims);
+  // The hero already carries the most urgent claim; the rows show the rest.
+  const rest = claims.filter(
+    (claim) => hero === null || claim.claim_id !== hero.claimId,
+  );
+  if (rest.length === 0) {
     return (
       <EmptyState
-        title="暂无进行中的任务"
-        hint="去任务广场看看，领取第一个任务开始攒积分"
+        title="没有其他进行中的任务"
+        hint="去任务广场看看还有什么可领取的"
       >
         <Link className="link" href="/tasks">
           浏览任务
@@ -91,6 +183,7 @@ function ClaimsBody({ claims, now }: { claims: MyClaimDto[]; now: number }) {
       </EmptyState>
     );
   }
+  const { active, revision } = claimsSummaryView(rest);
   return (
     <div className="claim-rows">
       {revision.map((claim) => (
@@ -298,9 +391,15 @@ function RankBody({ board }: { board: BoardDto }) {
   );
 }
 
-// --- task discovery preview --------------------------------------------------------
+// --- task discovery preview (deduped vs open claims) -------------------------------
 
-function TasksPreviewSection({ now }: { now: number }) {
+function TasksPreviewSection({
+  now,
+  claims,
+}: {
+  now: number;
+  claims: MyClaimDto[];
+}) {
   const { state, retry } = useSection(() =>
     listTasks({ limit: TASKS_PREVIEW_LIMIT }),
   );
@@ -326,10 +425,82 @@ function TasksPreviewSection({ now }: { now: number }) {
             hint="老师还没有发布可领取的任务，稍后再来看看"
           />
         ) : (
-          <ul className="task-grid">
-            {state.data.items.map((card) => (
-              <li key={card.id}>
-                <TaskCard card={card} nowMs={now} />
+          <TaskPreviewBody cards={state.data.items} claims={claims} now={now} />
+        )
+      ) : null}
+    </section>
+  );
+}
+
+function TaskPreviewBody({
+  cards,
+  claims,
+  now,
+}: {
+  cards: TaskCardDto[];
+  claims: MyClaimDto[];
+  now: number;
+}) {
+  // Dedup rides ONLY the ready claims (a loading claims section shows
+  // the raw cards rather than a duplicate-free guess).
+  const deduped = withoutClaimedTasks(cards, claims);
+  if (deduped.length === 0) {
+    return (
+      <EmptyState
+        title="最新任务都在你手上"
+        hint="你已领取了最新发布的任务，去任务广场看看其他机会"
+      >
+        <Link className="link" href="/tasks">
+          浏览全部任务
+        </Link>
+      </EmptyState>
+    );
+  }
+  return (
+    <ul className="task-grid">
+      {deduped.map((card) => (
+        <li key={card.id}>
+          <TaskCard card={card} nowMs={now} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// --- recent notifications preview --------------------------------------------------
+
+function NotificationsPreviewSection() {
+  const { state, retry } = useSection(() =>
+    listNotifications({ limit: NOTIFICATIONS_PREVIEW_LIMIT }),
+  );
+
+  return (
+    <section className="section" aria-label="最近通知">
+      <SectionHeading
+        title="最近通知"
+        action={
+          <Link className="link section-link" href="/notifications">
+            查看全部
+          </Link>
+        }
+      />
+      {state.status === "loading" ? <SectionSkeleton lines={3} /> : null}
+      {state.status === "error" ? (
+        <SectionError error={state.error} onRetry={retry} />
+      ) : null}
+      {state.status === "ready" ? (
+        state.data.items.length === 0 ? (
+          <EmptyState title="暂无通知" hint="任务与审核的进展会出现在这里" />
+        ) : (
+          <ul className="dash-notes">
+            {state.data.items.map((item) => (
+              <li key={item.id} className="dash-note" data-unread={item.read_at === null}>
+                <Link className="dash-note-link" href="/notifications">
+                  <span className="dash-note-title">{item.title}</span>
+                  <span className="dash-note-time" suppressHydrationWarning>
+                    {formatRelativeHint(item.created_at)}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -337,4 +508,16 @@ function TasksPreviewSection({ now }: { now: number }) {
       ) : null}
     </section>
   );
+}
+
+/** Coarse relative hint for preview rows (the inbox page owns precise formatting). */
+function formatRelativeHint(iso: string): string {
+  const minutes = Math.round((Date.now() - parseServerInstant(iso)) / 60_000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return "更早";
 }

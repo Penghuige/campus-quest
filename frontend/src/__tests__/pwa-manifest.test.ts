@@ -40,7 +40,9 @@ describe("oklchToHex (reference OKLab -> sRGB pipeline)", () => {
 
   test("the design tokens convert to their pinned sRGB values", () => {
     assert.equal(oklchToHex(DESIGN_TOKENS.primary), "#2a67bd");
-    assert.equal(oklchToHex(DESIGN_TOKENS.background), "#f5f7f9");
+    // Plan 11 §5: the page ground warmed from the V1 blue-grey paper
+    // (oklch 97.5% 0.004 250 -> #f5f7f9) to warm-neutral oklch 97.4% 0.005 90.
+    assert.equal(oklchToHex(DESIGN_TOKENS.background), "#f8f6f3");
   });
 
   test("anything outside the token grammar is a RangeError, not a guess", () => {

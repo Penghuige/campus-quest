@@ -15,19 +15,51 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { BottomNav } from "@/components/shell/BottomNav";
+import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
+import { GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 
-const NAV_ITEMS = [
+/* Plan 11 Task 3 — the frozen navigation contract (route-true
+ * amendment): desktop sidebar primary + secondary, narrow bottom nav.
+ * 我的任务 stays anchored on the dashboard (its only list surface);
+ * 社区 stays anchored on task detail — V1 has neither route. */
+const SIDEBAR_PRIMARY = [
+  { href: "/", label: "首页", icon: <HomeIcon /> },
+  { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
+  { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
+] as const;
+
+const SIDEBAR_SECONDARY = [
+  { href: "/notifications", label: "通知", icon: <InboxIcon /> },
+  { href: "/profile", label: "我的", icon: <UserIcon /> },
+] as const;
+
+const SIDEBAR_GROUPS = [
+  { label: "主导航", items: SIDEBAR_PRIMARY },
+  { label: "个人", items: SIDEBAR_SECONDARY },
+] as const;
+
+/* Medium band (40–64rem): the horizontal top nav keeps every
+ * destination — no reachability is lost between sidebar and bottom. */
+const MEDIUM_NAV = [
   { href: "/", label: "首页" },
   { href: "/tasks", label: "任务" },
   { href: "/rankings", label: "排行榜" },
   { href: "/rewards", label: "奖励" },
   { href: "/notifications", label: "通知" },
   { href: "/profile", label: "我的" },
-  // My Claims lands with its own S4 task — append here as the route
-  // appears (design §8).
+] as const;
+
+const BOTTOM_NAV = [
+  { href: "/", label: "首页", icon: <HomeIcon /> },
+  { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
+  { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
+  { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
 
 export function StudentShell({ children }: { children: ReactNode }) {
@@ -125,29 +157,36 @@ export function StudentShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="app-topbar">
-        <div className="app-topbar-inner">
-          <span className="app-brand">CampusQuest</span>
-          <nav className="app-nav" aria-label="主导航">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={pathname === item.href ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="app-topbar-actions">
-            <NotificationBell />
-            <span className="app-user" title={state.me.nickname}>
-              {state.me.nickname}
-            </span>
+      <WorkspaceSidebar
+        brand={{ href: "/", label: "CampusQuest" }}
+        groups={SIDEBAR_GROUPS}
+      />
+      <div className="app-body">
+        <header className="app-topbar">
+          <div className="app-topbar-inner">
+            <span className="app-brand">CampusQuest</span>
+            <nav className="app-nav" aria-label="主导航">
+              {MEDIUM_NAV.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <div className="app-topbar-actions">
+              <NotificationBell />
+              <span className="app-user" title={state.me.nickname}>
+                {state.me.nickname}
+              </span>
+            </div>
           </div>
-        </div>
-      </header>
-      <main className="app-main">{children}</main>
+        </header>
+        <main className="app-main">{children}</main>
+      </div>
+      <BottomNav items={BOTTOM_NAV} />
     </div>
   );
 }

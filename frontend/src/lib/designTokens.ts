@@ -25,7 +25,7 @@ export const DESIGN_TOKENS = {
   /** `--primary` — the one clear accent; PWA theme_color. */
   primary: "oklch(52% 0.15 258)",
   /** `--background` — large page background; PWA background_color. */
-  background: "oklch(97.5% 0.004 250)",
+  background: "oklch(97.4% 0.005 90)",
 } as const;
 
 /** Matches `oklch(<L>% <C> <H>)` with one optional leading `+`/`-` on H. */

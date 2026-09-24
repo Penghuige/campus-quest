@@ -39,10 +39,12 @@ Recommended token groups:
 
 ~~~text
 surface:
-  background
+  background          (warm-neutral near-white, Plan 11)
   surface-1
   surface-2
-  overlay
+  surface-brand       (the ONE soft brand wash: hero/progress emphasis
+                       only — never a page background)
+  overlay / overlay-scrim
 
 text:
   foreground
@@ -51,7 +53,7 @@ text:
   inverse-foreground
 
 border:
-  border
+  border              (soft; background contrast carries hierarchy first)
   border-strong
   focus-ring
 
@@ -76,7 +78,12 @@ shape:
 shadow:
   shadow-xs
   shadow-sm
-  shadow-dialog
+  shadow-raised        (the one lifted level: dialog/popover/hero objects)
+
+motion:
+  duration-fast / duration-slow
+  ease-standard
+  lift-hover           (the 1–2px hover lift interactive cards may take)
 ~~~
 
 Prefer OKLCH-compatible theme variables when the selected Tailwind and shadcn setup supports them.
@@ -169,13 +176,33 @@ Use elevation sparingly:
 
 ## 8. Page shells
 
+### Navigation shell (Plan 11: three bands)
+
+All authenticated workspaces share one navigation geometry, three
+bands by viewport:
+
+- **Wide (≥64rem)**: a visually QUIET sidebar owns the primary
+  navigation (surface step down, muted links, brand-tinted active
+  state with an inset keyline; exactly one `aria-current="page"` per
+  nav landmark); the top bar degrades to a context/actions strip
+  (bell, user — no nav, no brand).
+- **Medium (40–64rem)**: the horizontal top nav keeps every
+  destination.
+- **Narrow (<40rem)**: Student gets a fixed 5-slot bottom nav with
+  safe-area inset and reserved content bottom padding (the fixed bar
+  never covers a primary action); Teacher/Admin get a hamburger menu
+  sheet carrying the FULL staff list (native dialog semantics: focus
+  trap, Escape, backdrop close).
+
+Routes never change with the band; reachability does not either.
+
 ### Student
 
 Primary navigation should make these easy to reach:
 
 - Home
 - Tasks
-- My Claims
+- My Claims (anchored on the dashboard in V1 — no /claims index route)
 - Rankings
 - Rewards
 - Notifications
@@ -190,6 +217,11 @@ Dashboard priorities:
 5. task discovery.
 
 Do not make the Student home a wall of equal-sized metric cards.
+Plan 11 realizes this as ONE next-action hero (the single dominant
+element, and the only page-level `--surface-brand` consumer): a
+teacher-returned revision outranks everything, else the
+earliest-deadline open claim, else a discovery CTA. Discovery cards
+dedupe against the student's open claims.
 
 ### Teacher
 
@@ -226,6 +258,10 @@ Use a clear hierarchy:
 - Ghost: lightweight toolbar action.
 - Destructive: destructive intent only.
 
+A button is a button whatever the element: link-styled buttons
+(`<Link className="btn">`) never render the anchor underline; inline
+prose links (`.link`) keep theirs.
+
 Avoid two adjacent primary buttons competing for attention.
 
 Icon-only buttons require accessible labels and, where helpful, tooltips.
@@ -246,6 +282,23 @@ Poor uses:
 - wrapping every section inside another card;
 - turning every desktop table row into a large card;
 - one card per label/value pair.
+
+Plan 11 task cards: the title owns the card; rarity is a compact
+LEFT KEYLINE (`data-rarity` border color — quiet for NORMAL) with
+its TEXT label in the metadata row; color never carries rarity
+alone. Interactive cards may take the 1px hover lift
+(`--lift-hover`, reduced-motion safe).
+
+### Identity vs status (Plan 11 core rule)
+
+Assignment identity (platform / keyword / claim time) is NEVER drawn
+in a semantic tone: `.claim-panel` renders on the neutral
+`--surface-brand` surface with a neutral border in every state.
+Workflow status lives only on the status badge, the five-step
+progress strip (领取 → 提交 → 校验 → 审核 → 完成; current strong,
+done quiet, future subtle; non-linear terminals render no strip),
+and the alerts. When a revision is required, the revision banner
+precedes the assignment facts and owns the visual priority.
 
 ### Tables
 

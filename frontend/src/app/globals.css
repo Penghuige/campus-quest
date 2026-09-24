@@ -15,21 +15,26 @@
  */
 
 :root {
-  /* surface */
-  --background: oklch(97.5% 0.004 250);
+  /* surface — Plan 11 §5: warm-neutral ground (less blue-grey than the
+     V1 hue-250 paper); surfaces carry hierarchy, borders stay quiet. */
+  --background: oklch(97.4% 0.005 90);
   --surface-1: oklch(100% 0 0);
-  --surface-2: oklch(96% 0.005 250);
-  --overlay: oklch(98% 0.004 250);
+  --surface-2: oklch(96.2% 0.006 90);
+  --overlay: oklch(98% 0.004 90);
+  /* Brand wash (§5 "one soft brand wash token"): the ONLY page-level
+     tint the refresh allows — hero/progress emphasis, never a page bg. */
+  --surface-brand: oklch(96.6% 0.024 255);
 
-  /* text */
-  --foreground: oklch(26% 0.02 260);
-  --muted-foreground: oklch(50% 0.02 260);
-  --subtle-foreground: oklch(60% 0.015 260);
-  --inverse-foreground: oklch(98% 0.004 250);
+  /* text — hues aligned to the warm ground; near-neutral by design. */
+  --foreground: oklch(26% 0.015 75);
+  --muted-foreground: oklch(50% 0.015 75);
+  --subtle-foreground: oklch(60% 0.012 75);
+  --inverse-foreground: oklch(98.5% 0.004 90);
 
-  /* border */
-  --border: oklch(90% 0.008 260);
-  --border-strong: oklch(78% 0.012 260);
+  /* border — softer than V1 (§7: background contrast before border;
+     only interactive/selected states earn stronger keylines). */
+  --border: oklch(91.5% 0.007 90);
+  --border-strong: oklch(82% 0.01 90);
   --focus-ring: oklch(52% 0.15 258);
 
   /* semantic */
@@ -45,14 +50,19 @@
   --danger-muted: oklch(96.5% 0.025 27);
   --info: oklch(52% 0.12 240);
 
-  /* shape */
+  /* shape — §7: slightly rounder large panels; pills stay a badge-only
+     shape (999px inline where used). */
   --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
 
-  /* shadow (elevation is secondary to border + surface; §7) */
-  --shadow-xs: 0 1px 2px oklch(26% 0.02 260 / 0.06);
-  --shadow-sm: 0 1px 3px oklch(26% 0.02 260 / 0.1), 0 1px 2px oklch(26% 0.02 260 / 0.06);
+  /* shadow (elevation is secondary to border + surface; §7) — one
+     raised level for dialog/popover/hero objects (§5 surface-raised). */
+  --shadow-xs: 0 1px 2px oklch(26% 0.015 75 / 0.05);
+  --shadow-sm: 0 1px 2px oklch(26% 0.015 75 / 0.05),
+    0 2px 6px oklch(26% 0.015 75 / 0.07);
+  --shadow-raised: 0 1px 2px oklch(26% 0.015 75 / 0.04),
+    0 4px 12px oklch(26% 0.015 75 / 0.07);
 
   /* spacing scale (few values, consistently reused; §6) */
   --space-1: 0.25rem;
@@ -72,8 +82,12 @@
   --text-base: 1rem;
   --text-lg: 1.375rem;
   /* Icon glyphs (T6 fold): the star picker's 1.5rem star joins the scale
-     instead of a one-off literal (§3 token-first). */
+     instead of a one-off literal (§3 token-first). Doubles as the page
+     title step (Plan 11 §6: page title slightly larger and stronger). */
   --text-xl: 1.5rem;
+  /* Display/hero (Plan 11 §6): rare — the Student dashboard's
+     next-action hero is the only planned consumer. */
+  --text-2xl: 1.875rem;
 
   /* rarity accents (§4: restrained, recognizable; accent ONLY — never a
      page-wide background, and the text label always renders alongside).
@@ -92,6 +106,15 @@
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
     sans-serif;
   --duration-fast: 150ms;
+  /* Plan 11 §14 motion contract: 120–180ms surface/opacity/transform
+     transitions; --lift-hover is the 1–2px hover lift interactive cards
+     may take. Everything obeys prefers-reduced-motion (see base). */
+  --duration-slow: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --lift-hover: -1px;
+
+  /* Modal scrim: foreground-tinted translucency (dialog/popover only). */
+  --overlay-scrim: oklch(26% 0.015 75 / 0.3);
 }
 
 /* --- base ----------------------------------------------------------------- */
@@ -271,6 +294,9 @@ body {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
+  /* Buttons are buttons even when they are links (hero CTA, shell
+     CTAs): never the anchor underline, whatever the element. */
+  text-decoration: none;
   transition:
     background-color var(--duration-fast) ease,
     border-color var(--duration-fast) ease;
@@ -573,6 +599,312 @@ body {
   }
 }
 
+/* --- Plan 11 Task 3: three-band navigation shell (brief §4) ------------------
+ *
+ * Wide (≥64rem): quiet sidebar owns the primary navigation; the top
+ * bar degrades to a context/actions strip. Medium (40–64rem): the
+ * horizontal top nav keeps every destination. Narrow (<40rem): the
+ * student bottom nav (5 fixed slots) or the staff menu sheet.
+ *
+ * The :has guard keeps the sidebar-less gate/loading/anonymous shell
+ * branches single-column — they never render the grid. */
+
+.app-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Sidebar hidden below the wide band; the other bands own navigation. */
+.app-sidebar {
+  display: none;
+}
+
+.app-bottomnav,
+.app-menubtn {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .app-shell:has(> .app-sidebar) {
+    display: grid;
+    grid-template-columns: 14.5rem minmax(0, 1fr);
+  }
+
+  .app-shell:has(> .app-sidebar) > .app-body {
+    grid-column: 2;
+  }
+
+  .app-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    padding: var(--space-5) var(--space-3);
+    background: color-mix(in oklab, var(--background) 55%, var(--surface-1));
+    border-right: 1px solid var(--border);
+    /* Quieter than the content: no shadow, muted links (§4.1). */
+  }
+
+  /* The top bar keeps context + actions only — brand and nav live in
+     the sidebar, so they step out of the strip. Scoped to shells that
+     actually render the sidebar (the gate/loading branches keep theirs). */
+  .app-shell:has(> .app-sidebar) .app-topbar .app-nav,
+  .app-shell:has(> .app-sidebar) .app-topbar .app-brand {
+    display: none;
+  }
+}
+
+.app-sidebar-brand {
+  padding: 0 var(--space-2);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.side-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.side-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.side-nav a:hover {
+  background: var(--surface-1);
+  color: var(--foreground);
+}
+
+/* Frozen contract: brand-tinted background + keyline, distinguishable
+   from hover and from focus-visible. */
+.side-nav a[aria-current="page"] {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 9%, var(--surface-1));
+  box-shadow: inset 2px 0 0 var(--primary);
+  font-weight: 600;
+}
+
+.side-nav a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.side-nav svg {
+  flex: none;
+}
+
+.app-sidebar-footer {
+  margin-top: auto;
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+}
+
+/* --- claim progress strip (Plan 11 §9: the state machine visible) -------------
+ *
+ * Horizontal five-step strip: current step strong (primary dot + bold),
+ * done steps quiet (primary-tinted dot + muted text), future subtle
+ * (hollow dot + subtle text). Connectors ride ::before on every step
+ * except the first, colored by whether the PREVIOUS step completed. */
+
+.claim-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Connector: a quiet line before every step but the first. */
+.claim-step::before {
+  content: "";
+  width: var(--space-4);
+  height: 2px;
+  margin-right: var(--space-1);
+  background: var(--border);
+}
+
+.claim-step:first-child::before {
+  display: none;
+}
+
+/* A completed step's incoming connector is filled. */
+.claim-step[data-state="done"]::before,
+.claim-step[data-state="current"]::before {
+  background: color-mix(in oklab, var(--primary) 45%, var(--border));
+}
+
+.claim-step-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-1);
+}
+
+.claim-step[data-state="done"] .claim-step-dot {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--surface-1));
+  background: color-mix(in oklab, var(--primary) 35%, var(--surface-1));
+}
+
+.claim-step[data-state="current"] .claim-step-dot {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.claim-step-label {
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+}
+
+.claim-step[data-state="done"] .claim-step-label {
+  color: var(--muted-foreground);
+}
+
+.claim-step[data-state="current"] .claim-step-label {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+@media (max-width: 26rem) {
+  /* Narrow: connectors shrink instead of the labels wrapping. */
+  .claim-step::before {
+    width: var(--space-2);
+  }
+}
+
+/* --- student bottom navigation (narrow band; frozen 5-slot contract) -------- */
+
+@media (max-width: 40rem) {
+  .app-bottomnav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--surface-1);
+    border-top: 1px solid var(--border);
+    /* Safe-area rule (frozen contract): the nav's own padding includes
+       the inset, and the main content's bottom padding below clears
+       the nav's full height — the fixed bar never covers an action. */
+    padding: var(--space-1) var(--space-2)
+      calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-bottomnav a {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-height: 3rem;
+    padding: var(--space-1) var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--muted-foreground);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .app-bottomnav a[aria-current="page"] {
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .app-bottomnav a:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* Bottom band: the horizontal top nav and staff menu button trade
+     places with the band's own navigation surfaces. */
+  .app-topbar .app-nav {
+    display: none;
+  }
+
+  .app-menubtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  /* The content reservation the contract requires: nav height (3rem
+     items + padding ≈ 4rem) + inset + 16px breathing room. */
+  .app-main {
+    padding-bottom: calc(
+      4rem + env(safe-area-inset-bottom, 0px) + var(--space-4)
+    );
+  }
+}
+
+/* --- staff menu sheet (narrow band; full navigation list) -------------------- */
+
+.app-menusheet {
+  width: min(18rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.app-menusheet-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.app-menusheet-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: var(--text-md);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.app-menusheet-nav a:hover {
+  background: var(--surface-2);
+}
+
+.app-menusheet-nav a[aria-current="page"] {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 9%, var(--surface-1));
+  font-weight: 600;
+}
+
 .page-head {
   display: grid;
   gap: var(--space-1);
@@ -580,9 +912,11 @@ body {
 
 .page-title {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  /* Plan 11 §6: page title steps up to the xl rung — larger, stronger,
+     tighter; section titles keep the md rung so pages regain hierarchy. */
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 .page-subtitle {
@@ -621,6 +955,110 @@ body {
   gap: var(--space-4);
   grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
   align-content: start;
+}
+
+/* --- next-action hero (brief §9: the ONE dominant element; §5: the
+   only page-level brand wash allowed) -------------------------------------- */
+
+.hero {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding: var(--space-5) var(--space-4);
+  background: var(--surface-brand);
+  border-radius: var(--radius-lg);
+}
+
+.hero-loading {
+  min-height: 9.5rem;
+  align-content: center;
+}
+
+.hero-eyebrow {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.hero-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.hero-line {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-cta {
+  margin-top: var(--space-1);
+}
+
+/* --- recent-notifications preview rows -------------------------------------- */
+
+.dash-notes {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dash-note-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+
+.dash-note-link:hover {
+  background: var(--surface-2);
+}
+
+.dash-note-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.dash-note[data-unread="true"] .dash-note-title {
+  font-weight: 650;
+}
+
+/* The unread dot: non-color cue is the weight; the dot supplements it. */
+.dash-note[data-unread="true"] .dash-note-title::before {
+  content: "";
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--primary);
+  vertical-align: middle;
+}
+
+.dash-note-title {
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.dash-note-time {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 .panel {
@@ -775,6 +1213,11 @@ body {
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
   align-content: start;
+  /* Cards are grid children, not list items: no disc markers leaking
+     outside the cards (the baseline audit's leaked-bullet bug). */
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 /* Narrow viewport: single column, comfortable tappable cards (§13). */
@@ -792,12 +1235,44 @@ body {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  transition: border-color var(--duration-fast) ease;
+  /* Plan 11 §9: compact rarity keyline (NORMAL stays quiet — the label
+     in the metadata row always carries rarity semantics; §4). */
+  border-left: 3px solid var(--border-strong);
+  /* Plan 11 §14: the 1px hover lift + keyline change interactive cards
+     take; transform/opacity only (cheap, reduced-motion safe). */
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.task-card[data-rarity="RARE"] {
+  border-left-color: var(--rarity-rare);
+}
+
+.task-card[data-rarity="EPIC"] {
+  border-left-color: var(--rarity-epic);
+}
+
+.task-card[data-rarity="LEGENDARY"] {
+  border-left-color: var(--rarity-legendary);
 }
 
 .task-card:hover,
 .task-card:focus-within {
   border-color: var(--border-strong);
+  transform: translateY(var(--lift-hover));
+  box-shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card {
+    transition: none;
+  }
+  .task-card:hover,
+  .task-card:focus-within {
+    transform: none;
+  }
 }
 
 .task-card-top {
@@ -861,6 +1336,42 @@ body {
   gap: var(--space-5);
   max-width: 42rem;
   align-content: start;
+}
+
+/* Plan 11 mid-pass review P1: description before decision. Narrow keeps
+   the source order (说明 → 事实 → CTA); wide puts the decision column
+   (facts + claim action) beside the description. */
+.task-detail-body {
+  display: grid;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.task-decision {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: stretch;
+}
+
+@media (min-width: 48rem) {
+  .task-detail {
+    max-width: 56rem;
+  }
+
+  .task-detail-body {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+  }
+
+  .task-detail-body .task-description-block,
+  .task-detail-body .section {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .task-decision {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 
 .task-detail-title {
@@ -930,14 +1441,16 @@ body {
   font-weight: 550;
 }
 
-/* After-allocation panel — the ONLY student surface that shows the assigned
-   platform/keyword (spec §42); success tone, structured facts inside. */
+/* The assignment identity panel — platform/keyword/claim-time are
+   NEUTRAL facts (Plan 11 mid-pass review P1: identity is not workflow
+   status; the success tone lives only in the allocation status copy
+   and the state badge/timeline, never on this surface). */
 .claim-panel {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: var(--success-muted);
-  border: 1px solid var(--success);
+  background: var(--surface-brand);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 
@@ -1331,8 +1844,8 @@ body {
 /* Dialogs get the one stronger elevation (design §7); the shadow token
    joins the shared contract (§3 token-first). */
 :root {
-  --shadow-dialog: 0 10px 30px oklch(26% 0.02 260 / 0.16),
-    0 2px 8px oklch(26% 0.02 260 / 0.08);
+  --shadow-dialog: 0 12px 32px oklch(26% 0.015 75 / 0.14),
+    0 2px 8px oklch(26% 0.015 75 / 0.07);
 }
 
 /* Reward shelf grid + card (§8 card archetype; token-only values). */
@@ -1408,7 +1921,7 @@ body {
 }
 
 .dialog::backdrop {
-  background: oklch(26% 0.02 260 / 0.32);
+  background: var(--overlay-scrim);
 }
 
 .dialog-body {

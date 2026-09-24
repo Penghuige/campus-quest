@@ -38,6 +38,7 @@ import {
 import { useNow } from "@/features/tasks/useNow";
 
 import { describeSubmissionError } from "./submissionErrors";
+import { ClaimSteps } from "./ClaimSteps";
 import { RewardStatus } from "./RewardStatus";
 import { UploadPanel } from "./UploadPanel";
 
@@ -247,7 +248,13 @@ function ClaimDetailReady({
             <span className="badge badge-danger">已截止</span>
           ) : null}
         </div>
+        <ClaimSteps status={claim.status} />
       </div>
+
+      {/* Plan 11 mid-pass review P1: when a revision is required, the
+          revision context comes FIRST and owns the visual priority —
+          the neutral assignment facts follow, not the reverse. */}
+      {revision ? <RevisionBanner /> : null}
 
       <section className="claim-panel" aria-label="分配给你的任务单元">
         <h2 className="claim-panel-title">分配给你的任务单元</h2>
@@ -274,8 +281,6 @@ function ClaimDetailReady({
           超过截止时间后至 {formatDeadlineDateTime(graceMs)} 仍可提交，积分按实际提交时间结算。
         </p>
       </section>
-
-      {revision ? <RevisionBanner /> : null}
 
       <RewardStatus claim={claim} nowMs={nowMs} />
 

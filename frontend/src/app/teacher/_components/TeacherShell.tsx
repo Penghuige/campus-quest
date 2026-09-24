@@ -20,13 +20,21 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
+import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
+import { ReviewIcon, TasksIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { teacherWorkspaceGate } from "@/features/auth/workspace";
 
+/* Plan 11 Task 3: the shared sidebar geometry (frozen contract);
+ * per-task surfaces (import, statistics, community moderation) hang
+ * off the task detail, so no separate nav entries exist for them. */
 const NAV_ITEMS = [
-  { href: "/teacher/reviews", label: "审核队列" },
-  { href: "/teacher/tasks", label: "任务管理" },
+  { href: "/teacher/reviews", label: "审核队列", icon: <ReviewIcon /> },
+  { href: "/teacher/tasks", label: "任务管理", icon: <TasksIcon /> },
 ] as const;
+
+const SIDEBAR_GROUPS = [{ label: "教师工作台", items: NAV_ITEMS }] as const;
 
 export function TeacherShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
@@ -119,31 +127,38 @@ export function TeacherShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="app-topbar">
-        <div className="app-topbar-inner">
-          <span className="app-brand">CampusQuest</span>
-          <nav className="app-nav" aria-label="教师工作台导航">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="app-topbar-actions">
-            <span className="app-user" title={state.me.nickname}>
-              {state.me.nickname}
-              <span className="staff-role-tag">
-                {state.me.role === "ADMIN" ? "管理员" : "教师"}
+      <WorkspaceSidebar
+        brand={{ href: "/teacher/reviews", label: "CampusQuest" }}
+        groups={SIDEBAR_GROUPS}
+      />
+      <div className="app-body">
+        <header className="app-topbar">
+          <div className="app-topbar-inner">
+            <span className="app-brand">CampusQuest</span>
+            <nav className="app-nav" aria-label="教师工作台导航">
+              {NAV_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <div className="app-topbar-actions">
+              <span className="app-user" title={state.me.nickname}>
+                {state.me.nickname}
+                <span className="staff-role-tag">
+                  {state.me.role === "ADMIN" ? "管理员" : "教师"}
+                </span>
               </span>
-            </span>
+              <StaffMenuSheet label="教师工作台菜单" items={NAV_ITEMS} />
+            </div>
           </div>
-        </div>
-      </header>
-      <main className="app-main">{children}</main>
+        </header>
+        <main className="app-main">{children}</main>
+      </div>
     </div>
   );
 }

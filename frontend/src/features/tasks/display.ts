@@ -159,6 +159,65 @@ export function isRevisionClaim(status: string): boolean {
   return status === "REVISION_REQUIRED";
 }
 
+// --- claim progress timeline (Plan 11 brief §9: the state machine made
+// visible; current step strong, previous quiet, future subtle) ---------
+
+export type ClaimStepState = "done" | "current" | "future";
+
+export interface ClaimStep {
+  label: string;
+  state: ClaimStepState;
+}
+
+export interface ClaimStepsView {
+  /** False for the non-linear terminal states (abandoned/expired) —
+   * no happy-path strip would tell the truth there. */
+  linear: boolean;
+  steps: ClaimStep[];
+}
+
+const STEP_LABELS = ["领取", "提交", "校验", "审核", "完成"] as const;
+
+/**
+ * Map the backend claim status onto the five-step strip. Pure
+ * presentation over server states; `done`/`current`/`future` only —
+ * the badge (claimStatusView) keeps carrying the exact status label.
+ *
+ * Semantics: DONE_THROUGH is the highest COMPLETED step — claiming is
+ * itself step 1, so CLAIMED means 领取 done and 提交 current; a
+ * revision returns to the submission step; COMPLETED finishes the
+ * strip with no current step.
+ */
+const DONE_THROUGH: Record<string, number> = {
+  CLAIMED: 1,
+  VALIDATING: 2,
+  UNDER_REVIEW: 3,
+  // A revision restarts the loop at the submission step (the teacher
+  // is waiting on a corrected upload; the banner explains the return).
+  REVISION_REQUIRED: 1,
+  COMPLETED: 5,
+};
+
+export function claimStepView(status: string): ClaimStepsView {
+  const doneThrough = DONE_THROUGH[status];
+  if (doneThrough === undefined) {
+    return { linear: false, steps: [] };
+  }
+  return {
+    linear: true,
+    steps: STEP_LABELS.map((label, index) => {
+      const stepNumber = index + 1;
+      if (stepNumber <= doneThrough) {
+        return { label, state: "done" as const };
+      }
+      if (doneThrough < STEP_LABELS.length && stepNumber === doneThrough + 1) {
+        return { label, state: "current" as const };
+      }
+      return { label, state: "future" as const };
+    }),
+  };
+}
+
 // --- reward copy (spec §42: overdue framing stays non-punitive) ---------------
 
 /**
