@@ -59,6 +59,16 @@ export const REQUEST_ID_HEADER = "X-Request-ID";
  */
 const AUTH_API_PREFIX = "/api/v1/auth/";
 
+/**
+ * Deployment mount prefix for the API (build-time env). When the app is
+ * served under a path prefix (e.g. CQ_BASE_PATH=/campus with the API
+ * proxied at /campus/api/v1), set NEXT_PUBLIC_API_BASE to that prefix so
+ * every request URL carries it. Default "" — same-origin root, no change.
+ * Callers keep passing unprefixed "/api/v1/..." paths (the AUTH_API_PREFIX
+ * comparisons below run on those raw paths).
+ */
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
+
 export interface ApiRequestInit extends Omit<RequestInit, "body"> {
   /** Request body; plain objects are JSON-encoded automatically. */
   body?: unknown;
@@ -152,7 +162,7 @@ async function performApiRequest<T>(
     headers.set(REQUEST_ID_HEADER, requestId);
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...rest,
     method,
     headers,

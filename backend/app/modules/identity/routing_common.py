@@ -84,9 +84,26 @@ from app.modules.identity.staff_service import TotpSetupRequiredError
 REFRESH_COOKIE_NAME = "refresh_token"
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
-# The refresh cookie is only ever read by the auth endpoints; scoping its
-# path shrinks what any other endpoint (or bug) can see.
-_AUTH_COOKIE_PATH = "/api/v1/auth"
+
+
+def auth_cookie_path(settings: Settings) -> str:
+    """The refresh cookie's Path, under the deployment's public prefix.
+
+    The refresh cookie is only ever read by the auth endpoints; scoping its
+    path shrinks what any other endpoint (or bug) can see. A prefixed
+    mount (``external_api_prefix``) must carry that prefix, or the browser
+    would never send the cookie back to the proxied auth URLs.
+    """
+    prefix = settings.external_api_prefix
+    return f"{prefix}/api/v1/auth" if prefix else "/api/v1/auth"
+
+
+def csrf_cookie_path(settings: Settings) -> str:
+    """The readable CSRF cookie's Path — the app's public mount scope."""
+    prefix = settings.external_api_prefix
+    return f"{prefix}/" if prefix else "/"
+
+
 _SECONDS_PER_DAY = 86400
 
 _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
@@ -138,7 +155,7 @@ def _issue_session_cookies(
         secure=True,
         httponly=True,
         samesite="lax",
-        path=_AUTH_COOKIE_PATH,
+        path=auth_cookie_path(settings),
     )
     response.set_cookie(
         CSRF_COOKIE_NAME,
@@ -146,9 +163,22 @@ def _issue_session_cookies(
         max_age=max_age,
         secure=True,
         samesite="lax",
-        path="/",
+        path=csrf_cookie_path(settings),
     )
     return csrf_token
+
+
+def clear_session_cookies(response: Response, settings: Settings) -> None:
+    """Expire both auth cookies at the SAME paths they were set with.
+
+    A delete at a different Path edits a different jar entry: the real
+    cookie would survive. Both paths derive from the same settings the
+    issue used, so logout always clears exactly what login set.
+    """
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME, path=auth_cookie_path(settings)
+    )
+    response.delete_cookie(CSRF_COOKIE_NAME, path=csrf_cookie_path(settings))
 
 
 def _token_pair_response(

@@ -34,13 +34,11 @@ from app.modules.identity.providers import (
     get_profile_service,
 )
 from app.modules.identity.routing_common import (
-    _AUTH_COOKIE_PATH,
-    CSRF_COOKIE_NAME,
-    REFRESH_COOKIE_NAME,
     _client_ip,
     _enforce_rate_limit,
     _resolve_refresh_token,
     _token_pair_response,
+    clear_session_cookies,
     require_csrf_when_cookie_bearer,
 )
 from app.modules.identity.schemas import (
@@ -171,6 +169,7 @@ async def logout(
     response: Response,
     sessions: SessionsDep,
     db: DbSession,
+    settings: AppSettings,
     body: LogoutRequest | None = None,
 ) -> None:
     """Revoke exactly the presented session; clear the auth cookies.
@@ -182,8 +181,7 @@ async def logout(
         request, body.refresh_token if body else None
     )
     await sessions.revoke_session(db, refresh_token)
-    response.delete_cookie(REFRESH_COOKIE_NAME, path=_AUTH_COOKIE_PATH)
-    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    clear_session_cookies(response, settings)
 
 
 @router.post("/auth/password/forgot", response_model=ChallengeResponse)

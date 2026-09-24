@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     s3_read_timeout_seconds: int = 30
     s3_delete_total_attempts: int = 2
     business_timezone: str
+    # Public path prefix the API is reverse-proxied under (e.g. "/campus"
+    # when the app is mounted at https://host/campus). "" — the default —
+    # means the API is served at the domain root. Cookie Path attributes
+    # derive from it (routing_common): a browser only sends a cookie to
+    # URLs under its Path, so a prefixed mount MUST scope the auth
+    # cookies under the same prefix or refresh/logout silently break.
+    external_api_prefix: str = ""
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
     max_upload_bytes_default: int = 200 * 1024 * 1024
@@ -272,6 +279,25 @@ class Settings(BaseSettings):
     # — 2FA/RBAC still apply.
     management_network_enabled: bool = False
     management_network_cidrs: str = ""
+
+    @field_validator("external_api_prefix")
+    @classmethod
+    def _validate_external_api_prefix(cls, value: str) -> str:
+        # "" (root mount) or exactly one leading slash, no trailing
+        # slash, no empty segments: "/campus" is legal, "campus/",
+        # "//campus", "/campus/" are not.
+        if value == "":
+            return value
+        if (
+            not value.startswith("/")
+            or value.endswith("/")
+            or "//" in value
+        ):
+            raise ValueError(
+                "external_api_prefix must be '' or '/segment[...]' "
+                "with a leading slash, no trailing slash, no empty parts"
+            )
+        return value
 
     @field_validator("business_timezone")
     @classmethod
