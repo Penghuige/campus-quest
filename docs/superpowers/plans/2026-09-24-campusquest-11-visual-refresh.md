@@ -22,13 +22,13 @@
 
 ## Task 1 — Establish before/after evidence
 
-- [ ] Rebase onto latest main after PR #6 merges.
-- [ ] Run current app against seeded E2E world.
-- [ ] Capture baseline screenshots for the visual acceptance list,
+- [x] Rebase onto latest main after PR #6 merges (merged `main` @ `800cfb7` in — no force-push on the Draft branch).
+- [x] Run current app against seeded E2E world.
+- [x] Capture baseline screenshots for the visual acceptance list,
       under the brief §17.0 evidence matrix (Chromium; 375x812 and
       1440x900; same seeded world; named route/account/state; fixed
       clock for deadline/countdown screens; one reduced-motion pass).
-- [ ] Record the 5 most visibly weak screens before changing code.
+- [x] Record the 5 most visibly weak screens before changing code.
 
 Expected output: a short PR comment with baseline screenshots and the exact screens chosen for first-pass redesign.
 
@@ -39,15 +39,15 @@ behavior through role/name/label selectors plus structural hooks. A
 visual shell rewrite is exactly where those locators move, so this task
 runs **after the Task 1 rebase and before any visual code (Task 2+)**:
 
-- [ ] Inventory every Plan 10 Playwright locator/assertion for each
+- [x] Inventory every Plan 10 Playwright locator/assertion for each
       screen the refresh will touch. Known structural hooks to start
       from: `.task-card`, `.claim-panel`, `.deadline-line`,
       `.page-head`, `.review-item`, `.review-pair`, `.review-tier`,
       dialog ids / accessible labels, and exact action copy.
-- [ ] Classify each as **behavior/accessibility contract** (roles,
+- [x] Classify each as **behavior/accessibility contract** (roles,
       accessible names, labels, dialog semantics, asserted copy,
       business/privacy/RBAC assertions) vs **pure structural locator**.
-- [ ] Record the inventory in the PR (comment or committed doc table)
+- [x] Record the inventory in the PR (comment or committed doc table)
       so reviewers can diff against it.
 - [ ] Implementation rule: behavior/accessibility contracts are
       preserved as-is; a pure structural locator may only be replaced
