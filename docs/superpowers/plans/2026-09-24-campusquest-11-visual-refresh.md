@@ -329,4 +329,12 @@ Review each for:
 > visual regression pass) continue as follow-up branches under this
 > plan; the mid-pass review P2 rulings recorded above govern them.
 
+> Direction ruling (owner, 2026-09-24, shoot-out pick): **INK** — the
+> dark identity rail (sidebar + mobile bottom nav) with warm light
+> content, a more saturated primary, and the braver display scale.
+> Implemented natively on `design/ink-identity` (the shoot-out variant
+> machinery retired; cream/scale rejected). Folded into
+> frontend-design-system.md §4/§8. Remaining tasks execute in this
+> identity.
+
 Only then mark the visual-refresh PR Ready.

@@ -100,6 +100,8 @@ Prefer OKLCH-compatible theme variables when the selected Tailwind and shadcn se
 
 Default experience should be light-first, with tokens structured so a complete dark theme remains possible.
 
+**Identity ruling (Plan 11 direction shoot-out, owner pick "ink")**: the product's identity is a DARK navigation rail (sidebar / mobile bottom nav, `oklch(21% 0.018 262)`) beside warm light content — the rail is quiet in weight but bold in tone. The primary is `oklch(50% 0.18 264)` (#2b59c8), one notch more saturated than V1 so it carries the dark rail; display type (page titles, hero, metric numerals) rides the display rung (`--text-2xl` / 1.625rem) — scale contrast is the product's typographic signature.
+
 Recommended behavior:
 
 - large page backgrounds: neutral;
@@ -182,17 +184,17 @@ All authenticated workspaces share one navigation geometry, three
 bands by viewport:
 
 - **Wide (≥64rem)**: a visually QUIET sidebar owns the primary
-  navigation (surface step down, muted links, brand-tinted active
+  navigation — the INK dark rail (light links, brand-tinted active
   state with an inset keyline; exactly one `aria-current="page"` per
   nav landmark); the top bar degrades to a context/actions strip
   (bell, user — no nav, no brand).
 - **Medium (40–64rem)**: the horizontal top nav keeps every
   destination.
-- **Narrow (<40rem)**: Student gets a fixed 5-slot bottom nav with
-  safe-area inset and reserved content bottom padding (the fixed bar
-  never covers a primary action); Teacher/Admin get a hamburger menu
-  sheet carrying the FULL staff list (native dialog semantics: focus
-  trap, Escape, backdrop close).
+- **Narrow (<40rem)**: Student gets a fixed 5-slot bottom nav — the
+  same INK dark rail — with safe-area inset and reserved content
+  bottom padding (the fixed bar never covers a primary action);
+  Teacher/Admin get a hamburger menu sheet carrying the FULL staff
+  list (native dialog semantics: focus trap, Escape, backdrop close).
 
 Routes never change with the band; reachability does not either.
 
