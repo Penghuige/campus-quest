@@ -24,6 +24,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { BellIcon } from "@/components/shell/navIcons";
 import { fetchUnreadCount } from "@/features/notifications/api";
 import { bellLabel, unreadBadgeText } from "@/features/notifications/inboxView";
 
@@ -77,7 +78,7 @@ export function NotificationBell() {
   return (
     <Link href="/notifications" className="topbar-bell" aria-label={bellLabel(count)}>
       <span className="bell-glyph" aria-hidden="true">
-        🔔
+        <BellIcon />
       </span>
       {badge !== null ? (
         <span className="bell-badge" aria-hidden="true">

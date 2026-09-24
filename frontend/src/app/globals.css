@@ -31,6 +31,18 @@
   --subtle-foreground: oklch(60% 0.012 75);
   --inverse-foreground: oklch(98.5% 0.004 90);
 
+  /* INK rail palette — one shared inverse/navigation surface contract. */
+  --rail-bg: oklch(21% 0.018 262);
+  --rail-border: oklch(28% 0.02 262);
+  --rail-foreground: oklch(97% 0.004 90);
+  --rail-muted: oklch(73% 0.015 90);
+  --rail-subtle: oklch(62% 0.015 90);
+  --rail-hover: oklch(26% 0.02 262);
+  --rail-active-bg: oklch(28% 0.035 264);
+  --rail-active-foreground: oklch(86% 0.08 264);
+  --rail-active-keyline: oklch(72% 0.13 264);
+  --rail-focus-ring: oklch(82% 0.08 264);
+
   /* border — softer than V1 (§7: background contrast before border;
      only interactive/selected states earn stronger keylines). */
   --border: oklch(91.5% 0.007 90);
@@ -87,7 +99,7 @@
   --text-xl: 1.5rem;
   /* Display/hero (Plan 11 §6): rare — the Student dashboard's
      next-action hero is the only planned consumer. */
-  --text-2xl: 1.875rem;
+  --text-2xl: 1.625rem;
 
   /* rarity accents (§4: restrained, recognizable; accent ONLY — never a
      page-wide background, and the text label always renders alongside).
@@ -649,8 +661,8 @@ body {
        sidebar carries the product's visual identity; the content area
        stays warm paper. Quieter than the content in WEIGHT, bolder in
        tone — light links, brand-tinted active keyline. */
-    background: oklch(21% 0.018 262);
-    border-right: 1px solid oklch(28% 0.02 262);
+    background: var(--rail-bg);
+    border-right: 1px solid var(--rail-border);
   }
 
   /* The top bar keeps context + actions only — brand and nav live in
@@ -660,13 +672,47 @@ body {
   .app-shell:has(> .app-sidebar) .app-topbar .app-brand {
     display: none;
   }
+
+  /* Wide workspace: the rail owns the shell. The former full-width
+     topbar collapses into a small local action cluster aligned with the
+     page header, removing the legacy "sidebar + global bar" frame. */
+  .app-shell:has(> .app-sidebar) .app-topbar {
+    position: absolute;
+    top: var(--space-5);
+    right: max(
+      var(--space-4),
+      calc((100vw - 14.5rem - 64rem) / 2 + var(--space-4))
+    );
+    z-index: 11;
+    background: transparent;
+    border-bottom: 0;
+  }
+
+  .app-shell:has(> .app-sidebar) .app-topbar-inner {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .app-shell:has(> .app-sidebar) .app-topbar-actions {
+    padding: 2px var(--space-2) 2px 2px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--surface-1) 90%, transparent);
+    box-shadow: var(--shadow-xs);
+  }
+
+  .app-shell:has(> .app-sidebar) .page-head {
+    min-height: var(--control-height);
+    padding-right: 13rem;
+  }
 }
 
 .app-sidebar-brand {
   padding: 0 var(--space-2);
   font-weight: 650;
   letter-spacing: -0.01em;
-  color: oklch(97% 0.004 90);
+  color: var(--rail-foreground);
   text-decoration: none;
 }
 
@@ -682,29 +728,29 @@ body {
   min-height: 2.5rem;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  color: oklch(73% 0.015 90);
+  color: var(--rail-muted);
   font-size: var(--text-sm);
   font-weight: 500;
   text-decoration: none;
 }
 
 .side-nav a:hover {
-  background: oklch(26% 0.02 262);
-  color: oklch(97% 0.004 90);
+  background: var(--rail-hover);
+  color: var(--rail-foreground);
 }
 
 /* Frozen contract: brand-tinted background + keyline, distinguishable
    from hover and from focus-visible. On the ink sidebar the tint is a
    light wash of primary over the dark rail (AA against 21% L). */
 .side-nav a[aria-current="page"] {
-  color: oklch(86% 0.08 264);
-  background: oklch(28% 0.035 264);
-  box-shadow: inset 2px 0 0 oklch(72% 0.13 264);
+  color: var(--rail-active-foreground);
+  background: var(--rail-active-bg);
+  box-shadow: inset 2px 0 0 var(--rail-active-keyline);
   font-weight: 600;
 }
 
 .side-nav a:focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--rail-focus-ring);
   outline-offset: -2px;
 }
 
@@ -716,7 +762,7 @@ body {
   margin-top: auto;
   padding: 0 var(--space-2);
   font-size: var(--text-2xs);
-  color: oklch(62% 0.015 90);
+  color: var(--rail-subtle);
 }
 
 /* --- claim progress strip (Plan 11 §9: the state machine visible) -------------
@@ -815,8 +861,8 @@ body {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     /* INK identity on the narrow band: the same dark rail the wide
        sidebar carries, so mobile keeps the product's identity. */
-    background: oklch(21% 0.018 262);
-    border-top: 1px solid oklch(28% 0.02 262);
+    background: var(--rail-bg);
+    border-top: 1px solid var(--rail-border);
     /* Safe-area rule (frozen contract): the nav's own padding includes
        the inset, and the main content's bottom padding below clears
        the nav's full height — the fixed bar never covers an action. */
@@ -831,19 +877,19 @@ body {
     min-height: 3rem;
     padding: var(--space-1) var(--space-1);
     border-radius: var(--radius-sm);
-    color: oklch(73% 0.015 90);
+    color: var(--rail-muted);
     font-size: var(--text-2xs);
     font-weight: 500;
     text-decoration: none;
   }
 
   .app-bottomnav a[aria-current="page"] {
-    color: oklch(86% 0.08 264);
+    color: var(--rail-active-foreground);
     font-weight: 600;
   }
 
   .app-bottomnav a:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--rail-focus-ring);
     outline-offset: -2px;
   }
 
@@ -921,7 +967,7 @@ body {
   /* Plan 11 §6 + ink direction: page title steps up to the xl rung —
      larger, stronger, tighter; section titles keep the md rung so
      pages regain hierarchy. */
-  font-size: 1.625rem;
+  font-size: var(--text-2xl);
   font-weight: 700;
   letter-spacing: -0.015em;
 }
@@ -990,7 +1036,7 @@ body {
 
 .hero-title {
   margin: 0;
-  font-size: 1.625rem;
+  font-size: var(--text-2xl);
   font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 1.3;
@@ -1006,6 +1052,30 @@ body {
 
 .hero-cta {
   margin-top: var(--space-1);
+}
+
+@media (min-width: 48rem) {
+  .hero:not(.hero-loading) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    column-gap: var(--space-6);
+    row-gap: var(--space-1);
+    align-items: center;
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .hero:not(.hero-loading) .hero-eyebrow,
+  .hero:not(.hero-loading) .hero-title,
+  .hero:not(.hero-loading) .hero-line {
+    grid-column: 1;
+  }
+
+  .hero:not(.hero-loading) .hero-cta {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+    margin-top: 0;
+  }
 }
 
 /* --- recent-notifications preview rows -------------------------------------- */
@@ -1238,34 +1308,18 @@ body {
 }
 
 .task-card {
+  position: relative;
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   align-content: start;
   padding: var(--space-4);
   background: var(--surface-1);
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
   border-radius: var(--radius-md);
-  /* Plan 11 §9: compact rarity keyline (NORMAL stays quiet — the label
-     in the metadata row always carries rarity semantics; §4). */
-  border-left: 3px solid var(--border-strong);
-  /* Plan 11 §14: the 1px hover lift + keyline change interactive cards
-     take; transform/opacity only (cheap, reduced-motion safe). */
   transition:
     border-color var(--duration-fast) var(--ease-standard),
     transform var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
-}
-
-.task-card[data-rarity="RARE"] {
-  border-left-color: var(--rarity-rare);
-}
-
-.task-card[data-rarity="EPIC"] {
-  border-left-color: var(--rarity-epic);
-}
-
-.task-card[data-rarity="LEGENDARY"] {
-  border-left-color: var(--rarity-legendary);
 }
 
 .task-card:hover,
@@ -1285,18 +1339,20 @@ body {
   }
 }
 
-.task-card-top {
+.task-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .task-card-title {
+  min-width: 0;
+  flex: 1;
   margin: 0;
   font-size: var(--text-md);
-  font-weight: 600;
-  line-height: 1.5;
+  font-weight: 650;
+  line-height: 1.45;
 }
 
 .task-card-title a {
@@ -1304,22 +1360,85 @@ body {
   text-decoration: none;
 }
 
+/* Stretched title link: the visual lift now matches the real hit area. */
+.task-card-title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
 .task-card-title a:hover {
   color: var(--primary);
 }
 
+.task-card-rarity {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.task-card-rarity::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--rarity-normal);
+}
+
+.task-card-rarity[data-rarity="RARE"]::before {
+  background: var(--rarity-rare);
+}
+
+.task-card-rarity[data-rarity="EPIC"]::before {
+  background: var(--rarity-epic);
+}
+
+.task-card-rarity[data-rarity="LEGENDARY"]::before {
+  background: var(--rarity-legendary);
+}
+
 .task-card-reward {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card-reward strong {
+  color: var(--foreground);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.task-card-reward-unit {
+  color: var(--foreground);
   font-size: var(--text-sm);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .task-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-1) var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
   font-size: var(--text-xs);
   color: var(--muted-foreground);
+}
+
+.task-card-meta > span:not(:first-child)::before {
+  content: "·";
+  margin-right: var(--space-2);
+  color: var(--subtle-foreground);
 }
 
 .meta-num {
@@ -2570,7 +2689,8 @@ body {
 }
 
 .bell-glyph {
-  font-size: var(--text-md);
+  display: inline-flex;
+  color: var(--muted-foreground);
   line-height: 1;
 }
 
