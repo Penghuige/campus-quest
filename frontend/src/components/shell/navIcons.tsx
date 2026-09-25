@@ -1,10 +1,10 @@
 /**
- * Plan 11 Task 3 navigation icons (brief §8 iconography, order 2: a
+ * CampusQuest shared stroke icon set (brief §8 iconography, order 2: a
  * small local set of simple stroke SVGs — no third-party package).
  *
- * Stroke inherits `currentColor` so the icons ride the nav link's
- * color state (muted → primary on aria-current) without their own
- * palette; 20px grid, 1.8 stroke, round caps — one visual language.
+ * Started as the navigation set (Plan 11 Task 3) and now also carries
+ * the 14px context glyphs (motif 2) — one visual language: stroke
+ * inherits `currentColor`, 20px grid, 1.8 stroke, round caps.
  */
 import type { SVGProps } from "react";
 
@@ -96,10 +96,45 @@ export function InboxIcon(props: IconProps) {
   );
 }
 
+export function BellIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M5.5 8.5a4.5 4.5 0 0 1 9 0c0 4 1.5 4.7 1.5 4.7H4s1.5-.7 1.5-4.7Z" />
+      <path d="M8.2 15.2a2 2 0 0 0 3.6 0" />
+    </StrokeIcon>
+  );
+}
+
 export function MenuIcon(props: IconProps) {
   return (
     <StrokeIcon {...props}>
       <path d="M4 6h12M4 10h12M4 14h12" />
+    </StrokeIcon>
+  );
+}
+
+/*
+ * Context glyphs (Plan 11 review round 2 motif 2): one coherent
+ * 14px semantic set for HIGH-FREQUENCY metadata only — deadline,
+ * reward, availability, review state, rank movement. Same stroke
+ * language as the navigation set; never decorate every label.
+ */
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6.8V10l2.2 1.6" />
+    </StrokeIcon>
+  );
+}
+
+export function SlotsIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="7" cy="8" r="2.6" />
+      <circle cx="13.4" cy="8" r="2.6" />
+      <path d="M3 15c.6-2 2.2-3 4-3s3.4 1 4 3M9 15c.6-2 2.2-3 4-3s2.8 1 3.4 2.4" />
     </StrokeIcon>
   );
 }

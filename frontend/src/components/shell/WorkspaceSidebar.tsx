@@ -18,6 +18,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { BrandMark } from "./BrandMark";
+
 export interface SideNavItem {
   href: string;
   label: string;
@@ -48,7 +50,8 @@ export function WorkspaceSidebar({
   return (
     <aside className="app-sidebar">
       <Link className="app-sidebar-brand" href={brand.href}>
-        {brand.label}
+        <BrandMark />
+        <span className="app-sidebar-brand-name">{brand.label}</span>
       </Link>
       {groups.map((group) => (
         <nav key={group.label} className="side-nav" aria-label={group.label}>

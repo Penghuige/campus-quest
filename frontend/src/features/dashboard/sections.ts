@@ -158,6 +158,8 @@ export interface NextActionView {
   kind: "revision" | "active";
   claimId: string;
   taskTitle: string;
+  /** The backend status — feeds the mini progress rail (claimStepView). */
+  status: string;
   /**
    * The active claim's server deadline (ISO). Revision claims carry no
    * deadline in the /me/claims DTO yet — null there (the copy explains
@@ -181,6 +183,7 @@ export function nextActionView(claims: MyClaimDto[]): NextActionView | null {
       kind: "revision",
       claimId: first.claim_id,
       taskTitle: first.task_title,
+      status: first.status,
       deadlineAt: null,
     };
   }
@@ -197,6 +200,7 @@ export function nextActionView(claims: MyClaimDto[]): NextActionView | null {
     kind: "active",
     claimId: pick.claim_id,
     taskTitle: pick.task_title,
+    status: pick.status,
     deadlineAt: pick.deadline_at ?? null,
   };
 }

@@ -22,8 +22,9 @@
  * Keep the strings byte-identical to the CSS (the test enforces this).
  */
 export const DESIGN_TOKENS = {
-  /** `--primary` — the one clear accent; PWA theme_color. */
-  primary: "oklch(52% 0.15 258)",
+  /** `--primary` — the one clear accent; PWA theme_color. Ink direction:
+   * one notch more saturation so it carries the dark rail's identity. */
+  primary: "oklch(50% 0.18 264)",
   /** `--background` — large page background; PWA background_color. */
   background: "oklch(97.4% 0.005 90)",
 } as const;

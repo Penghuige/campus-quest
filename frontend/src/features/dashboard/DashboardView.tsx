@@ -32,7 +32,7 @@ import {
   type MyClaimsPageDto,
   type TaskCardDto,
 } from "@/features/tasks/api";
-import { claimStatusView } from "@/features/tasks/display";
+import { claimStatusView, claimStepView, currentStepLabel } from "@/features/tasks/display";
 import { TaskCard } from "@/features/tasks/TaskCard";
 import { useNow } from "@/features/tasks/useNow";
 
@@ -61,7 +61,10 @@ export function DashboardView() {
   return (
     <>
       <HeroSection state={claims.state} retry={claims.retry} now={now} />
-      <div className="dashboard-columns">
+      {/* Signature motif 3 (achievement): ONE asymmetric story on the
+          page ground — the points/next-reward rail dominates (2fr),
+          the rank snapshot rides compact (1fr). No equal card duel. */}
+      <div className="dash-band">
         <PointsProgressSection />
         <RankSection />
       </div>
@@ -119,17 +122,35 @@ function HeroSection({
 }
 
 function HeroAction({ next, now }: { next: NextActionView; now: number }) {
+  // Signature motif 1 (quest/progress): the hero carries the claim's
+  // step position as a compact segment rail — the same node+segment
+  // grammar as the claim page's strip, miniaturized. The visible
+  // current-step text is the accessible name (no aria-label on a
+  // generic <p> — AT ignores it there).
+  const steps = claimStepView(next.status);
   return (
     <section className="hero" aria-label="当前最重要">
       <p className="hero-eyebrow">
         {next.kind === "revision" ? "老师退回修改，奖励档位已保留" : "进行中 · 最早截止"}
       </p>
       <h2 className="hero-title">{next.taskTitle}</h2>
-      {next.kind === "active" && next.deadlineAt !== null ? (
-        <p className="hero-line" suppressHydrationWarning>
-          截止 {formatDeadlineSummary(parseServerInstant(next.deadlineAt), now)}
-        </p>
-      ) : null}
+      <div className="hero-row">
+        {next.kind === "active" && next.deadlineAt !== null ? (
+          <p className="hero-line" suppressHydrationWarning>
+            截止 {formatDeadlineSummary(parseServerInstant(next.deadlineAt), now)}
+          </p>
+        ) : null}
+        {steps.linear ? (
+          <p className="hero-line">
+            <span className="mini-rail" aria-hidden="true">
+              {steps.steps.map((step) => (
+                <span key={step.label} className="mini-rail-seg" data-state={step.state} />
+              ))}
+            </span>
+            {currentStepLabel(steps)}
+          </p>
+        ) : null}
+      </div>
       <Link
         className="btn btn-primary hero-cta"
         href={`/claims/${next.claimId}`}
@@ -207,23 +228,27 @@ function ClaimRow({
 }) {
   const status = claimStatusView(claim.status);
   return (
-    // The row links into the claim's own detail page (T4 submission
-    // surface); the layout stays a row, so the whole row is the target.
+    // Review round 2 motif 1: claims as a TIMELINE, not cards — the
+    // status node on the left rail carries the state (color supplements
+    // the badge text, never replaces it).
     <Link className="claim-row-link" href={`/claims/${claim.claim_id}`}>
-      <div className="claim-row">
-        <div className="claim-row-top">
-          <span className="claim-title">{claim.task_title}</span>
-          <span className={`badge badge-${status.tone}`}>{status.label}</span>
+      <div className="claim-row" data-tone={status.tone}>
+        <span className="claim-node" aria-hidden="true" />
+        <div className="claim-row-main">
+          <div className="claim-row-top">
+            <span className="claim-title">{claim.task_title}</span>
+            <span className={`badge badge-${status.tone}`}>{status.label}</span>
+          </div>
+          {revision ? (
+            // Design §14 preferred copy; the revision deadline is not part of
+            // the /me/claims DTO yet.
+            <p className="claim-deadline">老师已退回修改，奖励档位已保留</p>
+          ) : (
+            <p className="claim-deadline" suppressHydrationWarning>
+              截止 {formatDeadlineSummary(parseServerInstant(claim.deadline_at), now)}
+            </p>
+          )}
         </div>
-        {revision ? (
-          // Design §14 preferred copy; the revision deadline is not part of
-          // the /me/claims DTO yet.
-          <p className="claim-deadline">老师已退回修改，奖励档位已保留</p>
-        ) : (
-          <p className="claim-deadline" suppressHydrationWarning>
-            截止 {formatDeadlineSummary(parseServerInstant(claim.deadline_at), now)}
-          </p>
-        )}
       </div>
     </Link>
   );
@@ -275,17 +300,13 @@ function WalletBody({
 }) {
   const shelf = walletShelfView(wallet, rewards);
   return (
-    <div className="panel">
-      <div className="metric-row">
-        <div className="metric">
-          <span className="metric-label">可用积分</span>
-          <span className="metric-value">{wallet.available_points}</span>
-        </div>
-        <div className="metric">
-          <span className="metric-label">累计获得</span>
-          <span className="metric-value">{wallet.earned_points}</span>
-        </div>
-      </div>
+    // Review round 2: the stat band lives on the PAGE GROUND — no card.
+    // One dominant balance, the next-reward progress as the quest rail
+    // (motif 1), earned/frozen/debt as quiet secondary facts.
+    <div className="stat-block">
+      <span className="metric-label">可用积分</span>
+      <span className="stat-focus">{wallet.available_points}</span>
+      <span className="metric-label stat-sub-label">累计获得 {wallet.earned_points}</span>
       {shelf.shelf === "loading" ? (
         <span className="skeleton skeleton-line" data-width="narrow" aria-label="正在加载可兑换奖励" />
       ) : null}
@@ -296,9 +317,9 @@ function WalletBody({
       shelf.progress.status === "ready" &&
       shelf.progress.rewardName !== null &&
       shelf.progress.rewardCost !== null ? (
-        <div className="progress">
+        <div className="goal-rail-block">
           <div
-            className="progress-track"
+            className="goal-rail"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={shelf.progress.rewardCost}
@@ -306,8 +327,13 @@ function WalletBody({
             aria-label={`距离兑换「${shelf.progress.rewardName}」的进度`}
           >
             <div
-              className="progress-fill"
+              className="goal-rail-fill"
               style={{ width: `${Math.round(shelf.progress.ratio * 100)}%` }}
+            />
+            <span
+              className="goal-rail-node"
+              data-reached={shelf.progress.remainingPoints === null}
+              aria-hidden="true"
             />
           </div>
           <p className="progress-note">
@@ -355,37 +381,31 @@ function RankBody({ board }: { board: BoardDto }) {
   const view = rankSnapshotView(board);
   if (view.status === "empty") {
     return (
-      <div className="panel">
-        <EmptyState
-          title="本月暂无排名"
-          hint="完成任务获得积分后即可登上月榜"
-        />
-      </div>
+      <EmptyState
+        title="本月暂无排名"
+        hint="完成任务获得积分后即可登上月榜"
+      />
     );
   }
+  // Compact snapshot (motif 3): rank + score as the anchor, a mini
+  // top-3 underneath — no card, no equal-weight duel with the points.
   return (
-    <div className="panel">
-      <div className="metric-row">
-        <div className="metric">
-          <span className="metric-label">我的月榜名次</span>
-          <span className="metric-value">
-            第 {view.rank} 名
-            <span className="metric-unit"> · {view.score} 积分</span>
-          </span>
-        </div>
-      </div>
+    <div className="stat-block">
+      <span className="metric-label">本月排名</span>
+      <span className="stat-focus stat-focus-rank">
+        第 {view.rank}
+        <span className="metric-unit"> 名 · {view.score} 分</span>
+      </span>
       {view.top.length > 0 ? (
-        <div className="claim-rows">
+        <ol className="rank-mini">
           {view.top.map((entry) => (
-            <div key={entry.rank} className="claim-row-top">
-              <span className="claim-deadline">
-                #{entry.rank} {entry.nickname}
-                {entry.displayHonor !== null ? ` · ${entry.displayHonor}` : ""}
-              </span>
-              <span className="claim-deadline meta-num">{entry.score}</span>
-            </div>
+            <li key={entry.rank}>
+              <span className="rank-mini-n">#{entry.rank}</span>
+              <span className="rank-mini-name">{entry.nickname}</span>
+              <span className="rank-mini-score meta-num">{entry.score}</span>
+            </li>
           ))}
-        </div>
+        </ol>
       ) : null}
     </div>
   );

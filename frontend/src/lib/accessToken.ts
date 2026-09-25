@@ -33,6 +33,52 @@ import { observeServerDateHeader } from "./serverClock";
 /** The rotation endpoint (also the recursion guard for `lib/api.ts`). */
 export const AUTH_REFRESH_PATH = "/api/v1/auth/refresh";
 
+/**
+ * Cross-tab rotation lock (Web Locks API). The backend's refresh cookie
+ * is ROTATE-ONCE: each POST /auth/refresh consumes the cookie it was
+ * presented. Two tabs cold-starting simultaneously (or two localhost
+ * ports sharing the cookie jar) therefore used to race — the winner's
+ * rotation consumed the cookie and the loser's refresh answered 401,
+ * parking that tab on the login screen until a manual reload. Holding
+ * this lock for the network round-trip serializes rotations ACROSS
+ * tabs: the second tab waits for the first tab's Set-Cookie to land in
+ * the shared jar, then rotates with the FRESH cookie — every tab ends
+ * with its own valid credential. (In-tab callers are already deduped by
+ * the single-flight slot; browsers without navigator.locks keep the old
+ * behavior — every evergreen browser ships it.)
+ */
+const REFRESH_LOCK_NAME = "cq:auth-refresh";
+
+/** How long a tab may WAIT for another tab's rotation before giving up
+ * on serialization (surface false — never fire unlocked into the race;
+ * see rotate()). Injectable for the timeout-path test. */
+const REFRESH_LOCK_TIMEOUT_MS = 10_000;
+let refreshLockTimeoutMs = REFRESH_LOCK_TIMEOUT_MS;
+
+/** Test-only: shrink the cross-tab lock wait budget. */
+export function setRefreshLockTimeoutForTests(ms: number): void {
+  refreshLockTimeoutMs = ms;
+}
+
+interface WebLocksLike {
+  request: (
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<boolean>,
+  ) => Promise<boolean>;
+}
+
+function webLocks(): WebLocksLike | null {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  const locks = (navigator as { locks?: unknown }).locks;
+  return typeof locks === "object" && locks !== null &&
+    typeof (locks as WebLocksLike).request === "function"
+    ? (locks as WebLocksLike)
+    : null;
+}
+
 let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 // Auth-transition window (final re-review P0): true between
@@ -119,11 +165,6 @@ export function refreshAccessToken(): Promise<boolean> {
 }
 
 async function rotate(): Promise<boolean> {
-  const headers = new Headers({ Accept: "application/json" });
-  const csrfToken = readCsrfToken();
-  if (csrfToken !== null) {
-    headers.set(CSRF_HEADER_NAME, csrfToken);
-  }
   // The auth context this rotation belongs to: a refresh that started
   // under one epoch and settles under another (its drain straddled a
   // beginAuthTransition) must not write the OLD context's token into
@@ -131,7 +172,47 @@ async function rotate(): Promise<boolean> {
   // the transition, so its Set-Cookie is applied BEFORE the login/
   // logout request goes out and loses the last-writer race by design.
   const epochAtStart = authEpoch;
+  const locks = webLocks();
+  if (locks === null) {
+    return performRotation(epochAtStart);
+  }
+  // Serialize the round-trip across tabs (see REFRESH_LOCK_NAME).
+  // Rejection handling is CAUSE-AWARE (audit finding #1/#6):
+  // - the wait TIMED OUT (another tab holds the lock past the budget):
+  //   firing unlocked would re-create the very rotation race this lock
+  //   exists to prevent — surface false instead; the caller's 401 reads
+  //   as anonymous and the next reload (or the winner's settled cookie)
+  //   recovers, which is strictly better than a guaranteed double-spend;
+  // - an explicit auth transition opened while we waited: its drain
+  //   owns the cookie ordering, no new rotation may start — false;
+  // - lock infrastructure refused BEFORE our callback ran (sandboxed
+  //   iframe SecurityError etc.): degrade to the unlocked rotation —
+  //   performRotation is total (never throws), so at most one request.
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), refreshLockTimeoutMs);
   try {
+    return await locks.request(
+      REFRESH_LOCK_NAME,
+      { signal: abort.signal },
+      () => performRotation(epochAtStart),
+    );
+  } catch {
+    if (abort.signal.aborted || transitionActive) {
+      return false;
+    }
+    return performRotation(epochAtStart);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function performRotation(epochAtStart: number): Promise<boolean> {
+  try {
+    const headers = new Headers({ Accept: "application/json" });
+    const csrfToken = readCsrfToken();
+    if (csrfToken !== null) {
+      headers.set(CSRF_HEADER_NAME, csrfToken);
+    }
     const response = await fetch(AUTH_REFRESH_PATH, {
       method: "POST",
       headers,

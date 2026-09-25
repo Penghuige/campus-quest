@@ -62,6 +62,14 @@ const BOTTOM_NAV = [
   { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
 
+/* Audit #4: one grapheme-safe initial helper (nicknames are validated
+ * per grapheme cluster; Array.from splits ZWJ emoji in half). */
+function nicknameInitial(nickname: string): string {
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "grapheme" });
+  const first = segmenter.segment(nickname)[Symbol.iterator]().next();
+  return first.done ? "同" : first.value.segment;
+}
+
 export function StudentShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
   const pathname = usePathname();
@@ -160,6 +168,17 @@ export function StudentShell({ children }: { children: ReactNode }) {
       <WorkspaceSidebar
         brand={{ href: "/", label: "CampusQuest" }}
         groups={SIDEBAR_GROUPS}
+        footer={
+          // Review round 2: the account lives in the rail footer — a
+          // purposeful bottom anchor for the dark rail, and one less
+          // floating generic-admin element at the top.
+          <Link className="rail-account" href="/profile" title="我的账户">
+            <span className="rail-avatar" aria-hidden="true">
+              {nicknameInitial(state.me.nickname)}
+            </span>
+            <span className="rail-account-name">{state.me.nickname}</span>
+          </Link>
+        }
       />
       <div className="app-body">
         <header className="app-topbar">
@@ -178,9 +197,14 @@ export function StudentShell({ children }: { children: ReactNode }) {
             </nav>
             <div className="app-topbar-actions">
               <NotificationBell />
-              <span className="app-user" title={state.me.nickname}>
-                {state.me.nickname}
-              </span>
+              <Link
+                className="avatar-chip"
+                href="/profile"
+                aria-label="我的账户"
+                title="我的账户"
+              >
+                <span aria-hidden="true">{nicknameInitial(state.me.nickname)}</span>
+              </Link>
             </div>
           </div>
         </header>

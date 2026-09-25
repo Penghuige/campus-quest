@@ -26,6 +26,7 @@ import {
   getAccessToken,
   refreshAccessToken,
   resetAccessTokenManagerForTests,
+  setRefreshLockTimeoutForTests,
 } from "../lib/accessToken";
 import { apiRequest } from "../lib/api";
 import { isApiError } from "../lib/errors";
@@ -306,6 +307,124 @@ describe("regression 4: logout forgets the memory token", () => {
       () => assert.fail("expected rejection"),
       () => {},
     );
+    assert.equal(getAccessToken(), null);
+  });
+});
+
+// --- cross-tab rotation lock (concurrent-cold-start fix) --------------------------
+
+describe("refresh rotation serializes across tabs (Web Locks)", () => {
+  type LockFn = (
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<boolean>,
+  ) => Promise<boolean>;
+
+  // Node 22 exposes `navigator` as a getter-only property — install the
+  // fake via defineProperty and restore the original descriptor after.
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installNavigator(value: unknown): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  function installLocks(lock: LockFn): void {
+    installNavigator({ locks: { request: lock } });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    } else {
+      installNavigator(undefined);
+    }
+  });
+
+  test("the rotation POST runs INSIDE navigator.locks.request", async () => {
+    resetAccessTokenManagerForTests();
+    let insideLock = false;
+    let lockName = "";
+    installLocks(async (name, _options, callback) => {
+      lockName = name;
+      insideLock = true;
+      const result = await callback();
+      insideLock = false;
+      return result;
+    });
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      assert.equal(insideLock, true, "fetch must run inside the lock callback");
+      calls.push(String(input));
+      return new Response(JSON.stringify({ access_token: "tok-1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.deepEqual(calls, ["/api/v1/auth/refresh"]);
+    assert.equal(lockName, "cq:auth-refresh");
+    assert.equal(getAccessToken(), "tok-1");
+  });
+
+  test("a lock-rejection degrades to the unlocked rotation (never a false anonymous)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks(async () => {
+      throw new DOMException("aborted", "AbortError");
+    });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "tok-2" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(getAccessToken(), "tok-2");
+  });
+
+  test("without navigator.locks the rotation runs unlocked (legacy browsers)", async () => {
+    resetAccessTokenManagerForTests();
+    installNavigator({});
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "tok-3" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(getAccessToken(), "tok-3");
+  });
+
+
+  test("a lock WAIT timeout surfaces false — never fires unlocked into the race", async () => {
+    resetAccessTokenManagerForTests();
+    setRefreshLockTimeoutForTests(30);
+    // A lock holder that never grants us turn (hangs past the budget).
+    installLocks((_name, options) =>
+      new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    );
+    let fetches = 0;
+    globalThis.fetch = (() => {
+      fetches += 1;
+      return Promise.resolve(
+        new Response(JSON.stringify({ access_token: "never" }), { status: 200 }),
+      );
+    }) as typeof fetch;
+
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false, "timeout must surface false, not rotate");
+    assert.equal(fetches, 0, "no unlocked POST may fire after a lock timeout");
     assert.equal(getAccessToken(), null);
   });
 });
