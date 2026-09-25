@@ -98,10 +98,12 @@ class SessionService:
         clock: Clock,
         access_codec: AccessTokenCodec,
         refresh_token_ttl_days: int = 30,
+        refresh_grace_seconds: int = 30,
     ) -> None:
         self._clock = clock
         self._codec = access_codec
         self._refresh_ttl = timedelta(days=refresh_token_ttl_days)
+        self._grace = timedelta(seconds=refresh_grace_seconds)
         self._users = UserRepository()
 
     async def login_student(
@@ -183,11 +185,24 @@ class SessionService:
             logger.info("session rotate rejected reason=unknown_token")
             raise self._authentication_required()
         if current.revoked_at is not None or current.replaced_by is not None:
+            resumed = await self._grace_resume(db, current, now)
+            if resumed is None:
+                logger.info(
+                    "session rotate rejected session_id=%s reason=already_replaced",
+                    current.id,
+                )
+                raise self._authentication_required()
+            # Grace resume (OAuth rotation BCP): the presented token was
+            # retired moments ago by a concurrent client (the cross-tab
+            # cold-start race). Continue the rotation from the lineage
+            # tip so the chain converges instead of forking.
             logger.info(
-                "session rotate rejected session_id=%s reason=already_replaced",
+                "session rotate grace-resumed tip_session_id=%s "
+                "retired_session_id=%s",
+                resumed.id,
                 current.id,
             )
-            raise self._authentication_required()
+            current = resumed
         if current.expires_at <= now:
             logger.info(
                 "session rotate rejected session_id=%s reason=expired",
@@ -217,6 +232,7 @@ class SessionService:
         successor_row, tokens = await self.issue_session(db, user=user, now=now)
         current.revoked_at = now
         current.replaced_by = successor_row.id
+        current.replaced_at = now
         # Captured pre-commit (see login_student).
         user_id, successor_id, replaced_id = user.id, successor_row.id, current.id
         await db.commit()
@@ -227,6 +243,40 @@ class SessionService:
             replaced_id,
         )
         return tokens
+
+    async def _grace_resume(
+        self, db: AsyncSession, presented: UserSession, now: datetime
+    ) -> UserSession | None:
+        """The live lineage tip when ``presented`` retired inside the
+        grace window, else ``None`` (caller fails the rotation).
+
+        Eligibility — ALL must hold:
+        - grace enabled (``REFRESH_GRACE_SECONDS > 0``);
+        - the row was RETIRED by rotation (``replaced_by`` set): a
+          logout-revoked row (``revoked_at`` only) never resumes;
+        - ``replaced_at`` recorded and within the window (legacy NULL
+          rows fail closed);
+        - the walked tip is alive (not revoked, not itself replaced by
+          the time we reach it — races converge because every hop is
+          locked ``FOR UPDATE`` in chain order).
+
+        The hop bound is a pathological-loop guard only: realistic
+        races retire one or two generations back.
+        """
+        if self._grace.total_seconds() <= 0 or presented.replaced_by is None:
+            return None
+        if presented.replaced_at is None:
+            return None
+        if now - presented.replaced_at > self._grace:
+            return None
+        row: UserSession | None = presented
+        for _ in range(8):
+            if row is None or row.replaced_by is None:
+                break
+            row = await db.get(UserSession, row.replaced_by, with_for_update=True)
+        if row is None or row.revoked_at is not None or row.replaced_by is not None:
+            return None
+        return row
 
     async def revoke_session(self, db: AsyncSession, refresh_token: str) -> None:
         """Revoke exactly the session named by ``refresh_token`` (logout).

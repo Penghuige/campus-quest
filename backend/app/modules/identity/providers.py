@@ -126,6 +126,7 @@ def get_session_service(
         clock=clock,
         access_codec=codec,
         refresh_token_ttl_days=settings.refresh_token_ttl_days,
+        refresh_grace_seconds=settings.refresh_grace_seconds,
     )
 
 

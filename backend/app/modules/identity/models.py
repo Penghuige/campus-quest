@@ -152,6 +152,14 @@ class UserSession(Base):
     # Session that superseded this one at rotation time; NOT NULL on a
     # presented token means the token was already rotated (reuse signal).
     replaced_by: Mapped[UUID | None] = mapped_column(ForeignKey("user_sessions.id"))
+    # When THIS row was retired by rotation (set together with
+    # replaced_by). Drives the refresh replay grace window: a retired
+    # token presented within REFRESH_GRACE_SECONDS resumes the chain
+    # tip instead of failing — the OAuth rotation BCP for non-browser
+    # clients. NULL on legacy rows = outside any window (fail closed).
+    replaced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
