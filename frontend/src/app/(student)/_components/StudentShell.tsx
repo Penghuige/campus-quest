@@ -160,6 +160,17 @@ export function StudentShell({ children }: { children: ReactNode }) {
       <WorkspaceSidebar
         brand={{ href: "/", label: "CampusQuest" }}
         groups={SIDEBAR_GROUPS}
+        footer={
+          // Review round 2: the account lives in the rail footer — a
+          // purposeful bottom anchor for the dark rail, and one less
+          // floating generic-admin element at the top.
+          <Link className="rail-account" href="/profile" title="我的账户">
+            <span className="rail-avatar" aria-hidden="true">
+              {Array.from(state.me.nickname)[0] ?? "同"}
+            </span>
+            <span className="rail-account-name">{state.me.nickname}</span>
+          </Link>
+        }
       />
       <div className="app-body">
         <header className="app-topbar">
@@ -178,9 +189,13 @@ export function StudentShell({ children }: { children: ReactNode }) {
             </nav>
             <div className="app-topbar-actions">
               <NotificationBell />
-              <span className="app-user" title={state.me.nickname}>
-                {state.me.nickname}
-              </span>
+              <Link
+                className="rail-avatar rail-avatar-mini"
+                href="/profile"
+                title={state.me.nickname}
+              >
+                {Array.from(state.me.nickname)[0] ?? "同"}
+              </Link>
             </div>
           </div>
         </header>

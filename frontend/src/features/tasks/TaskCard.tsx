@@ -9,6 +9,8 @@
  */
 import Link from "next/link";
 
+import { ClockIcon, SlotsIcon } from "@/components/shell/navIcons";
+
 import type { TaskCardDto } from "./api";
 import { availabilityText, deadlineView, ratingText, rarityView } from "./display";
 
@@ -39,8 +41,14 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
       </p>
 
       <div className="task-card-meta">
-        <span suppressHydrationWarning>{deadline.line}</span>
-        <span className="meta-num">{availabilityText(card.assignments_available)}</span>
+        <span className="task-card-meta-item" suppressHydrationWarning>
+          <ClockIcon />
+          {deadline.line}
+        </span>
+        <span className="task-card-meta-item meta-num">
+          <SlotsIcon />
+          {availabilityText(card.assignments_available)}
+        </span>
         <span suppressHydrationWarning>{ratingText(card.rating)}</span>
       </div>
 

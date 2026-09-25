@@ -112,3 +112,56 @@ export function MenuIcon(props: IconProps) {
     </StrokeIcon>
   );
 }
+
+/*
+ * Context glyphs (Plan 11 review round 2 motif 2): one coherent
+ * 14px semantic set for HIGH-FREQUENCY metadata only — deadline,
+ * reward, availability, review state, rank movement. Same stroke
+ * language as the navigation set; never decorate every label.
+ */
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6.8V10l2.2 1.6" />
+    </StrokeIcon>
+  );
+}
+
+export function CoinIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6.5v7M8 8.2c0-.8.9-1.4 2-1.4s2 .6 2 1.4-.9 1.2-2 1.4-2 .6-2 1.4.9 1.4 2 1.4 2-.6 2-1.4" />
+    </StrokeIcon>
+  );
+}
+
+export function SlotsIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="7" cy="8" r="2.6" />
+      <circle cx="13.4" cy="8" r="2.6" />
+      <path d="M3 15c.6-2 2.2-3 4-3s3.4 1 4 3M9 15c.6-2 2.2-3 4-3s2.8 1 3.4 2.4" />
+    </StrokeIcon>
+  );
+}
+
+export function CheckBadgeIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <path d="M10 3.2 12 5l2.6.2.2 2.6L16.6 10l-1.8 2.2-.2 2.6-2.6.2-2 1.8-2-1.8-2.6-.2-.2-2.6L3.4 10l1.8-2.2.2-2.6L8 5Z" />
+      <path d="M7.8 10 9.4 11.6 12.4 8.6" />
+    </StrokeIcon>
+  );
+}
+
+export function TrendUpIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <path d="M4 14 10 8l3 3 4-5.4" />
+      <path d="M13.4 5.6H17v3.4" />
+    </StrokeIcon>
+  );
+}
