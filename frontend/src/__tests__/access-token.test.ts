@@ -26,6 +26,7 @@ import {
   getAccessToken,
   refreshAccessToken,
   resetAccessTokenManagerForTests,
+  setRefreshLockTimeoutForTests,
 } from "../lib/accessToken";
 import { apiRequest } from "../lib/api";
 import { isApiError } from "../lib/errors";
@@ -399,5 +400,31 @@ describe("refresh rotation serializes across tabs (Web Locks)", () => {
     const ok = await refreshAccessToken();
     assert.equal(ok, true);
     assert.equal(getAccessToken(), "tok-3");
+  });
+
+
+  test("a lock WAIT timeout surfaces false — never fires unlocked into the race", async () => {
+    resetAccessTokenManagerForTests();
+    setRefreshLockTimeoutForTests(30);
+    // A lock holder that never grants us turn (hangs past the budget).
+    installLocks((_name, options) =>
+      new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    );
+    let fetches = 0;
+    globalThis.fetch = (() => {
+      fetches += 1;
+      return Promise.resolve(
+        new Response(JSON.stringify({ access_token: "never" }), { status: 200 }),
+      );
+    }) as typeof fetch;
+
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false, "timeout must surface false, not rotate");
+    assert.equal(fetches, 0, "no unlocked POST may fire after a lock timeout");
+    assert.equal(getAccessToken(), null);
   });
 });

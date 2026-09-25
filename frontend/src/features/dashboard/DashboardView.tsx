@@ -32,7 +32,7 @@ import {
   type MyClaimsPageDto,
   type TaskCardDto,
 } from "@/features/tasks/api";
-import { claimStatusView, claimStepView } from "@/features/tasks/display";
+import { claimStatusView, claimStepView, currentStepLabel } from "@/features/tasks/display";
 import { TaskCard } from "@/features/tasks/TaskCard";
 import { useNow } from "@/features/tasks/useNow";
 
@@ -124,7 +124,9 @@ function HeroSection({
 function HeroAction({ next, now }: { next: NextActionView; now: number }) {
   // Signature motif 1 (quest/progress): the hero carries the claim's
   // step position as a compact segment rail — the same node+segment
-  // grammar as the claim page's strip, miniaturized.
+  // grammar as the claim page's strip, miniaturized. The visible
+  // current-step text is the accessible name (no aria-label on a
+  // generic <p> — AT ignores it there).
   const steps = claimStepView(next.status);
   return (
     <section className="hero" aria-label="当前最重要">
@@ -139,13 +141,13 @@ function HeroAction({ next, now }: { next: NextActionView; now: number }) {
           </p>
         ) : null}
         {steps.linear ? (
-          <p className="hero-line" aria-label={`进度：${steps.steps.find((s) => s.state === "current")?.label ?? "完成"}`}>
+          <p className="hero-line">
             <span className="mini-rail" aria-hidden="true">
               {steps.steps.map((step) => (
                 <span key={step.label} className="mini-rail-seg" data-state={step.state} />
               ))}
             </span>
-            {steps.steps.find((s) => s.state === "current")?.label ?? "已完成"}
+            {currentStepLabel(steps)}
           </p>
         ) : null}
       </div>
@@ -304,7 +306,7 @@ function WalletBody({
     <div className="stat-block">
       <span className="metric-label">可用积分</span>
       <span className="stat-focus">{wallet.available_points}</span>
-      <span className="metric-label">累计获得 {wallet.earned_points}</span>
+      <span className="metric-label stat-sub-label">累计获得 {wallet.earned_points}</span>
       {shelf.shelf === "loading" ? (
         <span className="skeleton skeleton-line" data-width="narrow" aria-label="正在加载可兑换奖励" />
       ) : null}
@@ -388,7 +390,7 @@ function RankBody({ board }: { board: BoardDto }) {
   // Compact snapshot (motif 3): rank + score as the anchor, a mini
   // top-3 underneath — no card, no equal-weight duel with the points.
   return (
-    <div className="stat-block stat-block-rank">
+    <div className="stat-block">
       <span className="metric-label">本月排名</span>
       <span className="stat-focus stat-focus-rank">
         第 {view.rank}

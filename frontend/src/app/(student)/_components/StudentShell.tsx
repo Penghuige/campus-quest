@@ -62,6 +62,14 @@ const BOTTOM_NAV = [
   { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
 
+/* Audit #4: one grapheme-safe initial helper (nicknames are validated
+ * per grapheme cluster; Array.from splits ZWJ emoji in half). */
+function nicknameInitial(nickname: string): string {
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "grapheme" });
+  const first = segmenter.segment(nickname)[Symbol.iterator]().next();
+  return first.done ? "同" : first.value.segment;
+}
+
 export function StudentShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
   const pathname = usePathname();
@@ -166,7 +174,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
           // floating generic-admin element at the top.
           <Link className="rail-account" href="/profile" title="我的账户">
             <span className="rail-avatar" aria-hidden="true">
-              {Array.from(state.me.nickname)[0] ?? "同"}
+              {nicknameInitial(state.me.nickname)}
             </span>
             <span className="rail-account-name">{state.me.nickname}</span>
           </Link>
@@ -190,11 +198,12 @@ export function StudentShell({ children }: { children: ReactNode }) {
             <div className="app-topbar-actions">
               <NotificationBell />
               <Link
-                className="rail-avatar rail-avatar-mini"
+                className="avatar-chip"
                 href="/profile"
-                title={state.me.nickname}
+                aria-label="我的账户"
+                title="我的账户"
               >
-                {Array.from(state.me.nickname)[0] ?? "同"}
+                <span aria-hidden="true">{nicknameInitial(state.me.nickname)}</span>
               </Link>
             </div>
           </div>
