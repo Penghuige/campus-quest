@@ -429,8 +429,24 @@ Do not render a broken page full of disabled controls. Explain that the user lac
 
 Motion is subordinate to comprehension.
 
+**Motion spec (review round 3 — tokens live in globals.css):**
+
+- entrances: ONE orchestrated rise (opacity + 8px, `--motion-in` 220ms,
+  `--ease-out-soft` settle) when a section's data mounts; lists stagger
+  `--stagger` 40ms per child, capped at three children so long lists
+  never crawl. Nothing animates longer than ~300ms — this is a
+  productivity tool, not a showcase;
+- only `transform` and `opacity` animate (GPU-composited; never
+  width/height/padding/margins);
+- skeletons are a LOW-CONTRAST directional sweep (`cq-sweep`,
+  transform-only) — never an opacity blink;
+- `prefers-reduced-motion` means FEWER and GENTLER animations, not
+  zero: entrances become pure fades, movement and sweeps drop, color
+  transitions stay.
+
 Use motion for:
 
+- the section/list entrance described above;
 - drawer and dialog transitions;
 - small list insertion or removal;
 - optimistic vote and reaction feedback;
@@ -438,12 +454,11 @@ Use motion for:
 
 Avoid:
 
-- page-load choreography on operational pages;
+- page-load choreography on operational pages beyond the single
+  section entrance;
 - parallax;
-- decorative looping animation;
+- decorative looping animation (the skeleton sweep is the only loop);
 - flashing rarity effects.
-
-Respect prefers-reduced-motion.
 
 ## 12. Accessibility baseline
 
