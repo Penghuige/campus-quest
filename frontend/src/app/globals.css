@@ -125,6 +125,16 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --lift-hover: -1px;
 
+  /* Motion spec (review round 3 — the "cheap feel" diagnosis): enters
+     are 220ms with a soft settle (NN/g 200–500ms band; >300ms flags in
+     productivity tools), exits/hovers faster; stagger is 40ms per list
+     child, capped. Only transform+opacity animate (GPU-composited);
+     reduced motion keeps fades, drops movement. */
+  --motion-in: 220ms;
+  --motion-out: 140ms;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --stagger: 40ms;
+
   /* Modal scrim: foreground-tinted translucency (dialog/popover only). */
   --overlay-scrim: oklch(26% 0.015 75 / 0.3);
 }
@@ -165,7 +175,93 @@ body {
   }
 }
 
-/* --- auth page shell (§2: authentication stays visually serious) ---------- */
+/* --- motion system (review round 3: kill the "cheap feel") ---------------
+ *
+ * One orchestrated entrance: sections rise in with a soft settle
+ * (opacity+8px, 220ms, ease-out-soft) when their data mounts; lists
+ * stagger 40ms per child, capped so long lists never crawl. Only
+ * transform+opacity animate. Linear rewards attention, Vercel stays
+ * silent — a productivity tool takes the middle: ONE entrance moment,
+ * then quiet. */
+
+@keyframes cq-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.section,
+.hero,
+.dash-band > .section,
+.task-detail-body {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+}
+
+/* Lists choreograph: first children carry the stagger, the rest land
+   together (capped — a 20-row list must not take a second to settle). */
+.task-grid > li:nth-child(1),
+.claim-rows > li:nth-child(1) {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+}
+
+.task-grid > li:nth-child(2),
+.claim-rows > li:nth-child(2) {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+  animation-delay: var(--stagger);
+}
+
+.task-grid > li:nth-child(3),
+.claim-rows > li:nth-child(3) {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+  animation-delay: calc(var(--stagger) * 2);
+}
+
+/* Timeline rows (the claim rows are links, not li): same capped trio. */
+.claim-rows > .claim-row-link:nth-child(1),
+.claim-rows > .claim-row-link:nth-child(2),
+.claim-rows > .claim-row-link:nth-child(3) {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+}
+
+.claim-rows > .claim-row-link:nth-child(2) {
+  animation-delay: var(--stagger);
+}
+
+.claim-rows > .claim-row-link:nth-child(3) {
+  animation-delay: calc(var(--stagger) * 2);
+}
+
+/* Reduced motion is FEWER, GENTLER animations, not zero: entrances
+   become pure fades (opacity still aids comprehension), movement and
+   the skeleton sweep drop. */
+@media (prefers-reduced-motion: reduce) {
+  .section,
+  .hero,
+  .task-detail-body,
+  .task-grid > li,
+  .claim-rows > li,
+  .claim-rows > .claim-row-link {
+    animation-name: cq-fade-in;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+@keyframes cq-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}/* --- auth page shell (§2: authentication stays visually serious) ---------- */
 
 .auth-shell {
   min-height: 100dvh;
@@ -1611,9 +1707,9 @@ body {
   border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
   border-radius: var(--radius-md);
   transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    transform var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
+    border-color var(--motion-out) var(--ease-out-soft),
+    transform var(--motion-out) var(--ease-out-soft),
+    box-shadow var(--motion-out) var(--ease-out-soft);
 }
 
 .task-card:hover,
@@ -1958,9 +2054,34 @@ body {
 /* --- loading skeletons (§10: skeletons where shape is stable) ---------------- */
 
 .skeleton {
+  position: relative;
+  overflow: hidden;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  animation: cq-shimmer 1.4s ease-in-out infinite;
+  /* The old 0.55↔1 opacity pulse read as a debug blink. The modern
+     skeleton is a LOW-CONTRAST directional sweep (transform only —
+     GPU-composited, no paint); the eye follows it without reading
+     "flashing placeholder". */
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--surface-1) 65%, transparent),
+    transparent
+  );
+  animation: cq-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes cq-sweep {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .skeleton-line {
@@ -1993,24 +2114,6 @@ body {
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-}
-
-@keyframes cq-shimmer {
-  0% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
 }
 
 /* --- empty states (§10: what is empty, why, what to do) ---------------------- */
