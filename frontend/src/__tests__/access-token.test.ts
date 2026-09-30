@@ -494,58 +494,224 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     assert.equal(getAccessToken(), "own-new");
   });
 
-  test("P1a: the adoption label rides the refresh RESPONSE csrf_token, not a cookie re-read", async () => {
+  test("P1a: the label rides the refresh RESPONSE csrf_token; the marker carries NO bearer", async () => {
     resetAccessTokenManagerForTests();
     installLocks((_n, _o, cb) => cb());
-    // The response pairs token + csrf in one body; a later cookie read
-    // (mutable) must never label the mint. Verify via the handoff slot.
-    const handoffWrites: string[] = [];
+    const markerWrites: string[] = [];
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => null,
-      setItem: (_k: string, v: string) => handoffWrites.push(v),
+      setItem: (_k: string, v: string) => markerWrites.push(v),
       removeItem: () => {},
     } as unknown as Storage;
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    const mints: unknown[] = [];
+    ear.onmessage = (event: MessageEvent) => mints.push(event.data);
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ access_token: "mint-x", csrf_token: "ctx-response" }), { status: 200 })) as typeof fetch;
     const ok = await refreshAccessToken();
     assert.equal(ok, true);
-    assert.equal(handoffWrites.length, 1);
-    const published = JSON.parse(handoffWrites[0]) as { token: string; contextId: string | null };
-    assert.equal(published.token, "mint-x");
-    assert.equal(published.contextId, "ctx-response", "label = response csrf_token");
-    // Node has no real localStorage; leave the stub in place for the
-    // rest of the suite (the P1b test installs its own).
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(markerWrites.length, 1);
+    const marker = JSON.parse(markerWrites[0]) as { contextId: string | null };
+    assert.equal(marker.contextId, "ctx-response", "label = response csrf_token");
+    assert.ok(!("token" in marker), "marker carries no bearer");
+    assert.equal(mints.length, 1);
+    const mint = mints[0] as { token: string; contextId: string | null };
+    assert.equal(mint.token, "mint-x");
+    assert.equal(mint.contextId, "ctx-response");
+    ear.close();
   });
 
-  test("P1b: handoff is a synchronous slot — a waiter that MISSES the broadcast still adopts (one POST)", async () => {
+  test("P1b: marker routes the waiter to a bounded channel wait (mint lands DURING it — zero POSTs)", async () => {
     resetAccessTokenManagerForTests();
-    // No BroadcastChannel delivery at all (simulate BC-missing/degraded):
-    // the winner writes the slot; the next lock holder reads the slot
-    // under the lock and adopts. Simulate two sequential lock holders.
-    const slot: { value: string | null } = { value: null };
+    installLocks((_n, _o, cb) => cb());
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "loser" }), { status: 200 });
+    }) as typeof fetch;
+    // This wave's winner already published the marker (under its lock);
+    // this waiter has NO lastAdoption (listener delivery delayed) — the
+    // mint arrives while the bounded wait is armed.
+    const waveAt = Date.now();
     (globalThis as { localStorage?: Storage }).localStorage = {
-      getItem: () => slot.value,
-      setItem: (_k: string, v: string) => { slot.value = v; },
-      removeItem: () => { slot.value = null; },
+      getItem: () => JSON.stringify({ contextId: null, at: waveAt }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const post = new BroadcastChannel("cq-auth-adoption");
+    post.postMessage({ token: "wave-mint", contextId: null, at: waveAt });
+    post.close();
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(posts, 0, "no rotation — the mint arrived within the bounded wait");
+    assert.equal(getAccessToken(), "wave-mint");
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+});
+
+// --- re-review round 2: memory-only handoff, no shadowing, fail-safe ---
+
+/**
+ * The browser's module-level adoption listener is window-guarded (Node
+ * must not open channels); tests simulate it with a persistent ear
+ * that feeds receiveAdoptionForTests — exactly what the production
+ * listener does on every page.
+ */
+function openBrowserListenerEar(): BroadcastChannel {
+  const ear = new BroadcastChannel("cq-auth-adoption");
+  ear.onmessage = (event: MessageEvent) => {
+    const data = event.data as Partial<{ token: string; contextId: string | null; at: number }>;
+    if (
+      typeof data?.token === "string" &&
+      data.token.length > 0 &&
+      (data.contextId === null || typeof data.contextId === "string") &&
+      typeof data.at === "number"
+    ) {
+      receiveAdoptionForTests({
+        token: data.token,
+        contextId: data.contextId ?? null,
+        at: data.at,
+      });
+    }
+  };
+  return ear;
+}
+
+
+describe("one-shot marker (v3 field bug regression)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+  test("a STALE marker (its wave finished) is consumed and this tab ROTATES as the new winner", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // A marker from a wave seconds ago whose mint will never arrive.
+    let removed = false;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() }),
+      setItem: () => {},
+      removeItem: () => { removed = true; },
     } as unknown as Storage;
     let posts = 0;
     globalThis.fetch = (async () => {
       posts += 1;
-      return new Response(JSON.stringify({ access_token: "wave-mint", csrf_token: null }), { status: 200 });
+      return new Response(JSON.stringify({ access_token: "fresh-winner" }), { status: 200 });
     }) as typeof fetch;
-    // "Winner": no adoption available -> rotates + writes slot.
-    const first = await refreshAccessToken();
-    assert.equal(first, true);
-    assert.equal(posts, 1);
-    // "Waiter": fresh module state (a sibling tab), no lastAdoption (BC
-    // never delivered) — must still adopt from the SLOT under the lock.
-    resetAccessTokenManagerForTests(); // clears lastAdoption; slot persists
-    const second = await refreshAccessToken();
-    assert.equal(second, true);
-    assert.equal(posts, 1, "waiter adopted from the handoff slot — no second POST");
-    assert.equal(getAccessToken(), "wave-mint");
-    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true, "stale marker must not strand the tab as anonymous");
+    assert.equal(posts, 1, "this tab rotated as the new wave's winner");
+    assert.equal(getAccessToken(), "fresh-winner");
+    assert.equal(removed, true, "the marker was consumed (one-shot)");
   });
 });
 
-// --- self-fence guard (regression: own login reset must not drop own bearer) ---
+describe("memory-only handoff (re-review round 2)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+  test("the bearer NEVER reaches localStorage (every persistent write is token-free)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const writes: string[] = [];
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => null,
+      setItem: (_k: string, v: string) => writes.push(v),
+      removeItem: () => {},
+    } as unknown as Storage;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "secret-bearer", csrf_token: "ctx" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.ok(writes.length >= 1, "marker written");
+    for (const raw of writes) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      assert.equal("token" in parsed, false, "no token field in any persistent write");
+      assert.ok(!raw.includes("secret-bearer"), "bearer string never persisted");
+    }
+  });
+
+  test("a stale lastAdoption cannot shadow the marker's newer wave (zero second POST)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks(async (_n, _o, cb) => cb());
+    receiveAdoptionForTests({ token: "old-wave", contextId: null, at: Date.now() - 60_000 });
+    const marker = { contextId: null, at: Date.now() };
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify(marker),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const ear = openBrowserListenerEar();
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const post = new BroadcastChannel("cq-auth-adoption");
+    post.postMessage({ token: "new-wave-mint", contextId: null, at: marker.at });
+    post.close();
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(getAccessToken(), "new-wave-mint", "the NEW wave's mint won — no shadowing");
+    ear.close();
+  });
+
+  test("fail-safe: fresh marker but no mint can arrive (no BroadcastChannel) -> false, zero POSTs", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const OriginalChannel = globalThis.BroadcastChannel;
+    (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel =
+      undefined as unknown as typeof BroadcastChannel;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const ok = await refreshAccessToken();
+      assert.equal(ok, false, "surface false — never a speculative rotation");
+      assert.equal(posts, 0);
+    } finally {
+      (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel = OriginalChannel;
+    }
+  });
+});

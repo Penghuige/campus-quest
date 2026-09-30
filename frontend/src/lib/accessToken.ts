@@ -137,17 +137,37 @@ export function setRefreshLockTimeoutForTests(ms: number): void {
 const ADOPTION_CHANNEL = "cq-auth-adoption";
 /** Cross-tab auth-context reset channel (login/logout fence). */
 const CONTEXT_RESET_CHANNEL = "cq-auth-reset";
-/** localStorage handoff slot: written UNDER the lock, read UNDER the lock —
- *  the deterministic barrier BroadcastChannel delivery cannot provide. */
-const HANDOFF_SLOT_KEY = "cq:auth-handoff";
+/**
+ * localStorage handoff MARKER — NON-SECRET by construction (re-review
+ * P1: the bearer NEVER touches persistent storage; the memory-only
+ * contract is preserved). The marker only says "a mint for context X
+ * was published at T and is arriving on the adoption channel"; the
+ * bearer itself moves exclusively through BroadcastChannel (memory,
+ * per-tab listeners). Written under the lock, read under the lock —
+ * the deterministic lock-to-lock barrier — while the mint's delivery
+ * is awaited with a bounded channel wait keyed to the marker's
+ * generation (a stale lastAdoption can never shadow a newer wave).
+ */
+const HANDOFF_MARKER_KEY = "cq:auth-handoff-marker";
 /** A published mint older than this is not adoptable (wave-scale freshness). */
 const ADOPTION_TTL_MS = 10_000;
+/** Bounded channel wait for a marker's mint (delivery is queued while
+ *  the winner still holds the lock; this only yields to the task that
+ *  drains it). Exceeding it is the fail-safe path — surface false,
+ *  never a speculative second rotation). */
+const MINT_WAIT_MS = 400;
 
 interface AdoptionMessage {
   token: string;
   /** The csrf_token from the SAME refresh response that minted the
    *  token (review P1a: never a post-response cookie read — the cookie
    *  is origin-global and a sibling could swap it mid-flight). */
+  contextId: string | null;
+  at: number;
+}
+
+/** The NON-SECRET marker (localStorage-safe: no bearer, no secret). */
+interface HandoffMarker {
   contextId: string | null;
   at: number;
 }
@@ -182,26 +202,21 @@ function webLocks(): WebLocksLike | null {
     : null;
 }
 
-/** The synchronous same-origin handoff slot (localStorage). */
-function readHandoff(): AdoptionMessage | null {
+/** Read the non-secret handoff marker (localStorage). */
+function readMarker(): HandoffMarker | null {
   try {
-    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(HANDOFF_SLOT_KEY);
+    const raw =
+      typeof localStorage === "undefined" ? null : localStorage.getItem(HANDOFF_MARKER_KEY);
     if (raw === null) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<AdoptionMessage> | null;
+    const parsed = JSON.parse(raw) as Partial<HandoffMarker> | null;
     if (
       parsed !== null &&
-      typeof parsed.token === "string" &&
-      parsed.token.length > 0 &&
       (parsed.contextId === null || typeof parsed.contextId === "string") &&
       typeof parsed.at === "number"
     ) {
-      return {
-        token: parsed.token,
-        contextId: parsed.contextId ?? null,
-        at: parsed.at,
-      };
+      return { contextId: parsed.contextId ?? null, at: parsed.at };
     }
     return null;
   } catch {
@@ -209,17 +224,77 @@ function readHandoff(): AdoptionMessage | null {
   }
 }
 
-/** Write the mint to the handoff slot — called UNDER the lock, BEFORE
- *  its release, so the next waiter's read is deterministic. */
-function writeHandoff(message: AdoptionMessage): void {
+/** Write the marker — UNDER the lock, BEFORE its release. */
+function writeMarker(marker: HandoffMarker): void {
   try {
     if (typeof localStorage !== "undefined") {
-      localStorage.setItem(HANDOFF_SLOT_KEY, JSON.stringify(message));
+      localStorage.setItem(HANDOFF_MARKER_KEY, JSON.stringify(marker));
     }
   } catch {
-    // Quota/private-mode: the BroadcastChannel notification still goes
-    // out; the invariant degrades to "best effort" for this wave only.
+    // Quota/private-mode: the channel mint still goes out; waiters
+    // without a marker fall back to lastAdoption-or-fail-safe.
   }
+}
+
+function clearMarker(): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(HANDOFF_MARKER_KEY);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+/**
+ * Bounded wait for THIS marker generation's mint on the adoption
+ * channel. The winner posted the mint while still holding the lock,
+ * so the message is already queued; a few macrotask yields drain it.
+ * Resolves the mint, or null on timeout (the caller fail-safes).
+ */
+type MintWait = { kind: "mint"; message: AdoptionMessage } | { kind: "timeout" } | { kind: "no-channel" };
+
+function waitForMint(marker: HandoffMarker): Promise<MintWait> {
+  const valid = (message: AdoptionMessage): boolean =>
+    message.at >= marker.at - 50 &&
+    message.contextId === marker.contextId &&
+    Date.now() - message.at < ADOPTION_TTL_MS;
+  const already = lastAdoption;
+  if (already !== null && valid(already)) {
+    return Promise.resolve({ kind: "mint", message: already });
+  }
+  if (typeof BroadcastChannel === "undefined") {
+    return Promise.resolve({ kind: "no-channel" });
+  }
+  return new Promise((resolve) => {
+    const ear = new BroadcastChannel(ADOPTION_CHANNEL);
+    const finish = (value: MintWait) => {
+      ear.close();
+      clearTimeout(timer);
+      resolve(value);
+    };
+    ear.onmessage = (event: MessageEvent) => {
+      const data = event.data as Partial<AdoptionMessage> | null;
+      if (
+        data !== null &&
+        typeof data.token === "string" &&
+        data.token.length > 0 &&
+        (data.contextId === null || typeof data.contextId === "string") &&
+        typeof data.at === "number"
+      ) {
+        const message: AdoptionMessage = {
+          token: data.token,
+          contextId: data.contextId ?? null,
+          at: data.at,
+        };
+        if (valid(message)) {
+          lastAdoption = message;
+          finish({ kind: "mint", message });
+        }
+      }
+    };
+    const timer = setTimeout(() => finish({ kind: "timeout" }), MINT_WAIT_MS);
+  });
 }
 
 // Sibling broadcasts may land while this tab still waits on the lock. The
@@ -267,7 +342,10 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
 function publishMint(token: string, contextIdFromResponse: string | null): void {
   const message: AdoptionMessage = { token, contextId: contextIdFromResponse, at: Date.now() };
   lastAdoption = message;
-  writeHandoff(message);
+  // The MARKER is the only persistent artifact — non-secret (re-review
+  // P1): contextId is the double-submit csrf value already readable in
+  // a JS cookie; `at` is a timestamp. The bearer never leaves memory.
+  writeMarker({ contextId: contextIdFromResponse, at: message.at });
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(ADOPTION_CHANNEL);
     channel.postMessage(message);
@@ -284,13 +362,7 @@ export function broadcastContextReset(): void {
   // The local fence applies EVERYWHERE (the sender is also a tab whose
   // stale handoff must die); the channel notification is browser-only.
   lastAdoption = null;
-  try {
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem(HANDOFF_SLOT_KEY);
-    }
-  } catch {
-    // best effort
-  }
+  clearMarker();
   if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
     return;
   }
@@ -299,15 +371,21 @@ export function broadcastContextReset(): void {
   channel.close();
 }
 
-/** Adopt a sibling's fresh mint for OUR context, or null. */
+/**
+ * Immediate adoption check: the freshest VALID candidate for OUR
+ * context. Re-review P1: a stale `lastAdoption` must never shadow a
+ * newer wave — validity (fresh + context match) is the filter, and the
+ * under-lock path re-checks against the marker generation, so an old
+ * in-memory message from a previous wave can neither win over a newer
+ * mint nor trigger a second rotation.
+ */
 function tryAdopt(): string | null {
-  const candidate = lastAdoption ?? readHandoff();
   if (
-    candidate !== null &&
-    Date.now() - candidate.at < ADOPTION_TTL_MS &&
-    candidate.contextId === readCsrfToken()
+    lastAdoption !== null &&
+    Date.now() - lastAdoption.at < ADOPTION_TTL_MS &&
+    lastAdoption.contextId === readCsrfToken()
   ) {
-    return candidate.token;
+    return lastAdoption.token;
   }
   return null;
 }
@@ -383,24 +461,70 @@ async function rotate(): Promise<boolean> {
 }
 
 /**
- * Inside the lock: adopt a sibling's fresh mint for our auth context, or
- * rotate ONCE and publish the mint. Either way at most one POST per
- * wave reaches the server from this tab.
+ * Inside the lock, in order:
+ * 1. immediate adoption — the freshest VALID mint already in memory;
+ * 2. marker wait — a fresh non-secret marker says THIS wave's mint is
+ *    arriving on the channel; bounded-wait for it (the winner posted
+ *    it while holding the lock, so it is queued). A stale
+ *    lastAdoption from an earlier wave cannot shadow the marker: the
+ *    wait validates `at >= marker.at - 50` for THIS generation;
+ * 3. fail-safe — no candidate and no marker (or the wait times out /
+ *    BroadcastChannel is absent): surface FALSE. Never a speculative
+ *    second rotation into the strict rotate-once race (re-review P1);
+ * 4. otherwise this tab IS the wave's winner: rotate once, publish the
+ *    marker + channel mint, and hold the lock a short delivery grace
+ *    so the message is queued before the next waiter acquires.
  */
-function adoptOrRotate(epochAtStart: number): Promise<boolean> {
-  const adopted = tryAdopt();
-  if (adopted !== null && authEpoch === epochAtStart && !transitionActive) {
-    accessToken = adopted;
-    return Promise.resolve(true);
+async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
+  if (authEpoch !== epochAtStart || transitionActive) {
+    return false;
   }
-  return performRotation(epochAtStart).then((ok) => {
-    if (ok && lastMintContext !== undefined) {
-      // contextId comes from the REFRESH RESPONSE body (P1a): the token
-      // and its context label left the server in the same message.
-      publishMint(accessToken as string, lastMintContext);
+  const adopted = tryAdopt();
+  if (adopted !== null) {
+    accessToken = adopted;
+    return true;
+  }
+  const marker = readMarker();
+  const markerIsOurs =
+    marker !== null &&
+    Date.now() - marker.at < ADOPTION_TTL_MS &&
+    marker.contextId === readCsrfToken();
+  if (marker !== null && markerIsOurs) {
+    // ONE-SHOT: the marker announces THIS wave; consume it on first
+    // observation so a later, independent cold start cannot mistake a
+    // finished wave's marker for an incoming mint (the v3 field bug:
+    // the next page load waited 400ms for a mint nobody would post
+    // and failed to the anonymous shell).
+    clearMarker();
+    const outcome = await waitForMint(marker);
+    if (outcome.kind === "no-channel") {
+      // Fail-safe (re-review P1): no ephemeral channel exists to move
+      // the bearer — surface false; a reload with the winner's settled
+      // cookie recovers. Never a speculative rotation.
+      return false;
     }
-    return ok;
-  });
+    if (outcome.kind === "mint") {
+      if (authEpoch !== epochAtStart || transitionActive) {
+        return false;
+      }
+      accessToken = outcome.message.token;
+      return true;
+    }
+    // timeout: the marker was stale (its wave finished — delivery of a
+    // queued mint takes microseconds, not 400ms) or genuinely lost.
+    // The marker is consumed; fall through and let THIS tab rotate as
+    // the new wave's winner.
+  }
+  const ok = await performRotation(epochAtStart);
+  if (ok && accessToken !== null && lastMintContext !== undefined) {
+    // contextId comes from the REFRESH RESPONSE body (P1a): the token
+    // and its context label left the server in the same message.
+    publishMint(accessToken, lastMintContext);
+    // Delivery grace: keep the lock across a few macrotasks so the
+    // mint is QUEUED for every waiter's bounded wait before release.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return ok;
 }
 
 /** The csrf_token riding the last successful refresh response (P1a). */
