@@ -24,7 +24,7 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
   const rarity = rarityView(card.rarity);
   const deadline = deadlineView(card, nowMs);
   return (
-    <article className="task-card" data-rarity={rarity.rarity}>
+    <article className="task-card">
       <div className="task-card-head">
         <h3 className="task-card-title">
           <Link href={`/tasks/${card.id}`}>{card.title}</Link>
@@ -49,7 +49,9 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
           <SlotsIcon />
           {availabilityText(card.assignments_available)}
         </span>
-        <span suppressHydrationWarning>{ratingText(card.rating)}</span>
+        <span className="task-card-meta-item" suppressHydrationWarning>
+          {ratingText(card.rating)}
+        </span>
       </div>
 
       {deadline.urgency === "near" ? (
