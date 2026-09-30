@@ -218,6 +218,12 @@ export function claimStepView(status: string): ClaimStepsView {
   };
 }
 
+/** The one current-step label for announcement/copy; "已完成" when the
+ * strip is finished (audit #2: one fallback, one place). */
+export function currentStepLabel(view: ClaimStepsView): string {
+  return view.steps.find((step) => step.state === "current")?.label ?? "已完成";
+}
+
 // --- reward copy (spec §42: overdue framing stays non-punitive) ---------------
 
 /**
