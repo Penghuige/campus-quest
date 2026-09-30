@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
+  broadcastContextReset,
   getAccessToken,
   receiveAdoptionForTests,
   refreshAccessToken,
@@ -446,5 +447,111 @@ describe("cold-start coordination (locks + adoption)", () => {
     assert.equal(ok, true);
     assert.equal(posts, 1, "expired broadcast must not be adopted");
     assert.equal(getAccessToken(), "fresh");
+  });
+});
+
+// --- review fix round: P0 fence, P1a response-bound label, P1b handoff barrier ---
+
+describe("cross-tab context-reset fence + deterministic handoff (review round)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+  });
+
+  test("P0: a sibling's context-reset fences THIS tab — stale A-mint never adopted, zero replay", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // A sibling tab logged in/out; the browser-only reset listener is
+    // window-guarded, so exercise the fence at the seam the listener
+    // writes: the reset sender clears the handoff + adoption locally
+    // (and on the channel), so THIS tab's next refresh cannot adopt
+    // the dead mint even though it was minted milliseconds ago.
+    receiveAdoptionForTests({ token: "token-A", contextId: null, at: Date.now() });
+    broadcastContextReset();
+    await new Promise((r) => setTimeout(r, 20));
+    // The reset clears the handoff + adoption: the next refresh may NOT
+    // adopt A's mint even though it was fresh.
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "own-new", csrf_token: "ctx-new" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1, "stale A-mint must NOT be adopted after a context reset");
+    assert.equal(getAccessToken(), "own-new");
+  });
+
+  test("P1a: the adoption label rides the refresh RESPONSE csrf_token, not a cookie re-read", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // The response pairs token + csrf in one body; a later cookie read
+    // (mutable) must never label the mint. Verify via the handoff slot.
+    const handoffWrites: string[] = [];
+    const origSetItem = globalThis.localStorage?.setItem?.bind(globalThis.localStorage);
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => null,
+      setItem: (_k: string, v: string) => handoffWrites.push(v),
+      removeItem: () => {},
+    } as unknown as Storage;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "mint-x", csrf_token: "ctx-response" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(handoffWrites.length, 1);
+    const published = JSON.parse(handoffWrites[0]) as { token: string; contextId: string | null };
+    assert.equal(published.token, "mint-x");
+    assert.equal(published.contextId, "ctx-response", "label = response csrf_token");
+    (globalThis as { localStorage?: Storage }).localStorage = origSetItem ? undefined : undefined;
+    if (origSetItem) {
+      // restore a working localStorage if the env had one
+      (globalThis as { localStorage?: Storage }).localStorage = {
+        getItem: () => null,
+        setItem: origSetItem,
+        removeItem: () => {},
+      } as unknown as Storage;
+    }
+  });
+
+  test("P1b: handoff is a synchronous slot — a waiter that MISSES the broadcast still adopts (one POST)", async () => {
+    resetAccessTokenManagerForTests();
+    // No BroadcastChannel delivery at all (simulate BC-missing/degraded):
+    // the winner writes the slot; the next lock holder reads the slot
+    // under the lock and adopts. Simulate two sequential lock holders.
+    const slot: { value: string | null } = { value: null };
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => slot.value,
+      setItem: (_k: string, v: string) => { slot.value = v; },
+      removeItem: () => { slot.value = null; },
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "wave-mint", csrf_token: null }), { status: 200 });
+    }) as typeof fetch;
+    // "Winner": no adoption available -> rotates + writes slot.
+    const first = await refreshAccessToken();
+    assert.equal(first, true);
+    assert.equal(posts, 1);
+    // "Waiter": fresh module state (a sibling tab), no lastAdoption (BC
+    // never delivered) — must still adopt from the SLOT under the lock.
+    resetAccessTokenManagerForTests(); // clears lastAdoption; slot persists
+    const second = await refreshAccessToken();
+    assert.equal(second, true);
+    assert.equal(posts, 1, "waiter adopted from the handoff slot — no second POST");
+    assert.equal(getAccessToken(), "wave-mint");
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
   });
 });

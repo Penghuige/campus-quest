@@ -97,16 +97,29 @@ export function getAccessToken(): string | null {
  *
  * 1. the round-trip runs inside a Web Locks request (same-origin tabs
  *    serialize on it);
- * 2. the tab that first reaches the lock ROTATES once and BROADCASTS
- *    the minted access token on a BroadcastChannel;
- * 3. every sibling that reaches the lock afterwards ADOPTS that
- *    broadcast (same auth context, fresh) instead of rotating — the
- *    server sees exactly one POST /auth/refresh per wave, and the one
- *    minted token stays the live one for all tabs.
+ * 2. the tab that first reaches the lock ROTATES once and PUBLISHES
+ *    the minted access token to a SYNCHRONOUS same-origin handoff slot
+ *    (localStorage — read UNDER the lock by the next waiter) plus a
+ *    BroadcastChannel notification for open listeners;
+ * 3. every sibling that reaches the lock afterwards ADOPTS that mint
+ *    (bound to the REFRESH RESPONSE's own csrf_token — never a later
+ *    cookie read) instead of rotating — one POST per wave, and the one
+ *    minted token stays live for all tabs.
  *
- * The server-side grace window (refresh-grace amendment, default off)
- * is the non-browser/cross-origin backstop, not a substitute: with
- * strict rotate-once (the default), adoption is the only protection.
+ * Cross-tab auth-context fence (review P0): authEpoch is TAB-LOCAL but
+ * cookies are origin-global, so a sibling tab's explicit login/logout
+ * must fence THIS tab too. Every explicit transition broadcasts a
+ * non-secret CONTEXT-RESET; receivers bump their local epoch, drop the
+ * stale in-memory bearer, and invalidate caches BEFORE any 401
+ * recovery can replay an old account's intent under the new one.
+ *
+ * Degraded-baseline contract (review P1c): the handoff slot is
+ * localStorage, NOT BroadcastChannel — the wave invariant holds with
+ * or without BC delivery. Without Web Locks the rotation degrades to
+ * the documented legacy racy behavior (the supported browser baseline
+ * is "Web Locks available" — every evergreen browser since 2021).
+ * The server-side grace window (PR #10, default off) is the
+ * non-browser/cross-origin backstop, not a substitute.
  */
 
 /** Web Locks name serializing rotations across same-origin tabs. */
@@ -120,15 +133,21 @@ export function setRefreshLockTimeoutForTests(ms: number): void {
   refreshLockTimeoutMs = ms;
 }
 
-/** Adoption channel: the winner's mint, broadcast to sibling tabs. */
+/** Adoption notification channel (open listeners hear the mint immediately). */
 const ADOPTION_CHANNEL = "cq-auth-adoption";
-/** A broadcast older than this is not adoptable (wave-scale freshness). */
+/** Cross-tab auth-context reset channel (login/logout fence). */
+const CONTEXT_RESET_CHANNEL = "cq-auth-reset";
+/** localStorage handoff slot: written UNDER the lock, read UNDER the lock —
+ *  the deterministic barrier BroadcastChannel delivery cannot provide. */
+const HANDOFF_SLOT_KEY = "cq:auth-handoff";
+/** A published mint older than this is not adoptable (wave-scale freshness). */
 const ADOPTION_TTL_MS = 10_000;
 
 interface AdoptionMessage {
   token: string;
-  /** The CSRF cookie value at mint time — adopt only if OURS matches
-   *  (the cookie rotates per login, so a foreign context never matches). */
+  /** The csrf_token from the SAME refresh response that minted the
+   *  token (review P1a: never a post-response cookie read — the cookie
+   *  is origin-global and a sibling could swap it mid-flight). */
   contextId: string | null;
   at: number;
 }
@@ -154,10 +173,49 @@ function webLocks(): WebLocksLike | null {
     : null;
 }
 
-// Sibling broadcasts may land while this tab still waits on the lock, so
-// the listener must exist from the first rotation. Guarded on `window`:
-// in Node (unit tests) BroadcastChannel exists but would hold the event
-// loop open forever — the listener is a browser-only affordance.
+/** The synchronous same-origin handoff slot (localStorage). */
+function readHandoff(): AdoptionMessage | null {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(HANDOFF_SLOT_KEY);
+    if (raw === null) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<AdoptionMessage> | null;
+    if (
+      parsed !== null &&
+      typeof parsed.token === "string" &&
+      parsed.token.length > 0 &&
+      (parsed.contextId === null || typeof parsed.contextId === "string") &&
+      typeof parsed.at === "number"
+    ) {
+      return {
+        token: parsed.token,
+        contextId: parsed.contextId ?? null,
+        at: parsed.at,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the mint to the handoff slot — called UNDER the lock, BEFORE
+ *  its release, so the next waiter's read is deterministic. */
+function writeHandoff(message: AdoptionMessage): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(HANDOFF_SLOT_KEY, JSON.stringify(message));
+    }
+  } catch {
+    // Quota/private-mode: the BroadcastChannel notification still goes
+    // out; the invariant degrades to "best effort" for this wave only.
+  }
+}
+
+// Sibling broadcasts may land while this tab still waits on the lock. The
+// listener also carries the CONTEXT-RESET fence. Browser-only (`window`
+// guard): in Node, BroadcastChannel exists but holds the event loop open.
 if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   const listener = new BroadcastChannel(ADOPTION_CHANNEL);
   listener.onmessage = (event: MessageEvent) => {
@@ -176,27 +234,69 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
       };
     }
   };
+  // Review P0: a sibling's EXPLICIT login/logout is an origin-global
+  // auth-context change. Fence locally: drop the stale bearer and bump
+  // the epoch so in-flight 401 recoveries from the OLD context can
+  // never replay under the new account. (Session/data caches invalidate
+  // via their own subscriptions — see invalidateSessionCache callers.)
+  const resetListener = new BroadcastChannel(CONTEXT_RESET_CHANNEL);
+  resetListener.onmessage = () => {
+    accessToken = null;
+    authEpoch += 1;
+    lastAdoption = null;
+  };
+}
+
+/**
+ * Publish the mint: handoff slot first (the deterministic lock-to-lock
+ * barrier), then the channel notification for already-open listeners.
+ */
+function publishMint(token: string, contextIdFromResponse: string | null): void {
+  const message: AdoptionMessage = { token, contextId: contextIdFromResponse, at: Date.now() };
+  lastAdoption = message;
+  writeHandoff(message);
+  if (typeof BroadcastChannel !== "undefined") {
+    const channel = new BroadcastChannel(ADOPTION_CHANNEL);
+    channel.postMessage(message);
+    channel.close();
+  }
+}
+
+/**
+ * Review P0 fence sender: call at every EXPLICIT auth transition
+ * (login/logout) after the transition request settles — tells sibling
+ * tabs the origin's auth context changed.
+ */
+export function broadcastContextReset(): void {
+  // The local fence applies EVERYWHERE (the sender is also a tab whose
+  // stale handoff must die); the channel notification is browser-only.
+  lastAdoption = null;
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(HANDOFF_SLOT_KEY);
+    }
+  } catch {
+    // best effort
+  }
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+    return;
+  }
+  const channel = new BroadcastChannel(CONTEXT_RESET_CHANNEL);
+  channel.postMessage({ reset: true });
+  channel.close();
 }
 
 /** Adopt a sibling's fresh mint for OUR context, or null. */
 function tryAdopt(): string | null {
+  const candidate = lastAdoption ?? readHandoff();
   if (
-    lastAdoption !== null &&
-    Date.now() - lastAdoption.at < ADOPTION_TTL_MS &&
-    lastAdoption.contextId === readCsrfToken()
+    candidate !== null &&
+    Date.now() - candidate.at < ADOPTION_TTL_MS &&
+    candidate.contextId === readCsrfToken()
   ) {
-    return lastAdoption.token;
+    return candidate.token;
   }
   return null;
-}
-
-function broadcastAdoption(token: string): void {
-  if (typeof BroadcastChannel === "undefined") {
-    return;
-  }
-  const channel = new BroadcastChannel(ADOPTION_CHANNEL);
-  channel.postMessage({ token, contextId: readCsrfToken(), at: Date.now() } satisfies AdoptionMessage);
-  channel.close();
 }
 
 /**
@@ -271,7 +371,7 @@ async function rotate(): Promise<boolean> {
 
 /**
  * Inside the lock: adopt a sibling's fresh mint for our auth context, or
- * rotate ONCE and broadcast the mint. Either way at most one POST per
+ * rotate ONCE and publish the mint. Either way at most one POST per
  * wave reaches the server from this tab.
  */
 function adoptOrRotate(epochAtStart: number): Promise<boolean> {
@@ -281,12 +381,17 @@ function adoptOrRotate(epochAtStart: number): Promise<boolean> {
     return Promise.resolve(true);
   }
   return performRotation(epochAtStart).then((ok) => {
-    if (ok && accessToken !== null) {
-      broadcastAdoption(accessToken);
+    if (ok && lastMintContext !== undefined) {
+      // contextId comes from the REFRESH RESPONSE body (P1a): the token
+      // and its context label left the server in the same message.
+      publishMint(accessToken as string, lastMintContext);
     }
     return ok;
   });
 }
+
+/** The csrf_token riding the last successful refresh response (P1a). */
+let lastMintContext: string | null | undefined = undefined;
 
 /** The one network round-trip: POST /auth/refresh with the cookie pair. */
 async function performRotation(epochAtStart: number): Promise<boolean> {
@@ -309,7 +414,10 @@ async function performRotation(epochAtStart: number): Promise<boolean> {
       }
       return false;
     }
-    const body = (await response.json()) as { access_token?: unknown };
+    const body = (await response.json()) as {
+      access_token?: unknown;
+      csrf_token?: unknown;
+    };
     if (typeof body.access_token !== "string" || body.access_token.length === 0) {
       if (authEpoch === epochAtStart) {
         accessToken = null;
@@ -325,6 +433,12 @@ async function performRotation(epochAtStart: number): Promise<boolean> {
       return false;
     }
     accessToken = body.access_token;
+    // P1a: the adoption label rides the SAME response — never a later
+    // read of the origin-global cookie a sibling could have swapped.
+    lastMintContext =
+      typeof body.csrf_token === "string" && body.csrf_token.length > 0
+        ? body.csrf_token
+        : null;
     return true;
   } catch {
     // Network-level failure: no verdict on the session — forget the
@@ -370,6 +484,7 @@ export function resetAccessTokenManagerForTests(): void {
   authEpoch = 0;
   transitionActive = false;
   lastAdoption = null;
+  lastMintContext = undefined;
 }
 
 /**

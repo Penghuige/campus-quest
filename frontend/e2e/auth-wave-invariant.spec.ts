@@ -8,7 +8,17 @@ import { expect, test } from "@playwright/test";
 
 const PROBE = process.env.CQ_E2E_PROBE === "1";
 
-test.skip(!PROBE, "invariant probe is opt-in: set CQ_E2E_PROBE=1");
+// P2 (review): the orchestrated world (CQ_E2E_STUDENT for the probe's
+// login) is seeded by global-setup only under CQ_E2E=1 — so the probe
+// requires BOTH flags. The guard names them instead of silently
+// skipping on a half-configured run.
+test.skip(
+  !PROBE,
+  "invariant probe is opt-in: set CQ_E2E=1 (seeds the world) AND CQ_E2E_PROBE=1",
+);
+if (PROBE && process.env.CQ_E2E !== "1") {
+  throw new Error("CQ_E2E_PROBE=1 also needs CQ_E2E=1 — the world seed gates on it");
+}
 
 test("one rotation per cold-start wave; both tabs authed", async ({ browser }) => {
   const ctx = await browser.newContext();

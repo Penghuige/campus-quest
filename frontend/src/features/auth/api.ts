@@ -12,6 +12,7 @@
 import { apiRequest } from "../../lib/api";
 import {
   beginAuthTransition,
+  broadcastContextReset,
   endAuthTransition,
   recordLogin,
   recordLogout,
@@ -93,6 +94,10 @@ export async function loginStudent(
     });
   } finally {
     endAuthTransition();
+    // Cross-tab fence (PR #14 review P0): sibling tabs must drop this
+    // account's stale bearer and bump their epoch before any in-flight
+    // 401 recovery can replay old-account intent under the new login.
+    broadcastContextReset();
   }
   // An explicit login opens a NEW auth context (epoch bump) and
   // synchronously drops any cached ANONYMOUS /me: the login page's
@@ -175,6 +180,10 @@ export async function loginStaff(
     });
   } finally {
     endAuthTransition();
+    // Cross-tab fence (PR #14 review P0): sibling tabs must drop this
+    // account's stale bearer and bump their epoch before any in-flight
+    // 401 recovery can replay old-account intent under the new login.
+    broadcastContextReset();
   }
   // An explicit login opens a NEW auth context (epoch bump) and
   // synchronously drops any cached ANONYMOUS /me: the login page's
@@ -205,6 +214,10 @@ export async function logout(): Promise<void> {
     // The authenticated /me cache is as stale as the token now.
     invalidateSessionCache();
     endAuthTransition();
+    // Cross-tab fence (PR #14 review P0): sibling tabs must drop this
+    // account's stale bearer and bump their epoch before any in-flight
+    // 401 recovery can replay old-account intent under the new login.
+    broadcastContextReset();
   }
 }
 
