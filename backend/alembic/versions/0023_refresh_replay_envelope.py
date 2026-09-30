@@ -29,6 +29,7 @@ Contract notes for psql readers:
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0023"
