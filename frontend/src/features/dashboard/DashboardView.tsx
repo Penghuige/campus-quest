@@ -56,7 +56,7 @@ export function DashboardView() {
   const now = useNow(60_000);
   // Claims feed BOTH the hero and the discovery dedup, so the fetch
   // lives here (one request, one triad) instead of inside a section.
-  const claims = useSection(() => listMyClaims({ limit: CLAIMS_PAGE_LIMIT }));
+  const claims = useSection(() => listMyClaims({ limit: CLAIMS_PAGE_LIMIT }), "GET /api/v1/me/claims?limit=10");
 
   return (
     <>
@@ -257,8 +257,8 @@ function ClaimRow({
 // --- points + nearest-reward progress -------------------------------------------
 
 function PointsProgressSection() {
-  const wallet = useSection(() => myWallet());
-  const rewards = useSection(() => listRewards());
+  const wallet = useSection(() => myWallet(), "GET /api/v1/points/me");
+  const rewards = useSection(() => listRewards(), "GET /api/v1/rewards");
 
   return (
     <section className="section" aria-label="积分与奖励">
@@ -363,7 +363,7 @@ function WalletBody({
 // --- monthly rank snapshot --------------------------------------------------------
 
 function RankSection() {
-  const { state, retry } = useSection(() => monthlyBoard(5));
+  const { state, retry } = useSection(() => monthlyBoard(5), "GET /api/v1/rankings/monthly?limit=5");
 
   return (
     <section className="section" aria-label="本月排名">
@@ -420,8 +420,9 @@ function TasksPreviewSection({
   now: number;
   claims: MyClaimDto[];
 }) {
-  const { state, retry } = useSection(() =>
-    listTasks({ limit: TASKS_PREVIEW_LIMIT }),
+  const { state, retry } = useSection(
+    () => listTasks({ limit: TASKS_PREVIEW_LIMIT }),
+    "GET /api/v1/tasks?limit=3",
   );
 
   return (
@@ -490,8 +491,9 @@ function TaskPreviewBody({
 // --- recent notifications preview --------------------------------------------------
 
 function NotificationsPreviewSection() {
-  const { state, retry } = useSection(() =>
-    listNotifications({ limit: NOTIFICATIONS_PREVIEW_LIMIT }),
+  const { state, retry } = useSection(
+    () => listNotifications({ limit: NOTIFICATIONS_PREVIEW_LIMIT }),
+    "GET /api/v1/notifications?limit=3",
   );
 
   return (

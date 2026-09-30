@@ -21,7 +21,7 @@ import { myGrowth } from "@/features/rankings/api";
 import { growthView } from "@/features/rankings/growthView";
 
 export function GrowthView() {
-  const { state, retry } = useSection(() => myGrowth());
+  const { state, retry } = useSection(() => myGrowth(), "GET /api/v1/points/me/growth");
 
   return (
     <section className="section" aria-label="我的成长">

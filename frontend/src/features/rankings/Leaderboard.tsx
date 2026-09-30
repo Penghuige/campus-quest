@@ -36,8 +36,8 @@ import {
 } from "@/features/rankings/leaderboardView";
 
 export function Leaderboard({ period }: { period: RankingPeriodKey }) {
-  const board = useSection(() => boardForPeriod(period));
-  const around = useSection(() => aroundMeBoard(period));
+  const board = useSection(() => boardForPeriod(period), `GET /api/v1/rankings/${period}`);
+  const around = useSection(() => aroundMeBoard(period), `GET /api/v1/rankings/${period}/around-me`);
 
   return (
     <>
