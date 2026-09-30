@@ -55,6 +55,7 @@ from sqlalchemy import (
     Index,
     LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -157,9 +158,17 @@ class UserSession(Base):
     # token presented within REFRESH_GRACE_SECONDS resumes the chain
     # tip instead of failing — the OAuth rotation BCP for non-browser
     # clients. NULL on legacy rows = outside any window (fail closed).
-    replaced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
+    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Stable-successor replay envelope: the successor generation's
+    # refresh secret, Fernet-encrypted with a "replay:v1:" domain
+    # prefix, written on the RETIRING row inside the same rotation
+    # transaction. Within the grace window, a replay of the retired
+    # token decrypts the envelope chain and re-issues the SAME live
+    # generation — concurrent callers converge instead of rotating
+    # (and mutually invalidating) again. The envelope dies with the
+    # window (reads refuse stale rows) and can never resurrect a
+    # logout-revoked lineage (successor liveness is checked on read).
+    replay_envelope: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

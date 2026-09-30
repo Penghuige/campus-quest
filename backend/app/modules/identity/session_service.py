@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,6 +74,13 @@ from app.modules.identity.repository import UserRepository
 logger = logging.getLogger(__name__)
 
 _AUTHENTICATION_MESSAGE = "用户名或密码错误"
+# Domain separation for the replay envelope plaintext: one Fernet key,
+# distinct purpose strings (the TOTP secrets use their own prefix in
+# totp.py), so an envelope can never be confused with another secret.
+_REPLAY_ENVELOPE_PREFIX = "replay:v1:"
+# Pathological-loop guard for chain walks; realistic races are one or
+# two generations deep.
+_CHAIN_HOP_BOUND = 8
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许登录"
 
 
@@ -98,12 +106,19 @@ class SessionService:
         clock: Clock,
         access_codec: AccessTokenCodec,
         refresh_token_ttl_days: int = 30,
-        refresh_grace_seconds: int = 30,
+        refresh_grace_seconds: int = 0,
+        replay_crypt: Fernet | None = None,
     ) -> None:
         self._clock = clock
         self._codec = access_codec
         self._refresh_ttl = timedelta(days=refresh_token_ttl_days)
         self._grace = timedelta(seconds=refresh_grace_seconds)
+        self._replay_crypt = replay_crypt
+        if self._grace.total_seconds() > 0 and replay_crypt is None:
+            raise ValueError(
+                "refresh_grace_seconds > 0 requires replay_crypt (the "
+                "envelope could not be written or resolved otherwise)"
+            )
         self._users = UserRepository()
 
     async def login_student(
@@ -184,25 +199,37 @@ class SessionService:
         if current is None:
             logger.info("session rotate rejected reason=unknown_token")
             raise self._authentication_required()
+        # The PRESENTED credential's own expiry is checked before any
+        # grace logic: an expired token stays expired even when it was
+        # retired recently and a live successor exists (review P1).
+        if current.expires_at <= now:
+            logger.info(
+                "session rotate rejected session_id=%s reason=expired",
+                current.id,
+            )
+            raise self._authentication_required()
         if current.revoked_at is not None or current.replaced_by is not None:
-            resumed = await self._grace_resume(db, current, now)
-            if resumed is None:
+            replayed = await self._stable_replay(db, current, now)
+            if replayed is None:
                 logger.info(
                     "session rotate rejected session_id=%s reason=already_replaced",
                     current.id,
                 )
                 raise self._authentication_required()
-            # Grace resume (OAuth rotation BCP): the presented token was
-            # retired moments ago by a concurrent client (the cross-tab
-            # cold-start race). Continue the rotation from the lineage
-            # tip so the chain converges instead of forking.
+            # Stable-successor replay (PR #10 rework): the presented
+            # token was retired moments ago by a concurrent client.
+            # Resolve through the envelope chain to the CURRENT live
+            # generation and re-issue it — no rotation, so concurrent
+            # callers converge on one live lineage instead of
+            # invalidating each other's freshly issued credentials.
             logger.info(
-                "session rotate grace-resumed tip_session_id=%s "
+                "session rotate replay-resumed live_session_id=%s "
                 "retired_session_id=%s",
-                resumed.id,
+                replayed[1].id,
                 current.id,
             )
-            current = resumed
+            await db.commit()
+            return replayed[0]
         if current.expires_at <= now:
             logger.info(
                 "session rotate rejected session_id=%s reason=expired",
@@ -233,6 +260,13 @@ class SessionService:
         current.revoked_at = now
         current.replaced_by = successor_row.id
         current.replaced_at = now
+        crypt = self._replay_crypt
+        if self._grace.total_seconds() > 0 and crypt is not None:
+            # The stable-successor envelope: this row's within-window
+            # replays re-issue the successor instead of rotating again.
+            current.replay_envelope = crypt.encrypt(
+                (_REPLAY_ENVELOPE_PREFIX + tokens.refresh_token).encode()
+            ).decode()
         # Captured pre-commit (see login_student).
         user_id, successor_id, replaced_id = user.id, successor_row.id, current.id
         await db.commit()
@@ -244,21 +278,35 @@ class SessionService:
         )
         return tokens
 
-    async def _grace_resume(
+    async def _stable_replay(
         self, db: AsyncSession, presented: UserSession, now: datetime
-    ) -> UserSession | None:
-        """The live lineage tip when ``presented`` retired inside the
-        grace window, else ``None`` (caller fails the rotation).
+    ) -> tuple[SessionTokens, UserSession] | None:
+        """Re-issue the CURRENT live generation for a within-window
+        replay of a retired token, else ``None`` (caller fails the
+        rotation).
+
+        The PR #10 review invariant: concurrent callers must converge
+        on ONE still-live refresh generation — replaying a retired
+        token must resolve to the same live successor the original
+        rotation issued, NOT rotate the tip again (which would instantly
+        invalidate the earlier caller's access token and cookie).
+
+        Resolution walks the ENVELOPE chain: each retired row carries
+        its successor's refresh secret Fernet-encrypted; every hop is
+        verified by hash lookup under ``FOR UPDATE``. The terminating
+        live row's secret is returned with a freshly minted access
+        token bound to that same row (access tokens are stateless JWTs
+        — several may name one live session). No row is written.
 
         Eligibility — ALL must hold:
         - grace enabled (``REFRESH_GRACE_SECONDS > 0``);
         - the row was RETIRED by rotation (``replaced_by`` set): a
-          logout-revoked row (``revoked_at`` only) never resumes;
+          logout-revoked row (``revoked_at`` only) never replays;
         - ``replaced_at`` recorded and within the window (legacy NULL
           rows fail closed);
-        - the walked tip is alive (not revoked, not itself replaced by
-          the time we reach it — races converge because every hop is
-          locked ``FOR UPDATE`` in chain order).
+        - the resolved live row is unrevoked, unreplaced, unexpired,
+          and its account is ACTIVE (a logout-revoked tip refuses —
+          grace can never resurrect a logged-out lineage).
 
         The hop bound is a pathological-loop guard only: realistic
         races retire one or two generations back.
@@ -269,23 +317,80 @@ class SessionService:
             return None
         if now - presented.replaced_at > self._grace:
             return None
+
         row: UserSession | None = presented
-        for _ in range(8):
-            if row is None or row.replaced_by is None:
+        secret: str | None = None
+        for _ in range(_CHAIN_HOP_BOUND):
+            if row is None:
+                return None
+            secret = self._decrypt_envelope(row)
+            if secret is None:
+                return None
+            successor = await db.scalar(
+                select(UserSession)
+                .where(UserSession.refresh_token_hash == hash_refresh_token(secret))
+                .with_for_update()
+            )
+            if successor is None:
+                return None
+            if successor.revoked_at is not None and successor.replaced_by is None:
+                # The lineage was logged out: dead is dead.
+                return None
+            row = successor
+            if row.replaced_by is None:
                 break
-            row = await db.get(UserSession, row.replaced_by, with_for_update=True)
-        if row is None or row.revoked_at is not None or row.replaced_by is not None:
+        if (
+            row is None
+            or secret is None
+            or row.revoked_at is not None
+            or row.replaced_by is not None
+            or row.expires_at <= now
+        ):
             return None
-        return row
+
+        user = await db.scalar(select(User).where(User.id == row.user_id))
+        if user is None or user.status != UserStatus.ACTIVE:
+            return None
+        access_token = self._codec.encode(
+            user_id=user.id,
+            session_id=row.id,
+            role=Role(user.role).value,
+            now=now,
+        )
+        return SessionTokens(access_token=access_token, refresh_token=secret), row
+
+    def _decrypt_envelope(self, row: UserSession) -> str | None:
+        """The successor secret inside ``row``'s envelope, or ``None``.
+
+        Any shape mismatch (missing envelope, undecryptable ciphertext,
+        wrong domain prefix) is a plain refusal — never an error path,
+        matching the uniform authentication failure discipline.
+        """
+        if not row.replay_envelope or self._replay_crypt is None:
+            return None
+        try:
+            plaintext = self._replay_crypt.decrypt(
+                row.replay_envelope.encode()
+            ).decode()
+        except InvalidToken:
+            return None
+        if not plaintext.startswith(_REPLAY_ENVELOPE_PREFIX):
+            return None
+        return plaintext[len(_REPLAY_ENVELOPE_PREFIX) :]
 
     async def revoke_session(self, db: AsyncSession, refresh_token: str) -> None:
-        """Revoke exactly the session named by ``refresh_token`` (logout).
+        """Revoke the live session lineage named by ``refresh_token``.
 
-        Idempotent by design: an unknown token (never issued, already
-        rotated away, or garbage from a stale client) is a silent no-op, so
-        a double-clicked logout or a cleared-cookie client never errors.
-        The row is locked ``FOR UPDATE`` so a concurrent rotation of the
-        same token serializes with the revocation; rows are never deleted.
+        Idempotent by design: an unknown token (never issued, or
+        garbage from a stale client) is a silent no-op, so a
+        double-clicked logout or a cleared-cookie client never errors.
+
+        Logout follows the ``replaced_by`` chain to the LIVE tip and
+        revokes THAT (review P0-2): a client holding a retired
+        generation — exactly what rotation races leave in cookie jars —
+        must never see its logout silently no-op while a later
+        generation keeps the account signed in. Rows are never
+        deleted; every hop is locked ``FOR UPDATE``.
         """
         now = self._clock.now()
         token_hash = hash_refresh_token(refresh_token)
@@ -297,6 +402,13 @@ class SessionService:
         if row is None:
             logger.info("session logout no-op reason=unknown_token")
             return
+        hops = 0
+        while row.replaced_by is not None and hops < _CHAIN_HOP_BOUND:
+            successor = await db.get(UserSession, row.replaced_by, with_for_update=True)
+            if successor is None:
+                break
+            row = successor
+            hops += 1
         if row.revoked_at is None:
             row.revoked_at = now
         session_id = row.id

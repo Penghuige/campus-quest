@@ -127,6 +127,9 @@ def get_session_service(
         access_codec=codec,
         refresh_token_ttl_days=settings.refresh_token_ttl_days,
         refresh_grace_seconds=settings.refresh_grace_seconds,
+        replay_crypt=Fernet(settings.totp_encryption_key.encode())
+        if settings.refresh_grace_seconds > 0
+        else None,
     )
 
 

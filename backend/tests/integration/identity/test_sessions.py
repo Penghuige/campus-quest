@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -84,6 +85,24 @@ def _make_service(clock: FrozenClock) -> SessionService:
     )
 
 
+# The stable-successor grace configuration (PR #10 rework): a real Fernet
+# key so envelopes round-trip; default deployments run grace=0 (strict
+# rotate-once) until the §5.6 amendment ruling flips it.
+_REPLAY_KEY = Fernet.generate_key()
+
+
+def _make_grace_service(clock: FrozenClock, seconds: int = 30) -> SessionService:
+    return SessionService(
+        clock=clock,
+        access_codec=AccessTokenCodec(
+            secret=_ACCESS_SECRET, ttl_minutes=_ACCESS_TTL_MINUTES
+        ),
+        refresh_token_ttl_days=_REFRESH_TTL_DAYS,
+        refresh_grace_seconds=seconds,
+        replay_crypt=Fernet(_REPLAY_KEY),
+    )
+
+
 def _advance(clock: FrozenClock, **kwargs: int) -> None:
     object.__setattr__(clock, "current", clock.current + timedelta(**kwargs))
 
@@ -112,6 +131,18 @@ async def _count_unrevoked_sessions(db: AsyncSession, user_id: UUID) -> int:
                 UserSession.revoked_at.is_(None),
                 UserSession.replaced_by.is_(None),
             )
+        )
+        or 0
+    )
+
+
+async def _count_sessions(db: AsyncSession, user_id: UUID) -> int:
+    """Every session row of the account (the rotation-chain length)."""
+    return int(
+        await db.scalar(
+            select(func.count())
+            .select_from(UserSession)
+            .where(UserSession.user_id == user_id)
         )
         or 0
     )
@@ -347,48 +378,50 @@ async def test_rotation_chain_reuse_of_old_token_fails(
 
 
 @pytest.mark.integration
-async def test_replay_within_grace_window_resumes_the_chain(
+async def test_replay_within_grace_reissues_the_same_live_generation(
     db_session: AsyncSession,
 ) -> None:
-    """Refresh-token rotation grace window (OAuth rotation BCP).
+    """Stable-successor replay (PR #10 rework, review P0-1).
 
-    Two browser tabs cold-start together: both present the SAME refresh
-    token; the rotation winner consumes it, the loser's presentation is
-    milliseconds behind. Within the grace window the loser's replay must
-    resume the SAME session lineage (rotate the chain tip) instead of
-    failing to a logged-out render. Browsers serialize via Web Locks;
-    this server-side window covers non-browser clients.
+    Two clients cold-start on one refresh token; the loser's replay must
+    resolve to the SAME live generation the winner received — re-issuing
+    it, not rotating the tip again (which would instantly invalidate the
+    winner's access token and cookie: find_with_live_session requires
+    replaced_by IS NULL). N replays = zero additional rotations.
     """
     clock = FrozenClock(_T0)
-    service = _make_service(clock)
+    service = _make_grace_service(clock)
     user = await _seed_user(db_session)
 
     tokens_a = await service.login_student(db_session, _USERNAME, _PASSWORD)
     tokens_b = await service.rotate_refresh(db_session, tokens_a.refresh_token)
+    rows_after_rotation = await _count_sessions(db_session, user.id)
+    assert rows_after_rotation == 2  # A retired + B live
 
-    # The losing tab replays A immediately: within the window this
-    # rotates the chain TIP (B's row) and returns fresh tokens.
-    tokens_c = await service.rotate_refresh(db_session, tokens_a.refresh_token)
-    assert tokens_c.refresh_token not in {
-        tokens_a.refresh_token,
-        tokens_b.refresh_token,
-    }
+    # The losing tab replays A: it receives B's OWN refresh secret and a
+    # fresh access token bound to the still-live B row. No rotation.
+    replayed = await service.rotate_refresh(db_session, tokens_a.refresh_token)
+    assert replayed.refresh_token == tokens_b.refresh_token
+    claims = AccessTokenCodec(
+        secret=_ACCESS_SECRET, ttl_minutes=_ACCESS_TTL_MINUTES
+    ).decode(replayed.access_token)
     row_b = await _session_row(db_session, tokens_b.refresh_token)
-    row_c = await _session_row(db_session, tokens_c.refresh_token)
-    assert row_b is not None and row_c is not None
-    # B was retired by the grace resume; C is the single live tip.
-    assert row_b.replaced_by == row_c.id
-    assert row_c.revoked_at is None and row_c.replaced_by is None
-    # One lineage, one live tip — the grace path never forked it.
+    assert row_b is not None
+    assert claims.sid == str(row_b.id)
+    assert row_b.revoked_at is None and row_b.replaced_by is None
+
+    # N tabs, one rotation: further replays add no rows, retire nothing.
+    for _ in range(3):
+        again = await service.rotate_refresh(db_session, tokens_a.refresh_token)
+        assert again.refresh_token == tokens_b.refresh_token
+    assert await _count_sessions(db_session, user.id) == rows_after_rotation
     assert await _count_unrevoked_sessions(db_session, user.id) == 1
 
-    # The winner's B presentation now ALSO replays a retired row within
-    # the window: it resumes the tip (C) the same way — convergence, not
-    # divergence, is the invariant.
-    tokens_d = await service.rotate_refresh(db_session, tokens_b.refresh_token)
-    row_d = await _session_row(db_session, tokens_d.refresh_token)
-    assert row_d is not None
-    assert row_c.replaced_by == row_d.id
+    # A later normal rotation retires B; the stale A replay now resolves
+    # THROUGH the envelope chain to the new live generation C.
+    tokens_c = await service.rotate_refresh(db_session, tokens_b.refresh_token)
+    chained = await service.rotate_refresh(db_session, tokens_a.refresh_token)
+    assert chained.refresh_token == tokens_c.refresh_token
     assert await _count_unrevoked_sessions(db_session, user.id) == 1
 
     # Outside the window the same replay is the §5.6 rejection again.
@@ -401,28 +434,134 @@ async def test_replay_within_grace_window_resumes_the_chain(
 
 
 @pytest.mark.integration
-async def test_grace_replay_fails_when_tip_is_revoked(
+async def test_presented_expiry_precedes_grace(
     db_session: AsyncSession,
 ) -> None:
-    """Logout kills the lineage: grace never resurrects a revoked tip."""
+    """Review P1: the presented credential's own expiry is checked
+    before any grace logic — an expired-but-recently-retired token
+    never replays even while a live successor exists."""
     clock = FrozenClock(_T0)
-    service = _make_service(clock)
+    service = _make_grace_service(clock)
+    await _seed_user(db_session)
+
+    tokens_a = await service.login_student(db_session, _USERNAME, _PASSWORD)
+    await service.rotate_refresh(db_session, tokens_a.refresh_token)
+
+    _advance(clock, days=_REFRESH_TTL_DAYS + 1)  # A itself long expired
+    with pytest.raises(BusinessError) as expired:
+        await service.rotate_refresh(db_session, tokens_a.refresh_token)
+    assert expired.value.status_code == 401
+
+
+@pytest.mark.integration
+async def test_grace_replay_fails_when_lineage_is_logged_out(
+    db_session: AsyncSession,
+) -> None:
+    """Grace never resurrects a logged-out lineage — neither replaying
+    the retired predecessor nor presenting the revoked tip itself."""
+    clock = FrozenClock(_T0)
+    service = _make_grace_service(clock)
     await _seed_user(db_session)
 
     tokens_a = await service.login_student(db_session, _USERNAME, _PASSWORD)
     tokens_b = await service.rotate_refresh(db_session, tokens_a.refresh_token)
     await service.revoke_session(db_session, tokens_b.refresh_token)
 
-    with pytest.raises(BusinessError) as exc_info:
+    with pytest.raises(BusinessError) as tip:
+        await service.rotate_refresh(db_session, tokens_b.refresh_token)
+    assert tip.value.status_code == 401
+    with pytest.raises(BusinessError) as predecessor:
         await service.rotate_refresh(db_session, tokens_a.refresh_token)
-    assert exc_info.value.status_code == 401
+    assert predecessor.value.status_code == 401
+
+
+@pytest.mark.integration
+async def test_logout_from_stale_generation_kills_the_live_tip(
+    db_session: AsyncSession,
+) -> None:
+    """Review P0-2: a client holding a retired generation (the normal
+    state of a raced cookie jar) must have its logout revoke the LIVE
+    lineage tip — never a silent no-op that keeps the account signed
+    in elsewhere."""
+    clock = FrozenClock(_T0)
+    service = _make_grace_service(clock)
+    user = await _seed_user(db_session)
+
+    tokens_a = await service.login_student(db_session, _USERNAME, _PASSWORD)
+    tokens_b = await service.rotate_refresh(db_session, tokens_a.refresh_token)
+
+    # Logout presents the STALE generation A.
+    await service.revoke_session(db_session, tokens_a.refresh_token)
+
+    assert await _count_unrevoked_sessions(db_session, user.id) == 0
+    with pytest.raises(BusinessError) as dead:
+        await service.rotate_refresh(db_session, tokens_b.refresh_token)
+    assert dead.value.status_code == 401
+
+
+@pytest.mark.integration
+async def test_refresh_vs_logout_race_ends_with_zero_live_sessions(
+    db_engine: AsyncEngine,
+) -> None:
+    """Review-mandated concurrency: one client refreshes while another
+    logs out, both presenting the same initial token. Regardless of
+    which transaction wins the row lock, the final lineage has ZERO
+    live sessions. Real commits on independent connections."""
+    username = "30990099997"
+    clock = FrozenClock(_T0)
+    service = _make_grace_service(clock)
+    async with AsyncSession(db_engine) as session:
+        session.add(
+            User(
+                username=username,
+                password_hash=hash_password(_PASSWORD),
+                nickname="登出竞态同学",
+                role=Role.STUDENT,
+                status=UserStatus.ACTIVE,
+            )
+        )
+        await session.commit()
+    try:
+        async with AsyncSession(db_engine) as session:
+            tokens = await service.login_student(session, username, _PASSWORD)
+
+        async def _rotate() -> bool:
+            async with AsyncSession(db_engine) as session:
+                try:
+                    await service.rotate_refresh(session, tokens.refresh_token)
+                    return True
+                except BusinessError:
+                    return False
+
+        async def _logout() -> None:
+            async with AsyncSession(db_engine) as session:
+                await service.revoke_session(session, tokens.refresh_token)
+
+        await asyncio.gather(_rotate(), _logout())
+
+        async with AsyncSession(db_engine) as verifier:
+            user_row = await verifier.scalar(
+                select(User).where(User.username == username)
+            )
+            assert user_row is not None
+            assert await _count_unrevoked_sessions(verifier, user_row.id) == 0
+    finally:
+        async with AsyncSession(db_engine) as session:
+            user = await session.scalar(select(User).where(User.username == username))
+            if user is not None:
+                await session.execute(
+                    delete(UserSession).where(UserSession.user_id == user.id)
+                )
+                await session.delete(user)
+            await session.commit()
 
 
 @pytest.mark.integration
 async def test_grace_disabled_at_zero_seconds(
     db_session: AsyncSession,
 ) -> None:
-    """REFRESH_GRACE_SECONDS=0 restores the strict rotate-once semantics."""
+    """REFRESH_GRACE_SECONDS=0 (the default until the amendment ruling)
+    restores strict rotate-once semantics and writes no envelopes."""
     clock = FrozenClock(_T0)
     service = SessionService(
         clock=clock,
@@ -430,12 +569,15 @@ async def test_grace_disabled_at_zero_seconds(
             secret=_ACCESS_SECRET, ttl_minutes=_ACCESS_TTL_MINUTES
         ),
         refresh_token_ttl_days=_REFRESH_TTL_DAYS,
-        refresh_grace_seconds=0,
     )
     await _seed_user(db_session)
 
     tokens_a = await service.login_student(db_session, _USERNAME, _PASSWORD)
     await service.rotate_refresh(db_session, tokens_a.refresh_token)
+
+    row_a = await _session_row(db_session, tokens_a.refresh_token)
+    assert row_a is not None
+    assert row_a.replay_envelope is None  # no envelope material at rest
 
     with pytest.raises(BusinessError) as exc_info:
         await service.rotate_refresh(db_session, tokens_a.refresh_token)
@@ -570,7 +712,7 @@ async def test_concurrent_rotation_of_one_refresh_token_converges_one_lineage(
     # connection and cannot prove a race).
     username = "30990099998"
     clock = FrozenClock(_T0)
-    service = _make_service(clock)
+    service = _make_grace_service(clock)
     async with AsyncSession(db_engine) as session:
         session.add(
             User(
@@ -598,10 +740,13 @@ async def test_concurrent_rotation_of_one_refresh_token_converges_one_lineage(
 
         winners = [result for result in results if isinstance(result, SessionTokens)]
         losers = [result for result in results if isinstance(result, BusinessError)]
-        # Both concurrent presenters won; the lineage did not fork.
+        # Review P0-1 invariant: BOTH concurrent presenters win AND they
+        # converge on ONE live generation — the loser's replay re-issues
+        # the winner's refresh secret (stable successor), so nobody's
+        # freshly issued credentials are invalidated by the other's.
         assert len(winners) == 2
         assert losers == []
-        assert len({winner.refresh_token for winner in winners}) == 2
+        assert winners[0].refresh_token == winners[1].refresh_token
         async with AsyncSession(db_engine) as verifier:
             user_row = await verifier.scalar(
                 select(User).where(User.username == username)
@@ -612,12 +757,13 @@ async def test_concurrent_rotation_of_one_refresh_token_converges_one_lineage(
             # refresh of user_row.id would be sync IO (MissingGreenlet).
             user_id = user_row.id
             assert await _count_unrevoked_sessions(verifier, user_id) == 1
-            # In-window, EVERY holder can still make progress (the
-            # retired-generation holder resumes the tip by grace).
+            # Exactly one rotation happened for the two-presenter wave.
+            assert await _count_sessions(verifier, user_id) == 2
+            # In-window, EVERY holder can still make progress — both
+            # access tokens name the one live session row.
             for winner in winners:
                 fresh = await service.rotate_refresh(verifier, winner.refresh_token)
                 assert fresh.refresh_token
-            assert await _count_unrevoked_sessions(verifier, user_id) == 1
 
         # Past the window, the original token is rejected for good.
         _advance(clock, seconds=31)

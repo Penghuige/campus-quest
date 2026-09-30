@@ -90,13 +90,17 @@ class Settings(BaseSettings):
     external_api_prefix: str = ""
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
-    # Refresh-rotation replay grace window (OAuth rotation BCP): a
-    # retired refresh token presented again within this many seconds
-    # resumes the session lineage instead of failing — covering
-    # non-browser clients that cannot serialize concurrent refreshes
-    # (browser tabs serialize via Web Locks). 0 restores strict
-    # rotate-once rejection. See SessionService._grace_resume.
-    refresh_grace_seconds: int = 30
+    # Refresh-rotation replay grace window (OAuth rotation BCP, PR #10
+    # rework): within this many seconds, a retired refresh token's
+    # replay resolves through the encrypted replay envelope to the
+    # CURRENT live generation and re-issues it — concurrent callers
+    # converge on one live lineage instead of rotating (and mutually
+    # invalidating) again. **Default 0 = strict rotate-once, unchanged
+    # product behavior**; flipping the default accepts the §5.6
+    # contract amendment (docs/superpowers/specs/
+    # 2026-09-30-refresh-grace-amendment.md) — that flip is the owner
+    # ruling, not an implementation detail.
+    refresh_grace_seconds: int = 0
     max_upload_bytes_default: int = 200 * 1024 * 1024
     # Presigned upload grant lifetimes (spec §10: 短时): the presigned
     # URL must expire STRICTLY BEFORE the single-use intent — the
