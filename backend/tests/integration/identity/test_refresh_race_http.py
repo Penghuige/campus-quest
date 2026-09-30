@@ -58,7 +58,14 @@ def grace_app(api_app: FastAPI) -> FastAPI:  # noqa: F811
     the grace window (and its Fernet envelope crypt, derived by the
     provider from the existing key) switches on.
     """
-    settings = get_settings().model_copy(update={"refresh_grace_seconds": 30})
+    from cryptography.fernet import Fernet
+
+    settings = get_settings().model_copy(
+        update={
+            "refresh_grace_seconds": 30,
+            "refresh_replay_encryption_key": Fernet.generate_key().decode(),
+        }
+    )
     api_app.dependency_overrides[get_settings] = lambda: settings
     return api_app
 

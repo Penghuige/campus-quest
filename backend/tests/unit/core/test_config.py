@@ -217,3 +217,57 @@ def test_get_settings_reads_environment_and_caches(monkeypatch) -> None:
         assert get_settings() is settings
     finally:
         get_settings.cache_clear()
+
+
+def test_refresh_grace_bounds_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The replay window changes bearer-replay authority: only the
+    owner-approved 0..60 range loads. Negative must not mean "off" by
+    accident and an hours-long window must never deploy by typo."""
+    from cryptography.fernet import Fernet
+
+    _set_required_env(monkeypatch)
+    valid_key = Fernet.generate_key().decode()
+
+    # 0 and the ceiling are legal (0 needs no key).
+    monkeypatch.setenv("REFRESH_GRACE_SECONDS", "0")
+    Settings()
+    monkeypatch.setenv("REFRESH_GRACE_SECONDS", "60")
+    monkeypatch.setenv("REFRESH_REPLAY_ENCRYPTION_KEY", valid_key)
+    Settings()
+
+    for bad in ("-1", "61", "3600"):
+        monkeypatch.setenv("REFRESH_GRACE_SECONDS", bad)
+        with pytest.raises(ValidationError):
+            Settings()
+    monkeypatch.setenv("REFRESH_GRACE_SECONDS", "30")
+
+
+def test_replay_key_required_and_valid_when_grace_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A window > 0 without a dedicated, structurally valid Fernet key
+    fails at config load — not at the first envelope write. The key is
+    dedicated: sharing the TOTP key is a wiring error the type system
+    cannot catch, so the loader catches shape at least."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("REFRESH_GRACE_SECONDS", "30")
+
+    # missing / empty / not-a-Fernet-key all refuse to load
+    for bad in (None, "", "definitely-not-base64-fernet-material"):
+        if bad is None:
+            monkeypatch.delenv("REFRESH_REPLAY_ENCRYPTION_KEY", raising=False)
+        else:
+            monkeypatch.setenv("REFRESH_REPLAY_ENCRYPTION_KEY", bad)
+        with pytest.raises(ValidationError):
+            Settings()
+
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("REFRESH_REPLAY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    settings = Settings()
+    assert settings.refresh_grace_seconds == 30
+
+    # grace off: the key is ignored entirely
+    monkeypatch.setenv("REFRESH_GRACE_SECONDS", "0")
+    monkeypatch.setenv("REFRESH_REPLAY_ENCRYPTION_KEY", "garbage")
+    assert Settings().refresh_grace_seconds == 0
