@@ -500,7 +500,6 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     // The response pairs token + csrf in one body; a later cookie read
     // (mutable) must never label the mint. Verify via the handoff slot.
     const handoffWrites: string[] = [];
-    const origSetItem = globalThis.localStorage?.setItem?.bind(globalThis.localStorage);
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => null,
       setItem: (_k: string, v: string) => handoffWrites.push(v),
@@ -514,15 +513,8 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     const published = JSON.parse(handoffWrites[0]) as { token: string; contextId: string | null };
     assert.equal(published.token, "mint-x");
     assert.equal(published.contextId, "ctx-response", "label = response csrf_token");
-    (globalThis as { localStorage?: Storage }).localStorage = origSetItem ? undefined : undefined;
-    if (origSetItem) {
-      // restore a working localStorage if the env had one
-      (globalThis as { localStorage?: Storage }).localStorage = {
-        getItem: () => null,
-        setItem: origSetItem,
-        removeItem: () => {},
-      } as unknown as Storage;
-    }
+    // Node has no real localStorage; leave the stub in place for the
+    // rest of the suite (the P1b test installs its own).
   });
 
   test("P1b: handoff is a synchronous slot — a waiter that MISSES the broadcast still adopts (one POST)", async () => {
