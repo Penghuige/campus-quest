@@ -154,6 +154,15 @@ interface AdoptionMessage {
 
 let lastAdoption: AdoptionMessage | null = null;
 
+/** This tab's id — reset broadcasts from OUR tab must not fence us
+ *  (BroadcastChannel delivers to other channel instances in the SAME
+ *  context; without this guard the tab that just logged in would drop
+ *  its own fresh bearer). */
+const TAB_ID =
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `tab-${Math.random().toString(36).slice(2)}`;
+
 interface WebLocksLike {
   request: (
     name: string,
@@ -240,7 +249,11 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   // never replay under the new account. (Session/data caches invalidate
   // via their own subscriptions — see invalidateSessionCache callers.)
   const resetListener = new BroadcastChannel(CONTEXT_RESET_CHANNEL);
-  resetListener.onmessage = () => {
+  resetListener.onmessage = (event: MessageEvent) => {
+    const data = event.data as { from?: unknown } | null;
+    if (data !== null && data.from === TAB_ID) {
+      return; // our OWN transition already fenced us locally
+    }
     accessToken = null;
     authEpoch += 1;
     lastAdoption = null;
@@ -282,7 +295,7 @@ export function broadcastContextReset(): void {
     return;
   }
   const channel = new BroadcastChannel(CONTEXT_RESET_CHANNEL);
-  channel.postMessage({ reset: true });
+  channel.postMessage({ reset: true, from: TAB_ID });
   channel.close();
 }
 

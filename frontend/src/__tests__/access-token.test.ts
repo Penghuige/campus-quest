@@ -555,3 +555,5 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     (globalThis as { localStorage?: Storage }).localStorage = undefined;
   });
 });
+
+// --- self-fence guard (regression: own login reset must not drop own bearer) ---
