@@ -90,6 +90,27 @@ class Settings(BaseSettings):
     external_api_prefix: str = ""
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
+    # Refresh-rotation replay grace window (OAuth rotation BCP, PR #10
+    # rework): within this many seconds, a retired refresh token's
+    # replay resolves through the encrypted replay envelope to the
+    # CURRENT live generation and re-issues it — concurrent callers
+    # converge on one live lineage instead of rotating (and mutually
+    # invalidating) again. **Default 0 = strict rotate-once, unchanged
+    # product behavior**; flipping the default accepts the §5.6
+    # contract amendment (docs/superpowers/specs/
+    # 2026-09-30-refresh-grace-amendment.md) — that flip is the owner
+    # ruling, not an implementation detail. The value is HARD-BOUNDED to
+    # the owner-approved window 0..60 (a negative silently behaves like
+    # "off" and an hours-long window would stretch bearer-replay
+    # authority far past the BCP's intent — both fail at config load).
+    refresh_grace_seconds: int = 0
+    # Dedicated Fernet key for the refresh replay envelopes —
+    # deliberately NOT the TOTP key: key compromise/rotation of one
+    # secret must not affect the other's ciphertexts (operational key
+    # separation; the "replay:v1:" prefix only prevented type
+    # confusion). Required (valid url-safe base64 32-byte key) whenever
+    # the grace window is enabled; unused and ignored at the default 0.
+    refresh_replay_encryption_key: str = ""
     max_upload_bytes_default: int = 200 * 1024 * 1024
     # Presigned upload grant lifetimes (spec §10: 短时): the presigned
     # URL must expire STRICTLY BEFORE the single-use intent — the
@@ -294,6 +315,37 @@ class Settings(BaseSettings):
                 "with a leading slash, no trailing slash, no empty parts"
             )
         return value
+
+    @field_validator("refresh_grace_seconds")
+    @classmethod
+    def _validate_refresh_grace_seconds(cls, value: int) -> int:
+        # The window changes bearer-token replay authority; the
+        # owner-approved range is 0..60 seconds. Anything outside fails
+        # at config load — a negative must not silently mean "off" and
+        # an hours-long window must never deploy by typo.
+        if not 0 <= value <= 60:
+            raise ValueError(
+                "refresh_grace_seconds must be within the owner-approved "
+                "0..60 range (0 = strict rotate-once)"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _require_replay_key_with_grace(self) -> "Settings":
+        # Enabling the window without a dedicated, structurally valid
+        # Fernet key must fail at load, not at the first rotation that
+        # tries to write an envelope.
+        if self.refresh_grace_seconds > 0:
+            key = self.refresh_replay_encryption_key
+            try:
+                Fernet(key.encode())
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    "refresh_replay_encryption_key must be a valid Fernet "
+                    "key (32 url-safe base64 bytes) when "
+                    "refresh_grace_seconds > 0"
+                ) from exc
+        return self
 
     @field_validator("business_timezone")
     @classmethod

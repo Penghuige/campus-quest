@@ -126,6 +126,13 @@ def get_session_service(
         clock=clock,
         access_codec=codec,
         refresh_token_ttl_days=settings.refresh_token_ttl_days,
+        refresh_grace_seconds=settings.refresh_grace_seconds,
+        # Dedicated key (settings validates it is a real Fernet key
+        # whenever the window is on) — never the TOTP key, so either
+        # secret can rotate without touching the other's ciphertexts.
+        replay_crypt=Fernet(settings.refresh_replay_encryption_key.encode())
+        if settings.refresh_grace_seconds > 0
+        else None,
     )
 
 
