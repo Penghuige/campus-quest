@@ -15,9 +15,15 @@ import type { NextConfig } from "next";
  *   including production builds — changes nothing.
  */
 const proxyTarget = process.env.CQ_DEV_API_PROXY;
+// Optional path-prefix mount (e.g. behind a reverse proxy serving the
+// app at https://host/campus). Build-time only. The client API base
+// stays the absolute `/api/v1` — route it at the proxy, NOT under the
+// base path, so the backend's cookie paths keep matching.
+const basePath = process.env.CQ_BASE_PATH || undefined;
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  basePath,
   ...(proxyTarget !== undefined && proxyTarget !== ""
     ? {
         async rewrites() {

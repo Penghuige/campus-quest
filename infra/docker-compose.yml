@@ -9,8 +9,13 @@
 # documented in infra/env.example.
 #
 # MinIO images come from the MinIO organization on quay.io: Docker Hub now
-# restricts anonymous pulls of third-party namespaces (minio/*), while the
-# quay.io registry stays anonymously pullable.
+# restricts anonymous pulls of third-party namespaces (minio/*), and since
+# ~2026-09-30 quay.io refuses anonymous minio pulls as well. A host without
+# a cached copy must load the mirrors first (same pinned tags, original
+# image names restored):
+#   curl -fsSL https://github.com/Penghuige/campus-quest/releases/download/ci-images-20260930/cq-minio-server.tar.gz | gunzip -c | docker load
+#   curl -fsSL https://github.com/Penghuige/campus-quest/releases/download/ci-images-20260930/cq-minio-mc.tar.gz     | gunzip -c | docker load
+# CI does exactly this (see .github/workflows/ci.yml).
 #
 # Dev-only credential defaults are inlined below; real environment variables
 # (POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD) win over them.

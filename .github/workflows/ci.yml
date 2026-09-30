@@ -123,6 +123,19 @@ jobs:
       # the server (infra/docker-compose.yml passes `server /data` too).
       # Same pinned image, credentials, and `mc ready local` healthcheck as
       # compose; started as a step container on localhost:9000 instead.
+      #
+      # The images load from the repo's own release assets
+      # (tag ci-images-20260930): quay.io stopped serving anonymous pulls
+      # for the minio namespace on ~2026-09-30, which broke every fresh
+      # runner. The tarballs are byte-identical mirrors of the pinned
+      # upstream tags and restore the original quay image names, so the
+      # run commands below are unchanged.
+      - name: Load pinned MinIO images from the release mirror
+        run: |
+          base="https://github.com/Penghuige/campus-quest/releases/download/ci-images-20260930"
+          curl -fsSL "$base/cq-minio-server.tar.gz" | gunzip -c | docker load
+          curl -fsSL "$base/cq-minio-mc.tar.gz"     | gunzip -c | docker load
+          docker image ls --format '{{.Repository}}:{{.Tag}}' | grep minio
       - name: Start MinIO and wait until healthy
         run: |
           docker run -d --name minio-ci \
