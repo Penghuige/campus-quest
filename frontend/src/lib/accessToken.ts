@@ -88,6 +88,117 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/*
+ * Cross-tab cold-start coordination (QA defect #1, owner ruling on the
+ * PR #10 review): every cold start rotates the refresh cookie, and the
+ * server's live-session row (`replaced_by IS NULL`) accepts exactly one
+ * lineage tip — so N tabs rotating concurrently used to leave the
+ * losers logged out. The contract is ONE rotation per cold-start wave:
+ *
+ * 1. the round-trip runs inside a Web Locks request (same-origin tabs
+ *    serialize on it);
+ * 2. the tab that first reaches the lock ROTATES once and BROADCASTS
+ *    the minted access token on a BroadcastChannel;
+ * 3. every sibling that reaches the lock afterwards ADOPTS that
+ *    broadcast (same auth context, fresh) instead of rotating — the
+ *    server sees exactly one POST /auth/refresh per wave, and the one
+ *    minted token stays the live one for all tabs.
+ *
+ * The server-side grace window (refresh-grace amendment, default off)
+ * is the non-browser/cross-origin backstop, not a substitute: with
+ * strict rotate-once (the default), adoption is the only protection.
+ */
+
+/** Web Locks name serializing rotations across same-origin tabs. */
+const REFRESH_LOCK_NAME = "cq:auth-refresh";
+
+/** How long a tab may WAIT for the lock before surfacing false. */
+let refreshLockTimeoutMs = 10_000;
+
+/** Test-only: shrink the cross-tab lock wait budget. */
+export function setRefreshLockTimeoutForTests(ms: number): void {
+  refreshLockTimeoutMs = ms;
+}
+
+/** Adoption channel: the winner's mint, broadcast to sibling tabs. */
+const ADOPTION_CHANNEL = "cq-auth-adoption";
+/** A broadcast older than this is not adoptable (wave-scale freshness). */
+const ADOPTION_TTL_MS = 10_000;
+
+interface AdoptionMessage {
+  token: string;
+  /** The CSRF cookie value at mint time — adopt only if OURS matches
+   *  (the cookie rotates per login, so a foreign context never matches). */
+  contextId: string | null;
+  at: number;
+}
+
+let lastAdoption: AdoptionMessage | null = null;
+
+interface WebLocksLike {
+  request: (
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<boolean>,
+  ) => Promise<boolean>;
+}
+
+function webLocks(): WebLocksLike | null {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  const locks = (navigator as { locks?: unknown }).locks;
+  return typeof locks === "object" && locks !== null &&
+    typeof (locks as WebLocksLike).request === "function"
+    ? (locks as WebLocksLike)
+    : null;
+}
+
+// Sibling broadcasts may land while this tab still waits on the lock, so
+// the listener must exist from the first rotation. Guarded on `window`:
+// in Node (unit tests) BroadcastChannel exists but would hold the event
+// loop open forever — the listener is a browser-only affordance.
+if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+  const listener = new BroadcastChannel(ADOPTION_CHANNEL);
+  listener.onmessage = (event: MessageEvent) => {
+    const data = event.data as Partial<AdoptionMessage> | null;
+    if (
+      data !== null &&
+      typeof data.token === "string" &&
+      data.token.length > 0 &&
+      (data.contextId === null || typeof data.contextId === "string") &&
+      typeof data.at === "number"
+    ) {
+      lastAdoption = {
+        token: data.token,
+        contextId: data.contextId ?? null,
+        at: data.at,
+      };
+    }
+  };
+}
+
+/** Adopt a sibling's fresh mint for OUR context, or null. */
+function tryAdopt(): string | null {
+  if (
+    lastAdoption !== null &&
+    Date.now() - lastAdoption.at < ADOPTION_TTL_MS &&
+    lastAdoption.contextId === readCsrfToken()
+  ) {
+    return lastAdoption.token;
+  }
+  return null;
+}
+
+function broadcastAdoption(token: string): void {
+  if (typeof BroadcastChannel === "undefined") {
+    return;
+  }
+  const channel = new BroadcastChannel(ADOPTION_CHANNEL);
+  channel.postMessage({ token, contextId: readCsrfToken(), at: Date.now() } satisfies AdoptionMessage);
+  channel.close();
+}
+
 /**
  * Rotate the session through the HttpOnly refresh cookie and remember
  * the new access token. Resolves `true` when a usable token came back.
@@ -119,11 +230,6 @@ export function refreshAccessToken(): Promise<boolean> {
 }
 
 async function rotate(): Promise<boolean> {
-  const headers = new Headers({ Accept: "application/json" });
-  const csrfToken = readCsrfToken();
-  if (csrfToken !== null) {
-    headers.set(CSRF_HEADER_NAME, csrfToken);
-  }
   // The auth context this rotation belongs to: a refresh that started
   // under one epoch and settles under another (its drain straddled a
   // beginAuthTransition) must not write the OLD context's token into
@@ -131,7 +237,65 @@ async function rotate(): Promise<boolean> {
   // the transition, so its Set-Cookie is applied BEFORE the login/
   // logout request goes out and loses the last-writer race by design.
   const epochAtStart = authEpoch;
+  const locks = webLocks();
+  if (locks === null) {
+    return adoptOrRotate(epochAtStart);
+  }
+  // Serialize adopt-or-rotate across same-origin tabs. Rejection
+  // handling is cause-aware:
+  // - the wait TIMED OUT: firing unlocked would re-create the rotation
+  //   race the lock exists to prevent — surface false; the next reload
+  //   (or the winner's settled broadcast/cookie) recovers, which beats
+  //   a guaranteed double-rotation under strict rotate-once;
+  // - an explicit auth transition opened while we waited: its drain
+  //   owns the cookie ordering — no new rotation — false;
+  // - lock infrastructure refused BEFORE our callback ran: degrade to
+  //   the unlocked adopt-or-rotate (performRotation is total).
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), refreshLockTimeoutMs);
   try {
+    return await locks.request(
+      REFRESH_LOCK_NAME,
+      { signal: abort.signal },
+      () => adoptOrRotate(epochAtStart),
+    );
+  } catch {
+    if (abort.signal.aborted || transitionActive) {
+      return false;
+    }
+    return adoptOrRotate(epochAtStart);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Inside the lock: adopt a sibling's fresh mint for our auth context, or
+ * rotate ONCE and broadcast the mint. Either way at most one POST per
+ * wave reaches the server from this tab.
+ */
+function adoptOrRotate(epochAtStart: number): Promise<boolean> {
+  const adopted = tryAdopt();
+  if (adopted !== null && authEpoch === epochAtStart && !transitionActive) {
+    accessToken = adopted;
+    return Promise.resolve(true);
+  }
+  return performRotation(epochAtStart).then((ok) => {
+    if (ok && accessToken !== null) {
+      broadcastAdoption(accessToken);
+    }
+    return ok;
+  });
+}
+
+/** The one network round-trip: POST /auth/refresh with the cookie pair. */
+async function performRotation(epochAtStart: number): Promise<boolean> {
+  try {
+    const headers = new Headers({ Accept: "application/json" });
+    const csrfToken = readCsrfToken();
+    if (csrfToken !== null) {
+      headers.set(CSRF_HEADER_NAME, csrfToken);
+    }
     const response = await fetch(AUTH_REFRESH_PATH, {
       method: "POST",
       headers,
@@ -199,10 +363,20 @@ export function endAuthTransition(): void {
   transitionActive = false;
 }
 
-/** Test-only: reset the module singleton between test cases. */
+/** Test seam: reset the module singleton between test cases. */
 export function resetAccessTokenManagerForTests(): void {
   accessToken = null;
   refreshInFlight = null;
   authEpoch = 0;
   transitionActive = false;
+  lastAdoption = null;
+}
+
+/**
+ * Test seam: simulate a sibling tab's broadcast landing in the listener
+ * (Node tests run without `window`, so the browser-only listener that
+ * feeds `lastAdoption` never exists there).
+ */
+export function receiveAdoptionForTests(message: AdoptionMessage): void {
+  lastAdoption = message;
 }

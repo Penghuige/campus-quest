@@ -24,8 +24,10 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
   getAccessToken,
+  receiveAdoptionForTests,
   refreshAccessToken,
   resetAccessTokenManagerForTests,
+  setRefreshLockTimeoutForTests,
 } from "../lib/accessToken";
 import { apiRequest } from "../lib/api";
 import { isApiError } from "../lib/errors";
@@ -307,5 +309,142 @@ describe("regression 4: logout forgets the memory token", () => {
       () => {},
     );
     assert.equal(getAccessToken(), null);
+  });
+});
+
+// --- cross-tab coordination: Web Locks + BroadcastChannel adoption (QA #1) -----
+
+describe("cold-start coordination (locks + adoption)", () => {
+  type LockFn = (
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<boolean>,
+  ) => Promise<boolean>;
+
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installNavigator(value: unknown): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  function installLocks(lock: LockFn): void {
+    installNavigator({ locks: { request: lock } });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    } else {
+      installNavigator(undefined);
+    }
+    resetAccessTokenManagerForTests();
+  });
+
+  test("the rotation POST runs INSIDE the lock callback", async () => {
+    resetAccessTokenManagerForTests();
+    let insideLock = false;
+    let lockName = "";
+    installLocks(async (name, _options, callback) => {
+      lockName = name;
+      insideLock = true;
+      const result = await callback();
+      insideLock = false;
+      return result;
+    });
+    globalThis.fetch = (async () => {
+      assert.equal(insideLock, true, "fetch must run inside the lock");
+      return new Response(JSON.stringify({ access_token: "tok-1" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(lockName, "cq:auth-refresh");
+  });
+
+  test("a lock WAIT timeout surfaces false — never fires unlocked into the race", async () => {
+    resetAccessTokenManagerForTests();
+    setRefreshLockTimeoutForTests(30);
+    installLocks((_name, options) =>
+      new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    );
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false);
+    assert.equal(posts, 0, "no unlocked POST after a lock timeout");
+  });
+
+  test("the winner's rotation BROADCASTS the mint on the adoption channel", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const seen: unknown[] = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    ear.onmessage = (event: MessageEvent) => seen.push(event.data);
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "mint-abc" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(seen.length, 1);
+    const message = seen[0] as { token: string };
+    assert.equal(message.token, "mint-abc");
+    ear.close();
+  });
+
+  test("a sibling's fresh same-context broadcast is ADOPTED — zero POSTs", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // No document.cookie in Node -> our contextId is null; a broadcast
+    // minted with contextId null matches.
+    receiveAdoptionForTests({ token: "sibling-mint", contextId: null, at: Date.now() });
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 0, "adoption must not rotate");
+    assert.equal(getAccessToken(), "sibling-mint");
+  });
+
+  test("a FOREIGN-context broadcast is never adopted (login/logout boundary)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    receiveAdoptionForTests({ token: "foreign", contextId: "other-session", at: Date.now() });
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "own" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1, "own rotation for own context");
+    assert.equal(getAccessToken(), "own");
+  });
+
+  test("an EXPIRED same-context broadcast is not adopted (TTL)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    receiveAdoptionForTests({ token: "stale", contextId: null, at: Date.now() - 30_000 });
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "fresh" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1, "expired broadcast must not be adopted");
+    assert.equal(getAccessToken(), "fresh");
   });
 });
