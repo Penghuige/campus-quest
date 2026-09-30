@@ -390,7 +390,11 @@ async def test_update_validates_the_merged_window_and_requires_a_field(
     admin = await _seed_user(db_session, username="rewadm-window-0007", role=Role.ADMIN)
     service = _admin_service()
     opens = _T0
-    closes = _T0.replace(day=30)
+    # A plain offset, never a calendar trick: `.replace(day=30)` made
+    # from == until on the 30th (and inverted on the 31st), so this
+    # test failed on month-end days only — a date bomb, not a product
+    # behavior.
+    closes = _T0 + timedelta(days=7)
     item = await service.create_reward_item(
         db_session,
         _actor(admin),
