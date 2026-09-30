@@ -21,11 +21,12 @@ Design decisions:
   must never mint a password-only session for staff.
 - **Rotation is one transaction guarded by a row lock.** The presented
   session row is selected `FOR UPDATE`, so two concurrent rotations of the
-  same refresh token serialize: the winner links and revokes the old row,
-  the loser reads `replaced_by IS NOT NULL` and fails (§5.6 replay
-  detection). Insert of the successor and the revoke happen in the same
-  transaction; there is no intermediate state where both tokens are live
-  (or neither).
+  same refresh token serialize: the winner links and revokes the old row;
+  the loser either fails (§5.6 rotate-once — the default, grace OFF) or
+  re-issues the live generation through the replay envelope (grace ON).
+  Insert of the successor and the revoke happen in the same
+  transaction; there is no intermediate state where both generations are
+  independently live (or neither).
 - **Only digests are persisted** (spec §5.6): the refresh token is
   `secrets.token_urlsafe(32)` in the return value only; the row stores its
   SHA-256 digest (see `app.core.security` for why SHA-256, not Argon2).
@@ -184,10 +185,13 @@ class SessionService:
         """Replace one refresh session with a successor, atomically.
 
         The old row is locked `FOR UPDATE`, so concurrent presentations of
-        the same token serialize and exactly one rotation wins; the loser
-        sees `replaced_by` set and fails (§5.6: an old refresh token must
-        never work twice). Unknown, expired, revoked, and replaced tokens
-        raise the same error — the branch reason never leaves the server.
+        the same token serialize and exactly one rotation wins. With the
+        grace window OFF (the default), the loser sees `replaced_by` set
+        and fails — §5.6 rotate-once. With the window ON, the loser
+        instead re-issues the live generation via the envelope chain
+        (`_stable_replay`), converging the race instead of failing it.
+        Unknown, expired, revoked, and out-of-window tokens raise the
+        same error — the branch reason never leaves the server.
         """
         now = self._clock.now()
         token_hash = hash_refresh_token(refresh_token)
@@ -230,12 +234,6 @@ class SessionService:
             )
             await db.commit()
             return replayed[0]
-        if current.expires_at <= now:
-            logger.info(
-                "session rotate rejected session_id=%s reason=expired",
-                current.id,
-            )
-            raise self._authentication_required()
 
         user = await db.scalar(select(User).where(User.id == current.user_id))
         if user is None:
@@ -350,6 +348,10 @@ class SessionService:
 
         user = await db.scalar(select(User).where(User.id == row.user_id))
         if user is None or user.status != UserStatus.ACTIVE:
+            # Deliberate asymmetry vs the live path: a NON-ACTIVE account
+            # gets a typed 403 on a LIVE presentation but a uniform 401
+            # here — a replay must never become an account-state oracle
+            # (the presented token's holder already failed primary auth).
             return None
         access_token = self._codec.encode(
             user_id=user.id,
@@ -402,13 +404,34 @@ class SessionService:
         if row is None:
             logger.info("session logout no-op reason=unknown_token")
             return
+        # The walk is deliberately UNBOUNDED: a long-lived lineage earns
+        # one row per refresh (15-minute access TTL -> dozens of
+        # generations per day), and a hop cap here would fail OPEN — the
+        # truncated walk lands on a retired row and logout silently
+        # no-ops while the real tip stays signed in (review P1, reproduced
+        # on PG with a 12-generation chain). `replaced_by` is set exactly
+        # once, always forward to a NEWER row, so the chain is acyclic
+        # and the forward lock order cannot deadlock; the depth guard
+        # below only LOUDLY reports the impossible.
         hops = 0
-        while row.replaced_by is not None and hops < _CHAIN_HOP_BOUND:
+        while row.replaced_by is not None:
             successor = await db.get(UserSession, row.replaced_by, with_for_update=True)
             if successor is None:
+                logger.error(
+                    "logout chain broken at session_id=%s — revoking the "
+                    "last reachable row",
+                    row.id,
+                )
                 break
             row = successor
             hops += 1
+            if hops > _CHAIN_HOP_BOUND:
+                logger.error(
+                    "logout chain depth exceeded %d at session_id=%s "
+                    "(pathological, continuing)",
+                    _CHAIN_HOP_BOUND,
+                    row.id,
+                )
         if row.revoked_at is None:
             row.revoked_at = now
         session_id = row.id

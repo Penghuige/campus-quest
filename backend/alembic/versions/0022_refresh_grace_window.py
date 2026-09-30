@@ -1,25 +1,31 @@
-"""Points: the refresh-rotation grace window timestamp.
+"""
+Points: the refresh-rotation grace window timestamps.
 
 `user_sessions.replaced_at` records WHEN a row was retired by rotation
-(set atomically with `replaced_by`). SessionService.rotate_refresh uses
-it for the OAuth refresh-token-rotation BCP: a retired token presented
-again within REFRESH_GRACE_SECONDS (default 30, 0 disables) resumes the
-chain tip instead of failing — covering non-browser clients that cannot
-serialize their refreshes the way browser tabs now do via Web Locks
-(the cross-tab race fix in PR #9). Outside the window the §5.6
-rotate-once rejection stands unchanged; a logout-revoked tip is never
-resurrected by grace.
+(set atomically with `replaced_by`); `user_sessions.replay_envelope`
+(added in 0023) carries the successor's encrypted refresh secret for
+the stable-successor replay. Together they implement the OAuth
+rotation-BCP grace window for PR #10: a retired token presented again
+within REFRESH_GRACE_SECONDS resolves to the CURRENT live generation
+and is re-issued — concurrent callers converge on one lineage.
+
+DEFAULT 0 = strict rotate-once, unchanged product behavior. Flipping
+the default accepts the section 5.6 contract amendment
+(docs/superpowers/specs/2026-09-30-refresh-grace-amendment.md) — that
+flip is the owner ruling, not an implementation detail.
 
 Contract notes for psql readers:
 
 - Rotation sets `revoked_at` AND `replaced_by` AND `replaced_at`
   together; logout revocation sets only `revoked_at`. Grace applies
-  exclusively to the replaced (retired) shape.
+  exclusively to the replaced (retired) shape, and `revoke_session`
+  walks the chain to revoke the live tip — a stale generation's
+  logout is never a silent no-op.
 - Legacy rows have `replaced_by` set with `replaced_at` NULL: the
   service treats NULL as "retirement time unknown" = outside every
   window (fail closed; no backfill guess).
-- One lineage per login is the invariant: a grace resume rotates the
-  CURRENT tip and re-links it, so the chain converges and never forks.
+- The chain is acyclic (replaced_by is written once, always forward),
+  which is what the unbounded logout walk relies on.
 """
 
 import sqlalchemy as sa

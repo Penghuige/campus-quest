@@ -357,10 +357,9 @@ async def test_rotation_chain_reuse_of_old_token_fails(
     assert claims_b.sid == str(row_b.id)
 
     live = await _count_unrevoked_sessions(db_session, user.id)
-    # Past the rotation grace window (default 30s), the reuse is the
-    # plain §5.6 rejection again (see the grace-window tests above for
-    # the in-window resume semantics).
-    _advance(clock, seconds=31)
+    # Strict rotate-once (this service runs grace=0): reuse is the plain
+    # §5.6 rejection; the grace-window tests above cover in-window
+    # replay under an explicitly enabled window.
     with pytest.raises(BusinessError) as reuse_exc:
         await service.rotate_refresh(db_session, tokens_a.refresh_token)
     assert reuse_exc.value.code == ErrorCode.AUTHENTICATION_REQUIRED
@@ -497,6 +496,78 @@ async def test_logout_from_stale_generation_kills_the_live_tip(
     with pytest.raises(BusinessError) as dead:
         await service.rotate_refresh(db_session, tokens_b.refresh_token)
     assert dead.value.status_code == 401
+
+
+@pytest.mark.integration
+async def test_logout_walks_deep_rotation_chains_without_a_cap(
+    db_session: AsyncSession,
+) -> None:
+    """Review P1 regression: the logout walk must be unbounded.
+
+    A lineage earns one row per refresh; with the 15-minute access TTL
+    a day-old session has dozens of generations. A hop cap would fail
+    OPEN — the truncated walk lands on a retired row and logout
+    silently no-ops while the live tip stays signed in (reproduced on
+    PG with 12 generations before the fix).
+    """
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)  # grace=0: pure rotation chain
+    user = await _seed_user(db_session)
+
+    tokens = await service.login_student(db_session, _USERNAME, _PASSWORD)
+    first_refresh = tokens.refresh_token
+    for _ in range(12):  # comfortably past any sane hop bound
+        tokens = await service.rotate_refresh(db_session, tokens.refresh_token)
+
+    # Logging out with the OLDEST credential must still reach the tip.
+    await service.revoke_session(db_session, first_refresh)
+    assert await _count_unrevoked_sessions(db_session, user.id) == 0
+
+
+@pytest.mark.integration
+async def test_replay_fail_closed_shapes(
+    db_session: AsyncSession,
+) -> None:
+    """Every fail-closed envelope shape refuses replay with a uniform
+    401: rows retired while the window was OFF (no envelope material),
+    legacy-shaped rows (replaced_at NULL), and tampered envelope
+    ciphertext (InvalidToken)."""
+    clock = FrozenClock(_T0)
+    strict = _make_service(clock)  # grace=0
+    await _seed_user(db_session)
+
+    tokens_a = await strict.login_student(db_session, _USERNAME, _PASSWORD)
+    tokens_b = await strict.rotate_refresh(db_session, tokens_a.refresh_token)
+
+    graced = _make_grace_service(clock)
+
+    # Shape 1: row_a was retired under grace=0 — no envelope material.
+    row_a = await _session_row(db_session, tokens_a.refresh_token)
+    assert row_a is not None
+    assert row_a.replay_envelope is None
+    with pytest.raises(BusinessError) as no_envelope:
+        await graced.rotate_refresh(db_session, tokens_a.refresh_token)
+    assert no_envelope.value.status_code == 401
+
+    # Shape 2: legacy shape — retirement timestamp missing entirely.
+    row_a.replaced_at = None
+    await db_session.flush()
+    with pytest.raises(BusinessError) as legacy:
+        await graced.rotate_refresh(db_session, tokens_a.refresh_token)
+    assert legacy.value.status_code == 401
+
+    # Shape 3: a well-formed retirement with a GARBAGE envelope.
+    tokens_c = await graced.rotate_refresh(db_session, tokens_b.refresh_token)
+    row_b = await _session_row(db_session, tokens_b.refresh_token)
+    assert row_b is not None and row_b.replay_envelope
+    row_b.replay_envelope = Fernet(_REPLAY_KEY).encrypt(b"tampered").decode()
+    await db_session.flush()
+    with pytest.raises(BusinessError) as tampered:
+        await graced.rotate_refresh(db_session, tokens_b.refresh_token)
+    assert tampered.value.status_code == 401
+    # The live generation is untouched by the refusal.
+    tokens_d = await graced.rotate_refresh(db_session, tokens_c.refresh_token)
+    assert tokens_d.refresh_token
 
 
 @pytest.mark.integration
