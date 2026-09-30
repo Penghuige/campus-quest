@@ -175,9 +175,7 @@ def clear_session_cookies(response: Response, settings: Settings) -> None:
     cookie would survive. Both paths derive from the same settings the
     issue used, so logout always clears exactly what login set.
     """
-    response.delete_cookie(
-        REFRESH_COOKIE_NAME, path=auth_cookie_path(settings)
-    )
+    response.delete_cookie(REFRESH_COOKIE_NAME, path=auth_cookie_path(settings))
     response.delete_cookie(CSRF_COOKIE_NAME, path=csrf_cookie_path(settings))
 
 

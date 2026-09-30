@@ -288,11 +288,7 @@ class Settings(BaseSettings):
         # "//campus", "/campus/" are not.
         if value == "":
             return value
-        if (
-            not value.startswith("/")
-            or value.endswith("/")
-            or "//" in value
-        ):
+        if not value.startswith("/") or value.endswith("/") or "//" in value:
             raise ValueError(
                 "external_api_prefix must be '' or '/segment[...]' "
                 "with a leading slash, no trailing slash, no empty parts"
