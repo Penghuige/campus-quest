@@ -95,22 +95,44 @@ export function getAccessToken(): string | null {
  * the first tab's just-minted token (the live-session row requires
  * `replaced_by IS NULL`).
  *
- * Mechanism (round-3 shape):
+ * Mechanism (round-5 shape — probe/answer liveness):
  * 1. the round-trip runs inside a Web Locks request (same-origin tabs
  *    serialize on "cq:auth-refresh");
- * 2. the wave's winner ROTATES once, then publishes — still under the
- *    lock — a NON-SECRET marker {contextId, at} to localStorage (the
- *    only persistent artifact; the bearer NEVER touches storage) and
- *    the mint (token + the RESPONSE's own csrf_token) to the adoption
- *    BroadcastChannel, holding the lock a short delivery grace;
- * 3. waiters, under the lock: adopt a valid in-memory mint, else read
- *    the marker — AGE-GATED (MINT_FRESH_MS): a fresh marker routes to
- *    a bounded wait on the LONG-LIVED listener (generation-keyed
- *    resolvers + recheck-after-register; a fresh channel cannot replay
- *    an already-posted message), and a timeout there FAILS CLOSED;
- *    an older marker belongs to a finished wave — this tab rotates as
- *    the new winner. The marker serves every waiter of the generation
- *    (never consumed by the first).
+ * 2. the wave's LEADER (no adoption, no marker for our context) rotates
+ *    once, then publishes — still under the lock — a NON-SECRET marker
+ *    {waveId, contextId, at} (waveId is a fresh opaque uuid per wave)
+ *    to localStorage and the mint {kind:"mint", waveId, token,
+ *    contextId, at} to the adoption BroadcastChannel, holding the lock
+ *    a short delivery grace;
+ * 3. a waiter seeing a marker for its context PROBES the wave — it
+ *    posts {kind:"probe", waveId} and bounded-waits on the resolver-
+ *    armed LONG-LIVED listener (a fresh channel cannot replay an
+ *    already-posted message). Every live holder of the wave — any tab
+ *    whose in-memory mint still names it; the reset clears that mint
+ *    exactly when its context dies — ANSWERS by re-posting a
+ *    RE-STAMPED mint (a live holder answering IS the liveness proof;
+ *    the answer's freshness is the answer time, never the mint time —
+ *    round-5 review P1), and the waiter adopts with ZERO extra POSTs.
+ *    Wave liveness is an active request/response, never a marker-age
+ *    or mint-age guess;
+ * 4. a probe timeout PROVES the wave dead (no live holder answered) —
+ *    the waiter rotates as the NEW LEADER and the marker is replaced.
+ *    This un-strands later cold starts (round-5 P1: a persistent
+ *    finished-wave marker plus an ephemeral bearer is a liveness
+ *    deadlock under any fail-closed-forever rule) and covers a
+ *    same-tab reload over its OWN dead marker with no ownership
+ *    counter to collide;
+ * 5. wave identity is an OPAQUE uuid compared by EQUALITY (round-5
+ *    P1a): per-tab numeric generations collide (every heap counts from
+ *    0), and the numeric `<=` comparison misread a sibling's live wave
+ *    as this tab's own dead one — retiring it.
+ *
+ * Divergence bound (accepted): a holder throttled past the probe
+ * window (a deep-background tab) can miss a probe; its wave is retired
+ * by the probing leader and SELF-HEALS on its next refresh (401 ->
+ * probe -> adopt the new wave, or rotate as the next leader). Cost:
+ * one extra rotation per incident — never a logout loop, never a
+ * stranded tab.
  *
  * Cross-tab auth-context fence (rounds 1-3 P0): authEpoch is TAB-LOCAL
  * but cookies are origin-global, so a sibling's explicit login/logout
@@ -120,10 +142,12 @@ export function getAccessToken(): string | null {
  * BEFORE any new mutation can 401-refresh-retry as the new one).
  *
  * Supported baseline: Web Locks + BroadcastChannel (both evergreen).
- * No BroadcastChannel -> the bounded wait cannot exist -> surface false
- * (fail-safe; never a speculative rotation). The server-side grace
- * window (PR #10, default off) is the non-browser/cross-origin
- * backstop, not a substitute.
+ * No BroadcastChannel -> the probe cannot exist: a marker FAILS CLOSED
+ * (surface false; never a speculative rotation) EXCEPT the wave THIS
+ * tab published before a reload — the sessionStorage record (dies with
+ * the tab) proves that holder dead. The server-side grace window
+ * (PR #10, default off) is the non-browser/cross-origin backstop, not
+ * a substitute.
  */
 
 /** Web Locks name serializing rotations across same-origin tabs. */
@@ -144,48 +168,41 @@ const CONTEXT_RESET_CHANNEL = "cq-auth-reset";
 /**
  * localStorage handoff MARKER — NON-SECRET by construction (re-review
  * P1: the bearer NEVER touches persistent storage; the memory-only
- * contract is preserved). The marker only says "a mint for context X
- * was published at T and is arriving on the adoption channel"; the
- * bearer itself moves exclusively through BroadcastChannel (memory,
- * per-tab listeners). Written under the lock, read under the lock —
- * the deterministic lock-to-lock barrier — while the mint's delivery
- * is awaited with a bounded channel wait keyed to the marker's
- * generation (a stale lastAdoption can never shadow a newer wave).
+ * contract is preserved). The marker only says "a mint for wave W of
+ * context X was published at T and is reachable by probing the
+ * adoption channel"; the bearer itself moves exclusively through
+ * BroadcastChannel (memory, per-tab listeners). Written under the
+ * lock, read under the lock — the deterministic lock-to-lock barrier.
  */
 const HANDOFF_MARKER_KEY = "cq:auth-handoff-marker";
-/** sessionStorage: the generation THIS tab last published (reload-safe). */
-const PUBLISHED_GEN_KEY = "cq:auth-published-generation";
+/**
+ * sessionStorage: the waveId THIS tab last published. Survives reload,
+ * dies with the tab — exactly the publisher's lifetime. Round-5 P1a:
+ * identity is an OPAQUE UNIQUE id compared by equality, never a
+ * per-tab counter (two tabs' counters collide; a shared uuid cannot).
+ * Cleared by every explicit auth transition (ownership metadata must
+ * not survive account changes).
+ */
+const PUBLISHED_WAVE_KEY = "cq:auth-published-wave";
+// (Caveat, accepted inside the no-BC baseline: a DUPLICATED tab
+// inherits sessionStorage, so the copy may treat the original's live
+// wave as its own dead one. BroadcastChannel-capable contexts are
+// unaffected — the probe decides there, not the record.)
 /** A published mint older than this is not adoptable (wave-scale freshness). */
 const ADOPTION_TTL_MS = 10_000;
-/** Bounded channel wait for a marker's mint (delivery is queued while
- *  the winner still holds the lock; this only yields to the task that
- *  drains it). Exceeding it is the fail-safe path — surface false,
- *  never a speculative second rotation). */
-const MINT_WAIT_MS = 400;
 /**
- * Round-4 P1: the wave boundary is an explicit GENERATION, not a 500ms
- * age heuristic (a throttled same-wave waiter beyond any age cutoff
- * would misclassify and rotate, retiring the winner's live generation).
- *
- * Protocol: the wave's winner — the tab that finds NO adoption and NO
- * marker under the lock — CLEARS any previous-generation marker, rotates
- * once, then writes marker {contextId, at, generation}. A waiter that
- * sees ANY valid marker for its context is in an UNRESOLVED generation
- * regardless of age: it bounded-waits, and a timeout FAILS CLOSED
- * (surface false; a reload recovers). Rotation happens ONLY for the
- * wave leader (marker absent) — never from a marker-timeout path. A
- * finished wave's marker is cleared by the NEXT wave's leader before it
- * rotates, so "marker present" always means "this generation owns the
- * lock-to-lock handoff".
+ * Bounded probe/answer window (round-5 P1b): the waiter posts the
+ * probe and waits THIS long for a live holder to re-post the mint.
+ * Exceeding it is PROOF OF DEATH — the caller rotates as the new
+ * leader. A few orders of magnitude above a same-origin
+ * BroadcastChannel round-trip; only a throttled holder can miss it
+ * (see the divergence bound above).
  */
-let mintGeneration = 0;
-
-/** The current handoff generation (test seam). */
-export function getMintGenerationForTests(): number {
-  return mintGeneration;
-}
+const MINT_WAIT_MS = 400;
 
 interface AdoptionMessage {
+  /** The wave this mint belongs to (probe/answer key; round-5 P1a). */
+  waveId: string;
   token: string;
   /** The csrf_token from the SAME refresh response that minted the
    *  token (review P1a: never a post-response cookie read — the cookie
@@ -196,10 +213,16 @@ interface AdoptionMessage {
 
 /** The NON-SECRET marker (localStorage-safe: no bearer, no secret). */
 interface HandoffMarker {
+  /** Opaque unique wave identity — NOT a per-tab counter (round-5 P1a). */
+  waveId: string;
   contextId: string | null;
   at: number;
-  generation: number;
 }
+
+/** Wire envelope on the adoption channel. */
+type ChannelMessage =
+  | ({ kind: "mint" } & AdoptionMessage)
+  | { kind: "probe"; waveId: string };
 
 let lastAdoption: AdoptionMessage | null = null;
 
@@ -211,6 +234,44 @@ const TAB_ID =
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `tab-${Math.random().toString(36).slice(2)}`;
+
+/** A fresh opaque wave identity (globally unique by construction). */
+function freshWaveId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? `wave-${crypto.randomUUID()}`
+    : `wave-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** sessionStorage record of the wave THIS tab published (or null). */
+function readPublishedWave(): string | null {
+  try {
+    return typeof sessionStorage === "undefined"
+      ? null
+      : sessionStorage.getItem(PUBLISHED_WAVE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberPublishedWave(waveId: string): void {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(PUBLISHED_WAVE_KEY, waveId);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+function forgetPublishedWave(): void {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(PUBLISHED_WAVE_KEY);
+    }
+  } catch {
+    // best effort
+  }
+}
 
 interface WebLocksLike {
   request: (
@@ -242,14 +303,15 @@ function readMarker(): HandoffMarker | null {
     const parsed = JSON.parse(raw) as Partial<HandoffMarker> | null;
     if (
       parsed !== null &&
+      typeof parsed.waveId === "string" &&
+      parsed.waveId.length > 0 &&
       (parsed.contextId === null || typeof parsed.contextId === "string") &&
-      typeof parsed.at === "number" &&
-      typeof parsed.generation === "number"
+      typeof parsed.at === "number"
     ) {
       return {
+        waveId: parsed.waveId,
         contextId: parsed.contextId ?? null,
         at: parsed.at,
-        generation: parsed.generation,
       };
     }
     return null;
@@ -280,22 +342,37 @@ function clearMarker(): void {
   }
 }
 
-/**
- * Bounded wait for THIS marker generation's mint on the adoption
- * channel. The winner posted the mint while still holding the lock,
- * so the message is already queued; a few macrotask yields drain it.
- * Resolves the mint, or null on timeout (the caller fail-safes).
- */
-type MintWait = { kind: "mint"; message: AdoptionMessage } | { kind: "timeout" } | { kind: "no-channel" };
+/** Fire-and-forget post on the adoption channel (no listener kept). */
+function postToAdoptionChannel(message: ChannelMessage): void {
+  if (typeof BroadcastChannel === "undefined") {
+    return;
+  }
+  const channel = new BroadcastChannel(ADOPTION_CHANNEL);
+  channel.postMessage(message);
+  channel.close();
+}
 
-function waitForMint(marker: HandoffMarker): Promise<MintWait> {
+/**
+ * Resolve a marker's wave (round-5 P1b): LIVE — a holder answers the
+ * probe with the mint (adopt, zero POSTs); DEAD — nobody answers within
+ * the bounded window (the caller rotates as the new leader); or
+ * UNKNOWABLE — no BroadcastChannel, so the probe cannot exist and only
+ * this tab's own published-wave record can prove death.
+ */
+type WaveOutcome =
+  | { kind: "mint"; message: AdoptionMessage }
+  | { kind: "dead" }
+  | { kind: "no-channel" };
+
+function resolveWave(marker: HandoffMarker): Promise<WaveOutcome> {
   const valid = (message: AdoptionMessage): boolean =>
+    message.waveId === marker.waveId &&
     message.at >= marker.at - 50 &&
     message.contextId === marker.contextId &&
+    // Re-stamped answers pass trivially; this bound only rejects a
+    // replayed ORIGINAL broadcast arriving long after its wave (the
+    // round-2 freshness pin, kept coherent with tryAdopt).
     Date.now() - message.at < ADOPTION_TTL_MS;
-  // An UNRESOLVED marker (round-4 P1): any age. The wait resolves only
-  // on this generation's mint or times out — the caller fails closed. No
-  // age heuristic classifies a throttled same-wave waiter as stale.
   const already = lastAdoption;
   if (already !== null && valid(already)) {
     return Promise.resolve({ kind: "mint", message: already });
@@ -304,11 +381,16 @@ function waitForMint(marker: HandoffMarker): Promise<MintWait> {
     // Round-4 P1: browser-present + BroadcastChannel-absent IS the
     // unsupported case — the previous `&& window === undefined` guard
     // missed it and let a timer-only wait fall through to rotation.
-    return Promise.resolve({ kind: "no-channel" });
+    // Without a channel there is no probe, so death is provable ONLY
+    // through this tab's own published-wave record; anything else
+    // fails closed (never a speculative rotation).
+    return Promise.resolve(
+      readPublishedWave() === marker.waveId ? { kind: "dead" } : { kind: "no-channel" },
+    );
   }
   return new Promise((resolve) => {
     let done = false;
-    const finish = (value: MintWait) => {
+    const finish = (value: WaveOutcome) => {
       if (done) {
         return;
       }
@@ -322,37 +404,39 @@ function waitForMint(marker: HandoffMarker): Promise<MintWait> {
         finish({ kind: "mint", message });
       }
     };
-    // Arm the long-lived-listener resolver FIRST, then RECHECK
-    // lastAdoption — a mint delivered between the entry check and
-    // this registration is still caught (round-3 P1a race).
+    // Arm the long-lived-listener resolver, then PROBE the wave. The
+    // arm-then-probe order covers every delivery window: a mint landing
+    // after arming resolves through the resolver (the listener feeds
+    // pendingMintResolvers), and no delivery can interleave between the
+    // entry check and arming — that span is one synchronous task.
     pendingMintResolvers.add(onMint);
-    if (lastAdoption !== null && valid(lastAdoption)) {
-      finish({ kind: "mint", message: lastAdoption });
-      return;
-    }
-    const timer = setTimeout(() => finish({ kind: "timeout" }), MINT_WAIT_MS);
+    postToAdoptionChannel({ kind: "probe", waveId: marker.waveId });
+    const timer = setTimeout(() => finish({ kind: "dead" }), MINT_WAIT_MS);
   });
 }
 
 /**
- * Pending generation-keyed resolvers for the LONG-LIVED listener (round-3
+ * Pending wave-keyed resolvers for the LONG-LIVED listener (round-3
  * P1a): a fresh BroadcastChannel opened by a waiter cannot replay a
- * message the winner already posted, so waitForMint arms a resolver HERE
- * and the page-lifetime listener resolves it — plus a recheck-after-
- * register for a mint that landed between the initial lastAdoption
- * check and resolver registration.
+ * message the winner already posted, so resolveWave arms a resolver
+ * HERE and the page-lifetime listener resolves it — plus a
+ * recheck-after-register for a mint that landed between the initial
+ * lastAdoption check and resolver registration.
  */
 const pendingMintResolvers = new Set<(message: AdoptionMessage) => void>();
 
 function feedAdoptionMessage(data: Partial<AdoptionMessage> | null): void {
   if (
     data !== null &&
+    typeof data.waveId === "string" &&
+    data.waveId.length > 0 &&
     typeof data.token === "string" &&
     data.token.length > 0 &&
     (data.contextId === null || typeof data.contextId === "string") &&
     typeof data.at === "number"
   ) {
     const message: AdoptionMessage = {
+      waveId: data.waveId,
       token: data.token,
       contextId: data.contextId ?? null,
       at: data.at,
@@ -370,13 +454,44 @@ export function deliverAdoptionForTests(message: AdoptionMessage): void {
   feedAdoptionMessage(message);
 }
 
+/**
+ * Round-5 P1b: a live holder ANSWERS a probe by re-posting its mint —
+ * the requester adopts with zero extra POSTs. The answer is re-stamped
+ * (at = now): a live holder answering IS the liveness proof, however
+ * long ago the wave was minted (round-5 review P1 — gating the answer
+ * on the ORIGINAL mint's age re-introduced an age heuristic through
+ * the back door and let a >10s-old wave be rotated away while its
+ * holder was alive and well). The receiver's contextId/waveId match
+ * still binds the answer to the probed wave; a dead-context holder
+ * cannot answer because the reset cleared its lastAdoption.
+ */
+function answerProbe(waveId: string): void {
+  const held = lastAdoption;
+  if (held !== null && held.waveId === waveId) {
+    postToAdoptionChannel({ kind: "mint", ...held, at: Date.now() });
+  }
+}
+
+/** Dispatch one adoption-channel message (the long-lived listener). */
+function onAdoptionChannelMessage(data: unknown): void {
+  if (data === null || typeof data !== "object") {
+    return;
+  }
+  const message = data as Partial<ChannelMessage>;
+  if (message.kind === "mint") {
+    feedAdoptionMessage(message);
+  } else if (message.kind === "probe" && typeof message.waveId === "string") {
+    answerProbe(message.waveId);
+  }
+}
+
 // Sibling broadcasts may land while this tab still waits on the lock. The
 // listener also carries the CONTEXT-RESET fence. Browser-only (`window`
 // guard): in Node, BroadcastChannel exists but holds the event loop open.
 if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   const listener = new BroadcastChannel(ADOPTION_CHANNEL);
   listener.onmessage = (event: MessageEvent) => {
-    feedAdoptionMessage(event.data as Partial<AdoptionMessage> | null);
+    onAdoptionChannelMessage(event.data);
   };
   // Review P0: a sibling's EXPLICIT login/logout is an origin-global
   // auth-context change. Fence locally: drop the stale bearer, bump the
@@ -426,37 +541,24 @@ function notifyCrossTabReset(): void {
  * barrier), then the channel notification for already-open listeners.
  */
 function publishMint(token: string, contextIdFromResponse: string | null): void {
-  const message: AdoptionMessage = { token, contextId: contextIdFromResponse, at: Date.now() };
-  lastAdoption = message;
-  mintGeneration += 1;
-  // The MARKER is the only persistent artifact — non-secret (re-review
-  // P1): contextId is the double-submit csrf value already readable in
-  // a JS cookie; `at` is a timestamp; `generation` is a counter. The
-  // bearer never leaves memory.
-  writeMarker({
+  const message: AdoptionMessage = {
+    waveId: freshWaveId(),
+    token,
     contextId: contextIdFromResponse,
-    at: message.at,
-    generation: mintGeneration,
-  });
-  // Round-4 regression fix: remember OUR published generation in
-  // sessionStorage (survives reload, dies with the tab — exactly the
-  // publisher's lifetime). A later cold start that sees a marker of the
-  // SAME generation is this tab's OWN dead wave (the reload killed the
-  // heap that held the mint): rotating is safe — the mint's holder no
-  // longer exists. A HIGHER generation is another tab's live wave: the
-  // throttled-waiter fail-closed contract applies unchanged.
-  try {
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem(PUBLISHED_GEN_KEY, String(mintGeneration));
-    }
-  } catch {
-    // best effort
-  }
-  if (typeof BroadcastChannel !== "undefined") {
-    const channel = new BroadcastChannel(ADOPTION_CHANNEL);
-    channel.postMessage(message);
-    channel.close();
-  }
+    at: Date.now(),
+  };
+  lastAdoption = message;
+  // The MARKER is the only persistent artifact — non-secret (re-review
+  // P1): waveId is an opaque uuid, contextId is the double-submit csrf
+  // value already readable in a JS cookie, `at` is a timestamp. The
+  // bearer never leaves memory.
+  writeMarker({ waveId: message.waveId, contextId: message.contextId, at: message.at });
+  // Round-5 P1a: remember OUR wave by opaque identity (sessionStorage:
+  // survives reload, dies with the tab — the publisher's exact
+  // lifetime). Equality — never a counter comparison — is what proves a
+  // later marker is this tab's OWN dead wave.
+  rememberPublishedWave(message.waveId);
+  postToAdoptionChannel({ kind: "mint", ...message });
 }
 
 /**
@@ -469,6 +571,9 @@ export function broadcastContextReset(): void {
   // stale handoff must die); the channel notification is browser-only.
   lastAdoption = null;
   clearMarker();
+  // Round-5 P1a: ownership metadata must not survive account changes —
+  // the wave this tab published belongs to the CLOSED context.
+  forgetPublishedWave();
   if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
     return;
   }
@@ -480,16 +585,20 @@ export function broadcastContextReset(): void {
 /**
  * Immediate adoption check: the freshest VALID candidate for OUR
  * context. Re-review P1: a stale `lastAdoption` must never shadow a
- * newer wave — validity (fresh + context match) is the filter, and the
- * under-lock path re-checks against the marker generation, so an old
- * in-memory message from a previous wave can neither win over a newer
- * mint nor trigger a second rotation.
+ * newer wave — validity (fresh + context match) is the filter, and
+ * when the marker for our context names a DIFFERENT wave, the in-memory
+ * mint has been superseded server-side (rotate-once retired the older
+ * wave's session row) and is refused regardless of TTL freshness
+ * (round-5 review P2).
  */
-function tryAdopt(): string | null {
+function tryAdopt(marker: HandoffMarker | null): string | null {
   if (
     lastAdoption !== null &&
     Date.now() - lastAdoption.at < ADOPTION_TTL_MS &&
-    lastAdoption.contextId === readCsrfToken()
+    lastAdoption.contextId === readCsrfToken() &&
+    (marker === null ||
+      marker.contextId !== readCsrfToken() ||
+      marker.waveId === lastAdoption.waveId)
   ) {
     return lastAdoption.token;
   }
@@ -566,76 +675,60 @@ async function rotate(): Promise<boolean> {
   }
 }
 
+/** The csrf_token riding the last successful refresh response (P1a). */
+let lastMintContext: string | null | undefined = undefined;
+
 /**
  * Inside the lock, in order:
- * 1. immediate adoption — the freshest VALID mint already in memory;
- * 2. marker wait — a fresh non-secret marker says THIS wave's mint is
- *    arriving on the channel; bounded-wait for it (the winner posted
- *    it while holding the lock, so it is queued). A stale
- *    lastAdoption from an earlier wave cannot shadow the marker: the
- *    wait validates `at >= marker.at - 50` for THIS generation;
- * 3. fail-safe — no candidate and no marker (or the wait times out /
- *    BroadcastChannel is absent): surface FALSE. Never a speculative
- *    second rotation into the strict rotate-once race (re-review P1);
+ * 1. immediate adoption — the freshest VALID mint already in memory
+ *    (wave-checked against the marker when one exists for our context);
+ * 2. wave resolution — a marker for our context routes to the
+ *    PROBE/ANSWER exchange: a live holder re-posts a re-stamped mint
+ *    (adopt, zero POSTs); a timeout PROVES the wave dead and this tab
+ *    falls through as the new leader;
+ * 3. fail-safe — no BroadcastChannel means no probe: surface FALSE
+ *    (never a speculative second rotation into the strict rotate-once
+ *    race), except this tab's OWN published wave (sessionStorage
+ *    proves that holder dead — the reload-recovery unlock);
  * 4. otherwise this tab IS the wave's winner: rotate once, publish the
  *    marker + channel mint, and hold the lock a short delivery grace
  *    so the message is queued before the next waiter acquires.
  */
-/** The csrf_token riding the last successful refresh response (P1a). */
-let lastMintContext: string | null | undefined = undefined;
-
 async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
   if (authEpoch !== epochAtStart || transitionActive) {
     return false;
   }
-  const adopted = tryAdopt();
+  const marker = readMarker();
+  const adopted = tryAdopt(marker);
   if (adopted !== null) {
     accessToken = adopted;
     return true;
   }
-  const marker = readMarker();
   const markerIsOurs =
     marker !== null &&
     marker.contextId === readCsrfToken();
   if (marker !== null && markerIsOurs) {
-    // Is this OUR OWN dead wave? A same-tab navigation reloads the heap;
-    // the marker we published before the reload still matches our
-    // context, but the mint's holder (the old heap) is gone. Rotating
-    // retires nothing — nobody holds that generation's token.
-    let publishedGen = -1;
-    try {
-      const raw =
-        typeof sessionStorage === "undefined"
-          ? null
-          : sessionStorage.getItem(PUBLISHED_GEN_KEY);
-      if (raw !== null) {
-        const parsed = Number.parseInt(raw, 10);
-        if (Number.isFinite(parsed)) {
-          publishedGen = parsed;
-        }
+    // Round-5: the wave's fate is decided by PROBE/ANSWER liveness, not
+    // by marker age and not by any ownership counter. A live wave is
+    // adopted from its holder's re-posted mint; a dead wave (probe
+    // timeout, or — without a channel — this tab's own published-wave
+    // record) lets this tab rotate as the new leader.
+    const outcome = await resolveWave(marker);
+    if (outcome.kind === "mint") {
+      if (authEpoch !== epochAtStart || transitionActive) {
+        return false;
       }
-    } catch {
-      // best effort
+      accessToken = outcome.message.token;
+      return true;
     }
-    const ownDeadWave = marker.generation <= publishedGen;
-    if (!ownDeadWave) {
-      // Another tab's LIVE wave (round-4 P1): adopt on the mint or fail
-      // closed — a throttled waiter must never retire the winner.
-      const outcome = await waitForMint(marker);
-      if (outcome.kind === "mint") {
-        if (authEpoch !== epochAtStart || transitionActive) {
-          return false;
-        }
-        accessToken = outcome.message.token;
-        return true;
-      }
+    if (outcome.kind === "no-channel") {
       return false;
     }
-    // Own dead wave: fall through and rotate as the new leader. The
-    // marker gets overwritten by publishMint with the new generation.
+    // dead -> fall through: this tab is the new wave's leader, and
+    // publishMint replaces the marker with the new wave.
   }
   // Wave LEADER (no adoption, no marker for our context): clear any
-  // foreign-generation marker, rotate once, publish the new generation.
+  // stale marker, rotate once, publish the new wave.
   if (marker !== null) {
     clearMarker();
   }
@@ -750,4 +843,25 @@ export function resetAccessTokenManagerForTests(): void {
  */
 export function receiveAdoptionForTests(message: AdoptionMessage): void {
   lastAdoption = message;
+}
+
+/**
+ * Test seam: run the browser reset listener's body (Node has no
+ * `window`, so the receiver path never exists there) — drop the
+ * bearer, bump the epoch, clear the adoption state, and notify
+ * app-level subscribers exactly as a sibling broadcast would.
+ */
+export function receiveCrossTabResetForTests(): void {
+  accessToken = null;
+  authEpoch += 1;
+  lastAdoption = null;
+  notifyCrossTabReset();
+}
+
+/**
+ * Test seam: drive the long-lived adoption listener's dispatch (mint
+ * feed + probe answering) exactly as the browser channel would.
+ */
+export function receiveChannelMessageForTests(data: unknown): void {
+  onAdoptionChannelMessage(data);
 }

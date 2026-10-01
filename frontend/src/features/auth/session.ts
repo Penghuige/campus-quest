@@ -72,6 +72,21 @@ export function invalidateSessionCache(): void {
   cache = null;
 }
 
+// Round-5 (review P2): the cache invalidation on a sibling reset runs
+// ONCE per event at module level. Per-instance subscribers each bumping
+// the generation would strand every consumer but the last — each bump
+// fences the previous subscriber's just-started /me, and a dropped /me
+// has no retry until the stale window or a focus event. This module
+// listener registers at import, BEFORE any hook instance's own
+// subscription, so every instance's revalidation starts under the
+// already-bumped generation.
+onCrossTabAuthReset(invalidateSessionCache);
+
+/** Test seam: the current session-cache generation (reset-bump pin). */
+export function getSessionGenerationForTests(): number {
+  return generation;
+}
+
 /** Test seam: reset the store to the pre-mount state. */
 export function resetSessionCacheForTests(): void {
   cache = null;
@@ -174,53 +189,68 @@ export function useSession(): UseSessionResult {
 
   useEffect(() => {
     let cancelled = false;
-    // Round-4 P0: `apply` is GENERATION-GATED at the component too. The
-    // module cache fence stops old results repopulating the CACHE, but
-    // without this gate an older in-flight load() could still overwrite
-    // the component's visible state after a reset settled the new one.
-    let applyGeneration = generation;
-    const apply = (result: SessionResult) => {
-      if (!cancelled && applyGeneration === generation) {
-        setState(toState(result));
-      }
-    };
-    const fail = (error: unknown) => {
-      if (!cancelled && applyGeneration === generation) {
-        setState({ status: "error", error });
-      }
+    // Round-5 P0: the component fence is PER-REQUEST. Each load()
+    // captures the session generation it started under, and only that
+    // request's own callbacks may apply — and only while the generation
+    // is still current. (Round-4's single shared mutable
+    // `applyGeneration` was REASSIGNED by the reset handler, so an old
+    // in-flight /me settling after the bump read the new value and
+    // repainted the stale identity: a shared guard cannot tell WHICH
+    // request produced a result. An immutable per-call snapshot can.)
+    const startLoad = () => {
+      const requestGeneration = generation;
+      load().then(
+        (result: SessionResult) => {
+          if (!cancelled && requestGeneration === generation) {
+            setState(toState(result));
+          }
+        },
+        (error: unknown) => {
+          if (!cancelled && requestGeneration === generation) {
+            setState({ status: "error", error });
+          }
+        },
+      );
     };
 
     // First run honors the fresh window; a `refresh()` revision always
     // bypasses it so login/logout transitions refetch unconditionally.
     if (revision === 0 && isFresh() && cache !== null) {
-      apply(cache.result);
+      // Render already seeded the visible state from the cache (the
+      // useState initializer); this only picks up the render-to-effect
+      // gap where a sibling consumer's load filled the cache in between.
+      // Deferred a microtask so the effect body stays free of
+      // synchronous setState (react-hooks/set-state-in-effect), with the
+      // generation snapshot fencing a reset that lands inside that gap.
+      const hydrateGeneration = generation;
+      const hydrated = cache.result;
+      Promise.resolve().then(() => {
+        if (!cancelled && hydrateGeneration === generation) {
+          setState(toState(hydrated));
+        }
+      });
     } else {
-      load().then(apply, fail);
+      startLoad();
     }
 
     const revalidateIfStale = () => {
       if (!isFresh()) {
-        load().then(apply, () => {});
+        startLoad();
       }
     };
     document.addEventListener("visibilitychange", revalidateIfStale);
     window.addEventListener("focus", revalidateIfStale);
-    // Round-3 P0: a SIBLING tab's explicit login/logout must not leave
-    // this tab serving the OLD account's cached /me — a stale-A click
-    // would 401-refresh-retry as B. The reset drops the cache and this
-    // consumer revalidates immediately (unconditionally — not only when
-    // stale: the account itself changed).
-    // Round-3/4 P0: a SIBLING tab's explicit login/logout must make the
-    // OLD account UI non-actionable SYNCHRONOUSLY — not at async /me
-    // arrival. The mounted state drops to `loading` (the shell renders
-    // its transitional gate: no authenticated-A actions remain) the
-    // moment the reset lands; revalidation then settles the new context
-    // (or anonymous).
+    // A SIBLING tab's explicit login/logout must make the OLD account
+    // UI non-actionable SYNCHRONOUSLY (rounds 3-4 P0): the mounted
+    // state drops to `loading` (the shell's transitional gate renders
+    // no authenticated actions) the instant the reset lands, and the
+    // revalidation settles the new context (or anonymous). The cache
+    // invalidation itself already ran ONCE at module level (see the
+    // module listener above) — this instance only re-fences its own
+    // visible state and revalidates.
     const unsubscribeReset = onCrossTabAuthReset(() => {
-      invalidateSessionCache();
-      applyGeneration = generation;
       setState({ status: "loading" });
-      load().then(apply, fail);
+      startLoad();
     });
     return () => {
       cancelled = true;

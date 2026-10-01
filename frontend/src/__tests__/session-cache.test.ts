@@ -16,11 +16,16 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { loginStudent } from "../features/auth/api";
 import {
+  getSessionGenerationForTests,
   loadSessionForTests,
   peekSessionCacheForTests,
   resetSessionCacheForTests,
 } from "../features/auth/session";
-import { resetAccessTokenManagerForTests } from "../lib/accessToken";
+import {
+  onCrossTabAuthReset,
+  receiveCrossTabResetForTests,
+  resetAccessTokenManagerForTests,
+} from "../lib/accessToken";
 
 type RecordedRequest = { url: string; headers: Headers };
 
@@ -200,5 +205,31 @@ describe("login synchronously invalidates the anonymous session cache (targeted 
       cached.result?.kind === "authenticated" ? cached.result.me.id : null,
       "u1",
     );
+  });
+});
+
+describe("a sibling reset bumps the session-cache generation exactly ONCE (round-5 review P2)", () => {
+  test("N mounted consumers fence without stranding each other's /me", () => {
+    resetSessionCacheForTests();
+    resetAccessTokenManagerForTests();
+    const before = getSessionGenerationForTests();
+    // Two mounted useSession consumers subscribe (their per-instance
+    // callbacks are the visible-state fences). Before the round-5 fix
+    // each instance ALSO invalidated, so the second bump fenced the
+    // first consumer's just-started /me — every consumer but the last
+    // stayed stuck on the loading gate until staleness or a refocus.
+    const unsubA = onCrossTabAuthReset(() => {});
+    const unsubB = onCrossTabAuthReset(() => {});
+    try {
+      receiveCrossTabResetForTests();
+      assert.equal(
+        getSessionGenerationForTests(),
+        before + 1,
+        "one bump per reset event — not one per consumer",
+      );
+    } finally {
+      unsubA();
+      unsubB();
+    }
   });
 });
