@@ -102,26 +102,34 @@ export function getAccessToken(): string | null {
  *    once, then publishes — still under the lock — a NON-SECRET marker
  *    {waveId, contextId, at} (waveId is a fresh opaque uuid per wave)
  *    to localStorage and the mint {kind:"mint", waveId, token,
- *    contextId, at} to the adoption BroadcastChannel, holding the lock
- *    a short delivery grace;
+ *    contextId, sentAt, expiresAt} to the adoption BroadcastChannel,
+ *    holding the lock a short delivery grace;
  * 3. a waiter seeing a marker for its context PROBES the wave — it
  *    posts {kind:"probe", waveId} and bounded-waits on the resolver-
  *    armed LONG-LIVED listener (a fresh channel cannot replay an
  *    already-posted message). Every live holder of the wave — any tab
- *    whose in-memory mint still names it; the reset clears that mint
- *    exactly when its context dies — ANSWERS by re-posting a
- *    RE-STAMPED mint (a live holder answering IS the liveness proof;
- *    the answer's freshness is the answer time, never the mint time —
- *    round-5 review P1), and the waiter adopts with ZERO extra POSTs.
- *    Wave liveness is an active request/response, never a marker-age
- *    or mint-age guess;
- * 4. a probe timeout PROVES the wave dead (no live holder answered) —
- *    the waiter rotates as the NEW LEADER and the marker is replaced.
- *    This un-strands later cold starts (round-5 P1: a persistent
- *    finished-wave marker plus an ephemeral bearer is a liveness
- *    deadlock under any fail-closed-forever rule) and covers a
- *    same-tab reload over its OWN dead marker with no ownership
- *    counter to collide;
+ *    whose in-memory mint still names it AND whose bearer is still
+ *    USABLE (the mint carries the bearer's immutable expiry; a holder
+ *    with an expired/near-expiry credential stays SILENT so the waiter
+ *    becomes the refresh leader and publishes a genuinely new wave —
+ *    round-6 P0) — ANSWERS by re-posting the mint with a RE-STAMPED
+ *    sentAt (transport freshness only: a live holder answering IS the
+ *    wave-liveness proof, but re-stamping never renews the CREDENTIAL;
+ *    the answer's expiresAt is immutable). The waiter adopts with ZERO
+ *    extra POSTs. Liveness is an active request/response, never a
+ *    marker-age or mint-age guess;
+ * 4. a probe timeout DECLARES THE WAVE FAILED — a bounded failure
+ *    detector, NOT proof of death (round-6 P1: a live-but-suspended
+ *    holder can miss the 400ms window). The contract this implements:
+ *    - responsive same-origin participants keep the strict
+ *      one-rotation-per-wave invariant;
+ *    - a suspended holder MAY be superseded after the probe timeout;
+ *    - that supersession is deliberate convergence, and the suspended
+ *      holder self-heals on its next 401 (probe -> adopt the new wave,
+ *      or rotate as the next leader). On timeout the waiter rotates as
+ *    the NEW LEADER and the marker is replaced — this un-strands later
+ *    cold starts (round-5 P1) and covers a same-tab reload over its
+ *    OWN dead marker with no ownership counter to collide;
  * 5. wave identity is an OPAQUE uuid compared by EQUALITY (round-5
  *    P1a): per-tab numeric generations collide (every heap counts from
  *    0), and the numeric `<=` comparison misread a sibling's live wave
@@ -193,12 +201,22 @@ const ADOPTION_TTL_MS = 10_000;
 /**
  * Bounded probe/answer window (round-5 P1b): the waiter posts the
  * probe and waits THIS long for a live holder to re-post the mint.
- * Exceeding it is PROOF OF DEATH — the caller rotates as the new
- * leader. A few orders of magnitude above a same-origin
- * BroadcastChannel round-trip; only a throttled holder can miss it
- * (see the divergence bound above).
+ * Exceeding it is a FAILURE-DETECTOR verdict — the wave is declared
+ * failed and the caller rotates as the new leader — not proof of
+ * death: only a responsive holder can answer inside it, a suspended
+ * one may be superseded (see the contract in the header comment). A
+ * few orders of magnitude above a same-origin BroadcastChannel
+ * round-trip.
  */
 const MINT_WAIT_MS = 400;
+/**
+ * Credential-boundary margin (round-6 P0): a bearer this close to its
+ * exp is treated as spent — adopting or advertising it would buy one
+ * doomed request. The JWT `exp` decode is ADVISORY (the server stays
+ * the authority on every request); it only decides whether a credential
+ * is OFFERED or ACCEPTED for handoff, never whether a request may run.
+ */
+const ADOPTION_EXPIRY_MARGIN_MS = 5_000;
 
 interface AdoptionMessage {
   /** The wave this mint belongs to (probe/answer key; round-5 P1a). */
@@ -208,8 +226,27 @@ interface AdoptionMessage {
    *  token (review P1a: never a post-response cookie read — the cookie
    *  is origin-global and a sibling could swap it mid-flight). */
   contextId: string | null;
-  at: number;
+  /**
+   * TRANSPORT freshness (round-6 P0): when this mint was last posted.
+   * A probe answer re-stamps THIS field only — it says the holder is
+   * responsive, nothing about the credential.
+   */
+  sentAt: number;
+  /**
+   * CREDENTIAL validity boundary (round-6 P0): the bearer JWT's `exp`
+   * in ms (advisory client-side decode; the server remains the
+   * authority), or null when the token carries no decodable exp.
+   * IMMUTABLE from minting onward — re-stamping sentAt never renews it.
+   * Expired/near-expiry bearers are neither advertised nor adopted, so
+   * an expired credential cannot be resurrected through the channel.
+   */
+  expiresAt: number | null;
 }
+
+// (Deploy note: the wire shape is versioned only by this unmerged PR —
+// a hypothetical mixed round-5/round-6 pair would mutually reject each
+// other's mints and trade one extra rotation per wave; deploys are
+// atomic, so no mixed fleet can exist in production.)
 
 /** The NON-SECRET marker (localStorage-safe: no bearer, no secret). */
 interface HandoffMarker {
@@ -240,6 +277,52 @@ function freshWaveId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? `wave-${crypto.randomUUID()}`
     : `wave-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Advisory decode of a bearer JWT's `exp` (round-6 P0) -> ms, or null.
+ * NOT signature validation — the server stays the authority on every
+ * request; this only decides whether a credential is OFFERED or
+ * ACCEPTED for cross-tab handoff. Opaque tokens (no decodable exp)
+ * return null and keep the handoff path that relies on the server's
+ * 401 for recovery — CampusQuest's backend issues JWTs, so the
+ * boundary is real in production.
+ */
+function bearerExpiryMs(token: string): number | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return null;
+  }
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const decoded =
+      typeof atob === "function"
+        ? atob(padded)
+        : Buffer.from(padded, "base64").toString("utf8");
+    const payload = JSON.parse(decoded) as { exp?: unknown };
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
+      return null;
+    }
+    if (payload.exp <= 0) {
+      return 0; // literally-expired claim: never usable
+    }
+    const ms = payload.exp * 1000;
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A handoff credential is USABLE while its decoded expiry is more than
+ * the margin away. null = unknown expiry: such a mint stays adoptable
+ * only while its ORIGINAL sentAt is TTL-fresh (answerProbe never
+ * re-stamps it), so the TTL — not a vouch — bounds unknown-expiry
+ * handoffs and any loop built on them.
+ */
+function bearerUsable(expiresAt: number | null): boolean {
+  return expiresAt === null || Date.now() < expiresAt - ADOPTION_EXPIRY_MARGIN_MS;
 }
 
 /** sessionStorage record of the wave THIS tab published (or null). */
@@ -367,12 +450,16 @@ type WaveOutcome =
 function resolveWave(marker: HandoffMarker): Promise<WaveOutcome> {
   const valid = (message: AdoptionMessage): boolean =>
     message.waveId === marker.waveId &&
-    message.at >= marker.at - 50 &&
+    message.sentAt >= marker.at - 50 &&
     message.contextId === marker.contextId &&
     // Re-stamped answers pass trivially; this bound only rejects a
     // replayed ORIGINAL broadcast arriving long after its wave (the
     // round-2 freshness pin, kept coherent with tryAdopt).
-    Date.now() - message.at < ADOPTION_TTL_MS;
+    Date.now() - message.sentAt < ADOPTION_TTL_MS &&
+    // Credential boundary (round-6 P0): a handoff past (or within the
+    // margin of) the bearer's immutable expiry is refused — transport
+    // freshness must never mask credential expiry.
+    bearerUsable(message.expiresAt);
   const already = lastAdoption;
   if (already !== null && valid(already)) {
     return Promise.resolve({ kind: "mint", message: already });
@@ -433,13 +520,15 @@ function feedAdoptionMessage(data: Partial<AdoptionMessage> | null): void {
     typeof data.token === "string" &&
     data.token.length > 0 &&
     (data.contextId === null || typeof data.contextId === "string") &&
-    typeof data.at === "number"
+    typeof data.sentAt === "number" &&
+    (data.expiresAt === null || typeof data.expiresAt === "number")
   ) {
     const message: AdoptionMessage = {
       waveId: data.waveId,
       token: data.token,
       contextId: data.contextId ?? null,
-      at: data.at,
+      sentAt: data.sentAt,
+      expiresAt: data.expiresAt ?? null,
     };
     lastAdoption = message;
     for (const resolve of pendingMintResolvers) {
@@ -456,19 +545,27 @@ export function deliverAdoptionForTests(message: AdoptionMessage): void {
 
 /**
  * Round-5 P1b: a live holder ANSWERS a probe by re-posting its mint —
- * the requester adopts with zero extra POSTs. The answer is re-stamped
- * (at = now): a live holder answering IS the liveness proof, however
- * long ago the wave was minted (round-5 review P1 — gating the answer
- * on the ORIGINAL mint's age re-introduced an age heuristic through
- * the back door and let a >10s-old wave be rotated away while its
- * holder was alive and well). The receiver's contextId/waveId match
- * still binds the answer to the probed wave; a dead-context holder
- * cannot answer because the reset cleared its lastAdoption.
+ * the requester adopts with zero extra POSTs. Re-stamping sentAt is a
+ * USABILITY VOUCH, so it is only given for a KNOWN expiry: an expired/
+ * near-expiry bearer stays SILENT entirely (round-6 review P0 —
+ * answering with a dead credential would resurrect it), and a mint
+ * with NO decodable expiry is re-posted AS-IS, its original sentAt
+ * intact — the receiver's TTL, not a vouch, bounds it (round-6
+ * review: otherwise an unknown-expiry self-answer could re-stamp
+ * itself fresh forever and the same-tab adopt loop would be unbounded
+ * for opaque tokens). expiresAt is immutable on every path. The
+ * receiver's contextId/waveId/expiry checks still bind the answer; a
+ * dead-context holder cannot answer because the reset cleared its
+ * lastAdoption.
  */
 function answerProbe(waveId: string): void {
   const held = lastAdoption;
-  if (held !== null && held.waveId === waveId) {
-    postToAdoptionChannel({ kind: "mint", ...held, at: Date.now() });
+  if (held !== null && held.waveId === waveId && bearerUsable(held.expiresAt)) {
+    postToAdoptionChannel({
+      kind: "mint",
+      ...held,
+      sentAt: held.expiresAt === null ? held.sentAt : Date.now(),
+    });
   }
 }
 
@@ -545,14 +642,17 @@ function publishMint(token: string, contextIdFromResponse: string | null): void 
     waveId: freshWaveId(),
     token,
     contextId: contextIdFromResponse,
-    at: Date.now(),
+    sentAt: Date.now(),
+    // Round-6 P0: the credential boundary rides the mint from birth —
+    // advisory JWT `exp` decode, immutable thereafter.
+    expiresAt: bearerExpiryMs(token),
   };
   lastAdoption = message;
   // The MARKER is the only persistent artifact — non-secret (re-review
   // P1): waveId is an opaque uuid, contextId is the double-submit csrf
   // value already readable in a JS cookie, `at` is a timestamp. The
   // bearer never leaves memory.
-  writeMarker({ waveId: message.waveId, contextId: message.contextId, at: message.at });
+  writeMarker({ waveId: message.waveId, contextId: message.contextId, at: message.sentAt });
   // Round-5 P1a: remember OUR wave by opaque identity (sessionStorage:
   // survives reload, dies with the tab — the publisher's exact
   // lifetime). Equality — never a counter comparison — is what proves a
@@ -594,7 +694,8 @@ export function broadcastContextReset(): void {
 function tryAdopt(marker: HandoffMarker | null): string | null {
   if (
     lastAdoption !== null &&
-    Date.now() - lastAdoption.at < ADOPTION_TTL_MS &&
+    Date.now() - lastAdoption.sentAt < ADOPTION_TTL_MS &&
+    bearerUsable(lastAdoption.expiresAt) &&
     lastAdoption.contextId === readCsrfToken() &&
     (marker === null ||
       marker.contextId !== readCsrfToken() ||
@@ -683,9 +784,10 @@ let lastMintContext: string | null | undefined = undefined;
  * 1. immediate adoption — the freshest VALID mint already in memory
  *    (wave-checked against the marker when one exists for our context);
  * 2. wave resolution — a marker for our context routes to the
- *    PROBE/ANSWER exchange: a live holder re-posts a re-stamped mint
- *    (adopt, zero POSTs); a timeout PROVES the wave dead and this tab
- *    falls through as the new leader;
+ *    PROBE/ANSWER exchange: a live holder with a USABLE bearer
+ *    re-posts a re-stamped mint (adopt, zero POSTs); a timeout — a
+ *    bounded failure-detector verdict, not proof of death — has this
+ *    tab fall through as the new leader;
  * 3. fail-safe — no BroadcastChannel means no probe: surface FALSE
  *    (never a speculative second rotation into the strict rotate-once
  *    race), except this tab's OWN published wave (sessionStorage

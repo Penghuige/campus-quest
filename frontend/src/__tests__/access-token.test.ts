@@ -16,12 +16,14 @@
  * localStorage/sessionStorage; the pending staff invitation token is
  * deliberately NOT promoted into the shared manager.
  *
- * Cross-tab wave coordination (rounds 1-5): Web Locks serialization,
- * BroadcastChannel mint adoption, the context-reset fence, and the
- * round-5 PROBE/ANSWER liveness — a marker's wave is resolved by an
- * active request/response (a live holder re-posts the mint; a timeout
- * PROVES death and the waiter rotates as the new leader), never by a
- * marker-age guess or a per-tab generation counter.
+ * Cross-tab wave coordination (rounds 1-6): Web Locks serialization,
+ * BroadcastChannel mint adoption, the context-reset fence, the round-5
+ * PROBE/ANSWER liveness — a marker's wave is resolved by an active
+ * request/response (a live holder with a USABLE bearer re-posts the
+ * mint; the bounded window is a FAILURE DETECTOR, so a suspended holder
+ * may be superseded and self-heals) — never by a marker-age guess or a
+ * per-tab generation counter, and never re-advertising an expired
+ * credential (the round-6 boundary).
  *
  * Harness decision (the stream's documented stance): stub globalThis
  * fetch with a URL-routing fake — no mocking library.
@@ -418,7 +420,7 @@ describe("cold-start coordination (locks + adoption)", () => {
     installLocks((_n, _o, cb) => cb());
     // No document.cookie in Node -> our contextId is null; a broadcast
     // minted with contextId null matches.
-    receiveAdoptionForTests({ waveId: "w-sibling", token: "sibling-mint", contextId: null, at: Date.now() });
+    receiveAdoptionForTests({ waveId: "w-sibling", token: "sibling-mint", contextId: null, sentAt: Date.now(), expiresAt: null });
     let posts = 0;
     globalThis.fetch = (async () => {
       posts += 1;
@@ -433,7 +435,7 @@ describe("cold-start coordination (locks + adoption)", () => {
   test("a FOREIGN-context broadcast is never adopted (login/logout boundary)", async () => {
     resetAccessTokenManagerForTests();
     installLocks((_n, _o, cb) => cb());
-    receiveAdoptionForTests({ waveId: "w-foreign", token: "foreign", contextId: "other-session", at: Date.now() });
+    receiveAdoptionForTests({ waveId: "w-foreign", token: "foreign", contextId: "other-session", sentAt: Date.now(), expiresAt: null });
     let posts = 0;
     globalThis.fetch = (async () => {
       posts += 1;
@@ -448,7 +450,7 @@ describe("cold-start coordination (locks + adoption)", () => {
   test("an EXPIRED same-context broadcast is not adopted (TTL)", async () => {
     resetAccessTokenManagerForTests();
     installLocks((_n, _o, cb) => cb());
-    receiveAdoptionForTests({ waveId: "w-stale", token: "stale", contextId: null, at: Date.now() - 30_000 });
+    receiveAdoptionForTests({ waveId: "w-stale", token: "stale", contextId: null, sentAt: Date.now() - 30_000, expiresAt: null });
     let posts = 0;
     globalThis.fetch = (async () => {
       posts += 1;
@@ -490,7 +492,7 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     // writes: the reset sender clears the handoff + adoption locally
     // (and on the channel), so THIS tab's next refresh cannot adopt
     // the dead mint even though it was minted milliseconds ago.
-    receiveAdoptionForTests({ waveId: "w-a", token: "token-A", contextId: null, at: Date.now() });
+    receiveAdoptionForTests({ waveId: "w-a", token: "token-A", contextId: null, sentAt: Date.now(), expiresAt: null });
     broadcastContextReset();
     await new Promise((r) => setTimeout(r, 20));
     // The reset clears the handoff + adoption: the next refresh may NOT
@@ -558,7 +560,7 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     await new Promise((resolve) => setTimeout(resolve, 30));
     // Node has no module listener (window-guarded): deliver the mint
     // through the seam the listener would drive.
-    deliverAdoptionForTests({ waveId: "w-live", token: "wave-mint", contextId: null, at: waveAt });
+    deliverAdoptionForTests({ waveId: "w-live", token: "wave-mint", contextId: null, sentAt: waveAt, expiresAt: null });
     const ok = await pending;
     assert.equal(ok, true);
     assert.equal(posts, 0, "no rotation — the mint arrived within the bounded wait");
@@ -614,7 +616,7 @@ describe("memory-only handoff (re-review round 2)", () => {
   test("a stale lastAdoption cannot shadow the marker's newer wave (zero second POST)", async () => {
     resetAccessTokenManagerForTests();
     installLocks(async (_n, _o, cb) => cb());
-    receiveAdoptionForTests({ waveId: "w-old", token: "old-wave", contextId: null, at: Date.now() - 60_000 });
+    receiveAdoptionForTests({ waveId: "w-old", token: "old-wave", contextId: null, sentAt: Date.now() - 60_000, expiresAt: null });
     const marker = { waveId: "w-new", contextId: null, at: Date.now() };
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => JSON.stringify(marker),
@@ -623,7 +625,7 @@ describe("memory-only handoff (re-review round 2)", () => {
     } as unknown as Storage;
     const pending = refreshAccessToken();
     await new Promise((resolve) => setTimeout(resolve, 30));
-    deliverAdoptionForTests({ waveId: "w-new", token: "new-wave-mint", contextId: null, at: marker.at });
+    deliverAdoptionForTests({ waveId: "w-new", token: "new-wave-mint", contextId: null, sentAt: marker.at, expiresAt: null });
     const ok = await pending;
     assert.equal(ok, true);
     assert.equal(getAccessToken(), "new-wave-mint", "the NEW wave's mint won — no shadowing");
@@ -702,7 +704,7 @@ describe("marker semantics across a wave", () => {
       resetAccessTokenManagerForTests();
       const pending = refreshAccessToken();
       await new Promise((resolve) => setTimeout(resolve, 10));
-      deliverAdoptionForTests({ waveId: "w-n", token: `mint-${index}`, contextId: null, at: waveAt });
+      deliverAdoptionForTests({ waveId: "w-n", token: `mint-${index}`, contextId: null, sentAt: waveAt, expiresAt: null });
       const ok = await pending;
       assert.equal(ok, true, `waiter ${index + 1} adopted`);
       assert.equal(getAccessToken(), `mint-${index}`);
@@ -730,7 +732,7 @@ describe("marker semantics across a wave", () => {
     // the marker but before resolveWave's resolver is armed... the arm-
     // then-recheck order means ANY delivery in this window still wins.
     await Promise.resolve();
-    deliverAdoptionForTests({ waveId: "w-race", token: "race-mint", contextId: null, at: waveAt });
+    deliverAdoptionForTests({ waveId: "w-race", token: "race-mint", contextId: null, sentAt: waveAt, expiresAt: null });
     const ok = await pending;
     assert.equal(ok, true, "recheck-after-register caught the in-window mint");
     assert.equal(posts, 0);
@@ -792,8 +794,9 @@ describe("round-5 protocol (probe/answer liveness)", () => {
     // Hours-old wave: the publisher tab is long gone, no listener holds
     // the mint, but the marker persists. Fail-closed-forever stranded
     // every later cold start at the anonymous shell (reload repeats
-    // forever). The PROBE is the proof: nobody answers within the
-    // bounded window -> the wave is dead -> rotate as the new leader.
+    // forever). The probe is the failure detector: nobody answers
+    // within the bounded window -> the wave is declared failed ->
+    // rotate as the new leader.
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => JSON.stringify({ waveId: "w-debris", contextId: null, at: Date.now() - 3_600_000 }),
       setItem: () => {},
@@ -864,7 +867,7 @@ describe("round-5 protocol (probe/answer liveness)", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     // The live holder (11s-old mint for exactly this wave) answers with
     // a RE-STAMPED mint through the listener seam.
-    deliverAdoptionForTests({ waveId: "w-old-mint", token: "still-live", contextId: null, at: Date.now() });
+    deliverAdoptionForTests({ waveId: "w-old-mint", token: "still-live", contextId: null, sentAt: Date.now(), expiresAt: null });
     const ok = await pending;
     assert.equal(ok, true, "an aged-but-live wave is adoptable via a re-stamped answer");
     assert.equal(posts, 0, "the holder's live token is never rotated away");
@@ -879,7 +882,7 @@ describe("round-5 protocol (probe/answer liveness)", () => {
     // mint. Adopting it would replay a server-side-dead token; the
     // marker's wave identity must gate the adoption. With no holder
     // answering the probe, this tab rotates as the new leader.
-    receiveAdoptionForTests({ waveId: "w-old", token: "superseded", contextId: null, at: Date.now() - 1_000 });
+    receiveAdoptionForTests({ waveId: "w-old", token: "superseded", contextId: null, sentAt: Date.now() - 1_000, expiresAt: null });
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => JSON.stringify({ waveId: "w-new", contextId: null, at: Date.now() }),
       setItem: () => {},
@@ -926,7 +929,7 @@ describe("round-5 protocol (probe/answer liveness)", () => {
       "the waiter actively probes the marker's wave",
     );
     // ...and the live holder's answer (re-posted mint) resolves the wait.
-    deliverAdoptionForTests({ waveId: "w-sib-live", token: "sib-mint", contextId: null, at: waveAt });
+    deliverAdoptionForTests({ waveId: "w-sib-live", token: "sib-mint", contextId: null, sentAt: waveAt, expiresAt: null });
     const ok = await pending;
     assert.equal(ok, true);
     assert.equal(posts, 0, "the sibling's live wave was adopted, never rotated");
@@ -936,7 +939,7 @@ describe("round-5 protocol (probe/answer liveness)", () => {
 
   test("ANSWERER: a tab holding a TTL-fresh mint RE-POSTS it when its wave is probed", async () => {
     resetAccessTokenManagerForTests();
-    receiveAdoptionForTests({ waveId: "w-held", token: "held-mint", contextId: null, at: Date.now() });
+    receiveAdoptionForTests({ waveId: "w-held", token: "held-mint", contextId: null, sentAt: Date.now(), expiresAt: null });
     const seen: unknown[] = [];
     const ear = new BroadcastChannel("cq-auth-adoption");
     ear.onmessage = (event: MessageEvent) => seen.push(event.data);
@@ -951,25 +954,68 @@ describe("round-5 protocol (probe/answer liveness)", () => {
     ear.close();
   });
 
-  test("ANSWERER: a tab holding the wave's mint ANSWERS even when the mint is TTL-stale — re-stamped", async () => {
+  test("ANSWERER: an aged mint with a KNOWN usable expiry answers RE-STAMPED — the vouch is about the credential, not the message", async () => {
     resetAccessTokenManagerForTests();
-    receiveAdoptionForTests({ waveId: "w-known", token: "held", contextId: null, at: Date.now() - 30_000 });
+    // sentAt 30s old (past the transport TTL), exp 15min out: the
+    // holder may vouch — message age is not credential age.
+    receiveAdoptionForTests({
+      waveId: "w-known",
+      token: "held",
+      contextId: null,
+      sentAt: Date.now() - 30_000,
+      expiresAt: Date.now() + 900_000,
+    });
     const seen: unknown[] = [];
     const ear = new BroadcastChannel("cq-auth-adoption");
-    ear.onmessage = (event: MessageEvent) => seen.push(event.data);
-    receiveChannelMessageForTests({ kind: "probe", waveId: "w-other" }); // not held
-    receiveChannelMessageForTests({ kind: "probe", waveId: "w-known" }); // held, mint aged
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.equal(seen.length, 1, "only the HELD wave is answered");
-    const answer = seen[0] as { kind: string; waveId: string; token: string; at: number };
-    assert.equal(answer.kind, "mint");
-    assert.equal(answer.waveId, "w-known");
-    assert.equal(answer.token, "held");
-    assert.ok(
-      Date.now() - answer.at < 1_000,
-      "the answer is re-stamped — its freshness is the answer time, not the mint time",
-    );
-    ear.close();
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data);
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-other" }); // not held
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-known" }); // held, aged but usable
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(seen.length, 1, "only the HELD wave is answered");
+      const answer = seen[0] as { kind: string; waveId: string; token: string; sentAt: number; expiresAt: number };
+      assert.equal(answer.kind, "mint");
+      assert.equal(answer.waveId, "w-known");
+      assert.equal(answer.token, "held");
+      assert.ok(
+        Date.now() - answer.sentAt < 1_000,
+        "known-expiry answer is re-stamped — transport freshness is the answer time",
+      );
+      assert.ok(
+        answer.expiresAt > Date.now(),
+        "the credential boundary rides the answer untouched",
+      );
+    } finally {
+      ear.close();
+    }
+  });
+
+  test("ANSWERER: an aged mint with NO decodable expiry is answered AS-IS — the TTL, not a vouch, bounds it", async () => {
+    resetAccessTokenManagerForTests();
+    // Unknown expiry cannot be vouched: re-stamping would let an
+    // opaque (possibly dead) bearer re-qualify forever. The answer
+    // carries the ORIGINAL sentAt; the receiver's TTL decides.
+    const originalSentAt = Date.now() - 30_000;
+    receiveAdoptionForTests({
+      waveId: "w-opaque",
+      token: "opaque",
+      contextId: null,
+      sentAt: originalSentAt,
+      expiresAt: null,
+    });
+    const seen: unknown[] = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data);
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-opaque" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(seen.length, 1, "the held wave is still answered");
+      const answer = seen[0] as { kind: string; sentAt: number };
+      assert.equal(answer.kind, "mint");
+      assert.equal(answer.sentAt, originalSentAt, "unknown-expiry mints are NEVER re-stamped");
+    } finally {
+      ear.close();
+    }
   });
 
   test("SAME-tab reload over its OWN dead marker (BC present): probe unanswered -> rotate", async () => {
@@ -1099,5 +1145,218 @@ describe("round-5 no-channel fail-safe", () => {
     } finally {
       (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel = OriginalChannel;
     }
+  });
+});
+
+// --- round 6: credential-expiry boundary on the probe/answer handoff ---
+
+describe("round-6 credential boundary", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  /** A fake bearer JWT whose payload carries `exp` (the advisory decode
+   *  target — no signature: the decode only gates OFFERS, never requests). */
+  function fakeJwt(expiresAtMs: number): string {
+    const b64 = (obj: unknown) =>
+      Buffer.from(JSON.stringify(obj)).toString("base64url");
+    return `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ exp: Math.floor(expiresAtMs / 1000) })}.sig`;
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = undefined;
+  });
+
+  test("P0 cross-tab: a live holder with an EXPIRED bearer stays SILENT — exactly one real refresh POST, new wave adopted", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Tab A minted wave W an hour ago and is still open — its bearer is
+    // long expired but lastAdoption still names W. Tab B cold-starts,
+    // sees W's marker and probes. A may NOT answer with the expired
+    // credential (re-stamping is transport freshness, never renewal);
+    // the probe times out and B rotates a genuinely new wave.
+    const expiredAt = Date.now() - 3_600_000;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ waveId: "w-expired", contextId: null, at: expiredAt }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const seen: Array<{ kind: string; waveId?: string }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    ear.onmessage = (event: MessageEvent) => seen.push(event.data as { kind: string; waveId?: string });
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "genuinely-new", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    // The holder tab's state (this process's seam): it holds W's mint,
+    // expired an hour ago. Driving its listener with the probe must
+    // produce NO answer.
+    receiveAdoptionForTests({ waveId: "w-expired", token: "expired-bearer", contextId: null, sentAt: expiredAt, expiresAt: expiredAt });
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // The probe arrives at the (simulated) live holder; it stays silent.
+    receiveChannelMessageForTests({ kind: "probe", waveId: "w-expired" });
+    const ok = await pending;
+    assert.equal(ok, true, "the waiter recovered by rotating");
+    assert.equal(posts, 1, "exactly one real refresh POST");
+    assert.equal(getAccessToken(), "genuinely-new");
+    assert.ok(
+      seen.some((m) => m.kind === "probe" && m.waveId === "w-expired"),
+      "the wave was probed",
+    );
+    assert.ok(
+      !seen.some((m) => m.kind === "mint" && m.waveId === "w-expired"),
+      "an expired bearer is never re-advertised",
+    );
+    ear.close();
+  });
+
+  test("P0 same-tab: the holder's own EXPIRED token rotates instead of self-adopting forever", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // The same tab's 401 recovery: it probes its own wave; its own
+    // long-lived listener receives the probe but must not answer with
+    // the expired self. The timeout lets the tab rotate as the new
+    // leader — the self-adopt loop of round-6 review P0 is broken.
+    const expiredAt = Date.now() - 3_600_000;
+    receiveAdoptionForTests({ waveId: "w-self", token: "own-expired", contextId: null, sentAt: expiredAt, expiresAt: expiredAt });
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ waveId: "w-self", contextId: null, at: expiredAt }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "fresh-after-loop", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    const seen: Array<{ kind: string; waveId?: string }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data as { kind: string; waveId?: string });
+      const pending = refreshAccessToken();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // The tab's own listener hears its own probe and must stay silent.
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-self" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const ok = await pending;
+      assert.equal(ok, true, "rotation, not self-adoption of the expired token");
+      assert.equal(posts, 1);
+      assert.equal(getAccessToken(), "fresh-after-loop");
+      assert.ok(
+        !seen.some((m) => m.kind === "mint" && m.waveId === "w-self"),
+        "the own listener never answers with the expired self (load-bearing silence)",
+      );
+    } finally {
+      ear.close();
+    }
+  });
+
+  test("margin: a bearer within the expiry margin is spent — the holder stays silent", async () => {
+    resetAccessTokenManagerForTests();
+    receiveAdoptionForTests({
+      waveId: "w-margin",
+      token: "almost-dead",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 2_000, // inside the 5s margin
+    });
+    const seen: unknown[] = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    ear.onmessage = (event: MessageEvent) => seen.push(event.data);
+    receiveChannelMessageForTests({ kind: "probe", waveId: "w-margin" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(seen.length, 0, "a near-expiry credential is not advertised");
+    ear.close();
+  });
+
+  test("tryAdopt refuses a transport-fresh mint whose bearer is expired (no marker)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    receiveAdoptionForTests({
+      waveId: "w-fresh-transport",
+      token: "expired-anyway",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() - 1_000,
+    });
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "own-rotation", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1, "expired bearer not adopted from memory");
+    assert.equal(getAccessToken(), "own-rotation");
+  });
+
+  test("receiver gate: an answer whose bearer is EXPIRED is refused — the waiter rotates (mutation-pinned)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // The receiving side of the credential boundary: a holder answers
+    // with a re-stamped TRANSPORT time but an expired credential. The
+    // resolver must NOT adopt it; the wait times out and this tab
+    // rotates as the new leader. (Removing the valid() expiry gate
+    // must turn this red — the mutation the review pass proved nothing
+    // else covered.)
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ waveId: "w-late", contextId: null, at: Date.now() }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "rotated-new", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    deliverAdoptionForTests({
+      waveId: "w-late",
+      token: "expired-anyway",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() - 1_000,
+    });
+    const ok = await pending;
+    assert.equal(ok, true, "the expired answer was not adopted");
+    assert.equal(posts, 1, "the waiter rotated exactly once");
+    assert.equal(getAccessToken(), "rotated-new");
+  });
+
+  test("publishMint rides the bearer JWT's exp at birth (advisory decode)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const expiresAt = Date.now() + 900_000;
+    const mints: Array<{ kind: string; waveId: string; expiresAt: number | null }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    ear.onmessage = (event: MessageEvent) => mints.push(event.data as { kind: string; waveId: string; expiresAt: number | null });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: fakeJwt(expiresAt), csrf_token: "ctx-e" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(mints.length, 1);
+    assert.ok(mints[0].expiresAt !== null, "the mint carries the decoded exp");
+    assert.ok(
+      Math.abs((mints[0].expiresAt ?? 0) - expiresAt) < 2_000,
+      "expiresAt = the JWT exp in ms",
+    );
+    ear.close();
   });
 });
