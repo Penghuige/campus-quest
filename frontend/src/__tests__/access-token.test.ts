@@ -1457,3 +1457,150 @@ describe("round-7 resolver lifecycle + server-time expiry", () => {
     }
   });
 });
+
+// --- round 8: observed-mint vs held-credential state split ---
+
+describe("round-8 holder state (observed vs held)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = undefined;
+  });
+
+  test("P1: an unrelated OBSERVED mint must not make the HOLDER forget its own wave", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // This tab HOLDS W2 (adopted earlier). A delayed mint from the
+    // superseded W1 wave arrives on the channel — observed traffic. It
+    // may wake W1 waiters, but it must never overwrite the tab's memory
+    // of the wave it actually holds: a later W2 probe must still be
+    // answered with the W2 bearer (on the pre-fix code lastAdoption was
+    // a single shared slot, W1 silently replaced W2, and a responsive
+    // live holder went mute — the waiter then rotated it away).
+    receiveAdoptionForTests({
+      waveId: "w2",
+      token: "w2-bearer",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 900_000,
+    });
+    const seen: Array<{ kind: string; waveId?: string; token?: string }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data as { kind: string; waveId?: string; token?: string });
+      // The unrelated/superseded mint arrives from the channel.
+      deliverAdoptionForTests({
+        waveId: "w1-old",
+        token: "w1-bearer",
+        contextId: null,
+        sentAt: Date.now(),
+        expiresAt: Date.now() + 900_000,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // A waiter probes W2 — the holder must STILL answer with W2.
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w2" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const answer = seen.find((m) => m.kind === "mint" && m.waveId === "w2");
+      assert.ok(answer, "the holder answered the W2 probe despite the W1 traffic");
+      assert.equal(answer.token, "w2-bearer", "the answer carries the HELD credential, not the observed one");
+    } finally {
+      ear.close();
+    }
+  });
+
+  test("PUBLISHER holds its wave: after rotating, a probe for the published wave is answered (production held-write pin)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Pins the PRODUCTION write of the held slot in publishMint: a tab
+    // that rotated and published must become a holder for that wave —
+    // removing `heldMint = message` there leaves later probes unanswered
+    // and the live wave rotated away (the same failure shape one round
+    // later; mutation-verified untested before this pin).
+    const markerWrites: string[] = [];
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => null,
+      setItem: (_k: string, v: string) => markerWrites.push(v),
+      removeItem: () => {},
+    } as unknown as Storage;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "pub-bearer", csrf_token: "ctx" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.ok(markerWrites.length >= 1, "marker written");
+    const marker = JSON.parse(markerWrites[0]) as { waveId: string };
+    const seen: Array<{ kind: string; waveId?: string; token?: string }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data as { kind: string; waveId?: string; token?: string });
+      receiveChannelMessageForTests({ kind: "probe", waveId: marker.waveId });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const answer = seen.find((m) => m.kind === "mint" && m.waveId === marker.waveId);
+      assert.ok(answer, "the publisher answers for its own live wave");
+      assert.equal(answer.token, "pub-bearer");
+    } finally {
+      ear.close();
+    }
+  });
+
+  test("ADOPTION promotes into the held slot: a tab that adopted a wave answers later probes for it", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Pins the PRODUCTION promotion in adoptOrRotate's adoption branch:
+    // taking a credential from the channel must make the tab its holder.
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ waveId: "w-ad", contextId: null, at: Date.now() }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    deliverAdoptionForTests({
+      waveId: "w-ad",
+      token: "ad-bearer",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 900_000,
+    });
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(posts, 0, "adopted, not rotated");
+    const seen: Array<{ kind: string; waveId?: string; token?: string }> = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data as { kind: string; waveId?: string; token?: string });
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-ad" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const answer = seen.find((m) => m.kind === "mint" && m.waveId === "w-ad");
+      assert.ok(answer, "the adopter answers for the wave it took");
+      assert.equal(answer.token, "ad-bearer");
+    } finally {
+      ear.close();
+    }
+  });
+
+  // (The waiter-side outcome of this fix — zero POSTs, live wave adopted
+  // after unrelated traffic — is pinned by the round-7 resolver test; the
+  // holder/waiter split it depends on only exists across two real tabs,
+  // which the opt-in wave-invariant e2e exercises as one-rotation-per-
+  // wave, though it does not inject delayed superseded traffic.)
+});

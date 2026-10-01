@@ -108,11 +108,15 @@ export function getAccessToken(): string | null {
  *    posts {kind:"probe", waveId} and bounded-waits on the resolver-
  *    armed LONG-LIVED listener (a fresh channel cannot replay an
  *    already-posted message). Every live holder of the wave — any tab
- *    whose in-memory mint still names it AND whose bearer is still
- *    USABLE (the mint carries the bearer's immutable expiry; a holder
- *    with an expired/near-expiry credential stays SILENT so the waiter
- *    becomes the refresh leader and publishes a genuinely new wave —
- *    round-6 P0) — ANSWERS by re-posting the mint with a RE-STAMPED
+ *    whose HELD credential still names it (the heldMint slot is written
+ *    only when the tab TAKES a credential — its own rotation or an
+ *    adoption it applied — never by observed channel traffic, so
+ *    unrelated mints cannot make a holder forget its wave; round-8 P1)
+ *    AND whose bearer is still USABLE (the mint carries the bearer's
+ *    immutable expiry; a holder with an expired/near-expiry credential
+ *    stays SILENT so the waiter becomes the refresh leader and
+ *    publishes a genuinely new wave — round-6 P0) — ANSWERS by
+ *    re-posting the mint with a RE-STAMPED
  *    sentAt (transport freshness only: a live holder answering IS the
  *    wave-liveness proof, but re-stamping never renews the CREDENTIAL;
  *    the answer's expiresAt is immutable). The waiter adopts with ZERO
@@ -261,7 +265,21 @@ type ChannelMessage =
   | ({ kind: "mint" } & AdoptionMessage)
   | { kind: "probe"; waveId: string };
 
+/**
+ * The latest OBSERVED channel mint (round-8 split): wake-up material for
+ * armed waiters and the adoption-entry recheck — nothing more. Channel
+ * traffic may replace it freely; it is NOT the tab's memory of what it
+ * holds.
+ */
 let lastAdoption: AdoptionMessage | null = null;
+/**
+ * The credential THIS tab actually holds (round-8 P1): written only when
+ * the tab TAKES a credential — its own rotation (publishMint) or an
+ * adoption it applied — and cleared exactly when that credential dies
+ * (context reset). Unrelated channel mints can never overwrite it, so a
+ * responsive holder never forgets the wave it can answer probes for.
+ */
+let heldMint: AdoptionMessage | null = null;
 
 /** This tab's id — reset broadcasts from OUR tab must not fence us
  *  (BroadcastChannel delivers to other channel instances in the SAME
@@ -544,7 +562,10 @@ function feedAdoptionMessage(data: Partial<AdoptionMessage> | null): void {
     };
     lastAdoption = message;
     // Offer the mint to every armed resolver; each keeps or drops ITSELF
-    // per its own wave validation (no global clear — round-7 P1).
+    // per its own wave validation (no global clear — round-7 P1). The
+    // HELD credential is deliberately untouched: observing an unrelated
+    // mint may wake matching waiters, but must never make the tab
+    // forget the wave it holds (round-8 P1).
     for (const resolve of pendingMintResolvers) {
       resolve(message);
     }
@@ -568,11 +589,11 @@ export function deliverAdoptionForTests(message: AdoptionMessage): void {
  * itself fresh forever and the same-tab adopt loop would be unbounded
  * for opaque tokens). expiresAt is immutable on every path. The
  * receiver's contextId/waveId/expiry checks still bind the answer; a
- * dead-context holder cannot answer because the reset cleared its
- * lastAdoption.
+ * dead-context holder cannot answer because the reset cleared its held
+ * credential.
  */
 function answerProbe(waveId: string): void {
-  const held = lastAdoption;
+  const held = heldMint;
   if (held !== null && held.waveId === waveId && bearerUsable(held.expiresAt)) {
     postToAdoptionChannel({
       kind: "mint",
@@ -618,6 +639,7 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
     accessToken = null;
     authEpoch += 1;
     lastAdoption = null;
+    heldMint = null;
     notifyCrossTabReset();
   };
 }
@@ -661,6 +683,9 @@ function publishMint(token: string, contextIdFromResponse: string | null): void 
     expiresAt: bearerExpiryMs(token),
   };
   lastAdoption = message;
+  // This tab now OWNS the wave it just published — the held slot rides
+  // with the credential (round-8 split).
+  heldMint = message;
   // The MARKER is the only persistent artifact — non-secret (re-review
   // P1): waveId is an opaque uuid, contextId is the double-submit csrf
   // value already readable in a JS cookie, `at` is a timestamp. The
@@ -683,6 +708,7 @@ export function broadcastContextReset(): void {
   // The local fence applies EVERYWHERE (the sender is also a tab whose
   // stale handoff must die); the channel notification is browser-only.
   lastAdoption = null;
+  heldMint = null;
   clearMarker();
   // Round-5 P1a: ownership metadata must not survive account changes —
   // the wave this tab published belongs to the CLOSED context.
@@ -696,25 +722,26 @@ export function broadcastContextReset(): void {
 }
 
 /**
- * Immediate adoption check: the freshest VALID candidate for OUR
- * context. Re-review P1: a stale `lastAdoption` must never shadow a
- * newer wave — validity (fresh + context match) is the filter, and
- * when the marker for our context names a DIFFERENT wave, the in-memory
- * mint has been superseded server-side (rotate-once retired the older
- * wave's session row) and is refused regardless of TTL freshness
- * (round-5 review P2).
+ * Immediate adoption check: the best VALID candidate for OUR context —
+ * the HELD credential first (never forget what we own — round-8), then
+ * the latest observed mint. Re-review P1: a superseded-wave candidate
+ * is refused by the marker's wave identity regardless of TTL freshness
+ * (round-5 review P2). Returns the message so the caller can promote
+ * its adoption into the held slot.
  */
-function tryAdopt(marker: HandoffMarker | null): string | null {
-  if (
-    lastAdoption !== null &&
-    Date.now() - lastAdoption.sentAt < ADOPTION_TTL_MS &&
-    bearerUsable(lastAdoption.expiresAt) &&
-    lastAdoption.contextId === readCsrfToken() &&
-    (marker === null ||
-      marker.contextId !== readCsrfToken() ||
-      marker.waveId === lastAdoption.waveId)
-  ) {
-    return lastAdoption.token;
+function tryAdopt(marker: HandoffMarker | null): AdoptionMessage | null {
+  for (const candidate of [heldMint, lastAdoption]) {
+    if (
+      candidate !== null &&
+      Date.now() - candidate.sentAt < ADOPTION_TTL_MS &&
+      bearerUsable(candidate.expiresAt) &&
+      candidate.contextId === readCsrfToken() &&
+      (marker === null ||
+        marker.contextId !== readCsrfToken() ||
+        marker.waveId === candidate.waveId)
+    ) {
+      return candidate;
+    }
   }
   return null;
 }
@@ -794,8 +821,10 @@ let lastMintContext: string | null | undefined = undefined;
 
 /**
  * Inside the lock, in order:
- * 1. immediate adoption — the freshest VALID mint already in memory
- *    (wave-checked against the marker when one exists for our context);
+ * 1. immediate adoption — the HELD credential first (never forget what
+ *    we own), then the freshest observed mint (both wave-checked
+ *    against the marker when one exists for our context; an applied
+ *    adoption promotes into the held slot);
  * 2. wave resolution — a marker for our context routes to the
  *    PROBE/ANSWER exchange: a live holder with a USABLE bearer
  *    re-posts a re-stamped mint (adopt, zero POSTs); a timeout — a
@@ -816,7 +845,8 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
   const marker = readMarker();
   const adopted = tryAdopt(marker);
   if (adopted !== null) {
-    accessToken = adopted;
+    accessToken = adopted.token;
+    heldMint = adopted;
     return true;
   }
   const markerIsOurs =
@@ -834,6 +864,7 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
         return false;
       }
       accessToken = outcome.message.token;
+      heldMint = outcome.message;
       return true;
     }
     if (outcome.kind === "no-channel") {
@@ -948,15 +979,17 @@ export function resetAccessTokenManagerForTests(): void {
   authEpoch = 0;
   transitionActive = false;
   lastAdoption = null;
+  heldMint = null;
   lastMintContext = undefined;
 }
 
 /**
- * Test seam: simulate a sibling tab's broadcast landing in the listener
- * (Node tests run without `window`, so the browser-only listener that
- * feeds `lastAdoption` never exists there).
+ * Test seam: the tab HOLDS this mint (its own adopted/published
+ * credential) — sets both the held slot and the observed slot, exactly
+ * as adopting the message would.
  */
 export function receiveAdoptionForTests(message: AdoptionMessage): void {
+  heldMint = message;
   lastAdoption = message;
 }
 
@@ -970,6 +1003,7 @@ export function receiveCrossTabResetForTests(): void {
   accessToken = null;
   authEpoch += 1;
   lastAdoption = null;
+  heldMint = null;
   notifyCrossTabReset();
 }
 
