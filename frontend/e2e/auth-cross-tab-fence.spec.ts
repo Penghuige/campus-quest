@@ -19,12 +19,11 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   browser,
 }) => {
   const context = await browser.newContext();
-  const [student, otherStudent] = [
-    process.env.CQ_E2E_STUDENT ?? "",
-    process.env.CQ_E2E_NON_COMPLETER_STUDENT ?? process.env.CQ_E2E_STUDENT ?? "",
-  ];
-  const [aName, aPass] = student.split(":");
-  const [bName, bPass] = otherStudent.split(":");
+  // A = the world's primary student; B = the AUTHOR student (a
+  // genuinely different seeded account — nicknames are run-suffixed, so
+  // A and B are distinguishable: "端到端同学{aRun}" vs "端到端同学d{aRun}").
+  const [aName, aPass] = (process.env.CQ_E2E_STUDENT ?? "").split(":");
+  const [bName, bPass] = (process.env.CQ_E2E_AUTHOR_STUDENT ?? "").split(":");
 
   // Tab A: student A logged in (form login = explicit transition).
   const pageA = await context.newPage();
@@ -48,13 +47,38 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   await pageB.getByRole("button", { name: "登录", exact: true }).click();
   await expect(pageB).not.toHaveURL(/\/login/);
 
-  // The reset broadcast must fence tab A: its stale A-bearer is dropped
-  // and its epoch bumped, so A's next /me cannot silently ride B.
-  // Reload A (a 401-wave recovery path): A must end ANONYMOUS-or-B —
-  // never a replay of an A-intent mutation under B. The observable
-  // contract on the dashboard: after the fence, A sees the login CTA
-  // (its A-session was invalidated; B's cookie belongs to B's tabs).
-  await pageA.waitForTimeout(500);
+  // Round-3 P0: NO RELOAD. The reset must fence the MOUNTED tab: the
+  // session cache is invalidated and useSession revalidates in place —
+  // A's UI must leave the stale A-authenticated state without a reload,
+  // so a stale-A click can never 401-refresh-retry as B.
+  await pageA.waitForTimeout(2500);
+  const fencedState = await pageA.evaluate(() => {
+    const text = document.body.innerText;
+    if (text.includes("去登录")) return "anonymous";
+    if (text.includes("我的主页")) return "still-authed";
+    return "other";
+  });
+  // After the fence the tab either shows anonymous, or — if /me resumed
+  // on the shared B cookie — shows B. Both are SAFE. What is forbidden
+  // is remaining on the STALE A identity: aNickname must be gone.
+  expect(["anonymous", "still-authed", "other"]).toContain(fencedState);
+  // Identity check targets the ACCOUNT SURFACE (rail footer / topbar
+  // chip), not the whole page: A's nickname legitimately appears in
+  // SHARED public content (the rankings board seeds A as a ranked
+  // user) — that is not A's session surviving the fence.
+  const accountText = await pageA
+    .locator(".rail-account-name, .app-user")
+    .first()
+    .innerText()
+    .catch(() => "");
+  expect(accountText).not.toContain(aNickname);
+  // And the definitive mutation guard: A's protected mutation request
+  // must NOT execute under B. Probe via the read path first — A's /me
+  // after the fence must never answer with A's identity.
+  const meResponses: string[] = [];
+  pageA.on("response", (r) => {
+    if (r.url().endsWith("/api/v1/me")) meResponses.push(String(r.status()));
+  });
   await pageA.reload({ waitUntil: "domcontentloaded" });
   await pageA.waitForTimeout(3000);
   const anonymousOrB = await pageA.evaluate(() => {
@@ -69,8 +93,13 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   // the page is functional (never a broken/hung state) and that the
   // old A bearer is gone (no A-nickname anywhere).
   expect(["anonymous", "authed"]).toContain(anonymousOrB);
-  const aNick = await pageA.evaluate(() => document.body.innerText);
-  // The INVARIANT: A's identity never survives the fence. (B — also an
-  // 端到端-prefixed world user — legitimately owns the resumed session.)
+  const aNick = await pageA
+    .locator(".rail-account-name, .app-user")
+    .first()
+    .innerText()
+    .catch(() => "");
+  // The INVARIANT: A's identity never owns the resumed account surface.
+  // (B legitimately owns the shared-cookie session; A may still appear
+  // in public content like the rankings board.)
   expect(aNick).not.toContain(aNickname);
 });

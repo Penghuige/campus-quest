@@ -34,6 +34,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import type { components } from "@/lib/api/schema";
 import { isApiError } from "@/lib/errors";
+import { onCrossTabAuthReset } from "@/lib/accessToken";
 
 /** Owner's account view (backend `MePublic`, spec §40). */
 export type MeProfile = components["schemas"]["MePublic"];
@@ -199,10 +200,20 @@ export function useSession(): UseSessionResult {
     };
     document.addEventListener("visibilitychange", revalidateIfStale);
     window.addEventListener("focus", revalidateIfStale);
+    // Round-3 P0: a SIBLING tab's explicit login/logout must not leave
+    // this tab serving the OLD account's cached /me — a stale-A click
+    // would 401-refresh-retry as B. The reset drops the cache and this
+    // consumer revalidates immediately (unconditionally — not only when
+    // stale: the account itself changed).
+    const unsubscribeReset = onCrossTabAuthReset(() => {
+      invalidateSessionCache();
+      load().then(apply, fail);
+    });
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", revalidateIfStale);
       window.removeEventListener("focus", revalidateIfStale);
+      unsubscribeReset();
     };
   }, [revision]);
 

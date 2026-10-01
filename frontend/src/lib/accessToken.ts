@@ -90,36 +90,40 @@ export function getAccessToken(): string | null {
 
 /*
  * Cross-tab cold-start coordination (QA defect #1, owner ruling on the
- * PR #10 review): every cold start rotates the refresh cookie, and the
- * server's live-session row (`replaced_by IS NULL`) accepts exactly one
- * lineage tip — so N tabs rotating concurrently used to leave the
- * losers logged out. The contract is ONE rotation per cold-start wave:
+ * PR #10 review): under strict rotate-once the invariant is ONE
+ * POST /auth/refresh per cold-start wave — the second rotation kills
+ * the first tab's just-minted token (the live-session row requires
+ * `replaced_by IS NULL`).
  *
+ * Mechanism (round-3 shape):
  * 1. the round-trip runs inside a Web Locks request (same-origin tabs
- *    serialize on it);
- * 2. the tab that first reaches the lock ROTATES once and PUBLISHES
- *    the minted access token to a SYNCHRONOUS same-origin handoff slot
- *    (localStorage — read UNDER the lock by the next waiter) plus a
- *    BroadcastChannel notification for open listeners;
- * 3. every sibling that reaches the lock afterwards ADOPTS that mint
- *    (bound to the REFRESH RESPONSE's own csrf_token — never a later
- *    cookie read) instead of rotating — one POST per wave, and the one
- *    minted token stays live for all tabs.
+ *    serialize on "cq:auth-refresh");
+ * 2. the wave's winner ROTATES once, then publishes — still under the
+ *    lock — a NON-SECRET marker {contextId, at} to localStorage (the
+ *    only persistent artifact; the bearer NEVER touches storage) and
+ *    the mint (token + the RESPONSE's own csrf_token) to the adoption
+ *    BroadcastChannel, holding the lock a short delivery grace;
+ * 3. waiters, under the lock: adopt a valid in-memory mint, else read
+ *    the marker — AGE-GATED (MINT_FRESH_MS): a fresh marker routes to
+ *    a bounded wait on the LONG-LIVED listener (generation-keyed
+ *    resolvers + recheck-after-register; a fresh channel cannot replay
+ *    an already-posted message), and a timeout there FAILS CLOSED;
+ *    an older marker belongs to a finished wave — this tab rotates as
+ *    the new winner. The marker serves every waiter of the generation
+ *    (never consumed by the first).
  *
- * Cross-tab auth-context fence (review P0): authEpoch is TAB-LOCAL but
- * cookies are origin-global, so a sibling tab's explicit login/logout
- * must fence THIS tab too. Every explicit transition broadcasts a
- * non-secret CONTEXT-RESET; receivers bump their local epoch, drop the
- * stale in-memory bearer, and invalidate caches BEFORE any 401
- * recovery can replay an old account's intent under the new one.
+ * Cross-tab auth-context fence (rounds 1-3 P0): authEpoch is TAB-LOCAL
+ * but cookies are origin-global, so a sibling's explicit login/logout
+ * broadcasts a non-secret CONTEXT-RESET. Receivers drop the bearer,
+ * bump the epoch, and notify app-level subscribers (onCrossTabAuthReset
+ * — the session cache revalidates so mounted UI leaves the old account
+ * BEFORE any new mutation can 401-refresh-retry as the new one).
  *
- * Degraded-baseline contract (review P1c): the handoff slot is
- * localStorage, NOT BroadcastChannel — the wave invariant holds with
- * or without BC delivery. Without Web Locks the rotation degrades to
- * the documented legacy racy behavior (the supported browser baseline
- * is "Web Locks available" — every evergreen browser since 2021).
- * The server-side grace window (PR #10, default off) is the
- * non-browser/cross-origin backstop, not a substitute.
+ * Supported baseline: Web Locks + BroadcastChannel (both evergreen).
+ * No BroadcastChannel -> the bounded wait cannot exist -> surface false
+ * (fail-safe; never a speculative rotation). The server-side grace
+ * window (PR #10, default off) is the non-browser/cross-origin
+ * backstop, not a substitute.
  */
 
 /** Web Locks name serializing rotations across same-origin tabs. */
@@ -156,6 +160,15 @@ const ADOPTION_TTL_MS = 10_000;
  *  drains it). Exceeding it is the fail-safe path — surface false,
  *  never a speculative second rotation). */
 const MINT_WAIT_MS = 400;
+/**
+ * A marker younger than this announces a wave whose mint delivery is
+ * IMMINENT (the winner published it under the lock moments ago). A
+ * bounded-wait timeout inside this window fails CLOSED — the miss is a
+ * delivery anomaly, not wave staleness, and rotating would retire the
+ * winner's live generation. Beyond it the wave is stale (round-3 P1b:
+ * separate age from consumption; the marker serves all N waiters).
+ */
+const MINT_FRESH_MS = MINT_WAIT_MS + 100;
 
 interface AdoptionMessage {
   token: string;
@@ -263,38 +276,71 @@ function waitForMint(marker: HandoffMarker): Promise<MintWait> {
   if (already !== null && valid(already)) {
     return Promise.resolve({ kind: "mint", message: already });
   }
-  if (typeof BroadcastChannel === "undefined") {
+  if (typeof BroadcastChannel === "undefined" && typeof window === "undefined") {
     return Promise.resolve({ kind: "no-channel" });
   }
   return new Promise((resolve) => {
-    const ear = new BroadcastChannel(ADOPTION_CHANNEL);
+    let done = false;
     const finish = (value: MintWait) => {
-      ear.close();
+      if (done) {
+        return;
+      }
+      done = true;
+      pendingMintResolvers.delete(onMint);
       clearTimeout(timer);
       resolve(value);
     };
-    ear.onmessage = (event: MessageEvent) => {
-      const data = event.data as Partial<AdoptionMessage> | null;
-      if (
-        data !== null &&
-        typeof data.token === "string" &&
-        data.token.length > 0 &&
-        (data.contextId === null || typeof data.contextId === "string") &&
-        typeof data.at === "number"
-      ) {
-        const message: AdoptionMessage = {
-          token: data.token,
-          contextId: data.contextId ?? null,
-          at: data.at,
-        };
-        if (valid(message)) {
-          lastAdoption = message;
-          finish({ kind: "mint", message });
-        }
+    const onMint = (message: AdoptionMessage) => {
+      if (valid(message)) {
+        finish({ kind: "mint", message });
       }
     };
+    // Arm the long-lived-listener resolver FIRST, then RECHECK
+    // lastAdoption — a mint delivered between the entry check and
+    // this registration is still caught (round-3 P1a race).
+    pendingMintResolvers.add(onMint);
+    if (lastAdoption !== null && valid(lastAdoption)) {
+      finish({ kind: "mint", message: lastAdoption });
+      return;
+    }
     const timer = setTimeout(() => finish({ kind: "timeout" }), MINT_WAIT_MS);
   });
+}
+
+/**
+ * Pending generation-keyed resolvers for the LONG-LIVED listener (round-3
+ * P1a): a fresh BroadcastChannel opened by a waiter cannot replay a
+ * message the winner already posted, so waitForMint arms a resolver HERE
+ * and the page-lifetime listener resolves it — plus a recheck-after-
+ * register for a mint that landed between the initial lastAdoption
+ * check and resolver registration.
+ */
+const pendingMintResolvers = new Set<(message: AdoptionMessage) => void>();
+
+function feedAdoptionMessage(data: Partial<AdoptionMessage> | null): void {
+  if (
+    data !== null &&
+    typeof data.token === "string" &&
+    data.token.length > 0 &&
+    (data.contextId === null || typeof data.contextId === "string") &&
+    typeof data.at === "number"
+  ) {
+    const message: AdoptionMessage = {
+      token: data.token,
+      contextId: data.contextId ?? null,
+      at: data.at,
+    };
+    lastAdoption = message;
+    for (const resolve of pendingMintResolvers) {
+      resolve(message);
+    }
+    pendingMintResolvers.clear();
+  }
+}
+
+/** Test seam: feed a mint as the long-lived listener would. */
+export function deliverAdoptionForTests(message: AdoptionMessage): void {
+  feedAdoptionMessage(message);
 }
 
 // Sibling broadcasts may land while this tab still waits on the lock. The
@@ -303,26 +349,14 @@ function waitForMint(marker: HandoffMarker): Promise<MintWait> {
 if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   const listener = new BroadcastChannel(ADOPTION_CHANNEL);
   listener.onmessage = (event: MessageEvent) => {
-    const data = event.data as Partial<AdoptionMessage> | null;
-    if (
-      data !== null &&
-      typeof data.token === "string" &&
-      data.token.length > 0 &&
-      (data.contextId === null || typeof data.contextId === "string") &&
-      typeof data.at === "number"
-    ) {
-      lastAdoption = {
-        token: data.token,
-        contextId: data.contextId ?? null,
-        at: data.at,
-      };
-    }
+    feedAdoptionMessage(event.data as Partial<AdoptionMessage> | null);
   };
   // Review P0: a sibling's EXPLICIT login/logout is an origin-global
-  // auth-context change. Fence locally: drop the stale bearer and bump
-  // the epoch so in-flight 401 recoveries from the OLD context can
-  // never replay under the new account. (Session/data caches invalidate
-  // via their own subscriptions — see invalidateSessionCache callers.)
+  // auth-context change. Fence locally: drop the stale bearer, bump the
+  // epoch (in-flight 401 recoveries from the OLD context can never
+  // replay under the new account), AND notify app-level subscribers —
+  // the session cache must not keep serving the OLD account's /me to
+  // mounted UI (a stale-A click would otherwise 401-refresh-retry as B).
   const resetListener = new BroadcastChannel(CONTEXT_RESET_CHANNEL);
   resetListener.onmessage = (event: MessageEvent) => {
     const data = event.data as { from?: unknown } | null;
@@ -332,7 +366,32 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
     accessToken = null;
     authEpoch += 1;
     lastAdoption = null;
+    notifyCrossTabReset();
   };
+}
+
+/**
+ * Cross-tab auth-context reset subscriptions (round-3 P0): app-level
+ * caches (the /me session cache first) subscribe so a SIBLING tab's
+ * explicit login/logout is an application-level transition in THIS
+ * tab too — mounted useSession consumers revalidate instead of
+ * serving the previous account's cached UI.
+ */
+type ResetListener = () => void;
+const resetListeners = new Set<ResetListener>();
+
+/** Subscribe to cross-tab auth-context resets; returns an unsubscriber. */
+export function onCrossTabAuthReset(listener: ResetListener): () => void {
+  resetListeners.add(listener);
+  return () => {
+    resetListeners.delete(listener);
+  };
+}
+
+function notifyCrossTabReset(): void {
+  for (const listener of resetListeners) {
+    listener();
+  }
 }
 
 /**
@@ -490,17 +549,17 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
     Date.now() - marker.at < ADOPTION_TTL_MS &&
     marker.contextId === readCsrfToken();
   if (marker !== null && markerIsOurs) {
-    // ONE-SHOT: the marker announces THIS wave; consume it on first
-    // observation so a later, independent cold start cannot mistake a
-    // finished wave's marker for an incoming mint (the v3 field bug:
-    // the next page load waited 400ms for a mint nobody would post
-    // and failed to the anonymous shell).
-    clearMarker();
+    // Round-3 P1b: the marker stays observable for the WHOLE generation
+    // window (TTL) — every waiter in an N-tab wave may route through it;
+    // the first waiter no longer removes it (that broke N > 2). Stale
+    // waves are separated by AGE, not by consumption: a marker younger
+    // than MINT_FRESH_MS announces a wave whose mint is imminent — a
+    // timeout there FAILS CLOSED (no rotation; the winner's live
+    // generation must not be retired by a missed message); an OLDER
+    // marker belongs to a finished wave — this tab may rotate as the
+    // new wave's winner (the v3 field-bug path, now age-gated).
     const outcome = await waitForMint(marker);
     if (outcome.kind === "no-channel") {
-      // Fail-safe (re-review P1): no ephemeral channel exists to move
-      // the bearer — surface false; a reload with the winner's settled
-      // cookie recovers. Never a speculative rotation.
       return false;
     }
     if (outcome.kind === "mint") {
@@ -510,10 +569,11 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
       accessToken = outcome.message.token;
       return true;
     }
-    // timeout: the marker was stale (its wave finished — delivery of a
-    // queued mint takes microseconds, not 400ms) or genuinely lost.
-    // The marker is consumed; fall through and let THIS tab rotate as
-    // the new wave's winner.
+    // timeout on a FRESHLY announced generation: fail closed.
+    if (Date.now() - marker.at < MINT_FRESH_MS) {
+      return false;
+    }
+    // stale marker: fall through — this tab is the new wave's winner.
   }
   const ok = await performRotation(epochAtStart);
   if (ok && accessToken !== null && lastMintContext !== undefined) {
