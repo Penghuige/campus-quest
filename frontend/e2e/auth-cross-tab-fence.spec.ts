@@ -51,6 +51,22 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   // session cache is invalidated and useSession revalidates in place —
   // A's UI must leave the stale A-authenticated state without a reload,
   // so a stale-A click can never 401-refresh-retry as B.
+  // Round-4 P0: the fence must act SYNCHRONOUSLY — the instant the
+  // reset lands the mounted state drops to the transitional gate (the
+  // authenticated dashboard disappears), so there is no A-action to
+  // click while /me revalidates. Capture the state EARLY (well before
+  // the revalidation settles).
+  await pageA.waitForTimeout(300);
+  const earlyState = await pageA.evaluate(() => {
+    const text = document.body.innerText;
+    if (text.includes("去登录")) return "anonymous";
+    if (text.includes("我的主页") && text.includes("需要处理的任务")) return "still-authed-full";
+    if (text.includes("我的主页")) return "transitional";
+    return "other";
+  });
+  // still-authed-full here would mean the old A UI stayed actionable
+  // synchronously — the exact P0. Transitional/anonymous/other pass.
+  expect(earlyState).not.toBe("still-authed-full");
   await pageA.waitForTimeout(2500);
   const fencedState = await pageA.evaluate(() => {
     const text = document.body.innerText;

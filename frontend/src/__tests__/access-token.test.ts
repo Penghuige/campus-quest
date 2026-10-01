@@ -536,7 +536,7 @@ describe("cross-tab context-reset fence + deterministic handoff (review round)",
     // mint arrives while the bounded wait is armed.
     const waveAt = Date.now();
     (globalThis as { localStorage?: Storage }).localStorage = {
-      getItem: () => JSON.stringify({ contextId: null, at: waveAt }),
+      getItem: () => JSON.stringify({ contextId: null, at: waveAt, generation: 4, generation: 11 }),
       setItem: () => {},
       removeItem: () => {},
     } as unknown as Storage;
@@ -604,6 +604,324 @@ describe("memory-only handoff (re-review round 2)", () => {
     receiveAdoptionForTests({ token: "old-wave", contextId: null, at: Date.now() - 60_000 });
     const marker = { contextId: null, at: Date.now() };
     (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ ...marker, generation: 2 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    deliverAdoptionForTests({ token: "new-wave-mint", contextId: null, at: marker.at });
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(getAccessToken(), "new-wave-mint", "the NEW wave's mint won — no shadowing");
+  });
+
+  test("fail-safe: fresh marker but no mint can arrive (no BroadcastChannel) -> false, zero POSTs", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now(), generation: 5, generation: 11 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const OriginalChannel = globalThis.BroadcastChannel;
+    (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel =
+      undefined as unknown as typeof BroadcastChannel;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const ok = await refreshAccessToken();
+      assert.equal(ok, false, "surface false — never a speculative rotation");
+      assert.equal(posts, 0);
+    } finally {
+      (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel = OriginalChannel;
+    }
+  });
+});
+
+// --- round 3: fresh-generation fail-closed + N-waiter marker + missed-message recheck ---
+
+describe("round-3 marker semantics", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+  test("ANY-age unresolved marker + missed message -> fail CLOSED (no rotation, any throttle delay)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks(async (_n, _o, cb) => cb());
+    // Round-4 P1: the marker's age is irrelevant — a generation-keyed
+    // marker means the wave is unresolved however long the waiter was
+    // throttled. Even a marker seconds old must fail closed on timeout.
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 5_000, generation: 3, generation: 11 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false, "unresolved generation fails closed at ANY age");
+    assert.equal(posts, 0, "no rotation — the winner's live generation survives");
+  });
+
+  test("N waiters: the marker stays observable — three sequential waiters all adopt one mint", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const waveAt = Date.now() - 30;
+    let reads = 0;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => {
+        reads += 1;
+        return JSON.stringify({ contextId: null, at: waveAt, generation: 1, generation: 11 });
+      },
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    // Three waiter-tabs (simulated sequentially: fresh module state, one
+    // shared marker, one mint delivered to each wait through the seam).
+    for (let index = 0; index < 3; index += 1) {
+      resetAccessTokenManagerForTests();
+      const pending = refreshAccessToken();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      deliverAdoptionForTests({ token: `mint-${index}`, contextId: null, at: waveAt });
+      const ok = await pending;
+      assert.equal(ok, true, `waiter ${index + 1} adopted`);
+      assert.equal(getAccessToken(), `mint-${index}`);
+    }
+    assert.equal(posts, 0, "zero rotations for the whole N-tab wave");
+    assert.ok(reads >= 3, "the marker served every waiter");
+  });
+
+  test("missed-message race: the mint lands BETWEEN entry check and resolver registration (recheck catches it)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const waveAt = Date.now();
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: waveAt, generation: 9, generation: 11 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const pending = refreshAccessToken();
+    // Deliver exactly in the microtask window after adoptOrRotate read
+    // the marker but before waitForMint's resolver is armed... the arm-
+    // then-recheck order means ANY delivery in this window still wins.
+    await Promise.resolve();
+    deliverAdoptionForTests({ token: "race-mint", contextId: null, at: waveAt });
+    const ok = await pending;
+    assert.equal(ok, true, "recheck-after-register caught the in-window mint");
+    assert.equal(posts, 0);
+    assert.equal(getAccessToken(), "race-mint");
+  });
+
+  test("a FOREIGN-context marker is cleared and this tab rotates as the wave leader", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // A marker from ANOTHER auth context (pre-login/logout): not ours —
+    // this tab is the new wave's leader: clear it, rotate, publish.
+    let removed = false;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: "other", at: Date.now(), generation: 7, generation: 11 }),
+      setItem: () => {},
+      removeItem: () => { removed = true; },
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "fresh-winner" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1);
+    assert.equal(getAccessToken(), "fresh-winner");
+    assert.equal(removed, true, "foreign-generation marker cleared before rotating");
+  });
+});
+
+// --- review fix round: P0 fence, P1a response-bound label, P1b handoff barrier ---
+
+describe("cross-tab context-reset fence + deterministic handoff (review round)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+  });
+
+  test("P0: a sibling's context-reset fences THIS tab — stale A-mint never adopted, zero replay", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // A sibling tab logged in/out; the browser-only reset listener is
+    // window-guarded, so exercise the fence at the seam the listener
+    // writes: the reset sender clears the handoff + adoption locally
+    // (and on the channel), so THIS tab's next refresh cannot adopt
+    // the dead mint even though it was minted milliseconds ago.
+    receiveAdoptionForTests({ token: "token-A", contextId: null, at: Date.now() });
+    broadcastContextReset();
+    await new Promise((r) => setTimeout(r, 20));
+    // The reset clears the handoff + adoption: the next refresh may NOT
+    // adopt A's mint even though it was fresh.
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "own-new", csrf_token: "ctx-new" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.equal(posts, 1, "stale A-mint must NOT be adopted after a context reset");
+    assert.equal(getAccessToken(), "own-new");
+  });
+
+  test("P1a: the label rides the refresh RESPONSE csrf_token; the marker carries NO bearer", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const markerWrites: string[] = [];
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => null,
+      setItem: (_k: string, v: string) => markerWrites.push(v),
+      removeItem: () => {},
+    } as unknown as Storage;
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    const mints: unknown[] = [];
+    ear.onmessage = (event: MessageEvent) => mints.push(event.data);
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "mint-x", csrf_token: "ctx-response" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(markerWrites.length, 1);
+    const marker = JSON.parse(markerWrites[0]) as { contextId: string | null };
+    assert.equal(marker.contextId, "ctx-response", "label = response csrf_token");
+    assert.ok(!("token" in marker), "marker carries no bearer");
+    assert.equal(mints.length, 1);
+    const mint = mints[0] as { token: string; contextId: string | null };
+    assert.equal(mint.token, "mint-x");
+    assert.equal(mint.contextId, "ctx-response");
+    ear.close();
+  });
+
+  test("P1b: marker routes the waiter to a bounded channel wait (mint lands DURING it — zero POSTs)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "loser" }), { status: 200 });
+    }) as typeof fetch;
+    // This wave's winner already published the marker (under its lock);
+    // this waiter has NO lastAdoption (listener delivery delayed) — the
+    // mint arrives while the bounded wait is armed.
+    const waveAt = Date.now();
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: waveAt, generation: 11 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Node has no module listener (window-guarded): deliver the mint
+    // through the seam the listener would drive.
+    deliverAdoptionForTests({ token: "wave-mint", contextId: null, at: waveAt });
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(posts, 0, "no rotation — the mint arrived within the bounded wait");
+    assert.equal(getAccessToken(), "wave-mint");
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+});
+
+// --- re-review round 2: memory-only handoff, no shadowing, fail-safe ---
+
+describe("memory-only handoff (re-review round 2)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+  });
+
+  test("the bearer NEVER reaches localStorage (every persistent write is token-free)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    const writes: string[] = [];
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => null,
+      setItem: (_k: string, v: string) => writes.push(v),
+      removeItem: () => {},
+    } as unknown as Storage;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ access_token: "secret-bearer", csrf_token: "ctx" }), { status: 200 })) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true);
+    assert.ok(writes.length >= 1, "marker written");
+    for (const raw of writes) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      assert.equal("token" in parsed, false, "no token field in any persistent write");
+      assert.ok(!raw.includes("secret-bearer"), "bearer string never persisted");
+    }
+  });
+
+  test("a stale lastAdoption cannot shadow the marker's newer wave (zero second POST)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks(async (_n, _o, cb) => cb());
+    receiveAdoptionForTests({ token: "old-wave", contextId: null, at: Date.now() - 60_000 });
+    const marker = { contextId: null, at: Date.now(), generation: 12 };
+    (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => JSON.stringify(marker),
       setItem: () => {},
       removeItem: () => {},
@@ -620,7 +938,7 @@ describe("memory-only handoff (re-review round 2)", () => {
     resetAccessTokenManagerForTests();
     installLocks((_n, _o, cb) => cb());
     (globalThis as { localStorage?: Storage }).localStorage = {
-      getItem: () => JSON.stringify({ contextId: null, at: Date.now() }),
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now(), generation: 11 }),
       setItem: () => {},
       removeItem: () => {},
     } as unknown as Storage;
@@ -670,7 +988,7 @@ describe("round-3 marker semantics", () => {
     installLocks(async (_n, _o, cb) => cb());
     // Marker written ~now; the mint NEVER arrives (delivery anomaly).
     (globalThis as { localStorage?: Storage }).localStorage = {
-      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 50 }),
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 50, generation: 11 }),
       setItem: () => {},
       removeItem: () => {},
     } as unknown as Storage;
@@ -692,7 +1010,7 @@ describe("round-3 marker semantics", () => {
     (globalThis as { localStorage?: Storage }).localStorage = {
       getItem: () => {
         reads += 1;
-        return JSON.stringify({ contextId: null, at: waveAt });
+        return JSON.stringify({ contextId: null, at: waveAt, generation: 1, generation: 11 });
       },
       setItem: () => {},
       removeItem: () => {},
@@ -722,7 +1040,7 @@ describe("round-3 marker semantics", () => {
     installLocks((_n, _o, cb) => cb());
     const waveAt = Date.now();
     (globalThis as { localStorage?: Storage }).localStorage = {
-      getItem: () => JSON.stringify({ contextId: null, at: waveAt }),
+      getItem: () => JSON.stringify({ contextId: null, at: waveAt, generation: 9, generation: 11 }),
       setItem: () => {},
       removeItem: () => {},
     } as unknown as Storage;
@@ -741,5 +1059,153 @@ describe("round-3 marker semantics", () => {
     assert.equal(ok, true, "recheck-after-register caught the in-window mint");
     assert.equal(posts, 0);
     assert.equal(getAccessToken(), "race-mint");
+  });
+});
+
+// --- round 4: no-BroadcastChannel BROWSER path + generation boundary ---
+
+describe("round-4 protocol", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    (globalThis as { window?: unknown }).window = undefined;
+  });
+
+  test("browser-present + BroadcastChannel-absent: unresolved marker fails CLOSED (the P1 branch bug)", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Simulate the BROWSER shape: window exists, BroadcastChannel does not.
+    (globalThis as { window?: unknown }).window = {};
+    const OriginalChannel = globalThis.BroadcastChannel;
+    (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel =
+      undefined as unknown as typeof BroadcastChannel;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now(), generation: 21 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const ok = await refreshAccessToken();
+      assert.equal(ok, false, "browser no-BC must fail closed, not fall through to rotation");
+      assert.equal(posts, 0);
+    } finally {
+      (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel = OriginalChannel;
+    }
+  });
+
+  test("a throttled same-wave waiter (marker 5s old, mint missed) still fails CLOSED — no age heuristic", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Same-wave waiter throttled far past any age cutoff: the marker
+    // generation is unresolved; rotating would retire the winner.
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 5_000, generation: 22 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false, "generation boundary, not age — no rotation");
+    assert.equal(posts, 0);
+  });
+});
+
+// --- round-4 regression: same-tab reload must rotate past its OWN dead marker ---
+
+describe("own-dead-wave detection (reload regression)", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = undefined;
+  });
+
+  test("SAME-tab reload (marker gen == own published gen) ROTATES as new leader", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // This tab published generation 3 before a reload; the marker (gen 3)
+    // survives; the heap's mint is gone. sessionStorage remembers gen 3.
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 1_000, generation: 3 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = {
+      getItem: () => "3",
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "reload-winner" }), { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, true, "reload must not be stranded anonymous by its own dead marker");
+    assert.equal(posts, 1, "rotated as the new wave leader");
+    assert.equal(getAccessToken(), "reload-winner");
+  });
+
+  test("CROSS-tab live wave (marker gen > own published gen) still FAILS CLOSED", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // This tab never published (gen -1); the marker gen 7 is another
+    // tab's live wave — the throttled-waiter contract applies.
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ contextId: null, at: Date.now() - 1_000, generation: 7 }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const ok = await refreshAccessToken();
+    assert.equal(ok, false, "another tab's live wave must fail closed");
+    assert.equal(posts, 0);
   });
 });

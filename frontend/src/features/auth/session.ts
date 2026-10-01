@@ -174,13 +174,18 @@ export function useSession(): UseSessionResult {
 
   useEffect(() => {
     let cancelled = false;
+    // Round-4 P0: `apply` is GENERATION-GATED at the component too. The
+    // module cache fence stops old results repopulating the CACHE, but
+    // without this gate an older in-flight load() could still overwrite
+    // the component's visible state after a reset settled the new one.
+    let applyGeneration = generation;
     const apply = (result: SessionResult) => {
-      if (!cancelled) {
+      if (!cancelled && applyGeneration === generation) {
         setState(toState(result));
       }
     };
     const fail = (error: unknown) => {
-      if (!cancelled) {
+      if (!cancelled && applyGeneration === generation) {
         setState({ status: "error", error });
       }
     };
@@ -205,8 +210,16 @@ export function useSession(): UseSessionResult {
     // would 401-refresh-retry as B. The reset drops the cache and this
     // consumer revalidates immediately (unconditionally — not only when
     // stale: the account itself changed).
+    // Round-3/4 P0: a SIBLING tab's explicit login/logout must make the
+    // OLD account UI non-actionable SYNCHRONOUSLY — not at async /me
+    // arrival. The mounted state drops to `loading` (the shell renders
+    // its transitional gate: no authenticated-A actions remain) the
+    // moment the reset lands; revalidation then settles the new context
+    // (or anonymous).
     const unsubscribeReset = onCrossTabAuthReset(() => {
       invalidateSessionCache();
+      applyGeneration = generation;
+      setState({ status: "loading" });
       load().then(apply, fail);
     });
     return () => {

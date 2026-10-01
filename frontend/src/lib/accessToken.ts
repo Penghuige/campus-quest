@@ -153,6 +153,8 @@ const CONTEXT_RESET_CHANNEL = "cq-auth-reset";
  * generation (a stale lastAdoption can never shadow a newer wave).
  */
 const HANDOFF_MARKER_KEY = "cq:auth-handoff-marker";
+/** sessionStorage: the generation THIS tab last published (reload-safe). */
+const PUBLISHED_GEN_KEY = "cq:auth-published-generation";
 /** A published mint older than this is not adoptable (wave-scale freshness). */
 const ADOPTION_TTL_MS = 10_000;
 /** Bounded channel wait for a marker's mint (delivery is queued while
@@ -161,14 +163,27 @@ const ADOPTION_TTL_MS = 10_000;
  *  never a speculative second rotation). */
 const MINT_WAIT_MS = 400;
 /**
- * A marker younger than this announces a wave whose mint delivery is
- * IMMINENT (the winner published it under the lock moments ago). A
- * bounded-wait timeout inside this window fails CLOSED — the miss is a
- * delivery anomaly, not wave staleness, and rotating would retire the
- * winner's live generation. Beyond it the wave is stale (round-3 P1b:
- * separate age from consumption; the marker serves all N waiters).
+ * Round-4 P1: the wave boundary is an explicit GENERATION, not a 500ms
+ * age heuristic (a throttled same-wave waiter beyond any age cutoff
+ * would misclassify and rotate, retiring the winner's live generation).
+ *
+ * Protocol: the wave's winner — the tab that finds NO adoption and NO
+ * marker under the lock — CLEARS any previous-generation marker, rotates
+ * once, then writes marker {contextId, at, generation}. A waiter that
+ * sees ANY valid marker for its context is in an UNRESOLVED generation
+ * regardless of age: it bounded-waits, and a timeout FAILS CLOSED
+ * (surface false; a reload recovers). Rotation happens ONLY for the
+ * wave leader (marker absent) — never from a marker-timeout path. A
+ * finished wave's marker is cleared by the NEXT wave's leader before it
+ * rotates, so "marker present" always means "this generation owns the
+ * lock-to-lock handoff".
  */
-const MINT_FRESH_MS = MINT_WAIT_MS + 100;
+let mintGeneration = 0;
+
+/** The current handoff generation (test seam). */
+export function getMintGenerationForTests(): number {
+  return mintGeneration;
+}
 
 interface AdoptionMessage {
   token: string;
@@ -183,6 +198,7 @@ interface AdoptionMessage {
 interface HandoffMarker {
   contextId: string | null;
   at: number;
+  generation: number;
 }
 
 let lastAdoption: AdoptionMessage | null = null;
@@ -227,9 +243,14 @@ function readMarker(): HandoffMarker | null {
     if (
       parsed !== null &&
       (parsed.contextId === null || typeof parsed.contextId === "string") &&
-      typeof parsed.at === "number"
+      typeof parsed.at === "number" &&
+      typeof parsed.generation === "number"
     ) {
-      return { contextId: parsed.contextId ?? null, at: parsed.at };
+      return {
+        contextId: parsed.contextId ?? null,
+        at: parsed.at,
+        generation: parsed.generation,
+      };
     }
     return null;
   } catch {
@@ -272,11 +293,17 @@ function waitForMint(marker: HandoffMarker): Promise<MintWait> {
     message.at >= marker.at - 50 &&
     message.contextId === marker.contextId &&
     Date.now() - message.at < ADOPTION_TTL_MS;
+  // An UNRESOLVED marker (round-4 P1): any age. The wait resolves only
+  // on this generation's mint or times out — the caller fails closed. No
+  // age heuristic classifies a throttled same-wave waiter as stale.
   const already = lastAdoption;
   if (already !== null && valid(already)) {
     return Promise.resolve({ kind: "mint", message: already });
   }
-  if (typeof BroadcastChannel === "undefined" && typeof window === "undefined") {
+  if (typeof BroadcastChannel === "undefined") {
+    // Round-4 P1: browser-present + BroadcastChannel-absent IS the
+    // unsupported case — the previous `&& window === undefined` guard
+    // missed it and let a timer-only wait fall through to rotation.
     return Promise.resolve({ kind: "no-channel" });
   }
   return new Promise((resolve) => {
@@ -401,10 +428,30 @@ function notifyCrossTabReset(): void {
 function publishMint(token: string, contextIdFromResponse: string | null): void {
   const message: AdoptionMessage = { token, contextId: contextIdFromResponse, at: Date.now() };
   lastAdoption = message;
+  mintGeneration += 1;
   // The MARKER is the only persistent artifact — non-secret (re-review
   // P1): contextId is the double-submit csrf value already readable in
-  // a JS cookie; `at` is a timestamp. The bearer never leaves memory.
-  writeMarker({ contextId: contextIdFromResponse, at: message.at });
+  // a JS cookie; `at` is a timestamp; `generation` is a counter. The
+  // bearer never leaves memory.
+  writeMarker({
+    contextId: contextIdFromResponse,
+    at: message.at,
+    generation: mintGeneration,
+  });
+  // Round-4 regression fix: remember OUR published generation in
+  // sessionStorage (survives reload, dies with the tab — exactly the
+  // publisher's lifetime). A later cold start that sees a marker of the
+  // SAME generation is this tab's OWN dead wave (the reload killed the
+  // heap that held the mint): rotating is safe — the mint's holder no
+  // longer exists. A HIGHER generation is another tab's live wave: the
+  // throttled-waiter fail-closed contract applies unchanged.
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(PUBLISHED_GEN_KEY, String(mintGeneration));
+    }
+  } catch {
+    // best effort
+  }
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(ADOPTION_CHANNEL);
     channel.postMessage(message);
@@ -534,6 +581,9 @@ async function rotate(): Promise<boolean> {
  *    marker + channel mint, and hold the lock a short delivery grace
  *    so the message is queued before the next waiter acquires.
  */
+/** The csrf_token riding the last successful refresh response (P1a). */
+let lastMintContext: string | null | undefined = undefined;
+
 async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
   if (authEpoch !== epochAtStart || transitionActive) {
     return false;
@@ -546,39 +596,51 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
   const marker = readMarker();
   const markerIsOurs =
     marker !== null &&
-    Date.now() - marker.at < ADOPTION_TTL_MS &&
     marker.contextId === readCsrfToken();
   if (marker !== null && markerIsOurs) {
-    // Round-3 P1b: the marker stays observable for the WHOLE generation
-    // window (TTL) — every waiter in an N-tab wave may route through it;
-    // the first waiter no longer removes it (that broke N > 2). Stale
-    // waves are separated by AGE, not by consumption: a marker younger
-    // than MINT_FRESH_MS announces a wave whose mint is imminent — a
-    // timeout there FAILS CLOSED (no rotation; the winner's live
-    // generation must not be retired by a missed message); an OLDER
-    // marker belongs to a finished wave — this tab may rotate as the
-    // new wave's winner (the v3 field-bug path, now age-gated).
-    const outcome = await waitForMint(marker);
-    if (outcome.kind === "no-channel") {
-      return false;
-    }
-    if (outcome.kind === "mint") {
-      if (authEpoch !== epochAtStart || transitionActive) {
-        return false;
+    // Is this OUR OWN dead wave? A same-tab navigation reloads the heap;
+    // the marker we published before the reload still matches our
+    // context, but the mint's holder (the old heap) is gone. Rotating
+    // retires nothing — nobody holds that generation's token.
+    let publishedGen = -1;
+    try {
+      const raw =
+        typeof sessionStorage === "undefined"
+          ? null
+          : sessionStorage.getItem(PUBLISHED_GEN_KEY);
+      if (raw !== null) {
+        const parsed = Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed)) {
+          publishedGen = parsed;
+        }
       }
-      accessToken = outcome.message.token;
-      return true;
+    } catch {
+      // best effort
     }
-    // timeout on a FRESHLY announced generation: fail closed.
-    if (Date.now() - marker.at < MINT_FRESH_MS) {
+    const ownDeadWave = marker.generation <= publishedGen;
+    if (!ownDeadWave) {
+      // Another tab's LIVE wave (round-4 P1): adopt on the mint or fail
+      // closed — a throttled waiter must never retire the winner.
+      const outcome = await waitForMint(marker);
+      if (outcome.kind === "mint") {
+        if (authEpoch !== epochAtStart || transitionActive) {
+          return false;
+        }
+        accessToken = outcome.message.token;
+        return true;
+      }
       return false;
     }
-    // stale marker: fall through — this tab is the new wave's winner.
+    // Own dead wave: fall through and rotate as the new leader. The
+    // marker gets overwritten by publishMint with the new generation.
+  }
+  // Wave LEADER (no adoption, no marker for our context): clear any
+  // foreign-generation marker, rotate once, publish the new generation.
+  if (marker !== null) {
+    clearMarker();
   }
   const ok = await performRotation(epochAtStart);
   if (ok && accessToken !== null && lastMintContext !== undefined) {
-    // contextId comes from the REFRESH RESPONSE body (P1a): the token
-    // and its context label left the server in the same message.
     publishMint(accessToken, lastMintContext);
     // Delivery grace: keep the lock across a few macrotasks so the
     // mint is QUEUED for every waiter's bounded wait before release.
@@ -586,9 +648,6 @@ async function adoptOrRotate(epochAtStart: number): Promise<boolean> {
   }
   return ok;
 }
-
-/** The csrf_token riding the last successful refresh response (P1a). */
-let lastMintContext: string | null | undefined = undefined;
 
 /** The one network round-trip: POST /auth/refresh with the cookie pair. */
 async function performRotation(epochAtStart: number): Promise<boolean> {
