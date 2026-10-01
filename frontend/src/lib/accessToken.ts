@@ -28,7 +28,7 @@
  * bearer (the backend's 401 stays the authority there).
  */
 import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
-import { observeServerDateHeader } from "./serverClock";
+import { observeServerDateHeader, currentServerClockOffset } from "./serverClock";
 
 /** The rotation endpoint (also the recursion guard for `lib/api.ts`). */
 export const AUTH_REFRESH_PATH = "/api/v1/auth/refresh";
@@ -316,13 +316,21 @@ function bearerExpiryMs(token: string): number | null {
 
 /**
  * A handoff credential is USABLE while its decoded expiry is more than
- * the margin away. null = unknown expiry: such a mint stays adoptable
- * only while its ORIGINAL sentAt is TTL-fresh (answerProbe never
- * re-stamps it), so the TTL — not a vouch — bounds unknown-expiry
- * handoffs and any loop built on them.
+ * the margin away, measured against the best SERVER-time estimate
+ * (local clock + the observed response-Date offset; 0 until a header
+ * has been seen). The exp is server-issued, so a slow local clock must
+ * not vouch for a server-expired bearer (round-7 P2); the margin
+ * absorbs the estimate's own error envelope (~1s header resolution
+ * plus half an RTT) and residual skew. null = unknown expiry: such a
+ * mint stays adoptable only while its ORIGINAL sentAt is TTL-fresh
+ * (answerProbe never re-stamps it), so the TTL — not a vouch — bounds
+ * unknown-expiry handoffs and any loop built on them.
  */
 function bearerUsable(expiresAt: number | null): boolean {
-  return expiresAt === null || Date.now() < expiresAt - ADOPTION_EXPIRY_MARGIN_MS;
+  if (expiresAt === null) {
+    return true;
+  }
+  return Date.now() + currentServerClockOffset() < expiresAt - ADOPTION_EXPIRY_MARGIN_MS;
 }
 
 /** sessionStorage record of the wave THIS tab published (or null). */
@@ -503,12 +511,16 @@ function resolveWave(marker: HandoffMarker): Promise<WaveOutcome> {
 }
 
 /**
- * Pending wave-keyed resolvers for the LONG-LIVED listener (round-3
- * P1a): a fresh BroadcastChannel opened by a waiter cannot replay a
- * message the winner already posted, so resolveWave arms a resolver
- * HERE and the page-lifetime listener resolves it — plus a
- * recheck-after-register for a mint that landed between the initial
- * lastAdoption check and resolver registration.
+ * Pending resolvers for the LONG-LIVED listener (round-3 P1a): a fresh
+ * BroadcastChannel opened by a waiter cannot replay a message the
+ * winner already posted, so resolveWave arms a resolver HERE and the
+ * page-lifetime listener feeds it. Each resolver is wave-keyed THROUGH
+ * ITS OWN VALIDATION and owns its lifecycle: an unrelated mint (another
+ * wave, a queued message from a superseded one) is rejected by the
+ * resolver's valid() check and leaves it ARMED — only the resolver's
+ * own finish() (its wave's mint, or its timeout) removes it. Round-7
+ * P1: a global clear after any mint let unrelated traffic disarm a
+ * live wait, and the forced timeout rotated away a responsive wave.
  */
 const pendingMintResolvers = new Set<(message: AdoptionMessage) => void>();
 
@@ -531,10 +543,11 @@ function feedAdoptionMessage(data: Partial<AdoptionMessage> | null): void {
       expiresAt: data.expiresAt ?? null,
     };
     lastAdoption = message;
+    // Offer the mint to every armed resolver; each keeps or drops ITSELF
+    // per its own wave validation (no global clear — round-7 P1).
     for (const resolve of pendingMintResolvers) {
       resolve(message);
     }
-    pendingMintResolvers.clear();
   }
 }
 

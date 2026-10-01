@@ -43,6 +43,7 @@ import {
 } from "../lib/accessToken";
 import { apiRequest } from "../lib/api";
 import { isApiError } from "../lib/errors";
+import { observeServerDateHeader, resetServerClockForTests } from "../lib/serverClock";
 import {
   acceptStaffInvitation,
   loginStaff,
@@ -713,7 +714,7 @@ describe("marker semantics across a wave", () => {
     assert.ok(reads >= 3, "the marker served every waiter");
   });
 
-  test("missed-message race: the mint lands BETWEEN entry check and resolver registration (recheck catches it)", async () => {
+  test("missed-message race: a mint landing right after arming is caught by the RESOLVER", async () => {
     resetAccessTokenManagerForTests();
     installLocks((_n, _o, cb) => cb());
     const waveAt = Date.now();
@@ -728,13 +729,14 @@ describe("marker semantics across a wave", () => {
       return new Response("{}", { status: 200 });
     }) as typeof fetch;
     const pending = refreshAccessToken();
-    // Deliver exactly in the microtask window after adoptOrRotate read
-    // the marker but before resolveWave's resolver is armed... the arm-
-    // then-recheck order means ANY delivery in this window still wins.
+    // Deliver in the microtask window after adoptOrRotate read the
+    // marker: by then the resolver is already armed (the arm-then-probe
+    // span is one synchronous task), so ANY delivery in this window —
+    // or later, up to the timeout — still reaches the armed resolver.
     await Promise.resolve();
     deliverAdoptionForTests({ waveId: "w-race", token: "race-mint", contextId: null, sentAt: waveAt, expiresAt: null });
     const ok = await pending;
-    assert.equal(ok, true, "recheck-after-register caught the in-window mint");
+    assert.equal(ok, true, "the armed resolver caught the in-window mint");
     assert.equal(posts, 0);
     assert.equal(getAccessToken(), "race-mint");
   });
@@ -1358,5 +1360,100 @@ describe("round-6 credential boundary", () => {
       "expiresAt = the JWT exp in ms",
     );
     ear.close();
+  });
+});
+
+// --- round 7: resolver lifecycle + server-time expiry ---
+
+describe("round-7 resolver lifecycle + server-time expiry", () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+  function installLocks(
+    lock: (n: string, o: { signal?: AbortSignal }, cb: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { locks: { request: lock } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
+    resetAccessTokenManagerForTests();
+    resetServerClockForTests();
+    (globalThis as { localStorage?: Storage }).localStorage = undefined;
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = undefined;
+  });
+
+  test("P1: an UNRELATED mint must not disarm the active wave's resolver", async () => {
+    resetAccessTokenManagerForTests();
+    installLocks((_n, _o, cb) => cb());
+    // Waiting on W2 (resolver armed). A delayed mint from the superseded
+    // W1 wave arrives FIRST — well-formed, wrong wave. The W2 resolver
+    // rejects it and MUST STAY ARMED: the real W2 answer still arrives
+    // well inside the window and is adopted with zero POSTs. (On the
+    // pre-fix code the global resolver clear let W1 disarm W2; the live
+    // responsive wave was then rotated away by the timeout.)
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: () => JSON.stringify({ waveId: "w2", contextId: null, at: Date.now() }),
+      setItem: () => {},
+      removeItem: () => {},
+    } as unknown as Storage;
+    let posts = 0;
+    globalThis.fetch = (async () => {
+      posts += 1;
+      return new Response(JSON.stringify({ access_token: "loser", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    const pending = refreshAccessToken();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // The unrelated queued mint from the older wave (validly shaped).
+    deliverAdoptionForTests({
+      waveId: "w1-old",
+      token: "unrelated",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 900_000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The REAL W2 answer, comfortably inside the window.
+    deliverAdoptionForTests({
+      waveId: "w2",
+      token: "w2-mint",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 900_000,
+    });
+    const ok = await pending;
+    assert.equal(ok, true);
+    assert.equal(posts, 0, "the live responsive W2 wave must not be rotated away");
+    assert.equal(getAccessToken(), "w2-mint");
+  });
+
+  test("P2: expiry compares against the SERVER-clock estimate — a slow local clock must not vouch a server-expired bearer", async () => {
+    resetAccessTokenManagerForTests();
+    // Observed Date header puts the server ~30s AHEAD of our local
+    // clock. A bearer with 20s of local-clock life left is ALREADY
+    // expired server-side: the holder must stay silent.
+    observeServerDateHeader(new Date(Date.now() + 30_000).toUTCString());
+    receiveAdoptionForTests({
+      waveId: "w-slowclock",
+      token: "locally-alive",
+      contextId: null,
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 20_000,
+    });
+    const seen: unknown[] = [];
+    const ear = new BroadcastChannel("cq-auth-adoption");
+    try {
+      ear.onmessage = (event: MessageEvent) => seen.push(event.data);
+      receiveChannelMessageForTests({ kind: "probe", waveId: "w-slowclock" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(seen.length, 0, "server-expired bearers are not vouched by a slow local clock");
+    } finally {
+      ear.close();
+    }
   });
 });
