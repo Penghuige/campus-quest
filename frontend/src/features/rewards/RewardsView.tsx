@@ -43,8 +43,8 @@ interface LatestRedemption {
 }
 
 export function RewardsView() {
-  const wallet = useSection(() => myWallet());
-  const shelf = useSection(() => listRewards());
+  const wallet = useSection(() => myWallet(), "GET /api/v1/points/me");
+  const shelf = useSection(() => listRewards(), "GET /api/v1/rewards");
   const [dialogReward, setDialogReward] = useState<RewardItemDto | null>(null);
   const [latest, setLatest] = useState<LatestRedemption | null>(null);
 

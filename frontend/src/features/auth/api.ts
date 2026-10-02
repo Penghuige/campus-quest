@@ -17,6 +17,7 @@ import {
   recordLogin,
   recordLogout,
 } from "../../lib/accessToken";
+import { invalidateDataCache } from "@/lib/dataCache";
 import { invalidateSessionCache } from "./session";
 import type { components } from "../../lib/api/schema";
 
@@ -106,6 +107,7 @@ export async function loginStudent(
   // entry (targeted re-review P1).
   recordLogin(tokens.access_token);
   invalidateSessionCache();
+  invalidateDataCache();
   return tokens;
 }
 
@@ -192,6 +194,7 @@ export async function loginStaff(
   // entry (targeted re-review P1).
   recordLogin(tokens.access_token);
   invalidateSessionCache();
+  invalidateDataCache();
   return tokens;
 }
 
@@ -211,8 +214,10 @@ export async function logout(): Promise<void> {
     // flight requests from the closed context must never replay
     // against whoever logs in next (final re-review P0).
     recordLogout();
-    // The authenticated /me cache is as stale as the token now.
+    // The authenticated /me cache — and every cached datum — is as
+    // stale as the token now (QA #2 generation fence).
     invalidateSessionCache();
+    invalidateDataCache();
     endAuthTransition();
     // Cross-tab fence (PR #14 review P0): sibling tabs must drop this
     // account's stale bearer and bump their epoch before any in-flight
