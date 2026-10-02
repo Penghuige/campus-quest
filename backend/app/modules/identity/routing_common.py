@@ -99,9 +99,17 @@ def auth_cookie_path(settings: Settings) -> str:
 
 
 def csrf_cookie_path(settings: Settings) -> str:
-    """The readable CSRF cookie's Path — the app's public mount scope."""
+    """The readable CSRF cookie's Path — the app's public mount scope.
+
+    RFC 6265 path-match: path=/campus covers BOTH /campus (the mount
+    root, reached when the gateway normalizes /campus/ -> /campus) and
+    every /campus/... subpath. path=/campus/ (with the trailing slash)
+    does NOT cover the bare /campus — the frontend at the mount root
+    then can't read the double-submit cookie and every cookie-authed
+    refresh from that page 403s (production finding, PR #14 QA).
+    """
     prefix = settings.external_api_prefix
-    return f"{prefix}/" if prefix else "/"
+    return prefix if prefix else "/"
 
 
 _SECONDS_PER_DAY = 86400
