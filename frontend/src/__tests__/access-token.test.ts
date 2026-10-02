@@ -1604,3 +1604,32 @@ describe("round-8 holder state (observed vs held)", () => {
   // which the opt-in wave-invariant e2e exercises as one-rotation-per-
   // wave, though it does not inject delayed superseded traffic.)
 });
+
+// --- production hotfix: the refresh POST must carry the mount prefix ---
+
+describe("deployment mount prefix (production QA #1 hotfix)", () => {
+  test("the refresh POST resolves through NEXT_PUBLIC_API_BASE — a root-relative path 404s under /campus", async () => {
+    resetAccessTokenManagerForTests();
+    const original = process.env.NEXT_PUBLIC_API_BASE;
+    process.env.NEXT_PUBLIC_API_BASE = "/campus";
+    let refreshUrl = "";
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/refresh")) {
+        refreshUrl = url;
+      }
+      return new Response(JSON.stringify({ access_token: "mounted", csrf_token: "ctx" }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const ok = await refreshAccessToken();
+      assert.equal(ok, true);
+      assert.equal(refreshUrl, "/campus/api/v1/auth/refresh", "the rotation must not escape the mount");
+    } finally {
+      if (original === undefined) {
+        delete process.env.NEXT_PUBLIC_API_BASE;
+      } else {
+        process.env.NEXT_PUBLIC_API_BASE = original;
+      }
+    }
+  });
+});

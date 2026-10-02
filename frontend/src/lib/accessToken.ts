@@ -29,6 +29,7 @@
  */
 import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
 import { observeServerDateHeader, currentServerClockOffset } from "./serverClock";
+import { resolveApiPath } from "./apiBase";
 
 /** The rotation endpoint (also the recursion guard for `lib/api.ts`). */
 export const AUTH_REFRESH_PATH = "/api/v1/auth/refresh";
@@ -896,7 +897,11 @@ async function performRotation(epochAtStart: number): Promise<boolean> {
     if (csrfToken !== null) {
       headers.set(CSRF_HEADER_NAME, csrfToken);
     }
-    const response = await fetch(AUTH_REFRESH_PATH, {
+    // resolveApiPath: under a path-mount deployment (NEXT_PUBLIC_API_BASE,
+    // e.g. /campus) the refresh POST must carry the mount prefix like every
+    // other API request — the bare root-relative path 404s there (found by
+    // the production QA #1 re-test on the 207 deploy).
+    const response = await fetch(resolveApiPath(AUTH_REFRESH_PATH), {
       method: "POST",
       headers,
       credentials: "include",
