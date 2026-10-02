@@ -173,7 +173,33 @@ def _issue_session_cookies(
         samesite="lax",
         path=csrf_cookie_path(settings),
     )
+    _expire_stale_trailing_slash_csrf(response, settings)
     return csrf_token
+
+
+def _expire_stale_trailing_slash_csrf(
+    response: Response, settings: Settings
+) -> None:
+    """Expire the legacy trailing-slash csrf cookie variant.
+
+    Pre-fix sessions hold csrf_token@path=/<prefix>/ (with slash). RFC
+    6265 §5.4 orders longer paths first, so document.cookie lists the
+    stale variant before the fresh path=/<prefix> one — a frontend
+    find() reads the WRONG value and sub-path refreshes 403 until the
+    old cookie ages out. A Max-Age=0 at the exact stale path evicts it
+    on the next auth response. No-op for root mounts and fresh visitors
+    (no stale variant can exist).
+    """
+    prefix = settings.external_api_prefix
+    if prefix:
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            "",
+            max_age=0,
+            secure=True,
+            samesite="lax",
+            path=f"{prefix}/",
+        )
 
 
 def clear_session_cookies(response: Response, settings: Settings) -> None:
