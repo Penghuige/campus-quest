@@ -552,17 +552,28 @@ async def clean_world(
         await db.execute(delete(Task).where(Task.id.in_(tasks)))
 
         # Points/rewards: reservations before the redemptions they
-        # freeze, redemptions before the items they reference.
-        await db.execute(
-            delete(PointReservation).where(PointReservation.user_id.in_(users))
+        # freeze, redemptions before the items they reference. The
+        # reservation scope must be AT LEAST as wide as the redemption
+        # scope: when a redemption is swept because its ITEM or its
+        # DECIDER belongs to this test (not its owner), the owner's
+        # reservation still FK-references it — a user_id-only filter
+        # leaves that row behind and the redemption delete blows the
+        # FK (reproduced in a Playwright teardown when residual data
+        # crossed world scopes).
+        redemption_scope = (
+            RewardRedemption.user_id.in_(users)
+            | RewardRedemption.reward_item_id.in_(items)
+            | RewardRedemption.decided_by.in_(users)
         )
         await db.execute(
-            delete(RewardRedemption).where(
-                RewardRedemption.user_id.in_(users)
-                | RewardRedemption.reward_item_id.in_(items)
-                | RewardRedemption.decided_by.in_(users)
+            delete(PointReservation).where(
+                PointReservation.user_id.in_(users)
+                | PointReservation.redemption_id.in_(
+                    select(RewardRedemption.id).where(redemption_scope)
+                )
             )
         )
+        await db.execute(delete(RewardRedemption).where(redemption_scope))
         await db.execute(delete(RewardItem).where(RewardItem.id.in_(items)))
         await db.execute(
             delete(RewardReviewGrant).where(
