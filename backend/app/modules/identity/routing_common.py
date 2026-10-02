@@ -177,9 +177,7 @@ def _issue_session_cookies(
     return csrf_token
 
 
-def _expire_stale_trailing_slash_csrf(
-    response: Response, settings: Settings
-) -> None:
+def _expire_stale_trailing_slash_csrf(response: Response, settings: Settings) -> None:
     """Expire the legacy trailing-slash csrf cookie variant.
 
     Pre-fix sessions hold csrf_token@path=/<prefix>/ (with slash). RFC
