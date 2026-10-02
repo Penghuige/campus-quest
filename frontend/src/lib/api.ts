@@ -47,6 +47,7 @@ import { observeServerDateHeader } from "./serverClock";
 import { toApiError } from "./errors";
 import { getAccessToken, getAuthEpoch, refreshAccessToken } from "./accessToken";
 import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
+import { resolveApiPath } from "./apiBase";
 
 /** Header the backend accepts on requests and echoes on responses. */
 export const REQUEST_ID_HEADER = "X-Request-ID";
@@ -59,15 +60,8 @@ export const REQUEST_ID_HEADER = "X-Request-ID";
  */
 const AUTH_API_PREFIX = "/api/v1/auth/";
 
-/**
- * Deployment mount prefix for the API (build-time env). When the app is
- * served under a path prefix (e.g. CQ_BASE_PATH=/campus with the API
- * proxied at /campus/api/v1), set NEXT_PUBLIC_API_BASE to that prefix so
- * every request URL carries it. Default "" — same-origin root, no change.
- * Callers keep passing unprefixed "/api/v1/..." paths (the AUTH_API_PREFIX
- * comparisons below run on those raw paths).
- */
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
+// Deployment mount prefix: see lib/apiBase.ts (shared by every API
+// fetcher — apiRequest resolves each path through resolveApiPath).
 
 export interface ApiRequestInit extends Omit<RequestInit, "body"> {
   /** Request body; plain objects are JSON-encoded automatically. */
@@ -162,7 +156,7 @@ async function performApiRequest<T>(
     headers.set(REQUEST_ID_HEADER, requestId);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(resolveApiPath(path), {
     ...rest,
     method,
     headers,
