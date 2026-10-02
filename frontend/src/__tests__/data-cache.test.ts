@@ -129,6 +129,7 @@ describe("auth generation fence", () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => (release = r));
     const slow = readCached("k", () => gate.then(() => ({ who: "A" })));
+    if (slow.kind !== "absent") throw new Error("expected absent");
     invalidateDataCache();
     release();
     await slow.promise.catch(() => {});
