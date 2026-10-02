@@ -99,9 +99,17 @@ def auth_cookie_path(settings: Settings) -> str:
 
 
 def csrf_cookie_path(settings: Settings) -> str:
-    """The readable CSRF cookie's Path — the app's public mount scope."""
+    """The readable CSRF cookie's Path — the app's public mount scope.
+
+    No trailing slash on the prefixed form: RFC 6265 path-match does
+    NOT match the bare mount root (/campus/) when the gateway
+    normalizes away the trailing slash, so the root page would lose
+    the double-submit cookie and every cookie-authed refresh 403s
+    (production finding, PR #14 QA round). path=/campus covers BOTH
+    /campus and every /campus/... subpath.
+    """
     prefix = settings.external_api_prefix
-    return f"{prefix}/" if prefix else "/"
+    return prefix if prefix else "/"
 
 
 _SECONDS_PER_DAY = 86400

@@ -53,7 +53,10 @@ def test_default_paths_unchanged_without_prefix() -> None:
 def test_prefixed_mount_scopes_both_cookies_under_prefix() -> None:
     settings = _settings("/campus")
     assert auth_cookie_path(settings) == "/campus/api/v1/auth"
-    assert csrf_cookie_path(settings) == "/campus/"
+    # No trailing slash: RFC 6265 path-match does NOT match the bare
+    # /campus (gateway-normalized), so the mount-root page would lose
+    # the double-submit cookie and refresh would 403.
+    assert csrf_cookie_path(settings) == "/campus"
 
     response = Response()
     _issue_session_cookies(response, _tokens(), settings)
@@ -63,10 +66,10 @@ def test_prefixed_mount_scopes_both_cookies_under_prefix() -> None:
     refresh = [c for c in cookies if c.startswith("refresh_token=")]
     assert refresh and "path=/campus/api/v1/auth" in refresh[0]
     csrf = [c for c in cookies if c.startswith("csrf_token=")]
-    assert csrf and "path=/campus/" in csrf[0]
+    assert csrf and "path=/campus" in csrf[0]
 
     clear = Response()
     clear_session_cookies(clear, settings)
     cleared = _cookies(clear)
     assert any("path=/campus/api/v1/auth" in c for c in cleared)
-    assert any("path=/campus/" in c for c in cleared)
+    assert any("path=/campus" in c for c in cleared)
