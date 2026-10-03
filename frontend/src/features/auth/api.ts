@@ -10,6 +10,7 @@
  * the HttpOnly cookie the backend sets.
  */
 import { apiRequest } from "../../lib/api";
+import { resolveApiPath } from "../../lib/apiBase";
 import {
   beginAuthTransition,
   broadcastContextReset,
@@ -329,4 +330,43 @@ export function changePassword(
     method: "POST",
     body: { current_password: currentPassword, new_password: newPassword },
   });
+}
+
+// --- avatar (defect #4; backend contract = avatar proposal D1–D6) -------------
+
+/** The multipart field name the avatar upload endpoint reads. */
+export const AVATAR_FORM_FIELD = "file";
+
+/**
+ * Upload the account avatar (POST /me/avatar): multipart DIRECT upload
+ * (D2) of the already-square-cropped image — the caller runs the
+ * canvas crop (avatarView/avatarCrop) and packs the FormData.
+ * apiRequest passes FormData through untouched (no Content-Type; the
+ * browser sets the multipart boundary). The server re-validates size
+ * and magic numbers; one change per 10 minutes per account.
+ */
+export function uploadAvatar(form: FormData): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/avatar`, {
+    method: "POST",
+    body: form,
+  });
+}
+
+/**
+ * Remove the avatar (DELETE /me/avatar): the UI falls back to the
+ * initial-letter avatar (D5 — a purely client-side fallback).
+ */
+export function deleteAvatar(): Promise<void> {
+  return apiRequest<void>(`${ME}/avatar`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * The avatar display URL (GET /users/{id}/avatar — D3's streaming
+ * proxy, private cache + ETag; never a presigned redirect). Needs a
+ * signed-in tab bearer, so this is for <img src> inside the app only.
+ */
+export function avatarUrl(userId: string): string {
+  return resolveApiPath(`/api/v1/users/${encodeURIComponent(userId)}/avatar`);
 }

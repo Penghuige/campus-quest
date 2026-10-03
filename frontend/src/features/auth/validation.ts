@@ -72,6 +72,27 @@ export function countCodePoints(value: string): number {
   return [...value].length;
 }
 
+/**
+ * The FIRST grapheme cluster of a nickname — the initial-letter avatar
+ * fallback (defect #4 / avatar proposal D5). Splits on user-perceived
+ * characters so a ZWJ emoji family renders whole, never halved; the
+ * empty string yields the caller's placeholder.
+ */
+export function firstGraphemeCluster(value: string, fallback: string): string {
+  const segmenter = getGraphemeSegmenter();
+  if (segmenter !== null) {
+    const first = segmenter.segment(value)[Symbol.iterator]().next();
+    if (!first.done) {
+      return first.value.segment;
+    }
+    return fallback;
+  }
+  for (const cluster of value) {
+    return cluster;
+  }
+  return fallback;
+}
+
 /** Student-number convenience rule; returns the error text or `null`. */
 export function validateStudentNumber(value: string): string | null {
   if (value.length === 0) {

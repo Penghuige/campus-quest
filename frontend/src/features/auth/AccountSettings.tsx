@@ -114,7 +114,7 @@ function pickFields(
   return picked;
 }
 
-function SettingsSection({
+export function SettingsSection({
   title,
   hint,
   children,
