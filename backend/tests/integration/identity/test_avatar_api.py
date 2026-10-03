@@ -63,7 +63,11 @@ from tests.fakes.integrations import (
 )
 
 _OTP_TEST_REDIS_DB = 15
-_T0 = datetime(2026, 10, 3, 12, 0, 0, tzinfo=UTC)
+# Anchored to the real now (second precision): PyJWT wall-clock-validates
+# iat/exp, so a business clock frozen ahead of (or far behind) the real
+# now makes every minted token "not yet valid"/"expired" — the
+# test_identity_api anchor.
+_T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
