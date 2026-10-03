@@ -207,6 +207,37 @@ export interface paths {
         patch: operations["change_nickname_api_v1_me_nickname_patch"];
         trace?: never;
     };
+    "/api/v1/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Avatar
+         * @description Set or replace the account avatar (spec amendment D2).
+         *
+         *     The request body IS the image bytes — no multipart envelope: the
+         *     server derives type from the magic bytes and the client sends its
+         *     Blob as the body, which keeps the read bounded by the size cap
+         *     during streaming (a multipart parser would spool first and check
+         *     later) and adds no parsing dependency for a body with no fields.
+         */
+        post: operations["upload_avatar_api_v1_me_avatar_post"];
+        /**
+         * Delete Avatar
+         * @description Remove the account avatar (spec amendment D5); NULL falls back to
+         *     the frontend's generated-initial default.
+         */
+        delete: operations["delete_avatar_api_v1_me_avatar_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/phone/change": {
         parameters: {
             query?: never;
@@ -309,6 +340,29 @@ export interface paths {
          * @description Rotate the password; every other session dies, this one survives.
          */
         post: operations["change_password_api_v1_me_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{user_id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Avatar
+         * @description One account's avatar bytes, login-gated (spec amendment D3).
+         *
+         *     404 covers both "no such user" and "user has no avatar" — probing
+         *     which UUIDs exist is not a surface this endpoint offers.
+         */
+        get: operations["get_user_avatar_api_v1_users__user_id__avatar_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3012,6 +3066,8 @@ export interface components {
             nickname: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
+            /** Has Avatar */
+            has_avatar: boolean;
             /** Phone E164 */
             phone_e164: string | null;
             /** Email Normalized */
@@ -4644,6 +4700,8 @@ export interface components {
             nickname: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
+            /** Has Avatar */
+            has_avatar: boolean;
         };
         /**
          * UserStatus
@@ -5234,6 +5292,46 @@ export interface operations {
             };
         };
     };
+    upload_avatar_api_v1_me_avatar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MePublic"];
+                };
+            };
+        };
+    };
+    delete_avatar_api_v1_me_avatar_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MePublic"];
+                };
+            };
+        };
+    };
     request_phone_change_api_v1_me_phone_change_post: {
         parameters: {
             query?: never;
@@ -5416,6 +5514,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_avatar_api_v1_users__user_id__avatar_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

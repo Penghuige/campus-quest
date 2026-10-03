@@ -17,7 +17,13 @@ from uuid import UUID, uuid4
 
 from app.core.clock import Clock, SystemClock
 from app.integrations.email import SentEmail
-from app.integrations.object_storage import DownloadUrl, ObjectHead, UploadUrl
+from app.integrations.object_storage import (
+    AVATAR_EXTENSIONS,
+    DownloadUrl,
+    ObjectHead,
+    StoredObject,
+    UploadUrl,
+)
 from app.integrations.rate_limit import RateLimitExceededError
 from app.integrations.sms import SentSms
 
@@ -260,6 +266,36 @@ class FakeObjectStorage(_FailureProgrammable):
             content_type=pinned,
         )
         self._contents[object_key] = content
+
+    def store_avatar(
+        self,
+        *,
+        user_id: UUID,
+        content: bytes,
+        content_type: str,
+    ) -> str:
+        # Port-conformant server-side write (spec amendment D2): mints
+        # the adapter-owned key, stores the validated bytes, and records
+        # the SERVICE-derived content type (never the client's claim).
+        self._raise_if_programmed()
+        object_key = f"avatars/{user_id}/{uuid4()}{AVATAR_EXTENSIONS[content_type]}"
+        self.objects[object_key] = ObjectHead(
+            object_key=object_key, size=len(content), content_type=content_type
+        )
+        self._contents[object_key] = content
+        return object_key
+
+    def read_object(self, *, object_key: str) -> StoredObject:
+        # The avatar display proxy's read: whole-object replay (the port
+        # bounds this shape to size-capped payloads).
+        self._raise_if_programmed()
+        if object_key not in self.objects:
+            raise FileNotFoundError(f"no object under key {object_key!r}")
+        return StoredObject(
+            object_key=object_key,
+            content=self._contents[object_key],
+            content_type=self.objects[object_key].content_type,
+        )
 
     def download_to_file(self, *, object_key: str, destination: Path) -> None:
         # Worker-side read path: replay the PUT content byte-identically.

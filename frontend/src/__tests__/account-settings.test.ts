@@ -54,6 +54,7 @@ const ME: MeDto = {
   nickname: "小明",
   role: "STUDENT",
   status: "ACTIVE",
+  has_avatar: false,
   phone_e164: "+8613800138000",
   email_normalized: null,
   email_verified_at: null,
