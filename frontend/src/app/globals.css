@@ -43,6 +43,14 @@
   --rail-active-keyline: oklch(72% 0.13 264);
   --rail-focus-ring: oklch(82% 0.08 264);
 
+  /* Defect #3 (QA 2026-09-30): the rail width is a LIVE token — the
+     resizer writes an inline px override on <html>, collapse swaps to
+     the icon-rail width. No width transition either way (motion
+     contract: only transform/opacity animate). Mirrored in
+     lib/sidebarPreference.ts (pin-tested). */
+  --rail-width: 14.5rem;
+  --rail-width-collapsed: 4.5rem;
+
   /* border — softer than V1 (§7: background contrast before border;
      only interactive/selected states earn stronger keylines). */
   --border: oklch(91.5% 0.007 90);
@@ -715,7 +723,7 @@ body {
 @media (min-width: 64rem) {
   .app-shell:has(> .app-sidebar) {
     display: grid;
-    grid-template-columns: 14.5rem minmax(0, 1fr);
+    grid-template-columns: var(--rail-width, 14.5rem) minmax(0, 1fr);
   }
 
   .app-shell:has(> .app-sidebar) > .app-body {
@@ -800,6 +808,105 @@ body {
 
 .app-sidebar-brand-name {
   font-size: var(--text-md);
+}
+
+/* --- Defect #3 (QA 2026-09-30): rail collapse + right-edge resize -------
+ *
+ * The brand row hosts the collapse toggle next to the brand link; the
+ * resizer is a 7px hit strip on the rail's right edge (the sticky
+ * sidebar is its containing block). Both are geometry-only affordances
+ * — nav items stay real links. Collapsed, labels move off-canvas via
+ * clip-path (NOT display:none) so every item keeps its accessible
+ * name on the icon rail. */
+
+.app-sidebar-brandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.rail-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--rail-subtle);
+  cursor: pointer;
+}
+
+.rail-toggle:hover {
+  background: var(--rail-hover);
+  color: var(--rail-foreground);
+}
+
+.rail-toggle:focus-visible {
+  outline: 2px solid var(--rail-focus-ring);
+  outline-offset: -2px;
+}
+
+.rail-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Straddles the rail's right border; 7px is a forgiving pointer target. */
+  right: -3px;
+  width: 7px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.rail-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+}
+
+.rail-resizer:hover::after,
+.rail-resizer:focus-visible::after {
+  background: var(--rail-active-keyline);
+}
+
+.rail-resizer:focus-visible {
+  outline: 2px solid var(--rail-focus-ring);
+  outline-offset: -2px;
+}
+
+/* Collapsed rail (icon rail): labels clip off-canvas but stay in the
+   a11y tree; rows center their icons. The resizer is meaningless while
+   collapsed — only the toggle brings the rail back. */
+.app-sidebar[data-collapsed="true"] .app-sidebar-brandbar {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand, .side-nav a, .rail-account) {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand-name, .side-nav a span, .rail-account-name) {
+  position: absolute;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-sidebar[data-collapsed="true"] .rail-resizer {
+  display: none;
 }
 
 /* Rail account footer (review round 2): avatar initial + name — the
@@ -1698,6 +1805,59 @@ body {
   box-shadow: var(--shadow-raised);
 }
 
+/* Defect #5 (QA 2026-09-30): SELECTION is the loudest card state and
+   stays uniformly primary — above hover and above the rarity tint.
+   Pressing anywhere on the stretched link is the visible toggle the
+   QA report asks for (press-down + primary border); keyboard focus
+   gets the same primary border so the selected card is unmistakable
+   either way. Both rules sit AFTER the hover rule on purpose. */
+.task-card:has(.task-card-title a:active) {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-xs);
+  transform: translateY(1px);
+}
+
+.task-card:has(.task-card-title a:focus-visible) {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-raised);
+}
+
+/* Defect #5: the card's tier identity — border + a faint wash in the
+   tier's accent (4%, quieter than the badge's 6%: a local tint, not a
+   page-wide immersion). NORMAL is deliberately absent: neutral IS its
+   corresponding color (design-system §4 rarity semantics). */
+.task-card[data-rarity="RARE"] {
+  border-color: color-mix(in oklab, var(--rarity-rare) 30%, var(--border));
+  background: color-mix(in oklab, var(--rarity-rare) 4%, var(--surface-1));
+}
+
+.task-card[data-rarity="EPIC"] {
+  border-color: color-mix(in oklab, var(--rarity-epic) 30%, var(--border));
+  background: color-mix(in oklab, var(--rarity-epic) 4%, var(--surface-1));
+}
+
+.task-card[data-rarity="LEGENDARY"] {
+  border-color: color-mix(in oklab, var(--rarity-legendary) 30%, var(--border));
+  background: color-mix(in oklab, var(--rarity-legendary) 4%, var(--surface-1));
+}
+
+/* Tinted cards deepen their OWN accent on hover instead of falling
+   back to the neutral border-strong. */
+.task-card[data-rarity="RARE"]:hover,
+.task-card[data-rarity="RARE"]:focus-within {
+  border-color: color-mix(in oklab, var(--rarity-rare) 45%, var(--border));
+}
+
+.task-card[data-rarity="EPIC"]:hover,
+.task-card[data-rarity="EPIC"]:focus-within {
+  border-color: color-mix(in oklab, var(--rarity-epic) 45%, var(--border));
+}
+
+.task-card[data-rarity="LEGENDARY"]:hover,
+.task-card[data-rarity="LEGENDARY"]:focus-within {
+  border-color: color-mix(in oklab, var(--rarity-legendary) 45%, var(--border));
+}
+
 /* (task-card reduced-motion override consolidated at end of file) */
 
 .task-card-head {
@@ -1718,7 +1878,12 @@ body {
 
 .task-card-title a {
   color: var(--foreground);
-  text-decoration: none;
+  /* Defect #5: the title reads as a link AT REST — a quiet underline in
+     the border tone (never bare text), coloring with the link on hover. */
+  text-decoration-line: underline;
+  text-decoration-color: var(--border-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 /* Stretched title link: the visual lift now matches the real hit area. */
@@ -1731,37 +1896,44 @@ body {
 
 .task-card-title a:hover {
   color: var(--primary);
+  text-decoration-color: var(--primary);
 }
 
+/* Defect #5: the tier badge — the detail page's .rarity-badge treatment
+   ported onto the card (accent text + 35% border + 6% wash), now with
+   the per-tier glyph so difficulty separates by shape AND color. */
 .task-card-rarity {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  padding-top: 2px;
+  padding: 0.125rem var(--space-2);
   font-size: var(--text-xs);
-  color: var(--muted-foreground);
+  font-weight: 550;
+  line-height: 1.6;
   white-space: nowrap;
+  border-radius: 999px;
+  color: var(--rarity-normal);
+  border: 1px solid color-mix(in oklab, var(--rarity-normal) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-normal) 6%, var(--surface-1));
 }
 
-.task-card-rarity::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--rarity-normal);
+.task-card-rarity[data-rarity="RARE"] {
+  color: var(--rarity-rare);
+  border-color: color-mix(in oklab, var(--rarity-rare) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-rare) 6%, var(--surface-1));
 }
 
-.task-card-rarity[data-rarity="RARE"]::before {
-  background: var(--rarity-rare);
+.task-card-rarity[data-rarity="EPIC"] {
+  color: var(--rarity-epic);
+  border-color: color-mix(in oklab, var(--rarity-epic) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-epic) 6%, var(--surface-1));
 }
 
-.task-card-rarity[data-rarity="EPIC"]::before {
-  background: var(--rarity-epic);
-}
-
-.task-card-rarity[data-rarity="LEGENDARY"]::before {
-  background: var(--rarity-legendary);
+.task-card-rarity[data-rarity="LEGENDARY"] {
+  color: var(--rarity-legendary);
+  border-color: color-mix(in oklab, var(--rarity-legendary) 35%, var(--border));
+  background: color-mix(in oklab, var(--rarity-legendary) 6%, var(--surface-1));
 }
 
 .task-card-reward {
@@ -3527,7 +3699,8 @@ body {
   }
 
   .task-card:hover,
-  .task-card:focus-within {
+  .task-card:focus-within,
+  .task-card:has(.task-card-title a:active) {
     transform: none;
   }
 
