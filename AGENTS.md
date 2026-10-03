@@ -139,3 +139,22 @@ A task is not complete until:
 - high-risk concurrency and idempotency tests were run when applicable;
 - the diff contains no secrets, debug artifacts, placeholder TODOs, or accidental generated files;
 - the implementation matches the relevant plan acceptance criteria.
+
+## Owner acceptance
+
+Merge approval belongs to the owner. Reviewer APPROVE and green CI are necessary, not sufficient. Before merging a reviewed PR, the owner checks:
+
+- the reviewer verdict names the exact head commit and is APPROVE;
+- CI is green on that same head (match the run URL to the head commit, not an earlier run);
+- no unresolved reviewer or bot threads remain on the PR.
+
+Merge order follows reviewer-stated dependencies when they exist.
+
+After a batch of merges lands on main, the owner accepts at the product level:
+
+- run the strongest currently implemented gate on merged main (`make verify`, then the `make release-gate` subset that exists) as a fresh run — a reused or pre-merge log is not acceptance evidence;
+- manually reproduce every fixed defect from the QA sheet (docs/qa/*.csv) against a running stack, following the reproduction steps in each row, and record the outcome in the fix-status column;
+- treat any number claimed in chat, PR descriptions, or handoffs as unverified until it matches a fresh gate output or the reviewer's independently re-run results.
+
+Agents keep acceptance cheap: per-head gate logs, updated generated contract artifacts (OpenAPI snapshot, generated clients) in the same PR as the API change, and QA-sheet closure after owner verification are part of deliverables, not follow-ups.
+
