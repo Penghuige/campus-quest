@@ -19,13 +19,14 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { getAccessToken } from "@/lib/accessToken";
-import { avatarUrl, AVATAR_FORM_FIELD, deleteAvatar, uploadAvatar } from "./api";
+import { avatarUrl, deleteAvatar, uploadAvatar } from "./api";
 import { SettingsSection } from "./AccountSettings";
 import { cropToSquareFile } from "./avatarCrop";
 import {
   avatarErrorText,
   avatarSupported,
-  validateAvatarFile,
+  validateAvatarSize,
+  validateAvatarType,
 } from "./avatarView";
 import { firstGraphemeCluster } from "./validation";
 import type { MeDto } from "./api";
@@ -109,17 +110,25 @@ export function AvatarSection() {
     }
     setError(null);
     setSavedNote(null);
-    const issue = validateAvatarFile(file);
-    if (issue !== null) {
-      setError(issue);
+    // Type gate on the raw pick (a wrong type never costs a decode);
+    // the SIZE gate runs on the cropped product below — a large photo
+    // legitimately shrinks under the ceiling through the crop.
+    const typeIssue = validateAvatarType(file);
+    if (typeIssue !== null) {
+      setError(typeIssue);
       return;
     }
     setBusy("upload");
     try {
       const cropped = await cropToSquareFile(file);
-      const form = new FormData();
-      form.append(AVATAR_FORM_FIELD, cropped);
-      await uploadAvatar(form);
+      const sizeIssue = validateAvatarSize(cropped.size);
+      if (sizeIssue !== null) {
+        setError(sizeIssue);
+        return;
+      }
+      // Raw-body upload (the ratified D2 revision): the cropped image
+      // IS the request body — no multipart envelope anywhere.
+      await uploadAvatar(cropped);
       setChangeEpoch((epoch) => epoch + 1);
       refresh();
       setSavedNote("头像已更新。");
@@ -158,7 +167,7 @@ export function AvatarSection() {
   }
 
   return (
-    <SettingsSection title="头像" hint="支持 PNG、JPEG、WebP，最大 2 MB；上传前自动裁剪为方形，每小时限改数次。">
+    <SettingsSection title="头像" hint="支持 PNG、JPEG、WebP，最大 2 MB；上传前自动裁剪为方形，每 10 分钟可修改一次。">
       <div className="avatar-row">
         {objectUrl !== null ? (
           <span className="avatar-figure">
