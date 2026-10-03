@@ -16,42 +16,37 @@ import {
   avatarErrorText,
   avatarSupported,
   squareCropRect,
-  validateAvatarFile,
+  validateAvatarSize,
+  validateAvatarType,
 } from "../features/auth/avatarView";
 import { ApiError } from "../lib/errors";
 
-describe("avatar file pre-checks (D2 contract: <=2MB, png/jpeg/webp)", () => {
+describe("avatar pre-checks (D2 contract: <=2MB, png/jpeg/webp)", () => {
   test("the policy constants mirror the contract", () => {
     assert.equal(AVATAR_MAX_BYTES, 2 * 1024 * 1024);
     assert.deepEqual(AVATAR_ACCEPTED_TYPES, ["image/png", "image/jpeg", "image/webp"]);
     assert.equal(AVATAR_DOWNSCALE_TARGET_PX, 512);
   });
 
-  test("a compliant file passes", () => {
-    assert.equal(
-      validateAvatarFile({ size: 1024, type: "image/png" }),
-      null,
-    );
-    assert.equal(
-      validateAvatarFile({ size: AVATAR_MAX_BYTES, type: "image/webp" }),
-      null,
-    );
-  });
-
-  test("oversize gets the size error naming the limit", () => {
-    const error = validateAvatarFile({ size: AVATAR_MAX_BYTES + 1, type: "image/png" });
-    assert.match(error!, /2\s*MB/);
-  });
-
-  test("wrong type gets the type error naming the accepted set", () => {
-    for (const type of ["image/gif", "image/svg+xml", "video/mp4", ""]) {
-      const error = validateAvatarFile({ size: 1024, type });
-      assert.match(error!, /PNG|JPEG|WebP/, type);
+  test("the TYPE gate passes accepted types on the raw pick", () => {
+    for (const type of ["image/png", "image/jpeg", "image/webp"]) {
+      assert.equal(validateAvatarType({ type }), null, type);
     }
   });
 
-  test("zero-byte files fail the type check, not a crash", () => {
-    assert.ok(validateAvatarFile({ size: 0, type: "" }) !== null);
+  test("the TYPE gate names the accepted set on anything else", () => {
+    for (const type of ["image/gif", "image/svg+xml", "video/mp4", ""]) {
+      assert.match(validateAvatarType({ type })!, /PNG|JPEG|WebP/, type);
+    }
+  });
+
+  test("the SIZE gate runs on the CROPPED bytes (r1 review rationale)", () => {
+    // At the ceiling passes; over it gets the limit copy. A large RAW
+    // photo is deliberately NOT this gate's input — the crop may
+    // legally shrink it under the ceiling before this ever runs.
+    assert.equal(validateAvatarSize(AVATAR_MAX_BYTES), null);
+    assert.match(validateAvatarSize(AVATAR_MAX_BYTES + 1)!, /2\s*MB/);
+    assert.match(validateAvatarSize(8 * 1024 * 1024)!, /2\s*MB/);
   });
 });
 
@@ -96,7 +91,9 @@ describe("avatar error copy (§29: code branching, never message parsing)", () =
     new ApiError({ code, message, status: 400 });
 
   test("rate-limited changes get the 10-minute copy", () => {
-    assert.match(avatarErrorText(apiError("AVATAR_RATE_LIMITED", "任意服务端文案")), /10 分钟/);
+    // RATE_LIMITED is the backend's real frozen code (verified by the
+    // reviewer against the avatar branch) — not a fictional sample.
+    assert.match(avatarErrorText(apiError("RATE_LIMITED", "任意服务端文案")), /10 分钟/);
   });
 
   test("oversize payloads get the size copy", () => {

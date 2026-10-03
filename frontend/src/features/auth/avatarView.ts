@@ -28,14 +28,26 @@ export const AVATAR_ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"] a
 export const AVATAR_DOWNSCALE_TARGET_PX = 512;
 
 /**
- * Convenience pre-check: null = looks acceptable, a string = the
- * user-facing problem. Mirrors uploadFlow's picker pre-check idiom.
+ * TYPE pre-check on the RAW picked file (convenience only; the server
+ * authenticates by magic bytes). null = acceptable, a string = the
+ * user-facing problem. Checked BEFORE the crop so a .gif never costs
+ * a decode.
  */
-export function validateAvatarFile(file: { size: number; type: string }): string | null {
+export function validateAvatarType(file: { type: string }): string | null {
   if (!AVATAR_ACCEPTED_TYPES.includes(file.type as (typeof AVATAR_ACCEPTED_TYPES)[number])) {
     return "头像仅支持 PNG、JPEG、WebP 图片";
   }
-  if (file.size > AVATAR_MAX_BYTES) {
+  return null;
+}
+
+/**
+ * SIZE pre-check, run on the CROPPED product (r1 review): a large
+ * source photo legitimately shrinks under the ceiling through the
+ * square crop + downscale, so rejecting raw picks by size would turn
+ * away photos the backend would happily accept.
+ */
+export function validateAvatarSize(bytes: number): string | null {
+  if (bytes > AVATAR_MAX_BYTES) {
     return "头像文件过大（最大 2 MB）";
   }
   return null;

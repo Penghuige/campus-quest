@@ -334,21 +334,19 @@ export function changePassword(
 
 // --- avatar (defect #4; backend contract = avatar proposal D1–D6) -------------
 
-/** The multipart field name the avatar upload endpoint reads. */
-export const AVATAR_FORM_FIELD = "file";
-
 /**
- * Upload the account avatar (POST /me/avatar): multipart DIRECT upload
- * (D2) of the already-square-cropped image — the caller runs the
- * canvas crop (avatarView/avatarCrop) and packs the FormData.
- * apiRequest passes FormData through untouched (no Content-Type; the
- * browser sets the multipart boundary). The server re-validates size
- * and magic numbers; one change per 10 minutes per account.
+ * Upload the account avatar (POST /me/avatar): RAW-BODY direct upload
+ * (the ratified D2 revision — the backend reads the whole request
+ * body as image bytes with a bounded streaming limit, no multipart
+ * parsing): the already-square-cropped image rides as the body
+ * itself, and apiRequest deliberately sets NO Content-Type for native
+ * bodies — the server authenticates by magic bytes, not the declared
+ * type. One change per 10 minutes per account (RATE_LIMITED).
  */
-export function uploadAvatar(form: FormData): Promise<MeDto> {
+export function uploadAvatar(image: Blob): Promise<MeDto> {
   return apiRequest<MeDto>(`${ME}/avatar`, {
     method: "POST",
-    body: form,
+    body: image,
   });
 }
 
@@ -365,7 +363,7 @@ export function deleteAvatar(): Promise<void> {
 /**
  * The avatar display URL (GET /users/{id}/avatar — D3's streaming
  * proxy, private cache + ETag; never a presigned redirect). Needs a
- * signed-in tab bearer, so this is for <img src> inside the app only.
+ * signed-in tab bearer, so this is for authenticated fetches only.
  */
 export function avatarUrl(userId: string): string {
   return resolveApiPath(`/api/v1/users/${encodeURIComponent(userId)}/avatar`);
