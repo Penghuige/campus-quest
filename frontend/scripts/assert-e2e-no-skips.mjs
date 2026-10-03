@@ -13,6 +13,12 @@
  *   node scripts/assert-e2e-no-skips.mjs [specBasename ...]   # default:
  *                                                           # teacher.spec.ts
  *                                                           # admin.spec.ts
+ *
+ * An ENV-OPTIONAL test may be exempted explicitly so its spec can be
+ * watched without pretending the skip is a run:
+ *   --allow-skip <specBasename>:<titleSubstring>
+ * (repeatable; the exemption is per title substring, and the verdict
+ * still logs every allowed skip it ignored — r4 M2, PR #19).
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,9 +26,31 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const reportPath = join(here, "..", "test-results", "report.json");
-const watched = process.argv.slice(2).length > 0
-  ? process.argv.slice(2)
-  : ["teacher.spec.ts", "admin.spec.ts"];
+
+// argv: spec basenames positionally; --allow-skip spec:titleSubstring
+// entries collect into an explicit exemption list (see the header).
+const argv = process.argv.slice(2);
+const allowSkip = new Map();
+for (let i = 0; i < argv.length; i += 1) {
+  if (argv[i] === "--allow-skip" && argv[i + 1] !== undefined) {
+    const separator = argv[i + 1].indexOf(":");
+    if (separator <= 0) {
+      console.error(
+        `[assert-e2e-no-skips] --allow-skip needs <specBasename>:<titleSubstring>, got ${JSON.stringify(argv[i + 1])}`,
+      );
+      process.exit(1);
+    }
+    const spec = argv[i + 1].slice(0, separator);
+    const title = argv[i + 1].slice(separator + 1);
+    allowSkip.set(spec, [...(allowSkip.get(spec) ?? []), title]);
+    i += 1;
+  }
+}
+const watchedSpecs = argv.filter(
+  (arg, index) => arg !== "--allow-skip" && argv[index - 1] !== "--allow-skip",
+);
+const watched =
+  watchedSpecs.length > 0 ? watchedSpecs : ["teacher.spec.ts", "admin.spec.ts"];
 
 /** Every test in the report, flattened across describe nesting. */
 function collect(spec) {
@@ -76,11 +104,26 @@ for (const name of watched) {
   }
   const tests = collect(spec);
   const counts = {};
+  const skippedTitles = [];
   for (const test of tests) {
     const status = specStatus(test);
     counts[status] = (counts[status] ?? 0) + 1;
+    if (status === "skipped") {
+      skippedTitles.push(test.title ?? "(untitled)");
+    }
   }
-  const skipped = counts.skipped ?? 0;
+  // Allowed skips stay out of the verdict but NEVER out of the log.
+  const allowed = allowSkip.get(name) ?? [];
+  const unexpectedSkips = skippedTitles.filter(
+    (title) => !allowed.some((fragment) => title.includes(fragment)),
+  );
+  for (const title of skippedTitles) {
+    const exempted = unexpectedSkips.indexOf(title) === -1;
+    console.log(
+      `[assert-e2e-no-skips]   skipped: "${title}"${exempted ? " (allow-listed)" : ""}`,
+    );
+  }
+  const skipped = unexpectedSkips.length;
   const summary = Object.entries(counts)
     .map(([status, count]) => `${count} ${status}`)
     .join(", ");

@@ -117,12 +117,12 @@ test.describe("sidebar collapse + resize (defect #3)", () => {
     const rail = page.locator(RAIL);
     expect(Math.round((await rail.boundingBox())!.width)).toBe(248);
 
-    // Home/End jump to the range bounds; ArrowDown narrows like Left.
+    // Home/End jump to the range bounds; clamped keys hold the bound.
     await page.keyboard.press("End");
     await expect(resizer).toHaveAttribute("aria-valuenow", "400");
     await page.keyboard.press("Home");
     await expect(resizer).toHaveAttribute("aria-valuenow", "208");
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowLeft");
     await expect(resizer).toHaveAttribute("aria-valuenow", "208");
   });
 
@@ -139,6 +139,36 @@ test.describe("sidebar collapse + resize (defect #3)", () => {
       window.localStorage.getItem("cq:sidebar-preference"),
     );
     expect(JSON.parse(stored!)).toEqual({ collapsed: true, widthPx: 232 });
+  });
+
+  test("a DRAGGED width survives reload too (endResizeDrag's write)", async ({ page }) => {
+    // S2 (r4): the persistence test above pins only the collapsed
+    // flag at the untouched default width — this one drags to a
+    // non-default width and asserts the settled write restores it.
+    const rail = page.locator(RAIL);
+    const resizer = page.locator(RESIZER);
+    const before = (await rail.boundingBox())!;
+    const handle = (await resizer.boundingBox())!;
+    const y = before.y + 200;
+    await page.mouse.move(handle.x + handle.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 60, y, { steps: 4 });
+    await page.mouse.up();
+    await expect
+      .poll(() => rail.evaluate((node) => Math.round(node.getBoundingClientRect().width)))
+      .toBe(292);
+
+    await page.reload();
+    // The mount effect re-applies the stored 292 post-hydration.
+    await expect
+      .poll(() => rail.evaluate((node) => Math.round(node.getBoundingClientRect().width)), {
+        timeout: 10_000,
+      })
+      .toBe(292);
+    const stored = await page.evaluate(() =>
+      window.localStorage.getItem("cq:sidebar-preference"),
+    );
+    expect(JSON.parse(stored!)).toEqual({ collapsed: false, widthPx: 292 });
   });
 
   test("no stored preference keeps the rem-based default (root-font scaling)", async ({ page }) => {

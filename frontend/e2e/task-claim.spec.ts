@@ -43,11 +43,11 @@ const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
 
 test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
 
+/** Scoped to the claim-flow describe ONLY (r4 M2): the defect-#5 card
+ * tests below need just CQ_E2E_STUDENT + the /tasks square, so a
+ * module-level skip here would silently unwatch them under the legal
+ * "CQ_E2E=1 + STUDENT without TASK_URL" configuration. */
 const claimFlowReady = TASK_URL !== undefined && STUDENT !== undefined;
-test.skip(
-  !claimFlowReady,
-  "claim flow needs CQ_E2E_TASK_URL (a published task with AVAILABLE assignments) and CQ_E2E_STUDENT (seeded credentials); Plan 10's fixture provides both.",
-);
 
 /** Open the shared student's session through the suite's resume chain
  * (the backend's auth:login window — 10 form attempts / 5 min per
@@ -58,6 +58,10 @@ async function loginAsStudent(page: import("@playwright/test").Page): Promise<vo
 }
 
 test.describe("student task claim", () => {
+  test.skip(
+    !claimFlowReady,
+    "claim flow needs CQ_E2E_TASK_URL (a published task with AVAILABLE assignments) and CQ_E2E_STUDENT (the seeded account); Plan 10's fixture provides both.",
+  );
   test.beforeEach(async ({ page }) => {
     await loginAsStudent(page);
   });
@@ -170,17 +174,32 @@ test.describe("task card affordances (defect #5)", () => {
   test("focusing the title outlines the whole card in primary (keyboard selection)", async ({ page }) => {
     const card = page.locator(".task-card").first();
     const title = card.locator(".task-card-title a");
+    // S1 (r4): settle the resting border first (entrance transitions
+    // are done long before, but be explicit), then read the token's
+    // COMPUTED value through a probe element — comparing serialized
+    // colors avoids string-matching the oklch token text.
     const before = await card.evaluate((node) => getComputedStyle(node).borderColor);
+    const primary = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--primary)";
+      document.body.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    expect(primary).not.toBe(before);
     // A programmatic focus() alone does not light :focus-visible —
     // first establish the KEYBOARD interaction modality (one real Tab),
     // then move focus; Chromium's heuristic then matches the selector.
     await page.keyboard.press("Tab");
     await title.focus();
     // The card border TRANSITIONS (140ms) — poll for the settled
-    // primary instead of reading the mid-transition start value.
+    // value, then demand EQUALITY with --primary: :focus-within alone
+    // (the pre-existing rule) only reaches border-strong, so a deleted
+    // focus-visible rule cannot satisfy this assertion.
     await expect
       .poll(() => card.evaluate((node) => getComputedStyle(node).borderColor))
-      .not.toBe(before);
+      .toBe(primary);
   });
 
   test("the rarity glyph fills and centers its 20-unit viewBox", async ({ page }) => {

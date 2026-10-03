@@ -152,6 +152,12 @@ export function WorkspaceSidebar({
   const onResizePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      // Mouse only: suppress the native text-selection drag that would
+      // otherwise highlight the rail while resizing (S3, PR #19 r4).
+      // Keyboard users reach the handle through Tab, not pointer clicks.
+      if (event.pointerType === "mouse") {
+        event.preventDefault();
+      }
       dragStart.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -196,14 +202,20 @@ export function WorkspaceSidebar({
   // --- resizer: keyboard equivalent (WAI-ARIA window splitter) ---
   const onResizeKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      // APG splitter pattern: chorded keys stay with the BROWSER —
+      // swallowing Alt+Left (history back) or Ctrl+Home (page top)
+      // into width steps would break standard shortcuts (M1, r4).
+      if (event.altKey || event.metaKey || event.ctrlKey) {
+        return;
+      }
       let next: number;
       switch (event.key) {
+        // A vertical splitter owns Left/Right ONLY (APG): Up/Down keep
+        // their native scroll meaning, matching the tooltip copy.
         case "ArrowLeft":
-        case "ArrowDown":
           next = pref.widthPx - RESIZE_KEY_STEP_PX;
           break;
         case "ArrowRight":
-        case "ArrowUp":
           next = pref.widthPx + RESIZE_KEY_STEP_PX;
           break;
         case "Home":
