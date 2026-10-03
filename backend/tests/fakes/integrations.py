@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 from app.core.clock import Clock, SystemClock
 from app.integrations.email import SentEmail
 from app.integrations.object_storage import (
+    AVATAR_EXTENSIONS,
     DownloadUrl,
     ObjectHead,
     StoredObject,
@@ -27,11 +28,6 @@ from app.integrations.rate_limit import RateLimitExceededError
 from app.integrations.sms import SentSms
 
 _FAKE_HOST = "https://fake-object-storage.test"
-
-# The adapter-owned avatar key extension map (mirrors the S3 adapter's
-# whitelist; an unmapped content type is a programming error, not a
-# client outcome — the service validated the magic bytes upstream).
-_AVATAR_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 
 @dataclass(frozen=True)
@@ -282,7 +278,7 @@ class FakeObjectStorage(_FailureProgrammable):
         # the adapter-owned key, stores the validated bytes, and records
         # the SERVICE-derived content type (never the client's claim).
         self._raise_if_programmed()
-        object_key = f"avatars/{user_id}/{uuid4()}{_AVATAR_EXT[content_type]}"
+        object_key = f"avatars/{user_id}/{uuid4()}{AVATAR_EXTENSIONS[content_type]}"
         self.objects[object_key] = ObjectHead(
             object_key=object_key, size=len(content), content_type=content_type
         )

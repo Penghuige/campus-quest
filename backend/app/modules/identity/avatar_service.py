@@ -46,7 +46,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
-from app.integrations.object_storage import ObjectStorage, StoredObject
+from app.integrations.errors import ProviderError
+from app.integrations.object_storage import (
+    AVATAR_CONTENT_TYPES,
+    ObjectStorage,
+    StoredObject,
+)
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
@@ -63,14 +68,6 @@ AUDIT_USER_AVATAR_CHANGED = "USER_AVATAR_CHANGED"
 _AVATAR_TOO_LARGE_MESSAGE = "头像文件不能超过 2 MB"
 _AVATAR_BAD_FORMAT_MESSAGE = "头像格式仅支持 PNG、JPEG 或 WebP"
 _AVATAR_NOT_FOUND_MESSAGE = "该账号未设置头像"
-
-#: Detected magic-byte type -> the canonical content type the service
-#: derives (and storage pins). Never the client's declared value.
-_AVATAR_CONTENT_TYPES = {
-    "png": "image/png",
-    "jpeg": "image/jpeg",
-    "webp": "image/webp",
-}
 
 #: The shortest header any accepted signature needs (WebP: RIFF at 0,
 #: WEBP at 8). Shorter payloads cannot be a valid avatar of any of the
@@ -174,7 +171,7 @@ class AvatarService:
                 _AVATAR_BAD_FORMAT_MESSAGE,
                 status_code=400,
             )
-        content_type = _AVATAR_CONTENT_TYPES[detected]
+        content_type = AVATAR_CONTENT_TYPES[detected]
 
         user = await self._locked_user(db, actor.user_id)
         previous_key = user.avatar_object_key
@@ -262,9 +259,14 @@ class AvatarService:
         except FileNotFoundError:
             # Already gone; the row is the authority and already moved.
             pass
-        except OSError:
-            # Transient provider failure: the object is orphaned, not
-            # lost — retention cleanup reconciles by key prefix.
+        except (OSError, ProviderError):
+            # The port's documented failure taxonomy. ProviderError does
+            # NOT derive from OSError (review finding) — without it, a
+            # post-commit cleanup failure would escape as a 500 that
+            # contradicts the committed row, and the client's retry
+            # would then hit the upload rate limit for nothing. Here it
+            # stays what the contract says: an orphaned object, a
+            # committed success.
             _logger.warning(
                 "avatar object cleanup failed (orphaned, row already "
                 "committed); key omitted by privacy contract",

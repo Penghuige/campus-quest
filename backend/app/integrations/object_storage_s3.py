@@ -104,19 +104,12 @@ from app.integrations.errors import (
     UnknownOutcomeError,
 )
 from app.integrations.object_storage import (
+    AVATAR_EXTENSIONS,
     DownloadUrl,
     ObjectHead,
     StoredObject,
     UploadUrl,
 )
-
-#: Avatar key extensions for the service-validated content types (spec
-#: amendment D2 whitelist: png / jpeg / webp by magic bytes).
-_AVATAR_EXTENSIONS = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/webp": ".webp",
-}
 
 #: ClientError codes that are provider-side transient (retry-safe).
 _TEMPORARY_ERROR_CODES = frozenset(
@@ -335,7 +328,7 @@ class S3ObjectStorage:
     def store_avatar(self, *, user_id: UUID, content: bytes, content_type: str) -> str:
         """Server-side avatar write; adapter-minted key (port docstring)."""
         try:
-            extension = _AVATAR_EXTENSIONS[content_type]
+            extension = AVATAR_EXTENSIONS[content_type]
         except KeyError:
             # The service validated the magic bytes and derived the
             # canonical content type; anything unmapped here is a

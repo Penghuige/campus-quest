@@ -39,6 +39,7 @@ from app.core.clock import FrozenClock
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import get_db_session
+from app.integrations.errors import TemporaryProviderError
 from app.main import create_app
 from app.modules.audit.models import AuditLog
 from app.modules.identity.dependencies import (
@@ -367,6 +368,49 @@ async def test_delete_avatar_clears_pointer_and_object(
     repeat = await client.delete("/api/v1/me/avatar", headers=_bearer(tokens))
     assert repeat.status_code == 404
     assert _envelope(repeat)["code"] == "NOT_FOUND"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_replacement_survives_cleanup_failure_as_orphan(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    fake_storage: FakeObjectStorage,
+) -> None:
+    # The quiet-cleanup contract (review finding): a PROVIDER failure on
+    # the post-commit delete of the replaced object must degrade to an
+    # orphan — never a 500 over a committed success (whose retry would
+    # then hit the rate limit for nothing). ProviderError does NOT
+    # derive from OSError, so this is exactly the branch that escaped
+    # before the fix.
+    user = await _seed_student(db_session, "20250101", "头像测试一")
+    tokens = await _login(client, "20250101")
+    assert (await _upload(client, _bearer(tokens), _PNG_1PX)).status_code == 200
+    old_key = _stored_avatar_key(fake_storage, user)
+
+    real_delete = fake_storage.delete_object
+
+    def _failing_delete(*, object_key: str) -> None:
+        if object_key == old_key:
+            # One-shot: only the replaced-object cleanup path fails.
+            fake_storage.delete_object = real_delete  # type: ignore[method-assign]
+            raise TemporaryProviderError("simulated provider outage")
+        return real_delete(object_key=object_key)
+
+    fake_storage.delete_object = _failing_delete  # type: ignore[method-assign]
+
+    replaced = await _upload(client, _bearer(tokens), _PNG_1PX)
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json()["has_avatar"] is True
+
+    # The row moved to the new key; the old object is orphaned in place
+    # (still stored, never deleted) — harmless, prefix-reconcilable.
+    new_key = _stored_avatar_key(fake_storage, user)
+    assert new_key != old_key
+    assert old_key in fake_storage.objects
+    assert old_key not in fake_storage.deleted_keys
+    rows = await _avatar_audit_rows(db_session)
+    assert len(rows) == 2  # both commits landed; nothing rolled back
 
 
 # --- cross-user serve ----------------------------------------------------------

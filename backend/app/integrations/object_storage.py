@@ -83,6 +83,23 @@ class StoredObject:
     content_type: str
 
 
+#: The avatar format whitelist, ONE authority for every layer (spec
+#: amendment D2; review finding: the map must not live per-adapter).
+#: detected magic type -> the canonical content type the service pins.
+AVATAR_CONTENT_TYPES: dict[str, str] = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+}
+
+#: canonical content type -> the key extension the adapter mints.
+AVATAR_EXTENSIONS: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+
+
 class ObjectStorage(Protocol):
     """Port for presigned uploads, metadata checks, signed downloads,
     worker-side object reads, and retention deletes."""
