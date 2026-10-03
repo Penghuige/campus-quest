@@ -141,6 +141,24 @@ test.describe("sidebar collapse + resize (defect #3)", () => {
     expect(JSON.parse(stored!)).toEqual({ collapsed: true, widthPx: 232 });
   });
 
+  test("no stored preference keeps the rem-based default (root-font scaling)", async ({ page }) => {
+    // Fresh context = no cq:sidebar-preference, so the rail must ride
+    // the CSS 14.5rem fallback and scale with the root font — NOT a
+    // JS-written 232px, which would freeze the width for users whose
+    // root font differs from 16px (reviewer finding A).
+    const rail = page.locator(RAIL);
+    const at16 = (await rail.boundingBox())!.width;
+    expect(Math.round(at16)).toBeGreaterThanOrEqual(230);
+    expect(Math.round(at16)).toBeLessThanOrEqual(234);
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "20px";
+    });
+    // 14.5rem at a 20px root = 290px (rem units recompute live).
+    const at20 = (await rail.boundingBox())!.width;
+    expect(Math.round(at20)).toBeGreaterThanOrEqual(286);
+    expect(Math.round(at20)).toBeLessThanOrEqual(294);
+  });
+
   test("below the wide band the rail (and its affordances) stay hidden", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await expect(page.locator(RAIL)).toBeHidden();

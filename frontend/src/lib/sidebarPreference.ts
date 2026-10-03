@@ -105,3 +105,21 @@ export function writeSidebarPreference(storage: PreferenceWriter, pref: SidebarP
     // No persistence is a degraded-but-usable session, not an error.
   }
 }
+
+/**
+ * Reach the localStorage OBJECT safely. The getter itself throws on
+ * opaque origins (sandboxed iframe without allow-same-origin, or a
+ * browser policy denying storage) — before any helper's internal
+ * try/catch can run — so callers must go through THIS access guard,
+ * never touch `window.localStorage` directly (Codex P2, PR #19).
+ */
+export function safeLocalStorage(): PreferenceStorage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}

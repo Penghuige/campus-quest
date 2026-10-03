@@ -45,6 +45,7 @@ import {
   RAIL_WIDTH_MAX_PX,
   RAIL_WIDTH_MIN_PX,
   readSidebarPreference,
+  safeLocalStorage,
   writeSidebarPreference,
   type SidebarPreference,
 } from "@/lib/sidebarPreference";
@@ -99,7 +100,8 @@ export function WorkspaceSidebar({
   // setState (react-hooks/set-state-in-effect) — the session.ts
   // precedent; the cancelled flag fences an unmount inside the gap.
   useEffect(() => {
-    const stored = readSidebarPreference(window.localStorage);
+    const storage = safeLocalStorage();
+    const stored = storage === null ? null : readSidebarPreference(storage);
     if (stored === null) return;
     let cancelled = false;
     Promise.resolve().then(() => {
@@ -115,19 +117,31 @@ export function WorkspaceSidebar({
   // Mirror the geometry into the --rail-width token the shell grid
   // consumes. Collapsed resolves THROUGH the collapsed token so the
   // icon-rail width stays rem-based (it scales with the user's font
-  // size even though the drag itself works in screen pixels).
+  // size even though the drag itself works in screen pixels). At the
+  // DEFAULT expanded width we clear the inline override instead of
+  // writing `232px` — the rem-based CSS fallback keeps serving users
+  // whose root font differs from 16px (reviewer P3, PR #19).
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--rail-width",
-      pref.collapsed ? "var(--rail-width-collapsed)" : `${pref.widthPx}px`,
-    );
+    const rootStyle = document.documentElement.style;
+    if (pref.collapsed) {
+      rootStyle.setProperty("--rail-width", "var(--rail-width-collapsed)");
+      return;
+    }
+    if (pref.widthPx === RAIL_WIDTH_DEFAULT_PX) {
+      rootStyle.removeProperty("--rail-width");
+      return;
+    }
+    rootStyle.setProperty("--rail-width", `${pref.widthPx}px`);
   }, [pref]);
 
   /** Every user-initiated change: state + explicit persist (no write
    * effect — mount/default reloads must not create a preference). */
   const updatePref = useCallback((next: SidebarPreference) => {
     setPref(next);
-    writeSidebarPreference(window.localStorage, next);
+    const storage = safeLocalStorage();
+    if (storage !== null) {
+      writeSidebarPreference(storage, next);
+    }
   }, []);
 
   const toggleCollapsed = useCallback(() => {
@@ -153,11 +167,16 @@ export function WorkspaceSidebar({
       const drag = dragStart.current;
       if (drag === null || drag.pointerId !== event.pointerId) return;
       const next = clampRailWidth(drag.startWidth + event.clientX - drag.startX);
-      if (next !== pref.widthPx) {
-        setPref((current) => ({ ...current, widthPx: next }));
-      }
+      // Compare INSIDE the updater (reviewer B, PR #19): a closure
+      // comparison against a possibly-stale render misses the final
+      // move when the pointer returns to the batch's starting width;
+      // returning the same reference lets React bail out of the
+      // no-op re-render instead.
+      setPref((current) =>
+        current.widthPx === next ? current : { ...current, widthPx: next },
+      );
     },
-    [pref.widthPx],
+    [],
   );
 
   const endResizeDrag = useCallback(
@@ -166,7 +185,10 @@ export function WorkspaceSidebar({
       if (drag === null || drag.pointerId !== event.pointerId) return;
       dragStart.current = null;
       // Persist the settled width once, at drag end (not per move).
-      writeSidebarPreference(window.localStorage, pref);
+      const storage = safeLocalStorage();
+      if (storage !== null) {
+        writeSidebarPreference(storage, pref);
+      }
     },
     [pref],
   );

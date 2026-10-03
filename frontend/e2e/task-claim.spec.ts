@@ -182,4 +182,20 @@ test.describe("task card affordances (defect #5)", () => {
       .poll(() => card.evaluate((node) => getComputedStyle(node).borderColor))
       .not.toBe(before);
   });
+
+  test("the rarity glyph fills and centers its 20-unit viewBox", async ({ page }) => {
+    // Codex P2 regression pin: the shapes must be drawn around the
+    // StrokeIcon (10, 10) center, not a corner of the 0 0 20 20 box.
+    const shape = page.locator(".task-card-rarity svg path, .task-card-rarity svg circle").first();
+    const box = await shape.evaluate((el) => {
+      const bbox = (el as SVGGraphicsElement).getBBox();
+      return { cx: bbox.x + bbox.width / 2, cy: bbox.y + bbox.height / 2, w: bbox.width, h: bbox.height };
+    });
+    expect(box.w).toBeGreaterThanOrEqual(10);
+    expect(box.h).toBeGreaterThanOrEqual(10);
+    expect(box.cx).toBeGreaterThan(8.5);
+    expect(box.cx).toBeLessThan(11.5);
+    expect(box.cy).toBeGreaterThan(8.5);
+    expect(box.cy).toBeLessThan(11.5);
+  });
 });

@@ -285,9 +285,10 @@ Poor uses:
 - turning every desktop table row into a large card;
 - one card per label/value pair.
 
-Plan 11 task cards: the title owns the card; rarity is a compact
-LEFT KEYLINE (`data-rarity` border color — quiet for NORMAL) with
-its TEXT label in the metadata row; color never carries rarity
+Plan 11 task cards: the title owns the card; rarity rides the badge
+pill + per-tier glyph + a restrained border/wash tint (caps in the
+Task rarity section below) — quiet for NORMAL — with its TEXT label
+in the metadata row; color never carries rarity
 alone. Interactive cards may take the 1px hover lift
 (`--lift-hover`, reduced-motion safe).
 
@@ -340,6 +341,11 @@ Rarity treatment:
 - optional small icon or edge accent;
 - never outrank task title;
 - no animated glow for Legendary.
+
+Task-card exception (owner ruling 2026-10-03, defect #5.2): the
+discovery card may carry a restrained tier border (≤30% mix) +
+background wash (≤6%); NORMAL stays neutral — the QA contract
+requires tier color on the card's background and outline.
 
 ### Forms
 

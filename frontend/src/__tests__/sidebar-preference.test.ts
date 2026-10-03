@@ -22,6 +22,7 @@ import {
   RAIL_WIDTH_MAX_PX,
   RAIL_WIDTH_MIN_PX,
   readSidebarPreference,
+  safeLocalStorage,
   serializeSidebarPreference,
   SIDEBAR_PREFERENCE_KEY,
   writeSidebarPreference,
@@ -115,6 +116,48 @@ describe("storage read/write (SSR + private-mode safety)", () => {
     assert.doesNotThrow(() =>
       writeSidebarPreference(hostile, { collapsed: false, widthPx: 260 }),
     );
+  });
+});
+
+describe("safeLocalStorage (the ACCESS guard, Codex P2)", () => {
+  type MutableGlobal = typeof globalThis & { window?: unknown };
+
+  test("no window (node/SSR) reads as null", () => {
+    assert.equal(safeLocalStorage(), null);
+  });
+
+  test("a throwing localStorage getter (opaque origin) reads as null, not a crash", () => {
+    const g = globalThis as MutableGlobal;
+    const hadOwn = "window" in g;
+    const prev = g.window;
+    g.window = {
+      get localStorage(): Storage {
+        throw new Error("SecurityError: denied");
+      },
+    };
+    try {
+      assert.equal(safeLocalStorage(), null);
+    } finally {
+      if (hadOwn) g.window = prev;
+      else delete g.window;
+    }
+  });
+
+  test("a reachable storage object passes through untouched", () => {
+    const fake = {
+      getItem: () => null,
+      setItem: () => undefined,
+    };
+    const g = globalThis as MutableGlobal;
+    const hadOwn = "window" in g;
+    const prev = g.window;
+    g.window = { localStorage: fake };
+    try {
+      assert.equal(safeLocalStorage(), fake);
+    } finally {
+      if (hadOwn) g.window = prev;
+      else delete g.window;
+    }
   });
 });
 
