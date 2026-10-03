@@ -20,6 +20,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
+from app.modules.identity.avatar_service import AvatarService, read_avatar_body
 from app.modules.identity.dependencies import (
     get_access_session_id,
     get_actor,
@@ -32,6 +33,7 @@ from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.providers import (
     DbSession,
     LimiterDep,
+    get_avatar_service,
     get_email_verification_service,
     get_phone_region,
     get_profile_service,
@@ -73,6 +75,40 @@ async def change_nickname(
     db: DbSession,
 ) -> MePublic:
     user = await profile.change_nickname(db, actor.user_id, body.nickname)
+    return MePublic.from_user(user)
+
+
+@router.post("/me/avatar", response_model=MePublic)
+async def upload_avatar(
+    request: Request,
+    actor: Annotated[Actor, Depends(require_active_actor)],
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+    limiter: LimiterDep,
+    db: DbSession,
+) -> MePublic:
+    """Set or replace the account avatar (spec amendment D2).
+
+    The request body IS the image bytes — no multipart envelope: the
+    server derives type from the magic bytes and the client sends its
+    Blob as the body, which keeps the read bounded by the size cap
+    during streaming (a multipart parser would spool first and check
+    later) and adds no parsing dependency for a body with no fields.
+    """
+    await _enforce_rate_limit(limiter, "me:avatar-upload", str(actor.user_id))
+    content = await read_avatar_body(request.stream())
+    user = await avatars.upload_avatar(db, actor, content)
+    return MePublic.from_user(user)
+
+
+@router.delete("/me/avatar", response_model=MePublic)
+async def delete_avatar(
+    actor: Annotated[Actor, Depends(require_active_actor)],
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+    db: DbSession,
+) -> MePublic:
+    """Remove the account avatar (spec amendment D5); NULL falls back to
+    the frontend's generated-initial default."""
+    user = await avatars.delete_avatar(db, actor)
     return MePublic.from_user(user)
 
 

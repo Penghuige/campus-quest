@@ -103,7 +103,20 @@ from app.integrations.errors import (
     TemporaryProviderError,
     UnknownOutcomeError,
 )
-from app.integrations.object_storage import DownloadUrl, ObjectHead, UploadUrl
+from app.integrations.object_storage import (
+    DownloadUrl,
+    ObjectHead,
+    StoredObject,
+    UploadUrl,
+)
+
+#: Avatar key extensions for the service-validated content types (spec
+#: amendment D2 whitelist: png / jpeg / webp by magic bytes).
+_AVATAR_EXTENSIONS = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
 
 #: ClientError codes that are provider-side transient (retry-safe).
 _TEMPORARY_ERROR_CODES = frozenset(
@@ -317,6 +330,44 @@ class S3ObjectStorage:
             object_key=object_key,
             url=url,
             expires_at=self._clock.now() + expires_in,
+        )
+
+    def store_avatar(self, *, user_id: UUID, content: bytes, content_type: str) -> str:
+        """Server-side avatar write; adapter-minted key (port docstring)."""
+        try:
+            extension = _AVATAR_EXTENSIONS[content_type]
+        except KeyError:
+            # The service validated the magic bytes and derived the
+            # canonical content type; anything unmapped here is a
+            # programming error, not a client outcome.
+            raise ValueError(
+                f"avatar content type not in the whitelist: {content_type!r}"
+            ) from None
+        object_key = f"avatars/{user_id}/{uuid4()}{extension}"
+        try:
+            self._client.put_object(
+                Bucket=self._bucket,
+                Key=object_key,
+                Body=content,
+                ContentType=content_type,
+            )
+        except (ClientError, BotoCoreError) as exc:
+            raise _translate(exc) from exc
+        return object_key
+
+    def read_object(self, *, object_key: str) -> StoredObject:
+        """Whole-object server-side read (bounded payloads only, port)."""
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+            body = response["Body"].read()
+        except (ClientError, BotoCoreError) as exc:
+            if isinstance(exc, ClientError) and _is_missing_object(exc):
+                raise FileNotFoundError(f"no object under key {object_key!r}") from exc
+            raise _translate(exc) from exc
+        return StoredObject(
+            object_key=object_key,
+            content=body,
+            content_type=str(response.get("ContentType", "application/octet-stream")),
         )
 
     def download_to_file(self, *, object_key: str, destination: Path) -> None:

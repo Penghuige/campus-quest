@@ -25,6 +25,9 @@ from app.modules.identity import routing_common as identity_routing_common
 from app.modules.identity import (
     staff_router as identity_staff_router,
 )
+from app.modules.identity import (
+    users_router as identity_users_router,
+)
 from app.modules.identity.dependencies import get_actor
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
@@ -60,6 +63,7 @@ def create_app() -> FastAPI:
     identity_routing_common.register_identity_exception_handlers(app)
     app.include_router(identity_auth_router.router, prefix="/api/v1")
     app.include_router(identity_profile_router.router, prefix="/api/v1")
+    app.include_router(identity_users_router.router, prefix="/api/v1")
     app.include_router(identity_staff_router.router, prefix="/api/v1")
 
     # Tasks/claims API: its typed exceptions subclass BusinessError
