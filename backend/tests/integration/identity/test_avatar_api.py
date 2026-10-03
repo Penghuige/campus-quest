@@ -405,7 +405,13 @@ async def test_replacement_survives_cleanup_failure_as_orphan(
 
     # The row moved to the new key; the old object is orphaned in place
     # (still stored, never deleted) — harmless, prefix-reconcilable.
-    new_key = _stored_avatar_key(fake_storage, user)
+    keys = sorted(
+        key
+        for key in fake_storage.objects
+        if key.startswith(f"avatars/{user.id}/")
+    )
+    assert len(keys) == 2  # the orphan plus the live replacement
+    new_key = keys[1] if keys[0] == old_key else keys[0]
     assert new_key != old_key
     assert old_key in fake_storage.objects
     assert old_key not in fake_storage.deleted_keys
