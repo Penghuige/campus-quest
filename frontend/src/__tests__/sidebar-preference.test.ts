@@ -120,17 +120,20 @@ describe("storage read/write (SSR + private-mode safety)", () => {
 });
 
 describe("safeLocalStorage (the ACCESS guard, Codex P2)", () => {
-  type MutableGlobal = typeof globalThis & { window?: unknown };
+  // Structural view of the global slot: `window` as `unknown` (NOT the
+  // DOM lib type) so tests can plant throwaway objects, delete the
+  // slot, and skip implementing the full Storage interface.
+  type MutableGlobal = { window?: unknown };
+  const globalSlot = globalThis as unknown as MutableGlobal;
 
   test("no window (node/SSR) reads as null", () => {
     assert.equal(safeLocalStorage(), null);
   });
 
   test("a throwing localStorage getter (opaque origin) reads as null, not a crash", () => {
-    const g = globalThis as MutableGlobal;
-    const hadOwn = "window" in g;
-    const prev = g.window;
-    g.window = {
+    const hadOwn = "window" in globalSlot;
+    const prev = globalSlot.window;
+    globalSlot.window = {
       get localStorage(): Storage {
         throw new Error("SecurityError: denied");
       },
@@ -138,8 +141,8 @@ describe("safeLocalStorage (the ACCESS guard, Codex P2)", () => {
     try {
       assert.equal(safeLocalStorage(), null);
     } finally {
-      if (hadOwn) g.window = prev;
-      else delete g.window;
+      if (hadOwn) globalSlot.window = prev;
+      else delete globalSlot.window;
     }
   });
 
@@ -148,15 +151,14 @@ describe("safeLocalStorage (the ACCESS guard, Codex P2)", () => {
       getItem: () => null,
       setItem: () => undefined,
     };
-    const g = globalThis as MutableGlobal;
-    const hadOwn = "window" in g;
-    const prev = g.window;
-    g.window = { localStorage: fake };
+    const hadOwn = "window" in globalSlot;
+    const prev = globalSlot.window;
+    globalSlot.window = { localStorage: fake };
     try {
       assert.equal(safeLocalStorage(), fake);
     } finally {
-      if (hadOwn) g.window = prev;
-      else delete g.window;
+      if (hadOwn) globalSlot.window = prev;
+      else delete globalSlot.window;
     }
   });
 });
