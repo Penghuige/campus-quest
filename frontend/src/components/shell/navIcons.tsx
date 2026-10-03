@@ -114,6 +114,29 @@ export function MenuIcon(props: IconProps) {
 }
 
 /*
+ * Defect #3 (QA 2026-09-30): the rail collapse/expand affordance — a
+ * double chevron pointing where the rail will go. 16px like the context
+ * glyphs: a small affordance, not a navigation mark.
+ */
+export function PanelCollapseIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="16" height="16" {...props}>
+      <path d="M8.5 4.5 4 10l4.5 5.5" />
+      <path d="M14.5 4.5 10 10l4.5 5.5" />
+    </StrokeIcon>
+  );
+}
+
+export function PanelExpandIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="16" height="16" {...props}>
+      <path d="M4.5 4.5 9 10l-4.5 5.5" />
+      <path d="M10.5 4.5 15 10l-4.5 5.5" />
+    </StrokeIcon>
+  );
+}
+
+/*
  * Context glyphs (Plan 11 review round 2 motif 2): one coherent
  * 14px semantic set for HIGH-FREQUENCY metadata only — deadline,
  * reward, availability, review state, rank movement. Same stroke
@@ -135,6 +158,44 @@ export function SlotsIcon(props: IconProps) {
       <circle cx="7" cy="8" r="2.6" />
       <circle cx="13.4" cy="8" r="2.6" />
       <path d="M3 15c.6-2 2.2-3 4-3s3.4 1 4 3M9 15c.6-2 2.2-3 4-3s2.8 1 3.4 2.4" />
+    </StrokeIcon>
+  );
+}
+
+/*
+ * Defect #5 (QA 2026-09-30): the rarity mark set — one distinct 14px
+ * SHAPE per tier so the difficulty is separable by shape alone (color
+ * never carries meaning by itself), inheriting the accent color from
+ * the badge text. Same stroke language; filled to read at badge size.
+ */
+export function RarityNormalIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <circle cx="7" cy="7" r="4.4" />
+    </StrokeIcon>
+  );
+}
+
+export function RarityRareIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <path d="M7 1.8 12.2 7 7 12.2 1.8 7Z" />
+    </StrokeIcon>
+  );
+}
+
+export function RarityEpicIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <path d="M7 1.4 11.6 4.1v5.8L7 12.6 2.4 9.9V4.1Z" />
+    </StrokeIcon>
+  );
+}
+
+export function RarityLegendaryIcon(props: IconProps) {
+  return (
+    <StrokeIcon width="14" height="14" strokeWidth="1.6" {...props}>
+      <path d="M7 1.5 8.4 5.6 12.5 7 8.4 8.4 7 12.5 5.6 8.4 1.5 7 5.6 5.6Z" />
     </StrokeIcon>
   );
 }

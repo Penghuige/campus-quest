@@ -251,3 +251,54 @@ describe("claimStepView (the five-step progress strip)", () => {
     );
   });
 });
+
+/* --- Defect #5 (QA 2026-09-30) pins: task-card affordances -------------------
+ *
+ * The card's interaction states and rarity treatment are CSS-level
+ * product behavior; these pins read globals.css the way the rarity-key
+ * pin above does, so deleting a rule (or dropping the NORMAL-stays-
+ * neutral semantic) fails the gate instead of silently regressing. */
+describe("task card affordance pins (defect #5)", () => {
+  const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+
+  test("selected state: pressing the stretched link flips the card to primary", () => {
+    // :has(a:active) = the press feedback the QA report asks for; the
+    // rule must sit in source AFTER the hover rule to win the cascade.
+    assert.match(css, /\.task-card:has\(\.task-card-title a:active\)\s*{\s*border-color: var\(--primary\)/);
+    const press = css.indexOf(".task-card:has(.task-card-title a:active)");
+    const hover = css.indexOf(".task-card:hover");
+    assert.ok(press > hover, "press rule must come after the hover rule");
+  });
+
+  test("keyboard selection: focus-visible on the title link outlines the card", () => {
+    assert.match(css, /\.task-card:has\(\.task-card-title a:focus-visible\)\s*{\s*border-color: var\(--primary\)/);
+  });
+
+  test("rarity tints the card border + a faint wash; NORMAL stays neutral", () => {
+    for (const key of ["RARE", "EPIC", "LEGENDARY"] as const) {
+      const pattern = `\\.task-card\\[data-rarity="${key}"\\]\\s*{[^}]*border-color: color-mix\\(in oklab, var\\(--rarity-${key.toLowerCase()}\\) [^)]+\\)[^}]*background: color-mix\\(in oklab, var\\(--rarity-${key.toLowerCase()}\\) \\d+%`;
+      assert.match(css, new RegExp(pattern), `missing border+wash tint for ${key}`);
+    }
+    // NORMAL is deliberately NOT tinted — neutral IS its corresponding
+    // color (design-system rarity semantics); a NORMAL tint rule is a
+    // regression, not an addition.
+    assert.doesNotMatch(css, /\.task-card\[data-rarity="NORMAL"\]/);
+  });
+
+  test("the rarity badge carries its accent color, not the muted default", () => {
+    assert.match(css, /\.task-card-rarity\[data-rarity="RARE"\]\s*{\s*color: var\(--rarity-rare\)/);
+    assert.match(css, /\.task-card-rarity\[data-rarity="LEGENDARY"\]\s*{\s*color: var\(--rarity-legendary\)/);
+  });
+
+  test("the title link reads as a link at rest (quiet underline)", () => {
+    assert.match(
+      css,
+      /\.task-card-title a\s*{[^}]*text-decoration-line: underline[^}]*text-decoration-color: var\(--border-strong\)/,
+    );
+  });
+
+  test("reduced motion drops the press transform too", () => {
+    const consolidated = css.slice(css.indexOf("prefers-reduced-motion: reduce"));
+    assert.match(consolidated, /\.task-card:has\(\.task-card-title a:active\)\s*{\s*transform: none/);
+  });
+});

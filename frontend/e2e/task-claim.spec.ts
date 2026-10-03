@@ -127,3 +127,59 @@ test.describe("student task claim", () => {
     await expect(page.getByRole("button", { name: "领取任务" })).toBeEnabled();
   });
 });
+
+/* --- Defect #5 (QA 2026-09-30): task-card affordances on the square ---------- */
+
+test.describe("task card affordances (defect #5)", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsStudent(page);
+    await page.goto(`${BASE_URL}/tasks`);
+    await expect(page.locator(".task-card").first()).toBeVisible();
+  });
+
+  test("every card carries its tier: data-rarity + shaped badge glyph + label", async ({ page }) => {
+    const cards = page.locator(".task-card");
+    const count = await cards.count();
+    for (let i = 0; i < count; i += 1) {
+      const card = cards.nth(i);
+      const rarity = await card.getAttribute("data-rarity");
+      // rarityView's canonical keys only (unknown values normalize).
+      expect(["NORMAL", "RARE", "EPIC", "LEGENDARY"]).toContain(rarity);
+      const badge = card.locator(".task-card-rarity");
+      await expect(badge).toHaveAttribute("data-rarity", rarity!);
+      // The shape glyph rides inside the badge next to the text label.
+      await expect(badge.locator("svg")).toHaveCount(1);
+      await expect(badge).toContainText(
+        rarity === "NORMAL" ? "普通"
+          : rarity === "RARE" ? "稀有"
+          : rarity === "EPIC" ? "史诗"
+          : "传说",
+      );
+    }
+  });
+
+  test("the title reads as a link at rest (quiet underline, defect #5.3)", async ({ page }) => {
+    const title = page.locator(".task-card .task-card-title a").first();
+    await expect(title).toBeVisible();
+    await expect(title).toHaveCSS("text-decoration-line", "underline");
+    // And it still points at the task's own detail route.
+    const href = await title.getAttribute("href");
+    expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
+  });
+
+  test("focusing the title outlines the whole card in primary (keyboard selection)", async ({ page }) => {
+    const card = page.locator(".task-card").first();
+    const title = card.locator(".task-card-title a");
+    const before = await card.evaluate((node) => getComputedStyle(node).borderColor);
+    // A programmatic focus() alone does not light :focus-visible —
+    // first establish the KEYBOARD interaction modality (one real Tab),
+    // then move focus; Chromium's heuristic then matches the selector.
+    await page.keyboard.press("Tab");
+    await title.focus();
+    // The card border TRANSITIONS (140ms) — poll for the settled
+    // primary instead of reading the mid-transition start value.
+    await expect
+      .poll(() => card.evaluate((node) => getComputedStyle(node).borderColor))
+      .not.toBe(before);
+  });
+});
