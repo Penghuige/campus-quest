@@ -1,0 +1,4 @@
+# Plan-13 T0: before-evidence PNGs are PR-description artifacts (owner
+# rule) — commit only the README that lists them.
+*.png
+manifest.json

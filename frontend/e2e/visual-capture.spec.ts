@@ -132,6 +132,45 @@ async function capture(
   });
 }
 
+/**
+ * Scroll-anchor variant: frame ONE region of a long page instead of the
+ * full page (plan-13 T0: the task-detail community section needs a
+ * dedicated before/after frame — the full-page shot buries it under the
+ * task facts). Same wrong-artifact guard and settle discipline as
+ * `capture`; the anchor selector must exist or the shot fails loudly.
+ */
+async function captureAnchor(
+  page: Page,
+  name: string,
+  route: string,
+  account: string,
+  anchorSelector: string,
+): Promise<void> {
+  await page.goto(`${BASE_URL}${route}`);
+  const anchor = page.locator(".page-head, main").first();
+  await expect(anchor).toBeVisible({ timeout: 15_000 });
+  const nav =
+    VIEWPORT === "desktop"
+      ? page.locator(".app-sidebar")
+      : page.locator(".app-bottomnav, .app-menubtn");
+  await expect(nav.first()).toBeVisible({ timeout: 5_000 });
+  const region = page.locator(anchorSelector).first();
+  await expect(region).toBeVisible({ timeout: 15_000 });
+  await region.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(800);
+  const file = `${PASS}/${name}.png`;
+  await page.screenshot({ path: join(CAPTURE_DIR!, file) });
+  recordManifest({
+    name,
+    route,
+    account,
+    viewport: VIEWPORT,
+    reducedMotion: REDUCED_MOTION,
+    worldRun: process.env.CQ_E2E_RUN ?? "adhoc",
+    file,
+  });
+}
+
 // --- passes -------------------------------------------------------------------
 
 test.describe("visual capture — anonymous auth surfaces", () => {
@@ -151,6 +190,16 @@ test.describe("visual capture — student surfaces", () => {
     await capture(page, "student-tasks", "/tasks", account);
     if (process.env.CQ_E2E_TASK_OPEN_PATH) {
       await capture(page, "student-task-detail", process.env.CQ_E2E_TASK_OPEN_PATH, account);
+      // Plan-13 T0: the community section's own frame. The seeded open
+      // task carries no comments, so the anchor is the section (composer
+      // + empty state), not a literal .comment-thread.
+      await captureAnchor(
+        page,
+        "student-task-community",
+        process.env.CQ_E2E_TASK_OPEN_PATH,
+        account,
+        ".community-section",
+      );
     }
     if (process.env.CQ_E2E_CLAIM_PATH) {
       await capture(page, "student-claim", process.env.CQ_E2E_CLAIM_PATH, account);
