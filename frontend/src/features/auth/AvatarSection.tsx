@@ -3,12 +3,12 @@
  * Defect #4 (QA 2026-09-30) — the avatar section of the 个人信息
  * subpage (avatar proposal D1–D6; backend half in flight).
  *
- * CAPABILITY GATE: the whole section renders ONLY while the /me
- * payload carries a boolean `has_avatar` (avatarView.avatarSupported) —
- * until the backend avatar PR deploys and the OpenAPI schema is
- * regenerated, this returns null. That is feature detection on the
- * live contract, not a placeholder: nothing half-rendered, nothing to
- * click that 404s.
+ * CAPABILITY GATE: the section renders only while the /me payload
+ * carries a boolean `has_avatar` (avatarView.avatarSupported). That
+ * gate was the pre-#21 hiding mechanism — the backend now always
+ * sends the flag, so it stays open; it survives as a cheap contract
+ * guard (a schema regression hides the section instead of breaking
+ * it).
  *
  * Display path: the memory-only bearer cannot ride a plain <img src>,
  * so the bytes come through an Authorization-headed fetch and render
@@ -48,7 +48,6 @@ async function fetchAvatarBlob(userId: string): Promise<Blob | null> {
   return response.blob();
 }
 
-type AvatarMe = MeDto & { has_avatar?: boolean };
 
 export function AvatarSection() {
   const { state, refresh } = useSession();
@@ -63,13 +62,37 @@ export function AvatarSection() {
   const deleteConfirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const authenticated = state.status === "authenticated";
-  const me: AvatarMe | null = authenticated ? (state.me as AvatarMe) : null;
+  // MeDto has carried the live has_avatar flag since #21 landed.
+  const me: MeDto | null = authenticated ? state.me : null;
 
   useEffect(() => {
-    if (me === null || me.has_avatar !== true) {
-      return;
-    }
     let cancelled = false;
+    /** Clear any stale object URL (revoke + null), deferred a microtask
+     * so the effect body stays free of synchronous setState
+     * (react-hooks/set-state-in-effect — the session.ts idiom). */
+    const clearObjectUrl = () => {
+      Promise.resolve().then(() => {
+        if (!cancelled) {
+          setObjectUrl((current) => {
+            if (current !== null) {
+              URL.revokeObjectURL(current);
+            }
+            return null;
+          });
+        }
+      });
+    };
+
+    if (me === null || me.has_avatar !== true) {
+      // Avatar gone (removed, or never set): drop any STALE object URL
+      // so the figure falls back to the initial letter — without this
+      // the removed avatar's blob URL kept rendering (rebase-e2e find).
+      clearObjectUrl();
+      return () => {
+        cancelled = true;
+      };
+    }
+
     let created: string | null = null;
     fetchAvatarBlob(me.id)
       .then((blob) => {
@@ -78,7 +101,14 @@ export function AvatarSection() {
         }
         if (blob !== null) {
           created = URL.createObjectURL(blob);
-          setObjectUrl(created);
+          // Replace-and-revoke: a fresh upload supersedes the previous
+          // URL without waiting for unmount.
+          setObjectUrl((current) => {
+            if (current !== null && current !== created) {
+              URL.revokeObjectURL(current);
+            }
+            return created;
+          });
         }
       })
       .catch(() => {
