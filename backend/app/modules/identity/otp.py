@@ -55,6 +55,7 @@ envelope response. Callers can already branch precisely today.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -306,7 +307,14 @@ class OtpChallengeService:
             str(now_ts + cooldown),
             ex=max(1, cooldown + _REDIS_TTL_GRACE_SECONDS),
         )
-        self._sms.send(
+        # The SMS port is synchronous (Celery delivery calls it from
+        # worker threads); the ONE real adapter does blocking HTTP, so
+        # this async caller moves it off the event loop — the storage
+        # adapter's asyncio.to_thread precedent. The challenge row is
+        # already committed to Redis above; an adapter failure surfaces
+        # after the fact exactly as the pre-adapter contract did.
+        await asyncio.to_thread(
+            self._sms.send,
             to=phone,
             template=_SMS_TEMPLATE,
             variables={
