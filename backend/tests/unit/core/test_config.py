@@ -271,3 +271,64 @@ def test_replay_key_required_and_valid_when_grace_enabled(
     monkeypatch.setenv("REFRESH_GRACE_SECONDS", "0")
     monkeypatch.setenv("REFRESH_REPLAY_ENCRYPTION_KEY", "garbage")
     assert Settings().refresh_grace_seconds == 0
+
+
+def _set_aliyun_sms_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALIYUN_SMS_ACCESS_KEY_ID", "test-key-id")
+    monkeypatch.setenv("ALIYUN_SMS_ACCESS_KEY_SECRET", "test-key-secret")
+    monkeypatch.setenv("ALIYUN_SMS_SIGN_NAME", "测试签名")
+    monkeypatch.setenv("ALIYUN_SMS_OTP_TEMPLATE_CODE", "100001")
+
+
+def test_aliyun_dypns_is_selectable_in_development(monkeypatch) -> None:
+    # The first real SMS adapter: selectable with the four config
+    # values set; endpoint/region carry deployment defaults.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("SMS_PROVIDER", "aliyun_dypns")
+    _set_aliyun_sms_config(monkeypatch)
+    settings = Settings()
+    assert settings.sms_provider == "aliyun_dypns"
+    assert settings.aliyun_sms_endpoint == "dypnsapi.aliyuncs.com"
+    assert settings.aliyun_sms_region == "ap-southeast-1"
+
+
+def test_production_rejects_aliyun_dypns_with_incomplete_config(
+    monkeypatch,
+) -> None:
+    # The fail-closed chain extends: a REAL provider selection with
+    # missing config values must fail at startup (the specific gate
+    # fires before the general logging refusal, naming exactly what
+    # to set).
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    _set_production_secrets(monkeypatch)
+    monkeypatch.setenv("SMS_PROVIDER", "aliyun_dypns")
+    monkeypatch.delenv("ALIYUN_SMS_ACCESS_KEY_ID", raising=False)
+    with pytest.raises(ValidationError, match="ALIYUN_SMS_ACCESS_KEY_ID"):
+        Settings()
+
+    # Complete config clears this gate; production then still fails on
+    # the EMAIL logging provider (no real email adapter exists yet —
+    # the correct V1 posture), proving the gates layer independently.
+    _set_aliyun_sms_config(monkeypatch)
+    with pytest.raises(ValidationError, match="EMAIL_PROVIDER"):
+        Settings()
+
+
+def test_sms_factory_refuses_aliyun_with_incomplete_config(monkeypatch) -> None:
+    # Composition-time refusal in EVERY environment (not only
+    # production): a half-configured real provider never reaches a
+    # first send signed with garbage.
+    from app.integrations.sms import build_sms_sender
+
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("SMS_PROVIDER", "aliyun_dypns")
+    monkeypatch.delenv("ALIYUN_SMS_ACCESS_KEY_ID", raising=False)
+    settings = Settings()
+    with pytest.raises(LookupError, match="aliyun_sms_access_key_id"):
+        build_sms_sender("aliyun_dypns", settings)
+
+    _set_aliyun_sms_config(monkeypatch)
+    settings = Settings()
+    sender = build_sms_sender("aliyun_dypns", settings)
+    assert type(sender).__name__ == "AliyunDypnsSmsSender"

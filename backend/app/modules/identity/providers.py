@@ -82,11 +82,12 @@ def get_sms_sender(
 
     The fail-closed chain (PR #2 hardening P0-2): production refuses
     provider="logging" at Settings construction (config.py's production
-    guard), so this wiring has no silent fallback onto a sender that
-    delivers nothing. When real adapters land (the provider project),
-    the Literal in config.py and `build_sms_sender` grow together.
+    guard), and the aliyun_dypns adapter refuses incomplete credentials
+    at factory time in every environment — this wiring has no silent
+    fallback onto a sender that delivers nothing or half-configures a
+    real one.
     """
-    return build_sms_sender(settings.sms_provider)
+    return build_sms_sender(settings.sms_provider, settings)
 
 
 def get_email_sender(

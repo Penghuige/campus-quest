@@ -45,12 +45,22 @@ _INSECURE_PRODUCTION_SENTINELS: tuple[tuple[str, str], ...] = (
 # (field, env var) pairs the SAME production guard refuses on the logging
 # provider: "logging" records the send and delivers nothing, so running it
 # in production would mark deliveries SENT that were never sent (G4
-# external side effects must not fake success). V1 has no alternative
-# value — real SMS/EMAIL adapters are a separate later project — so until
-# they land a production deployment fails closed at startup by design.
+# external side effects must not fake success). The EMAIL side has no
+# real adapter yet, so its only refusal value stays "logging"; the SMS
+# side gains "aliyun_dypns" with its own credential-completeness guard.
 _LOGGING_ONLY_PROVIDER_FIELDS: tuple[tuple[str, str], ...] = (
     ("sms_provider", "SMS_PROVIDER"),
     ("email_provider", "EMAIL_PROVIDER"),
+)
+
+# (field, env var) pairs an sms_provider=aliyun_dypns selection must
+# carry non-empty: the guard (production) and the adapter factory (every
+# environment) both walk this table.
+_ALIYUN_SMS_CREDENTIAL_FIELDS: tuple[tuple[str, str], ...] = (
+    ("aliyun_sms_access_key_id", "ALIYUN_SMS_ACCESS_KEY_ID"),
+    ("aliyun_sms_access_key_secret", "ALIYUN_SMS_ACCESS_KEY_SECRET"),
+    ("aliyun_sms_sign_name", "ALIYUN_SMS_SIGN_NAME"),
+    ("aliyun_sms_otp_template_code", "ALIYUN_SMS_OTP_TEMPLATE_CODE"),
 )
 
 
@@ -132,16 +142,29 @@ class Settings(BaseSettings):
     environment: Literal["development", "production"] = "development"
 
     # Outbound channel provider selection (PR #2 hardening P0-2,
-    # fail-closed): V1 ships exactly one implementation per channel — the
-    # logging adapter that records the send and delivers nothing. Real
-    # providers (Twilio/SMTP) are a separate later project; when they
-    # land, extend these Literals with the real values and the
-    # composition points' factories with them. Until then "logging" is
-    # the only value, and environment=production refuses it at
-    # construction (see the production guard below): a deployment must
-    # never mark deliveries SENT that were never actually sent.
-    sms_provider: Literal["logging"] = "logging"
+    # fail-closed): "logging" records the send and delivers nothing —
+    # environment=production refuses it at construction (see the
+    # production guard below). "aliyun_dypns" is the first REAL SMS
+    # adapter (SendSmsVerifyCode, caller-supplied code; integrations/
+    # sms_aliyun.py): selecting it requires the four ALIYUN_SMS_*
+    # credential fields — incomplete credentials fail at startup in
+    # EVERY environment (the adapter factory raises; production gets the
+    # same refusal one step earlier here), keeping the fail-closed
+    # chain unbroken: a deployment must never mark deliveries SENT that
+    # were never actually sent.
+    sms_provider: Literal["logging", "aliyun_dypns"] = "logging"
     email_provider: Literal["logging"] = "logging"
+
+    # Aliyun DYPNS SMS credentials (owner-approved 2026-10-05; local
+    # stack scope first). Secrets live in deployment env, never in the
+    # repository; the factory and the production guard both refuse an
+    # "aliyun_dypns" selection with any of the four left empty.
+    aliyun_sms_access_key_id: str = ""
+    aliyun_sms_access_key_secret: str = ""
+    aliyun_sms_sign_name: str = ""
+    aliyun_sms_otp_template_code: str = ""
+    aliyun_sms_endpoint: str = "dypnsapi.aliyuncs.com"
+    aliyun_sms_region: str = "ap-southeast-1"
 
     # Phone OTP challenge lifecycle (spec §33.2 recommended defaults:
     # 5-minute TTL, 5 verification attempts, resend cooldown, per-phone and
@@ -528,6 +551,23 @@ class Settings(BaseSettings):
                 "anyone brute-force stored OTP hashes offline, forge "
                 "access tokens, or decrypt stored TOTP secrets)"
             )
+        # The specific gate first (an aliyun selection with incomplete
+        # credentials), then the general logging-provider refusal: a
+        # config offending both reports the credential gap, which is
+        # the deployer's actionable next step.
+        if self.environment == "production" and (self.sms_provider == "aliyun_dypns"):
+            missing = [
+                env_name
+                for field_name, env_name in _ALIYUN_SMS_CREDENTIAL_FIELDS
+                if not getattr(self, field_name)
+            ]
+            if missing:
+                raise ValueError(
+                    "environment=production refuses sms_provider="
+                    "aliyun_dypns with incomplete credentials: set "
+                    f"{' and '.join(missing)} (a half-configured provider "
+                    "fails at startup, never at the first send)"
+                )
         logging_providers = [
             env_name
             for field_name, env_name in _LOGGING_ONLY_PROVIDER_FIELDS
@@ -538,9 +578,9 @@ class Settings(BaseSettings):
                 "environment=production refuses the logging provider: "
                 f"set {' and '.join(logging_providers)} to a real sending "
                 "provider (the logging adapter delivers nothing while "
-                "deliveries are recorded SENT; real SMS/EMAIL adapters "
-                "land with the provider project, so V1 channels cannot "
-                "run in production)"
+                "deliveries are recorded SENT; the SMS side now has "
+                "aliyun_dypns — the EMAIL side still has no real adapter, "
+                "so V1 email channels cannot run in production)"
             )
         return self
 

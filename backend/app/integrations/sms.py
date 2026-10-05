@@ -88,18 +88,58 @@ class SmsSender(Protocol):
         ...
 
 
-def build_sms_sender(provider: str) -> SmsSender:
+def build_sms_sender(provider: str, settings: Any = None) -> SmsSender:
     """The `SmsSender` adapter a configured provider value wires.
 
     The fail-closed chain (PR #2 hardening P0-2): config.py's production
     guard refuses provider="logging" when environment=production, so the
     logging branch below is development-only by construction — there is
-    no silent fallback onto a sender that fakes success. When real
-    adapters land (the provider project), extend the `sms_provider`
-    Literal in app/core/config.py and this factory together.
+    no silent fallback onto a sender that fakes success. The real
+    adapter ("aliyun_dypns", integrations/sms_aliyun.py) refuses
+    incomplete credentials HERE in every environment — a misconfigured
+    deployment fails at composition, never at the first send.
+
+    ``settings`` is the composition root's ``Settings`` (typed Any to
+    keep the integrations layer free of the config import cycle); the
+    logging branch ignores it.
     """
     if provider == "logging":
         return LoggingSmsSender()
+    if provider == "aliyun_dypns" and settings is not None:
+        from app.integrations.sms_aliyun import AliyunDypnsSmsSender
+
+        missing = [
+            field_name
+            for field_name in (
+                "aliyun_sms_access_key_id",
+                "aliyun_sms_access_key_secret",
+                "aliyun_sms_sign_name",
+                "aliyun_sms_otp_template_code",
+            )
+            if not getattr(settings, field_name, "")
+        ]
+        if missing:
+            # Every environment, not just production: a half-configured
+            # real provider fails HERE, at composition, instead of at
+            # the first send (which would burn a real outbound attempt
+            # on a request signed with garbage).
+            raise LookupError(
+                f"sms_provider=aliyun_dypns is missing credentials: "
+                f"{', '.join(missing)} (set the ALIYUN_SMS_* env)"
+            )
+        return AliyunDypnsSmsSender(
+            access_key_id=settings.aliyun_sms_access_key_id,
+            access_key_secret=settings.aliyun_sms_access_key_secret,
+            sign_name=settings.aliyun_sms_sign_name,
+            otp_template_code=settings.aliyun_sms_otp_template_code,
+            endpoint=settings.aliyun_sms_endpoint,
+            region=settings.aliyun_sms_region,
+        )
+    if provider == "aliyun_dypns":
+        raise LookupError(
+            "sms_provider=aliyun_dypns needs the deployment settings "
+            "(wired from the composition root, not constructed bare)"
+        )
     raise LookupError(
         f"unknown sms_provider {provider!r}: extend the sms_provider "
         "Literal in app/core/config.py together with this factory"
