@@ -2048,6 +2048,19 @@ body {
   }
 }
 
+.claim-detail {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 42rem;
+  align-content: start;
+}
+
+@media (min-width: 48rem) {
+  .claim-detail {
+    max-width: 56rem;
+  }
+}
+
 .task-detail-title {
   margin: 0;
   font-size: var(--text-lg);
