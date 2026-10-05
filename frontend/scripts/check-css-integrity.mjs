@@ -45,6 +45,21 @@ for (const f of files) {
 // comment citing the producing code.
 const ALLOWED_UNDEFINED = new Set([
   // e.g. "active" toggled via data attributes elsewhere
+  // Ternary comparison operands / template-interpolation suffixes misread
+  // as class tokens (the rendered classes — badge-*, alert-*, btn-* — are
+  // defined; these literals never reach the DOM as classes):
+  "success",    // badge-${... "success" ...}: WhitelistAdmin/RewardsAdmin/SystemAdmin/ValidationReport
+  "muted",      // badge-${...} suffix + claim.tone === "muted": RewardsAdmin/SubmissionReview/SystemAdmin/WhitelistAdmin
+  "info",       // badge-${... "info" ...}: SubmissionReview.tsx:243
+  "danger",     // badge-${... "danger" ...}: ValidationReport.tsx:26
+  "approved",   // outcome.kind === "approved": SubmissionReview.tsx:688
+  "revision",   // outcome.kind === "revision": SubmissionReview.tsx:688
+  "grant",      // mode === "grant": RewardsAdmin.tsx:780
+  "compact",    // size === "compact": TaskLifecycleActions.tsx:60
+  "ok",         // outcome.tone === "ok": TaskRating.tsx:145
+  "verified",   // view.state === "verified": AccountSettings.tsx:531
+  "unverified", // view.state === "unverified": AccountSettings.tsx:533
+  "redeemable", // view.state === "redeemable": RewardsView.tsx:228
 ]);
 
 for (const [cls, where] of used) {

@@ -424,7 +424,7 @@ body {
    darkened on hover; disabled state inherits .btn opacity. */
 .btn-danger {
   background: var(--danger);
-  color: var(--danger-foreground, oklch(99% 0 0));
+  color: var(--danger-foreground);
 }
 
 .btn-danger:hover:not(:disabled) {

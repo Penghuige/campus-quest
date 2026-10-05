@@ -24,7 +24,7 @@ export function BottomNav({ items }: { items: readonly SideNavItem[] }) {
           aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
         >
           {item.icon}
-          <span className="app-bottomnav-label">{item.label}</span>
+          <span>{item.label}</span>
         </Link>
       ))}
     </nav>
