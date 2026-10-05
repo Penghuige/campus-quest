@@ -67,6 +67,7 @@
   --warning-strong: oklch(46% 0.12 70);
   --warning-muted: oklch(96.5% 0.03 70);
   --danger: oklch(51% 0.19 27);
+  --danger-foreground: oklch(99% 0.004 27);
   --danger-muted: oklch(96.5% 0.025 27);
   --info: oklch(52% 0.12 240);
 
@@ -417,6 +418,17 @@ body {
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--surface-2);
+}
+
+/* Destructive actions (§9 destructive hierarchy): solid danger fill,
+   darkened on hover; disabled state inherits .btn opacity. */
+.btn-danger {
+  background: var(--danger);
+  color: var(--danger-foreground, oklch(99% 0 0));
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--danger) 88%, black);
 }
 
 .btn-block {
