@@ -2792,8 +2792,57 @@ body {
   font-weight: 550;
 }
 
+/* Segmented control (plan-13 T2): the period tabs read as ONE control —
+   a quiet track with a hairline keyline, the current segment raised to
+   surface-1. Behavior/URLs unchanged (the link IS the state). Modifier
+   on .tab-bar so other tab bars (community sort) keep the flat grammar
+   until their own surface pass. */
+.segmented-tabs {
+  display: inline-flex;
+  gap: var(--gap-hairline);
+  padding: var(--gap-hairline);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.segmented-tabs .tab-link {
+  min-height: calc(var(--control-height) - 2 * var(--gap-hairline));
+}
+
+.segmented-tabs .tab-link:hover {
+  background: color-mix(in oklab, var(--surface-1) 60%, var(--surface-2));
+}
+
+.segmented-tabs .tab-link[aria-current="page"] {
+  color: var(--foreground);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-xs);
+  font-weight: 600;
+}
+
 /* Leaderboard rows: rank | who | score; the me-anchor is a tinted row
    plus a visible 我 tag (§9: highlight, never danger for low rank). */
+.rankings-view {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 42rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.rankings-view > .section {
+  width: 100%;
+}
+
+@media (min-width: 48rem) {
+  /* The .task-detail 56rem step (same as .rewards-view): the page uses
+     the desktop viewport instead of hugging a narrow orphan column. */
+  .rankings-view {
+    max-width: 56rem;
+  }
+}
+
 .board-rows {
   display: grid;
   gap: var(--space-1);
@@ -2812,9 +2861,26 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* Restrained top-3 distinction (plan-13 T2 / plan-11 P2 — NO podium):
+   the rank numeral gains weight + the Legendary-adjacent amber, and the
+   row takes ONE subtle amber-tinted keyline. Local accent only; the
+   me-anchor rules below stay authoritative on the caller's own row. */
+.board-row[data-top3="true"] {
+  border-color: color-mix(in oklab, var(--rarity-legendary) 30%, var(--border));
+}
+
+.board-row[data-top3="true"] .board-rank {
+  color: var(--rarity-legendary);
+  font-weight: 700;
+}
+
+/* Strong 我 anchor (plan-13 T2): the brand wash + a strong keyline +
+   an inset primary bar — identical in the top list and 我的附近, so the
+   current-user highlight is one consistent grammar (design §9). */
 .board-row[data-me="true"] {
-  border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
-  background: color-mix(in oklab, var(--primary) 7%, var(--surface-1));
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+  background: var(--surface-brand);
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--primary) 70%, var(--surface-brand));
 }
 
 .board-rank {
@@ -2824,6 +2890,7 @@ body {
 
 .board-row[data-me="true"] .board-rank {
   color: var(--primary);
+  font-weight: 650;
 }
 
 .board-nick {
@@ -2855,6 +2922,27 @@ body {
   margin: 0;
   font-size: var(--text-md);
   font-weight: 550;
+}
+
+/* Honor as quiet text next to the nickname (plan-13 T2): the DTO's own
+   display_honor verbatim, demoted from the epic-rarity chip — identity
+   context, not a status signal (P2: what can become quiet metadata).
+   The chip grammar (.honor-chip) stays with the growth page's owned
+   honors, where the honor itself is the object under review. */
+.board-honor {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+/* Around-me lead (plan-13 T2): one quiet line re-stating the caller's
+   global rank when they are OUTSIDE the top list, so the neighborhood
+   below reads as one continuous story. */
+.board-around-lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Honors (§18: playful accents allowed, restrained). */

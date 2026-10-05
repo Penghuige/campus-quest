@@ -75,6 +75,20 @@ export function boardRowView(entry: RankingEntryDto): BoardRowView {
   };
 }
 
+// --- top-list distinction (plan-13 T2 / plan-11 P2: restrained top-3, no podium) ---
+
+/** Ranks 1..3 earn the rank-numeral weight + one subtle keyline tint. */
+export const TOP_DISTINCTION_CUTOFF = 3;
+
+/**
+ * Presentation-only read of the server's VERBATIM rank (never a
+ * re-ranking): the top three rows are distinguished by typography and a
+ * local keyline tint, everything below stays plain.
+ */
+export function hasTopDistinction(rank: number): boolean {
+  return rank >= 1 && rank <= TOP_DISTINCTION_CUTOFF;
+}
+
 // --- board view -------------------------------------------------------------------
 
 export interface BoardView {
@@ -86,16 +100,22 @@ export interface BoardView {
   myScore: number | null;
   /** Rows in the top list that ARE the caller (rank equality anchor). */
   rowIsMe: boolean[];
+  /** rowIsMe rollup: true when the caller's own row is in the top list.
+   * Drives the around-me lead line (plan-13 T2): only a caller OUTSIDE
+   * the top list needs the 我的附近 panel to re-state their standing. */
+  meInTopList: boolean;
 }
 
 export function boardView(board: BoardDto): BoardView {
   const rows = board.entries.map(boardRowView);
+  const rowIsMe = rows.map((row) => board.my_rank === row.rank);
   return {
     status: rows.length === 0 && board.my_rank === null ? "empty" : "ready",
     rows,
     myRank: board.my_rank ?? null,
     myScore: board.my_score ?? null,
-    rowIsMe: rows.map((row) => board.my_rank === row.rank),
+    rowIsMe,
+    meInTopList: rowIsMe.some((flag) => flag),
   };
 }
 

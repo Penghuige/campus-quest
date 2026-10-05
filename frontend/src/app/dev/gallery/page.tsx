@@ -45,6 +45,7 @@ import {
   SectionError,
   SectionSkeleton,
 } from "@/components/ui/sectionStates";
+import { BoardRow } from "@/features/rankings/Leaderboard";
 import { TaskCard } from "@/features/tasks/TaskCard";
 import type { TaskCardDto } from "@/features/tasks/api";
 import { rarityView, type RarityKey } from "@/features/tasks/display";
@@ -76,6 +77,35 @@ const FIXTURE_TASKS: readonly TaskCardDto[] = RARITIES.map((rarity, index) => ({
 
 /** TaskCard's display-only island clock; fixed so the render is pure. */
 const FIXED_NOW_MS = 1_800_000_000_000;
+
+/** Leaderboard row fixtures (plan-13 T2): the thin e2e world seeds a
+ * single-entity board, so the top-3 distinction and the outside-top
+ * around-me story never render there — these rows make both states
+ * inspectable and pixel-baselined without touching world seeding. */
+function boardFixture(
+  rank: number,
+  nickname: string,
+  score: number,
+  displayHonor: string | null = null,
+) {
+  return { rank, nickname, score, displayHonor };
+}
+
+const BOARD_TOP_FIXTURES = [
+  boardFixture(1, "同学甲", 900, "月度之星"),
+  boardFixture(2, "同学乙", 850),
+  boardFixture(3, "同学丙", 820),
+  boardFixture(4, "同学丁", 640),
+  boardFixture(5, "同学戊", 610),
+] as const;
+
+const BOARD_AROUND_FIXTURES = [
+  boardFixture(12, "同学己", 420),
+  boardFixture(13, "同学庚", 405),
+  boardFixture(14, "同学辛", 398),
+  boardFixture(15, "同学壬", 377),
+  boardFixture(16, "同学癸", 350),
+] as const;
 
 const BUTTON_VARIANTS = [
   { className: "btn btn-primary", label: "主要操作" },
@@ -190,6 +220,33 @@ export default function DevGalleryPage() {
       </section>
 
       <RewardTileGallery />
+
+      <section className="section" aria-label="排行榜行">
+        <h2 className="section-title">排行榜行 × 前三 / 我锚点</h2>
+        <p className="progress-note">
+          前 3 名：名次字重 + 淡琥珀描边（局部强调，无领奖台）；第 4 名为当前用户：品牌底 + 强描边。
+        </p>
+        <div className="panel">
+          <ol className="board-rows">
+            {BOARD_TOP_FIXTURES.map((row) => (
+              <BoardRow key={row.rank} row={row} isMe={row.rank === 4} />
+            ))}
+          </ol>
+        </div>
+        <p className="progress-note">
+          我的附近（用户在榜单外）：安静名次导语 + 上/下相邻行，我的一行居中高亮。
+        </p>
+        <div className="panel">
+          <p className="board-around-lead">
+            我的名次：第 <span className="meta-num">14</span> 名 · 你前后的同学
+          </p>
+          <ol className="board-rows">
+            {BOARD_AROUND_FIXTURES.map((row) => (
+              <BoardRow key={row.rank} row={row} isMe={row.rank === 14} />
+            ))}
+          </ol>
+        </div>
+      </section>
 
       <section className="section" aria-label="表单控件">
         <h2 className="section-title">表单控件</h2>

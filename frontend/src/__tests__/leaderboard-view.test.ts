@@ -21,8 +21,10 @@ import {
   aroundMeView,
   boardRowView,
   boardView,
+  hasTopDistinction,
   parseRankingPeriod,
   RANKING_PERIODS,
+  TOP_DISTINCTION_CUTOFF,
 } from "../features/rankings/leaderboardView";
 
 type RecordedRequest = { url: string; method: string };
@@ -114,6 +116,28 @@ describe("board view (server order, server ranks)", () => {
   test("no rows and no own score -> empty; own score alone keeps ready", () => {
     assert.equal(boardView({ entries: [], my_rank: null, my_score: null }).status, "empty");
     assert.equal(boardView({ entries: [], my_rank: 4, my_score: 10 }).status, "ready");
+  });
+
+  test("meInTopList is the rowIsMe rollup (plan-13 T2 around-me story)", () => {
+    // Caller inside the top list: the around-me lead stays silent (the
+    // top list already tells the standing).
+    assert.equal(boardView({ entries, my_rank: 2, my_score: 850 }).meInTopList, true);
+    // Caller outside the top list: the around-me panel carries the lead.
+    assert.equal(boardView({ entries, my_rank: 12, my_score: 300 }).meInTopList, false);
+    // Unranked caller: nobody is anchored anywhere.
+    assert.equal(boardView({ entries, my_rank: null, my_score: null }).meInTopList, false);
+  });
+});
+
+describe("top-3 distinction (plan-13 T2 / plan-11 P2: restrained, no podium)", () => {
+  test("ranks 1..cutoff earn the distinction; everything else does not", () => {
+    assert.equal(TOP_DISTINCTION_CUTOFF, 3);
+    for (const rank of [1, 2, 3]) {
+      assert.equal(hasTopDistinction(rank), true, `rank ${rank}`);
+    }
+    for (const rank of [0, 4, 20, -1]) {
+      assert.equal(hasTopDistinction(rank), false, `rank ${rank}`);
+    }
   });
 });
 
