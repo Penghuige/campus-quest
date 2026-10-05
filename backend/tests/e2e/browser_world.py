@@ -31,6 +31,7 @@ import asyncio
 import contextlib
 import datetime as dt
 import json
+import os
 import sys
 import tempfile
 import uuid
@@ -74,6 +75,20 @@ from tests.e2e.factories import (  # noqa: E402
 
 _BROKER_QUEUE_KEY = "celery"
 _REWARD_POINTS = 100
+
+#: Plan-12 task 8: CQ_E2E_FIXED_LABELS=1 freezes every seeded label a
+#: screenshot can render — task titles, reward names, nicknames AND the
+#: usernames (the admin user table sorts BY username, so row order is
+#: deterministic only when the sort key is) — at this marker instead of
+#: the run id, so the pixel-regression suite's worlds diff clean across
+#: runs. The marker must stay 12 HEX chars: the student factories fold
+#: it into student numbers and phones (int(run[:11], 16)). Fixed mode
+#: drops the run marker's leftover tolerance (a crashed fixed-label
+#: run's residue collides on the unique constraints) — the
+#: visual-regression gate owns a clean stack. Unset is the default and
+#: every string stays byte-identical to the pre-flag behavior; only the
+#: visual-regression run sets the flag.
+FIXED_LABEL_RUN = "e2ef1ed1abe1"
 
 _GOOD_CSV = (
     b"url,title\n"
@@ -185,37 +200,45 @@ async def _seed() -> dict[str, Any]:
     from app.workers.jobs.project_ranking_update import run_ranking_projection
 
     run = uuid.uuid4().hex[:12]
+    # The label marker fed to every VISIBLE string (see FIXED_LABEL_RUN):
+    # the unique run id by default, the frozen marker under
+    # CQ_E2E_FIXED_LABELS=1. Read per seed call (not at import) so the
+    # pytest e2e toggles it with monkeypatch. Storage/teardown mechanics
+    # (tmpdir, world file, CQ_E2E_RUN, drift sweeps, request ids) keep
+    # the unique run — only label/identifier CONSTRUCTION follows
+    # label_run.
+    label_run = FIXED_LABEL_RUN if os.environ.get("CQ_E2E_FIXED_LABELS") == "1" else run
     factory = _factory()
     broker = aioredis.from_url(get_settings().redis_url, decode_responses=True)
     tmpdir = tempfile.mkdtemp(prefix=f"cq-e2e-{run}-")
     try:
-        student = await seed_student(factory, run=run)
-        teacher = await seed_teacher_confirmed_totp(factory, run=run)
-        admin = await seed_admin_confirmed_totp(factory, run=run)
+        student = await seed_student(factory, run=label_run)
+        teacher = await seed_teacher_confirmed_totp(factory, run=label_run)
+        admin = await seed_admin_confirmed_totp(factory, run=label_run)
         # Plan 10 task 9: a SECOND student authors the anonymous comment
         # under privacy test, with a known email so the DOM negative
         # search covers every identity fact. The PREFIXED run marker
         # keeps the factories' hex-folded student number/phone distinct
         # from the primary student's (a suffix would fold identically).
-        author = await seed_student(factory, run=f"d{run}")
-        author_email = f"e2e-author-{run}@school.edu"
+        author = await seed_student(factory, run=f"d{label_run}")
+        author_email = f"e2e-author-{label_run}@school.edu"
 
         # Three independent tasks: A/B each carry one PRE-CLAIMED claim
         # (the deep-link specs consume them), C stays fully open for the
         # UI-claim flow. Separate tasks because the same-task rule
         # refuses a second non-terminal claim for one student.
         task_a = await seed_task_with_assignments(
-            factory, teacher_id=teacher.user_id, run=f"{run}a", assignment_count=2
+            factory, teacher_id=teacher.user_id, run=f"{label_run}a", assignment_count=2
         )
         task_b = await seed_task_with_assignments(
-            factory, teacher_id=teacher.user_id, run=f"{run}b", assignment_count=2
+            factory, teacher_id=teacher.user_id, run=f"{label_run}b", assignment_count=2
         )
         task_c = await seed_task_with_assignments(
-            factory, teacher_id=teacher.user_id, run=f"{run}c", assignment_count=2
+            factory, teacher_id=teacher.user_id, run=f"{label_run}c", assignment_count=2
         )
         claim_a = await seed_claim(factory, task=task_a, student_id=student.user_id)
         claim_b = await seed_claim(factory, task=task_b, student_id=student.user_id)
-        item = await seed_reward_item(factory, run=run, point_cost=50)
+        item = await seed_reward_item(factory, run=label_run, point_cost=50)
 
         # Plan 10 task 9 additions, all world-building (the FLOWS stay
         # in the specs): the author's email, one pre-existing anonymous
@@ -242,23 +265,23 @@ async def _seed() -> dict[str, Any]:
         from app.modules.identity.totp import encrypt_totp_secret
 
         reveal_admin, reveal_admin_secret = _answerable_staff_row(
-            f"e2e-admin-{run}@school.edu",
-            f"端到端揭示管理员{run[:4]}",
+            f"e2e-admin-{label_run}@school.edu",
+            f"端到端揭示管理员{label_run[:4]}",
             SeedRole.ADMIN,
         )
         browser_teacher, browser_teacher_secret = _answerable_staff_row(
-            f"e2e-teacher-{run}@school.edu",
-            f"端到端浏览器教师{run[:4]}",
+            f"e2e-teacher-{label_run}@school.edu",
+            f"端到端浏览器教师{label_run[:4]}",
             SeedRole.TEACHER,
         )
         browser_teacher2, browser_teacher2_secret = _answerable_staff_row(
-            f"e2e-teacher2-{run}@school.edu",
-            f"端到端浏览器教师乙{run[:4]}",
+            f"e2e-teacher2-{label_run}@school.edu",
+            f"端到端浏览器教师乙{label_run[:4]}",
             SeedRole.TEACHER,
         )
         browser_admin, browser_admin_secret = _answerable_staff_row(
-            f"e2e-ops-admin-{run}@school.edu",
-            f"端到端运营管理员{run[:4]}",
+            f"e2e-ops-admin-{label_run}@school.edu",
+            f"端到端运营管理员{label_run[:4]}",
             SeedRole.ADMIN,
         )
         answerable_staff = (
@@ -290,7 +313,7 @@ async def _seed() -> dict[str, Any]:
                 Comment(
                     task_id=task_a.task_id,
                     user_id=author.user_id,
-                    content=f"匿名治理目标{run[:6]}：大家记得提前预约座位",
+                    content=f"匿名治理目标{label_run[:6]}：大家记得提前预约座位",
                     is_anonymous=True,
                 )
             )
@@ -340,12 +363,15 @@ async def _seed() -> dict[str, Any]:
         from app.modules.tasks.models import AssignmentClaim
 
         task_r = await seed_task_with_assignments(
-            factory, teacher_id=browser_teacher.id, run=f"{run}r", assignment_count=1
+            factory,
+            teacher_id=browser_teacher.id,
+            run=f"{label_run}r",
+            assignment_count=1,
         )
         # Hex-digit prefix "e" (the author's "d" discipline): the
         # factories fold the marker's leading chars as HEX into the
         # student number/phone, so the prefix must be a hex digit.
-        redeemer = await seed_student(factory, run=f"e{run}")
+        redeemer = await seed_student(factory, run=f"e{label_run}")
         claim_r = await seed_claim(factory, task=task_r, student_id=redeemer.user_id)
         await seed_points_balance(
             factory,
@@ -422,9 +448,9 @@ async def _seed() -> dict[str, Any]:
             # The admin users page's suspend target, located by its
             # run-unique handle (the spec's row locator).
             suspended_student = UserRow(
-                username=f"e2e-suspended-student-{run}",
+                username=f"e2e-suspended-student-{label_run}",
                 password_hash=hash_password(DEFAULT_PASSWORD),
-                nickname=f"停用目标同学{run[:4]}",
+                nickname=f"停用目标同学{label_run[:4]}",
                 phone_e164=None,
                 role=SeedRole.STUDENT,
                 status=SeedStatus.ACTIVE,
