@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "check:css": "node scripts/check-css-integrity.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:unit": "tsx --test src/__tests__/*.test.ts",
