@@ -56,8 +56,12 @@
  *   student-dashboard (.progress-note=1 deterministic, .claim-deadline=1,
  *   .hero-line~截止=1), teacher-reviews (time=1: submitted_at),
  *   admin-users (time=10: created_at; span.mono[title]=10: user UUIDs).
- * .deadline-line appears on no matrix page (task/claim detail are not
- * in the matrix), so it is not masked anywhere.
+ * Follow-up probe (claim + task-detail shots, same discipline):
+ *   student-claim — .deadline-line=1 (volatile countdown), .progress-note=1
+ *   (volatile grace timestamp), .assignment-item~领取时间 .assignment-value=1
+ *   (claimed_at); student-task-detail — .deadline-line=1 but its text is
+ *   "领取后 4320 分钟内提交" (derived from the seeded task's FIXED RELATIVE
+ *   duration → deterministic, deliberately unmasked); all other candidates 0.
  */
 import { type Locator, type Page } from "@playwright/test";
 
@@ -100,9 +104,16 @@ interface ShotMask {
 
 interface Shot {
   name: string;
-  path: string;
   auth: ShotAuth;
   masks: ShotMask[];
+  /** Static path (matrix routes)… */
+  path?: string;
+  /** …or a world-export env carrying a seeded deep link (claim/task
+   * detail): the shot skips when the export is absent, mirroring
+   * visual-capture.spec.ts's conditional-capture discipline. These two
+   * shots are deliberately NOT in scripts/assert-e2e-no-skips.mjs's
+   * watched list — the skip is legal. */
+  envPath?: string;
 }
 
 const SHOTS: Shot[] = [
@@ -128,6 +139,40 @@ const SHOTS: Shot[] = [
     ],
   },
   { name: "student-tasks", path: "/tasks", auth: "student", masks: [] },
+  {
+    name: "student-task-detail",
+    envPath: "CQ_E2E_TASK_OPEN_PATH",
+    auth: "student",
+    // Probe proof (follow-up run): the page's only candidate, its
+    // .deadline-line, renders "领取后 4320 分钟内提交" — derived from the
+    // seeded task's fixed RELATIVE duration, deterministic across runs.
+    masks: [],
+  },
+  {
+    name: "student-claim",
+    envPath: "CQ_E2E_CLAIM_PATH",
+    auth: "student",
+    masks: [
+      {
+        id: ".assignment-item~领取时间 .assignment-value",
+        why: "领取时间 = claimed_at — absolute clock (ClaimDetailView.tsx)",
+        locate: (page) =>
+          page
+            .locator(".assignment-item", { hasText: "领取时间" })
+            .locator(".assignment-value"),
+      },
+      {
+        id: ".deadline-line",
+        why: "截止…· 还剩… — relative-clock countdown (ClaimDetailView.tsx)",
+        locate: (page) => page.locator(".deadline-line"),
+      },
+      {
+        id: ".progress-note",
+        why: "grace note 超过截止时间后至 <grace> 仍可提交 — absolute clock (ClaimDetailView.tsx)",
+        locate: (page) => page.locator(".progress-note"),
+      },
+    ],
+  },
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
   { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
   {
@@ -194,8 +239,14 @@ async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
 
 for (const shot of SHOTS) {
   test(shot.name, async ({ page }) => {
+    const path =
+      shot.envPath === undefined ? shot.path : process.env[shot.envPath];
+    test.skip(
+      path === undefined || path === "",
+      `world did not export ${shot.envPath ?? "path"}`,
+    );
     await authenticate(page, shot.auth);
-    await page.goto(`${BASE_URL}${shot.path}`);
+    await page.goto(`${BASE_URL}${path}`);
     // The capture harness's wrong-artifact guard: the shot is only valid
     // if THIS pass rendered the page's own header and (for authenticated
     // surfaces) the desktop sidebar landmark.
