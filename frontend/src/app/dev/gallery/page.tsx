@@ -6,9 +6,10 @@
  *
  * Render rules (the page's reason to exist is fidelity, not novelty):
  * - it composes ONLY existing global classes (globals.css) and shared
- *   components (TaskCard, the sectionStates primitives, navIcons
- *   glyphs) — no gallery-local styling exists or may be added (inline
- *   controls are separated by plain markup whitespace, not CSS);
+ *   components (TaskCard, RewardCard via the client RewardTileGallery
+ *   wrapper, the sectionStates primitives, navIcons glyphs) — no
+ *   gallery-local styling exists or may be added (inline controls are
+ *   separated by plain markup whitespace, not CSS);
  * - fixture data is inline and fully deterministic (no clocks, no
  *   randomness) so the pixel baseline is stable.
  *
@@ -47,6 +48,8 @@ import {
 import { TaskCard } from "@/features/tasks/TaskCard";
 import type { TaskCardDto } from "@/features/tasks/api";
 import { rarityView, type RarityKey } from "@/features/tasks/display";
+
+import { RewardTileGallery } from "./RewardTileGallery";
 
 const RARITIES: readonly RarityKey[] = ["NORMAL", "RARE", "EPIC", "LEGENDARY"];
 
@@ -185,6 +188,8 @@ export default function DevGalleryPage() {
           ))}
         </div>
       </section>
+
+      <RewardTileGallery />
 
       <section className="section" aria-label="表单控件">
         <h2 className="section-title">表单控件</h2>

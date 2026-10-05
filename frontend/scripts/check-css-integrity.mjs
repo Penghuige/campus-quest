@@ -59,7 +59,6 @@ const ALLOWED_UNDEFINED = new Set([
   "ok",         // outcome.tone === "ok": TaskRating.tsx:145
   "verified",   // view.state === "verified": AccountSettings.tsx:531
   "unverified", // view.state === "unverified": AccountSettings.tsx:533
-  "redeemable", // view.state === "redeemable": RewardsView.tsx:228
 ]);
 
 for (const [cls, where] of used) {

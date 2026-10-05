@@ -28,6 +28,9 @@ test("dev gallery is production-gated and covers the primitive matrix", () => {
     "task-card-rarity",
     "SectionSkeleton",
     "EmptyState",
+    // Plan-13 T1: the reward tile's CTA-state matrix (the e2e world can
+    // never render 积分不足 / 缺货 — gallery fixtures carry them).
+    "RewardTileGallery",
   ])
     assert.ok(src.includes(cls), `gallery covers ${cls}`);
 });

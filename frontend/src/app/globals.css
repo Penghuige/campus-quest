@@ -2552,7 +2552,74 @@ body {
     0 2px 8px oklch(26% 0.015 75 / 0.07);
 }
 
-/* Reward shelf grid + card (§8 card archetype; token-only values). */
+/* Reward shelf grid + card (§8 card archetype; token-only values).
+   Plan-13 T1: tiles are discrete objects — icon + name lead, the cost is
+   the primary signal, stock/window stay quiet metadata, and the CTA
+   carries the state (primary / disabled-with-distance / quiet
+   unavailable). */
+.rewards-view {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 42rem;
+  align-content: start;
+}
+
+@media (min-width: 48rem) {
+  /* The .task-detail 56rem step: the page uses the desktop viewport
+     instead of hugging a narrow orphan column. */
+  .rewards-view {
+    max-width: 56rem;
+  }
+}
+
+/* Balance hero (plan-11 P2: ONE dominant spendable balance + next-reward
+   progress; earned/frozen/debt quiet). Page-ground grammar shared with
+   the dashboard stat band — no card. The stat line is ONE baseline row
+   at every width (mobile included: label · number · unit). */
+.balance-hero {
+  display: grid;
+  gap: var(--space-3);
+  align-items: end;
+  justify-items: start;
+}
+
+@media (min-width: 48rem) {
+  .balance-hero-with-goal {
+    grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr);
+    gap: var(--space-4) var(--space-7);
+  }
+}
+
+.balance-hero-main {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.balance-hero-stat {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+
+.balance-hero-unit {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.balance-quiet {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-hero-goal {
+  width: 100%;
+  margin-top: 0;
+}
+
 .reward-grid {
   display: grid;
   gap: var(--space-3);
@@ -2576,11 +2643,24 @@ body {
   border-radius: var(--radius-md);
 }
 
-.reward-card-top {
+.reward-card-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Restrained object identity: the shared GiftIcon glyph on a quiet chip
+   (no new assets, no emoji; gamification accent stays local). */
+.reward-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
 }
 
 .reward-card-title {
@@ -2599,6 +2679,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.reward-price {
+  margin: 0;
+}
+
+.reward-cost {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  color: var(--foreground);
+}
+
 .reward-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -2607,9 +2697,22 @@ body {
   color: var(--muted-foreground);
 }
 
-.reward-cost {
-  font-weight: 600;
-  color: var(--foreground);
+/* 缺货 / 窗口关闭: the unavailable state is quiet text where the CTA
+   would be — no disabled button to knock on, no badge. */
+.reward-unavailable {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--subtle-foreground);
+}
+
+/* 积分不足: the disabled CTA's quiet reason (the wallet's own spendable
+   figure, never a client re-judgment). */
+.reward-cta-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Native dialog: the platform's focus containment + Escape handling.

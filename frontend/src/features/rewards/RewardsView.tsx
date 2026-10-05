@@ -1,9 +1,15 @@
 "use client";
 /**
  * Rewards page island (spec §16/§16.2, §42; patterns §8): the wallet
- * strip (available / earned / spendable with the freeze note), the
- * reward shelf (server-side window/stock verdicts), and the redeem
- * dialog orchestration.
+ * hero (ONE dominant spendable balance + the next-reward progress strip;
+ * plan-13 T1 / plan-11 P2 ruling), the reward shelf (server-side
+ * window/stock verdicts), and the redeem dialog orchestration.
+ *
+ * Hierarchy contract (plan-11 P2, owner 2026-09-24): the spendable
+ * figure is the page's first read; 可用/累计/冻结/负债 ride as quiet
+ * metadata; each shelf tile leads with icon + name + cost, keeps
+ * availability/stock quiet, and its CTA carries the state — primary 兑换
+ * / disabled-with-distance 积分不足 / quiet unavailable 缺货·窗口关闭.
  *
  * Boundary rule (patterns §3/§7): a successful redemption NEVER mutates
  * local wallet/shelf figures — `onRedeemed` refetches both endpoints
@@ -15,6 +21,7 @@
  */
 import { useState } from "react";
 
+import { GiftIcon } from "@/components/shell/navIcons";
 import {
   EmptyState,
   SectionCardsSkeleton,
@@ -28,10 +35,13 @@ import {
   myWallet,
   type RedemptionDto,
   type RewardItemDto,
+  type WalletDto,
 } from "@/features/points/api";
 import { RedeemDialog } from "@/features/rewards/RedeemDialog";
 import {
+  nextRewardView,
   redemptionStatusView,
+  rewardCtaView,
   rewardShelfView,
 } from "@/features/rewards/redeemView";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
@@ -48,13 +58,17 @@ export function RewardsView() {
   const [dialogReward, setDialogReward] = useState<RewardItemDto | null>(null);
   const [latest, setLatest] = useState<LatestRedemption | null>(null);
 
+  const spendablePoints =
+    wallet.state.status === "ready" ? wallet.state.data.spendable_points : null;
+
   return (
-    <>
+    <div className="rewards-view">
       <WalletSection
         status={wallet.state.status}
         error={wallet.state.status === "error" ? wallet.state.error : null}
         data={wallet.state.status === "ready" ? wallet.state.data : null}
         retry={wallet.retry}
+        shelfItems={shelf.state.status === "ready" ? shelf.state.data.items : null}
       />
       {latest !== null ? <LatestRedemptionPanel latest={latest} /> : null}
       <ShelfSection
@@ -62,17 +76,14 @@ export function RewardsView() {
         error={shelf.state.status === "error" ? shelf.state.error : null}
         items={shelf.state.status === "ready" ? shelf.state.data.items : null}
         retry={shelf.retry}
+        spendablePoints={spendablePoints}
         onRedeem={setDialogReward}
       />
       {dialogReward !== null ? (
         <RedeemDialog
           key={dialogReward.id}
           reward={dialogReward}
-          spendablePoints={
-            wallet.state.status === "ready"
-              ? wallet.state.data.spendable_points
-              : null
-          }
+          spendablePoints={spendablePoints}
           open
           onClose={() => setDialogReward(null)}
           onRedeemed={(redemption, item) => {
@@ -84,52 +95,88 @@ export function RewardsView() {
           }}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
-// --- wallet strip -------------------------------------------------------------------
+// --- wallet hero ------------------------------------------------------------------
 
 function WalletSection({
   status,
   error,
   data,
   retry,
+  shelfItems,
 }: {
   status: "loading" | "ready" | "error";
   error: unknown;
-  data: {
-    available_points: number;
-    earned_points: number;
-    spendable_points: number;
-    point_debt: number;
-  } | null;
+  data: WalletDto | null;
   retry: () => void;
+  /** Ready-shelf items feeding the next-reward strip; null until the
+   * shelf's own verdict arrives (no strip without it — the absence of a
+   * purchasable item is a server-verdicted fact). */
+  shelfItems: RewardItemDto[] | null;
 }) {
   const frozen =
     data === null
       ? 0
       : Math.max(data.available_points - data.spendable_points, 0);
+  const goal =
+    data !== null && shelfItems !== null
+      ? nextRewardView(data.spendable_points, shelfItems)
+      : null;
   return (
     <section className="section" aria-label="积分余额">
       <SectionHeading title="积分余额" />
       {status === "loading" ? <SectionSkeleton lines={2} /> : null}
       {status === "error" ? <SectionError error={error} onRetry={retry} /> : null}
       {status === "ready" && data !== null ? (
-        <div className="panel">
-          <div className="metric-row">
-            <div className="metric">
-              <span className="metric-label">可用积分</span>
-              <span className="metric-value">{data.available_points}</span>
+        <>
+          {/* The hero lives on the PAGE GROUND (the dashboard stat band's
+              grammar): one dominant number, quiet secondary facts — no
+              equal-weight metric row, no card. */}
+          <div
+            className={
+              goal !== null ? "balance-hero balance-hero-with-goal" : "balance-hero"
+            }
+          >
+            <div className="balance-hero-main">
+              <p className="balance-hero-stat">
+                <span className="metric-label">可花费</span>
+                <span className="stat-focus">{data.spendable_points}</span>
+                <span className="balance-hero-unit">积分</span>
+              </p>
+              <p className="balance-quiet">
+                可用积分 {data.available_points} · 累计获得 {data.earned_points}
+              </p>
             </div>
-            <div className="metric">
-              <span className="metric-label">累计获得</span>
-              <span className="metric-value">{data.earned_points}</span>
-            </div>
-            <div className="metric">
-              <span className="metric-label">可花费</span>
-              <span className="metric-value">{data.spendable_points}</span>
-            </div>
+            {goal !== null ? (
+              <div className="goal-rail-block balance-hero-goal">
+                <div
+                  className="goal-rail"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={goal.rewardCost}
+                  aria-valuenow={Math.min(data.spendable_points, goal.rewardCost)}
+                  aria-label={`距离兑换「${goal.rewardName}」的进度`}
+                >
+                  <div
+                    className="goal-rail-fill"
+                    style={{ width: `${Math.round(goal.ratio * 100)}%` }}
+                  />
+                  <span
+                    className="goal-rail-node"
+                    data-reached={goal.remainingPoints === null}
+                    aria-hidden="true"
+                  />
+                </div>
+                <p className="progress-note">
+                  {goal.remainingPoints === null
+                    ? `「${goal.rewardName}」（${goal.rewardCost} 积分）现在就可以兑换`
+                    : `距兑换「${goal.rewardName}」还差 ${goal.remainingPoints} 积分`}
+                </p>
+              </div>
+            ) : null}
           </div>
           {data.point_debt > 0 ? (
             <p className="progress-note">
@@ -141,7 +188,7 @@ function WalletSection({
               有 {frozen} 积分冻结在兑换申请中，兑换以可花费余额为准
             </p>
           ) : null}
-        </div>
+        </>
       ) : null}
     </section>
   );
@@ -180,12 +227,17 @@ function ShelfSection({
   error,
   items,
   retry,
+  spendablePoints,
   onRedeem,
 }: {
   status: "loading" | "ready" | "error";
   error: unknown;
   items: RewardItemDto[] | null;
   retry: () => void;
+  /** The wallet's server-verbatim spendable figure; null until the
+   * wallet loads (tiles then keep the pre-plan-13 enabled behavior —
+   * the server's typed conflict teaches). */
+  spendablePoints: number | null;
   onRedeem: (item: RewardItemDto) => void;
 }) {
   return (
@@ -202,7 +254,12 @@ function ShelfSection({
         ) : (
           <ul className="reward-grid">
             {items.map((item) => (
-              <RewardCard key={item.id} item={item} onRedeem={onRedeem} />
+              <RewardCard
+                key={item.id}
+                item={item}
+                spendablePoints={spendablePoints}
+                onRedeem={onRedeem}
+              />
             ))}
           </ul>
         )
@@ -211,44 +268,67 @@ function ShelfSection({
   );
 }
 
-function RewardCard({
+/**
+ * One shelf tile. Exported for the dev-only component gallery's fixture
+ * composition of the CTA states (plan-13 T1): the e2e world's single
+ * stocked item can never show 积分不足 / 缺货, so those variants are
+ * reviewable (and pixel-baselined) only through the gallery.
+ */
+export function RewardCard({
   item,
+  spendablePoints,
   onRedeem,
 }: {
   item: RewardItemDto;
+  spendablePoints: number | null;
   onRedeem: (item: RewardItemDto) => void;
 }) {
   const view = rewardShelfView(item);
+  const cta = rewardCtaView(item, spendablePoints);
   return (
     <li className="reward-card">
-      <div className="reward-card-top">
-        <h3 className="reward-card-title">{item.name}</h3>
-        <span
-          className={
-            view.state === "redeemable" ? "badge badge-success" : "badge"
-          }
-        >
-          {view.stateLabel}
+      <div className="reward-card-head">
+        <span className="reward-icon" aria-hidden="true">
+          <GiftIcon />
         </span>
+        <h3 className="reward-card-title">{item.name}</h3>
       </div>
       {item.description !== null ? (
         <p className="reward-card-desc">{item.description}</p>
       ) : null}
-      <div className="reward-card-meta">
+      {/* Cost is the tile's primary signal; stock/window stay quiet
+          metadata (both are the server's own verdicts verbatim). */}
+      <p className="reward-price">
         <span className="reward-cost meta-num">{item.point_cost} 积分</span>
-        {view.stockLabel !== null ? <span>{view.stockLabel}</span> : null}
-        {view.windowLabel !== null ? <span>{view.windowLabel}</span> : null}
-      </div>
-      {/* Spendability is the server's call (patterns §3): the button
-          stays enabled on redeemable items and typed conflicts teach. */}
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => onRedeem(item)}
-        disabled={view.state !== "redeemable"}
-      >
-        兑换
-      </button>
+      </p>
+      {view.stockLabel !== null || view.windowLabel !== null ? (
+        <div className="reward-card-meta">
+          {view.stockLabel !== null ? <span>{view.stockLabel}</span> : null}
+          {view.windowLabel !== null ? <span>{view.windowLabel}</span> : null}
+        </div>
+      ) : null}
+      {cta.kind === "unavailable" ? (
+        // 缺货 / 窗口关闭: quiet unavailable treatment — no button to
+        // knock on; the state text + the quiet metadata carry it.
+        <p className="reward-unavailable">{view.stateLabel}</p>
+      ) : (
+        <>
+          {/* Spendability is the server's call (patterns §3): only the
+              wallet's OWN spendable figure disables the button, and any
+              stale-wallet attempt still meets the typed conflict. */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => onRedeem(item)}
+            disabled={cta.kind === "insufficient"}
+          >
+            兑换
+          </button>
+          {cta.kind === "insufficient" ? (
+            <p className="reward-cta-note">还差 {cta.missingPoints} 积分</p>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }
