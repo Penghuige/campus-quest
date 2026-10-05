@@ -276,7 +276,16 @@ def test_user_public_excludes_private_fields() -> None:
     # the hash, the raw phone, and every other internal column can never
     # leak into a response even if the ORM model grows them.
     exposed = set(UserPublic.model_fields)
-    assert exposed == {"id", "username", "nickname", "role", "status"}
+    # spec amendment D4: ``has_avatar`` is deliberately public (a flag,
+    # never the object key); every private column stays unrepresentable.
+    assert exposed == {
+        "id",
+        "username",
+        "nickname",
+        "role",
+        "status",
+        "has_avatar",
+    }
     assert "password_hash" not in exposed
     assert "phone_e164" not in exposed
     assert "email_normalized" not in exposed

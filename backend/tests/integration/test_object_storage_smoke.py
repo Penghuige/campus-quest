@@ -404,3 +404,44 @@ def test_missing_object_semantics(storage: ObjectStorage, tmp_path: Path) -> Non
     with pytest.raises(urllib.error.HTTPError) as caught:
         _get(download.url)
     assert caught.value.code in (403, 404)
+
+
+def test_avatar_store_read_replace_delete_roundtrip(
+    storage: ObjectStorage,
+) -> None:
+    """The avatar channel's two port methods against the real provider
+    (spec amendment D2/D3; review suggestion): server-side write, whole
+    read, replacement as a NEW key, and the §27 missing-read/delete
+    semantics — the byte proxy's failure modes, not just its happy path.
+    """
+    user_id = uuid.uuid4()
+    payload = b"\x89PNG\r\n\x1a\n" + b"avatar-smoke" * 8
+
+    first = storage.store_avatar(
+        user_id=user_id, content=payload, content_type="image/png"
+    )
+    assert first.startswith(f"avatars/{user_id}/") and first.endswith(".png")
+    read_back = storage.read_object(object_key=first)
+    assert read_back.content == payload
+    assert read_back.content_type == "image/png"
+
+    # Replacement mints a fresh key (never a presigned rewrite) and the
+    # old object follows the §27 delete semantics exactly.
+    second = storage.store_avatar(
+        user_id=user_id, content=payload + b"v2", content_type="image/png"
+    )
+    assert second != first and second.startswith(f"avatars/{user_id}/")
+    storage.delete_object(object_key=first)
+    with pytest.raises(FileNotFoundError):
+        storage.read_object(object_key=first)
+    with pytest.raises(FileNotFoundError):
+        storage.delete_object(object_key=first)
+
+    storage.delete_object(object_key=second)
+
+    # An off-whitelist content type is a programming error (the service
+    # validated magic bytes upstream), even against the real provider.
+    with pytest.raises(ValueError):
+        storage.store_avatar(
+            user_id=user_id, content=b"...", content_type="image/svg+xml"
+        )

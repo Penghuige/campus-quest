@@ -393,6 +393,52 @@
         ]
       }
     },
+    "/api/v1/me/avatar": {
+      "post": {
+        "summary": "Upload Avatar",
+        "description": "Set or replace the account avatar (spec amendment D2).\n\nThe request body IS the image bytes — no multipart envelope: the\nserver derives type from the magic bytes and the client sends its\nBlob as the body, which keeps the read bounded by the size cap\nduring streaming (a multipart parser would spool first and check\nlater) and adds no parsing dependency for a body with no fields.",
+        "operationId": "upload_avatar_api_v1_me_avatar_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePublic"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Delete Avatar",
+        "description": "Remove the account avatar (spec amendment D5); NULL falls back to\nthe frontend's generated-initial default.",
+        "operationId": "delete_avatar_api_v1_me_avatar_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePublic"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/phone/change": {
       "post": {
         "summary": "Request Phone Change",
@@ -637,6 +683,50 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/users/{user_id}/avatar": {
+      "get": {
+        "summary": "Get User Avatar",
+        "description": "One account's avatar bytes, login-gated (spec amendment D3).\n\n404 covers both \"no such user\" and \"user has no avatar\" — probing\nwhich UUIDs exist is not a surface this endpoint offers.",
+        "operationId": "get_user_avatar_api_v1_users__user_id__avatar_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/auth/staff/login": {
@@ -7076,6 +7166,10 @@
           "status": {
             "$ref": "#/components/schemas/UserStatus"
           },
+          "has_avatar": {
+            "type": "boolean",
+            "title": "Has Avatar"
+          },
           "phone_e164": {
             "anyOf": [
               {
@@ -7118,6 +7212,7 @@
           "nickname",
           "role",
           "status",
+          "has_avatar",
           "phone_e164",
           "email_normalized",
           "email_verified_at"
@@ -10558,6 +10653,10 @@
           },
           "status": {
             "$ref": "#/components/schemas/UserStatus"
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "title": "Has Avatar"
           }
         },
         "type": "object",
@@ -10566,7 +10665,8 @@
           "username",
           "nickname",
           "role",
-          "status"
+          "status",
+          "has_avatar"
         ],
         "title": "UserPublic",
         "description": "Public account view returned to the account owner (spec §40).\n\nThe owner sees their own username/student number; no other surface\nexposes it. Status is included because ACTIVE (vs PENDING_PHONE)\nis the registration outcome clients branch on."

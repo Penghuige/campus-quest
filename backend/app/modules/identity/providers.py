@@ -33,9 +33,11 @@ from app.core.config import Settings, get_settings
 from app.core.security import AccessTokenCodec, hash_password
 from app.db.session import get_db_session
 from app.integrations.email import EmailSender, build_email_sender
+from app.integrations.object_storage import ObjectStorage
 from app.integrations.rate_limit import RateLimiter, RedisFixedWindowLimiter
 from app.integrations.sms import SmsSender, build_sms_sender
 from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.avatar_service import AvatarService
 from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
@@ -208,8 +210,33 @@ def get_phone_region(
     return settings.phone_default_region
 
 
+def get_object_storage() -> ObjectStorage:
+    """Object-storage adapter factory — identity's own composition seam.
+
+    The same production binding and rationale as the submissions
+    factory (``submissions.router.get_object_storage``): S3 adapter
+    from ``Settings``, fail-closed on misconfiguration, tests override
+    with the in-memory fake through ``dependency_overrides``. Duplicated
+    here rather than imported because identity is the lower-level
+    module — importing submissions would invert the module arrows for
+    one provider function.
+    """
+    from app.integrations.object_storage_s3 import S3ObjectStorage
+
+    return S3ObjectStorage(get_settings())
+
+
+def get_avatar_service(
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+) -> AvatarService:
+    # The stateless G12 writer, defaulted in the constructor like every
+    # audited identity service (the account_admin_service wiring rule).
+    return AvatarService(storage=storage)
+
+
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 OtpServiceDep = Annotated[OtpChallengeService, Depends(get_otp_service)]
 SessionsDep = Annotated[SessionService, Depends(get_session_service)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
+StorageDep = Annotated[ObjectStorage, Depends(get_object_storage)]

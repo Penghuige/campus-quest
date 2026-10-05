@@ -203,6 +203,11 @@ class UserPublic(BaseModel):
     nickname: str
     role: Role
     status: UserStatus
+    #: Whether the account holds a stored avatar (spec amendment D4).
+    #: A boolean, never the object key: the display path is the
+    #: ``/users/{id}/avatar`` byte proxy, and the key itself is
+    #: storage plumbing that must not surface in any DTO.
+    has_avatar: bool
 
     @classmethod
     def from_user(cls, user: User) -> UserPublic:
@@ -214,6 +219,7 @@ class UserPublic(BaseModel):
             nickname=user.nickname,
             role=Role(user.role),
             status=UserStatus(user.status),
+            has_avatar=user.avatar_object_key is not None,
         )
 
 
@@ -237,6 +243,7 @@ class MePublic(UserPublic):
             nickname=user.nickname,
             role=Role(user.role),
             status=UserStatus(user.status),
+            has_avatar=user.avatar_object_key is not None,
             phone_e164=user.phone_e164,
             email_normalized=user.email_normalized,
             email_verified_at=user.email_verified_at,

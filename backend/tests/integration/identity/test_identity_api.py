@@ -269,6 +269,8 @@ async def test_student_flow_whitelist_otp_register_login_me(
         "nickname": _NICKNAME,  # normalized by the service
         "role": "STUDENT",
         "status": "ACTIVE",
+        # spec amendment D4: the avatar capability flag (never the key).
+        "has_avatar": False,
     }
 
     logged_in = await client.post(
@@ -758,6 +760,7 @@ async def test_nickname_patch_updates_and_returns_the_owner_view(
         "nickname",
         "role",
         "status",
+        "has_avatar",
         "phone_e164",
         "email_normalized",
         "email_verified_at",

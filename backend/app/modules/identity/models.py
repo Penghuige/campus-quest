@@ -99,6 +99,11 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str] = mapped_column(String(255))
+    # The avatar's object-storage key (spec amendment D1), or NULL when
+    # the account shows the frontend's generated-initial default. The
+    # key is storage-plumbing only: never in any DTO, log, or DOM — the
+    # display path is the /users/{id}/avatar byte proxy (D3).
+    avatar_object_key: Mapped[str | None] = mapped_column(Text)
     phone_e164: Mapped[str | None] = mapped_column(String(32))
     email_normalized: Mapped[str | None] = mapped_column(String(320))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
