@@ -136,3 +136,17 @@ playwright-e2e:
 release-gate: release-test-db backend-unit backend-integration backend-worker \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e
+
+# --- Plan 12 task 9: pixel visual regression --------------------------------
+#
+# Opt-in and deliberately NOT part of release-gate/ci.yml yet: pixel
+# stability across runner environments is proven first (a Phase-C task
+# promotes it). Baselines at frontend/e2e/visual-regression.spec.ts-snapshots/
+# are Linux-authoritative and committed (reviewed like code); regenerate
+# deliberately with CQ_VISUAL_UPDATE=1 and re-review every changed PNG.
+# Needs the compose dependency stack; the Playwright config orchestrates
+# both dev servers (override CQ_E2E_BASE_URL / CQ_E2E_API_URL together
+# when 3000/8000 are occupied — same rule as playwright-e2e).
+.PHONY: visual-regression
+visual-regression:
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npm run test:e2e:visual

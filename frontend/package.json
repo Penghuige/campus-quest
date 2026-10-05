@@ -12,7 +12,8 @@
     "test": "npm run test:unit",
     "api:types": "openapi-typescript \"${OPENAPI_URL:-http://localhost:8000/openapi.json}\" -o src/lib/api/schema.d.ts",
     "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:visual": "playwright test visual-regression.spec.ts ${CQ_VISUAL_UPDATE:+--update-snapshots}"
   },
   "dependencies": {
     "next": "^16.3.5",

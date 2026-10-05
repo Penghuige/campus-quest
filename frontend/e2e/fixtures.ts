@@ -27,6 +27,7 @@
  * module-private by design — so out-of-page logins stay useful for
  * seeding calls only, never for authenticated page navigation.
  */
+import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import {
@@ -173,6 +174,75 @@ type StorageCookie = {
 /** Where this run's resumable student session lives. */
 function sessionStatePath(): string {
   return `/tmp/cq-e2e-state-${process.env.CQ_E2E_RUN ?? "adhoc"}.json`;
+}
+
+// --- staff login (shared by visual-capture and visual-regression) -------------
+//
+// Moved here from visual-capture.spec.ts by plan-12 task 9 so the pixel
+// suite logs staff in through the SAME code path the evidence harness
+// uses — one TOTP implementation, one form-driving discipline.
+
+export const STAFF_LOGIN_URL =
+  process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
+
+/** RFC 4648 base32 (the TOTP secret alphabet) -> bytes. */
+function base32Decode(input: string): Buffer {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const char of input.toUpperCase().replace(/=+$/, "")) {
+    const index = alphabet.indexOf(char);
+    if (index === -1) {
+      throw new Error(`non-base32 character in secret: ${char}`);
+    }
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
+/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits). */
+function totpCode(secret: string, atMs: number = Date.now()): string {
+  const counter = Math.floor(atMs / 30_000);
+  const block = Buffer.alloc(8);
+  block.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", base32Decode(secret)).update(block).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+/** Staff login through the REAL form (the teacher.spec.ts retry loop). */
+export async function staffLogin(
+  page: Page,
+  credentials: string,
+  totpSecret: string,
+): Promise<void> {
+  const [email, password] = credentials.split(":");
+  await page.goto(STAFF_LOGIN_URL);
+  await page.getByLabel("邮箱").fill(email);
+  await page.getByLabel("密码").fill(password);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    try {
+      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      return;
+    } catch {
+      // A slow hop can carry the submit across the step boundary —
+      // recompute the code exactly like a real user would.
+    }
+  }
+  await expect(page).not.toHaveURL(/\/staff\/login/);
 }
 
 /** The three-role account contract consumed by happy-path specs (each
