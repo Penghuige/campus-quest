@@ -43,11 +43,11 @@ const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
 
 test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
 
+/** Scoped to the claim-flow describe ONLY (r4 M2): the defect-#5 card
+ * tests below need just CQ_E2E_STUDENT + the /tasks square, so a
+ * module-level skip here would silently unwatch them under the legal
+ * "CQ_E2E=1 + STUDENT without TASK_URL" configuration. */
 const claimFlowReady = TASK_URL !== undefined && STUDENT !== undefined;
-test.skip(
-  !claimFlowReady,
-  "claim flow needs CQ_E2E_TASK_URL (a published task with AVAILABLE assignments) and CQ_E2E_STUDENT (seeded credentials); Plan 10's fixture provides both.",
-);
 
 /** Open the shared student's session through the suite's resume chain
  * (the backend's auth:login window — 10 form attempts / 5 min per
@@ -58,6 +58,10 @@ async function loginAsStudent(page: import("@playwright/test").Page): Promise<vo
 }
 
 test.describe("student task claim", () => {
+  test.skip(
+    !claimFlowReady,
+    "claim flow needs CQ_E2E_TASK_URL (a published task with AVAILABLE assignments) and CQ_E2E_STUDENT (the seeded account); Plan 10's fixture provides both.",
+  );
   test.beforeEach(async ({ page }) => {
     await loginAsStudent(page);
   });
@@ -125,5 +129,92 @@ test.describe("student task claim", () => {
     await expect(page.getByRole("alert")).toContainText("当前没有可领取的任务单元");
     // Retry-friendly: the button re-enables so another attempt is possible.
     await expect(page.getByRole("button", { name: "领取任务" })).toBeEnabled();
+  });
+});
+
+/* --- Defect #5 (QA 2026-09-30): task-card affordances on the square ---------- */
+
+test.describe("task card affordances (defect #5)", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsStudent(page);
+    await page.goto(`${BASE_URL}/tasks`);
+    await expect(page.locator(".task-card").first()).toBeVisible();
+  });
+
+  test("every card carries its tier: data-rarity + shaped badge glyph + label", async ({ page }) => {
+    const cards = page.locator(".task-card");
+    const count = await cards.count();
+    for (let i = 0; i < count; i += 1) {
+      const card = cards.nth(i);
+      const rarity = await card.getAttribute("data-rarity");
+      // rarityView's canonical keys only (unknown values normalize).
+      expect(["NORMAL", "RARE", "EPIC", "LEGENDARY"]).toContain(rarity);
+      const badge = card.locator(".task-card-rarity");
+      await expect(badge).toHaveAttribute("data-rarity", rarity!);
+      // The shape glyph rides inside the badge next to the text label.
+      await expect(badge.locator("svg")).toHaveCount(1);
+      await expect(badge).toContainText(
+        rarity === "NORMAL" ? "普通"
+          : rarity === "RARE" ? "稀有"
+          : rarity === "EPIC" ? "史诗"
+          : "传说",
+      );
+    }
+  });
+
+  test("the title reads as a link at rest (quiet underline, defect #5.3)", async ({ page }) => {
+    const title = page.locator(".task-card .task-card-title a").first();
+    await expect(title).toBeVisible();
+    await expect(title).toHaveCSS("text-decoration-line", "underline");
+    // And it still points at the task's own detail route.
+    const href = await title.getAttribute("href");
+    expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
+  });
+
+  test("focusing the title outlines the whole card in primary (keyboard selection)", async ({ page }) => {
+    const card = page.locator(".task-card").first();
+    const title = card.locator(".task-card-title a");
+    // S1 (r4): settle the resting border first (entrance transitions
+    // are done long before, but be explicit), then read the token's
+    // COMPUTED value through a probe element — comparing serialized
+    // colors avoids string-matching the oklch token text.
+    const before = await card.evaluate((node) => getComputedStyle(node).borderColor);
+    const primary = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--primary)";
+      document.body.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    expect(primary).not.toBe(before);
+    // A programmatic focus() alone does not light :focus-visible —
+    // first establish the KEYBOARD interaction modality (one real Tab),
+    // then move focus; Chromium's heuristic then matches the selector.
+    await page.keyboard.press("Tab");
+    await title.focus();
+    // The card border TRANSITIONS (140ms) — poll for the settled
+    // value, then demand EQUALITY with --primary: :focus-within alone
+    // (the pre-existing rule) only reaches border-strong, so a deleted
+    // focus-visible rule cannot satisfy this assertion.
+    await expect
+      .poll(() => card.evaluate((node) => getComputedStyle(node).borderColor))
+      .toBe(primary);
+  });
+
+  test("the rarity glyph fills and centers its 20-unit viewBox", async ({ page }) => {
+    // Codex P2 regression pin: the shapes must be drawn around the
+    // StrokeIcon (10, 10) center, not a corner of the 0 0 20 20 box.
+    const shape = page.locator(".task-card-rarity svg path, .task-card-rarity svg circle").first();
+    const box = await shape.evaluate((el) => {
+      const bbox = (el as SVGGraphicsElement).getBBox();
+      return { cx: bbox.x + bbox.width / 2, cy: bbox.y + bbox.height / 2, w: bbox.width, h: bbox.height };
+    });
+    expect(box.w).toBeGreaterThanOrEqual(10);
+    expect(box.h).toBeGreaterThanOrEqual(10);
+    expect(box.cx).toBeGreaterThan(8.5);
+    expect(box.cx).toBeLessThan(11.5);
+    expect(box.cy).toBeGreaterThan(8.5);
+    expect(box.cy).toBeLessThan(11.5);
   });
 });
