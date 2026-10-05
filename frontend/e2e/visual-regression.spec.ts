@@ -30,20 +30,36 @@
  * fullPage + maxDiffPixelRatio 0.01; Playwright's toHaveScreenshot
  * defaults already disable animations (finite fast-forwarded, infinite
  * frozen at their initial state — the gallery skeleton's shimmer) and
- * hide the caret. The mask list covers the remaining clock/id-volatile
- * regions until the world grows a fixed clock:
- * - .deadline-line / .progress-note (the briefed relative-clock text);
- * - .claim-deadline (the dashboard claim-row "截止 …· 还剩 …" line —
- *   the same relative-clock text under a different existing class,
- *   DashboardView.tsx);
- * - .hero-line bearing 截止 (the dashboard HERO's deadline copy;
- *   .hero-line also carries the deterministic step strip, so the mask
- *   keys on the frozen "截止" copy, not the shared class);
- * - <time> elements (absolute timestamps: admin created_at, review
- *   submitted_at — same clock-volatile rationale);
- * - span.mono[title] (the admin user-id cells: run-unique UUIDs).
+ * hide the caret.
+ *
+ * Masks — how they actually work here (fix-round-1 correction; the
+ * earlier "masks apply at comparison only" note was wrong):
+ * - a mask paints an opaque box over the matched element's box AT
+ *   CAPTURE TIME — the produced PNG (baseline write or actual) carries
+ *   the box, which is why the stored baselines show pink strips;
+ * - `--update-snapshots` rewrites a baseline only when the comparison
+ *   mismatches, so adding a mask later does NOT regenerate an existing
+ *   baseline — the stale file must be deleted and regenerated (that is
+ *   how the hero-deadline box initially went missing from
+ *   student-dashboard-linux.png while comparisons still passed);
+ * - a mask whose locator matches NOTHING is a silent no-op, so every
+ *   declared mask carries an engagement assertion (count > 0, hard
+ *   fail) — an inert mask can never pass unnoticed again.
+ *
+ * Masks are scoped PER SHOT: a shot lists only the volatile regions its
+ * own page renders (deterministic content stays visible and asserted —
+ * e.g. the dashboard's reward-progress note is fixed under fixed labels
+ * and must NOT be masked). The per-shot truth table below was measured
+ * by a live probe (fix-round-1, probe counts at capture state):
+ *   .deadline-line / .progress-note / .claim-deadline / .hero-line~截止 /
+ *   time / span.mono[title] match ONLY on:
+ *   student-dashboard (.progress-note=1 deterministic, .claim-deadline=1,
+ *   .hero-line~截止=1), teacher-reviews (time=1: submitted_at),
+ *   admin-users (time=10: created_at; span.mono[title]=10: user UUIDs).
+ * .deadline-line appears on no matrix page (task/claim detail are not
+ * in the matrix), so it is not masked anywhere.
  */
-import { type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
 
 import {
   BASE_URL,
@@ -70,15 +86,79 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 type ShotAuth = "anon" | "student" | "teacher" | "admin";
 
-const SHOTS: Array<{ name: string; path: string; auth: ShotAuth }> = [
-  { name: "auth-login", path: "/login", auth: "anon" },
-  { name: "dev-gallery", path: "/dev/gallery", auth: "anon" },
-  { name: "student-dashboard", path: "/", auth: "student" },
-  { name: "student-tasks", path: "/tasks", auth: "student" },
-  { name: "student-rankings", path: "/rankings", auth: "student" },
-  { name: "student-rewards", path: "/rewards", auth: "student" },
-  { name: "teacher-reviews", path: "/teacher/reviews", auth: "teacher" },
-  { name: "admin-users", path: "/admin/users", auth: "admin" },
+/** One masked volatile region. Every declared mask MUST engage on its
+ * shot — the test asserts count > 0 before capturing, so a mask that a
+ * UI change silently detaches (rename, removal) fails loudly instead of
+ * rotting into a no-op. */
+interface ShotMask {
+  /** Stable id used in assertion messages. */
+  id: string;
+  /** Why this region is volatile (what clock/id fact it hides). */
+  why: string;
+  locate: (page: Page) => Locator;
+}
+
+interface Shot {
+  name: string;
+  path: string;
+  auth: ShotAuth;
+  masks: ShotMask[];
+}
+
+const SHOTS: Shot[] = [
+  { name: "auth-login", path: "/login", auth: "anon", masks: [] },
+  { name: "dev-gallery", path: "/dev/gallery", auth: "anon", masks: [] },
+  {
+    name: "student-dashboard",
+    path: "/",
+    auth: "student",
+    masks: [
+      {
+        id: ".claim-deadline",
+        why: "claim-row 截止…· 还剩… — relative-clock text (DashboardView.tsx)",
+        locate: (page) => page.locator(".claim-deadline"),
+      },
+      {
+        id: ".hero-line~截止",
+        why: "hero deadline — the same relative-clock copy; .hero-line is shared with the deterministic step rail, so the mask keys on the frozen 截止 copy (DashboardView.tsx)",
+        locate: (page) => page.locator(".hero-line", { hasText: "截止" }),
+      },
+      // Deliberately NOT masked: the reward-progress .progress-note
+      // ("（50 积分）现在就可以兑换") is deterministic under fixed labels.
+    ],
+  },
+  { name: "student-tasks", path: "/tasks", auth: "student", masks: [] },
+  { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
+  { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
+  {
+    name: "teacher-reviews",
+    path: "/teacher/reviews",
+    auth: "teacher",
+    masks: [
+      {
+        id: "time",
+        why: "queue-row submitted_at — absolute clock (SubmissionReview.tsx)",
+        locate: (page) => page.locator("time"),
+      },
+    ],
+  },
+  {
+    name: "admin-users",
+    path: "/admin/users",
+    auth: "admin",
+    masks: [
+      {
+        id: "time",
+        why: "row created_at — absolute clock (AdminUserAccounts.tsx)",
+        locate: (page) => page.locator("time"),
+      },
+      {
+        id: "span.mono[title]",
+        why: "run-unique user UUIDs (the username .mono cell carries no title attr, so this selects only the id cells)",
+        locate: (page) => page.locator("span.mono[title]"),
+      },
+    ],
+  },
 ];
 
 async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
@@ -128,17 +208,23 @@ for (const shot of SHOTS) {
       });
     }
     await page.waitForTimeout(800);
+    // Engagement contract: every declared mask must match at least one
+    // element on THIS shot, at capture state. A zero-count mask is a
+    // silent no-op (nothing painted, nothing protected) — fail hard.
+    const masks: Locator[] = [];
+    for (const mask of shot.masks) {
+      const locator = mask.locate(page);
+      const count = await locator.count();
+      expect(
+        count,
+        `mask "${mask.id}" on ${shot.name} must engage (${mask.why}); got 0 elements`,
+      ).toBeGreaterThan(0);
+      masks.push(locator);
+    }
     await expect(page).toHaveScreenshot(`${shot.name}.png`, {
       fullPage: true,
       maxDiffPixelRatio: 0.01,
-      mask: [
-        page.locator(".deadline-line"),
-        page.locator(".progress-note"),
-        page.locator(".claim-deadline"),
-        page.locator(".hero-line", { hasText: "截止" }),
-        page.locator("time"),
-        page.locator("span.mono[title]"),
-      ],
+      mask: masks,
     });
   });
 }
