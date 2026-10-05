@@ -117,6 +117,13 @@ test.describe("sidebar collapse + resize (defect #3)", () => {
     const rail = page.locator(RAIL);
     expect(Math.round((await rail.boundingBox())!.width)).toBe(248);
 
+    // The NON-clamped narrowing step (r5 backlog pin): ArrowLeft from
+    // a mid-range value steps back by the same 16px — the clamped
+    // Left-at-min case below can never catch a broken narrow branch.
+    await page.keyboard.press("ArrowLeft");
+    await expect(resizer).toHaveAttribute("aria-valuenow", "232");
+    expect(Math.round((await rail.boundingBox())!.width)).toBe(232);
+
     // Home/End jump to the range bounds; clamped keys hold the bound.
     await page.keyboard.press("End");
     await expect(resizer).toHaveAttribute("aria-valuenow", "400");
