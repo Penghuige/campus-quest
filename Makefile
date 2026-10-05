@@ -21,7 +21,7 @@ lint-backend:
 
 verify: lint-backend
 	cd backend && uv run pytest -v
-	cd frontend && npm run typecheck && npm run lint && npm run build
+	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run build
 
 # --- Plan 10 task 11: the V1 release command ------------------------------
 #
@@ -41,13 +41,14 @@ verify: lint-backend
 #      assertions -> downgrade base -> re-upgrade)
 #   6. frontend typecheck            (frontend-typecheck)
 #   7. frontend lint                 (frontend-lint)
-#   8. frontend unit tests           (frontend-unit)
-#   9. frontend production build     (frontend-build)
-#  10. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
+#   8. frontend CSS integrity        (frontend-css-guard)
+#   9. frontend unit tests           (frontend-unit)
+#  10. frontend production build     (frontend-build)
+#  11. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
 #      orchestrates both servers itself)
-#  11. ranking rebuild test          — inside backend-e2e:
+#  12. ranking rebuild test          — inside backend-e2e:
 #      tests/e2e/test_ranking_recovery.py
-#  12. concurrency gate              — inside backend-e2e:
+#  13. concurrency gate              — inside backend-e2e:
 #      tests/e2e/test_concurrency_gate.py
 #
 # Prerequisites (quality-gates §15; docs/operations/release-checklist.md
@@ -77,8 +78,8 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
                  BUSINESS_TIMEZONE=$${BUSINESS_TIMEZONE:-Asia/Shanghai}
 
 .PHONY: backend-unit backend-integration backend-worker backend-e2e \
-        migration-verify frontend-typecheck frontend-lint frontend-unit \
-        frontend-build playwright-e2e release-test-db release-gate
+        migration-verify frontend-typecheck frontend-lint frontend-css-guard \
+        frontend-unit frontend-build playwright-e2e release-test-db release-gate
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -110,6 +111,9 @@ frontend-typecheck:
 frontend-lint:
 	cd frontend && npm run lint
 
+frontend-css-guard:
+	cd frontend && npm run check:css
+
 frontend-unit:
 	cd frontend && npm run test:unit
 
@@ -131,4 +135,4 @@ playwright-e2e:
 
 release-gate: release-test-db backend-unit backend-integration backend-worker \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
-              frontend-unit frontend-build playwright-e2e
+              frontend-css-guard frontend-unit frontend-build playwright-e2e
