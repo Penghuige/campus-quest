@@ -106,8 +106,8 @@ owner-approved product decision — never "to fit the new DOM".
 | `.deadline-line` | task/claim deadline row | |
 | `.validation-report` · `.report-errors` | submission validation report | |
 | `.comment` · `.comment-list` · `.comment-author` · `.comment-depth-3` · `.reaction-count` | community thread | depth-3 asserts nesting |
-| `.board-rows` · `.board-row` · `.board-rank` · `.board-me-tag` | rankings | me-tag asserts around-me anchoring |
-| `.reward-card` | rewards list | |
+| `.board-rows` · `.board-row` · `.board-rank` · `.board-me-tag` · `.board-honor` | rankings | me-tag asserts around-me anchoring; board-honor is the honor chip (renamed from `.honor-chip` in plan-13 with no spec uses) |
+| `.reward-card` · `.balance-quiet` · `.reward-cta-note` | rewards list | balance-quiet is the wallet's 累计获得 value (re-anchored from a parent-hop locator in plan-13); reward-cta-note is the spend-state note under the CTA |
 | `.notif-item` · `.notif-item[data-read='false']` · `.notif-title` | notifications | data-read asserts unread state |
 | `.review-item` · `.review-pair` · `.review-tier` | teacher review queue | pair/tier assert VALIDATED tier pairing |
 | `.import-preview` · `.moderation-key` · `.mono` | teacher import / moderation | |
