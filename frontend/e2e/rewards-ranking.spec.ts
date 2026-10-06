@@ -201,7 +201,9 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
     // submission.spec alphabetically, so nothing else has granted yet;
     // the earlier legacy redeem in THIS file only froze its 50).
     const metrics = page.locator("[aria-label='积分余额']");
-    await expect(metrics.getByText("累计获得").locator("..")).toContainText("100");
+    await expect(metrics.locator(".balance-quiet")).toContainText(
+      "累计获得 100",
+    );
 
     // Redeem through the dialog; the server answer carries the id the
     // Admin chain below decides on.
@@ -239,8 +241,12 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
     // spec §15.1).
     await page.reload();
     const metricsAfter = page.locator("[aria-label='积分余额']");
-    await expect(metricsAfter.getByText("可用积分").locator("..")).toContainText("50");
-    await expect(metricsAfter.getByText("累计获得").locator("..")).toContainText("100");
+    await expect(metricsAfter.locator(".balance-quiet")).toContainText(
+      "可用积分 50",
+    );
+    await expect(metricsAfter.locator(".balance-quiet")).toContainText(
+      "累计获得 100",
+    );
 
     // The ranking boards carry the seeded projection: the student's
     // own anchor is present with the earned score.
