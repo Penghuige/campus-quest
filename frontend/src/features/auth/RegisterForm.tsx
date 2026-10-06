@@ -68,6 +68,7 @@ interface OtpState {
   /** Single-use REGISTER proof; `null` until the code is verified. */
   phoneToken: string | null;
 }
+import { Button } from "@/components/ui/button";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -282,9 +283,8 @@ export function RegisterForm() {
             }
             disabled={submitting}
           />
-          <button
-            type="button"
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={onRequestCode}
             disabled={requestingOtp || remaining > 0 || submitting}
           >
@@ -293,7 +293,7 @@ export function RegisterForm() {
               otp === null ? "获取验证码" : "重新发送",
               requestingOtp,
             )}
-          </button>
+          </Button>
         </div>
         {otpNote ? (
           <p className="field-hint" id="otp-note" role="status">

@@ -49,12 +49,13 @@ export function CopyButton({ value, label }: CopyButtonProps) {
 
   return (
     <span className="copy-control">
-      <button type="button" className="btn btn-ghost" onClick={() => void onCopy()}>
+      <Button variant="ghost" onClick={() => void onCopy()}>
         {label}
-      </button>
+      </Button>
       <span className="copy-status" aria-live="polite">
         {status === "copied" ? "已复制" : status === "failed" ? "复制失败，请手动选择复制" : ""}
       </span>
     </span>
   );
 }
+import { Button } from "@/components/ui/button";
