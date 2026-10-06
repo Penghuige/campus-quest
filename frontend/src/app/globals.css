@@ -67,6 +67,7 @@
   --warning-strong: oklch(46% 0.12 70);
   --warning-muted: oklch(96.5% 0.03 70);
   --danger: oklch(51% 0.19 27);
+  --danger-foreground: oklch(99% 0.004 27);
   --danger-muted: oklch(96.5% 0.025 27);
   --info: oklch(52% 0.12 240);
 
@@ -419,6 +420,17 @@ body {
   background: var(--surface-2);
 }
 
+/* Destructive actions (§9 destructive hierarchy): solid danger fill,
+   darkened on hover; disabled state inherits .btn opacity. */
+.btn-danger {
+  background: var(--danger);
+  color: var(--danger-foreground);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--danger) 88%, black);
+}
+
 .btn-block {
   width: 100%;
 }
@@ -444,6 +456,11 @@ body {
   font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.link:hover {
+  color: var(--primary-strong);
+  text-decoration-thickness: 2px;
 }
 
 /* --- alerts / result summaries -------------------------------------------- */
@@ -2105,6 +2122,19 @@ body {
   }
 }
 
+.claim-detail {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 42rem;
+  align-content: start;
+}
+
+@media (min-width: 48rem) {
+  .claim-detail {
+    max-width: 56rem;
+  }
+}
+
 .task-detail-title {
   margin: 0;
   font-size: var(--text-lg);
@@ -2591,7 +2621,74 @@ body {
     0 2px 8px oklch(26% 0.015 75 / 0.07);
 }
 
-/* Reward shelf grid + card (§8 card archetype; token-only values). */
+/* Reward shelf grid + card (§8 card archetype; token-only values).
+   Plan-13 T1: tiles are discrete objects — icon + name lead, the cost is
+   the primary signal, stock/window stay quiet metadata, and the CTA
+   carries the state (primary / disabled-with-distance / quiet
+   unavailable). */
+.rewards-view {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 42rem;
+  align-content: start;
+}
+
+@media (min-width: 48rem) {
+  /* The .task-detail 56rem step: the page uses the desktop viewport
+     instead of hugging a narrow orphan column. */
+  .rewards-view {
+    max-width: 56rem;
+  }
+}
+
+/* Balance hero (plan-11 P2: ONE dominant spendable balance + next-reward
+   progress; earned/frozen/debt quiet). Page-ground grammar shared with
+   the dashboard stat band — no card. The stat line is ONE baseline row
+   at every width (mobile included: label · number · unit). */
+.balance-hero {
+  display: grid;
+  gap: var(--space-3);
+  align-items: end;
+  justify-items: start;
+}
+
+@media (min-width: 48rem) {
+  .balance-hero-with-goal {
+    grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr);
+    gap: var(--space-4) var(--space-7);
+  }
+}
+
+.balance-hero-main {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.balance-hero-stat {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+
+.balance-hero-unit {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.balance-quiet {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-hero-goal {
+  width: 100%;
+  margin-top: 0;
+}
+
 .reward-grid {
   display: grid;
   gap: var(--space-3);
@@ -2615,11 +2712,24 @@ body {
   border-radius: var(--radius-md);
 }
 
-.reward-card-top {
+.reward-card-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Restrained object identity: the shared GiftIcon glyph on a quiet chip
+   (no new assets, no emoji; gamification accent stays local). */
+.reward-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
 }
 
 .reward-card-title {
@@ -2638,6 +2748,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.reward-price {
+  margin: 0;
+}
+
+.reward-cost {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  color: var(--foreground);
+}
+
 .reward-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -2646,9 +2766,22 @@ body {
   color: var(--muted-foreground);
 }
 
-.reward-cost {
-  font-weight: 600;
-  color: var(--foreground);
+/* 缺货 / 窗口关闭: the unavailable state is quiet text where the CTA
+   would be — no disabled button to knock on, no badge. */
+.reward-unavailable {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--subtle-foreground);
+}
+
+/* 积分不足: the disabled CTA's quiet reason (the wallet's own spendable
+   figure, never a client re-judgment). */
+.reward-cta-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Native dialog: the platform's focus containment + Escape handling.
@@ -2728,8 +2861,60 @@ body {
   font-weight: 550;
 }
 
+/* Segmented control (plan-13 T2): the period tabs read as ONE control —
+   a quiet track with a hairline keyline, the current segment raised to
+   surface-1. Behavior/URLs unchanged (the link IS the state). Modifier
+   on .tab-bar so other tab bars (community sort) keep the flat grammar
+   until their own surface pass. The control hugs its segments even
+   inside a .section grid (default stretch would fake a full-width
+   track); justify-self is a no-op for flex/block parents. */
+.segmented-tabs {
+  display: inline-flex;
+  justify-self: start;
+  gap: var(--gap-hairline);
+  padding: var(--gap-hairline);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.segmented-tabs .tab-link {
+  min-height: calc(var(--control-height) - 2 * var(--gap-hairline));
+}
+
+.segmented-tabs .tab-link:hover {
+  background: color-mix(in oklab, var(--surface-1) 60%, var(--surface-2));
+}
+
+.segmented-tabs .tab-link[aria-current="page"] {
+  color: var(--foreground);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-xs);
+  font-weight: 600;
+}
+
 /* Leaderboard rows: rank | who | score; the me-anchor is a tinted row
    plus a visible 我 tag (§9: highlight, never danger for low rank). */
+.rankings-view {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 42rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.rankings-view > .section {
+  width: 100%;
+}
+
+@media (min-width: 48rem) {
+  /* The .task-detail 56rem step (same as .rewards-view): the page uses
+     the desktop viewport instead of hugging a narrow orphan column. */
+  .rankings-view {
+    max-width: 56rem;
+  }
+}
+
 .board-rows {
   display: grid;
   gap: var(--space-1);
@@ -2748,9 +2933,26 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* Restrained top-3 distinction (plan-13 T2 / plan-11 P2 — NO podium):
+   the rank numeral gains weight + the Legendary-adjacent amber, and the
+   row takes ONE subtle amber-tinted keyline. Local accent only; the
+   me-anchor rules below stay authoritative on the caller's own row. */
+.board-row[data-top3="true"] {
+  border-color: color-mix(in oklab, var(--rarity-legendary) 30%, var(--border));
+}
+
+.board-row[data-top3="true"] .board-rank {
+  color: var(--rarity-legendary);
+  font-weight: 700;
+}
+
+/* Strong 我 anchor (plan-13 T2): the brand wash + a strong keyline +
+   an inset primary bar — identical in the top list and 我的附近, so the
+   current-user highlight is one consistent grammar (design §9). */
 .board-row[data-me="true"] {
-  border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
-  background: color-mix(in oklab, var(--primary) 7%, var(--surface-1));
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+  background: var(--surface-brand);
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--primary) 70%, var(--surface-brand));
 }
 
 .board-rank {
@@ -2760,6 +2962,7 @@ body {
 
 .board-row[data-me="true"] .board-rank {
   color: var(--primary);
+  font-weight: 650;
 }
 
 .board-nick {
@@ -2791,6 +2994,27 @@ body {
   margin: 0;
   font-size: var(--text-md);
   font-weight: 550;
+}
+
+/* Honor as quiet text next to the nickname (plan-13 T2): the DTO's own
+   display_honor verbatim, demoted from the epic-rarity chip — identity
+   context, not a status signal (P2: what can become quiet metadata).
+   The chip grammar (.honor-chip) stays with the growth page's owned
+   honors, where the honor itself is the object under review. */
+.board-honor {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+/* Around-me lead (plan-13 T2): one quiet line re-stating the caller's
+   global rank when they are OUTSIDE the top list, so the neighborhood
+   below reads as one continuous story. */
+.board-around-lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Honors (§18: playful accents allowed, restrained). */
@@ -2868,29 +3092,51 @@ body {
   color: var(--foreground);
 }
 
+/* Plan-13 T3: the community section takes the .task-detail 56rem step.
+   The thread + composer render OUTSIDE .task-detail's grid (the page
+   composes them as siblings), so they used to span the full app-main
+   width — an orphan wide strip under a 56rem detail column. T5: the
+   rating section (the page's third sibling) joins the same step. */
+.community-section,
+.task-rating {
+  max-width: 42rem;
+}
+
+@media (min-width: 48rem) {
+  .community-section,
+  .task-rating {
+    max-width: 56rem;
+  }
+}
+
 .community-section .tab-bar {
   /* The sort tabs sit beside the section title, not on their own row. */
   flex-wrap: nowrap;
 }
 
-/* --- comment list: root groups stacked; replies indent one fixed level --- */
+/* --- comment list: root groups as hairline-separated threads on the
+   page ground (plan-13 T3: NO cards-in-cards — the composer is the
+   section's only panel; replies stay connected through the single
+   second-level indent rail below) --- */
 
 .comment-list {
   display: grid;
-  gap: var(--space-3);
 }
 
 .comment-thread {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.comment-thread:last-child {
+  border-bottom: none;
 }
 
 .comment-thread-leaf {
-  /* No replies: the group box hugs the single row (no dead space). */
+  /* No replies: the single row keeps the same hairline rhythm, hugging
+     its content (no dead reply slot). */
   padding-block: var(--space-2);
 }
 
@@ -2932,15 +3178,31 @@ body {
   content: "· ";
 }
 
+/* One quiet metadata line (plan-13 T3): author · time · 已编辑. Scoped
+   to the student THREAD — the moderation meta row mixes in badges and
+   keeps its own spacing; .comment-edited's own ::before already
+   separates there, so it is excluded from this rule. */
+.comment-thread .comment-meta > * + *:not(.comment-edited)::before {
+  content: "· ";
+  color: var(--subtle-foreground);
+}
+
 /* User text renders as plain text: pre-wrap keeps the author's line
    breaks, break-words/overflow-wrap keep long payloads (and XSS-shaped
-   strings, which display verbatim per spec §33.1) from breaking layout. */
+   strings, which display verbatim per spec §33.1) from breaking layout.
+   Plan-13 T3: a comfortable reading measure inside the 56rem section —
+   scoped to the student thread; the moderation list keeps full-width
+   rows. */
 .comment-content {
   margin: 0;
   font-size: var(--text-md);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.comment-thread .comment-content {
+  max-width: 40rem;
 }
 
 .comment-tombstone .comment-tombstone-text {
@@ -2968,7 +3230,9 @@ body {
   font-size: var(--text-xs);
 }
 
-/* --- votes + reactions (spec §22): toggle buttons with pressed state --- */
+/* --- votes + reactions (spec §22; plan-13 T3: compact inline-quiet —
+   no chip borders, the pressed state is a quiet primary wash on the
+   page ground, counts stay tabular) --- */
 
 .vote-group,
 .reaction-bar {
@@ -2982,11 +3246,11 @@ body {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 2rem;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
+  min-height: 1.75rem;
+  padding: var(--space-1);
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  background: transparent;
   font-size: var(--text-sm);
   color: var(--muted-foreground);
   cursor: pointer;
@@ -3000,8 +3264,7 @@ body {
 
 .vote-btn[aria-pressed="true"],
 .reaction-btn[aria-pressed="true"] {
-  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
-  background: color-mix(in oklab, var(--primary) 8%, var(--surface-1));
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
   color: var(--primary);
   font-weight: 550;
 }
@@ -3105,6 +3368,17 @@ body {
   color: var(--muted-foreground);
 }
 
+/* Identity choice + its preview on ONE baseline row (plan-13 T3): the
+   mode you are about to post under sits next to the choice itself, and
+   the composer compacts vertically so the input furniture never
+   outweighs the thread. */
+.identity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
 .identity-options,
 .report-categories {
   display: flex;
@@ -3154,6 +3428,14 @@ body {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--muted-foreground);
+}
+
+/* Anonymous is the deliberate opt-in (the V1 公开昵称 default ruling):
+   the state must be UNMISSABLE before posting — the copy is verbatim
+   (Class A), the presentation carries the emphasis. */
+.identity-preview[data-mode="anonymous"] {
+  color: var(--foreground);
+  font-weight: 550;
 }
 
 .load-more {
@@ -3323,9 +3605,26 @@ body {
 
 /* --- inbox rows: icon | head+title+body+action -------------------------------- */
 
+/* Plan-13 T4: the inbox takes the .task-detail 56rem step (same as
+   .rewards-view / .rankings-view) — no narrow orphan column on desktop. */
+.notifications-view {
+  width: 100%;
+  max-width: 42rem;
+}
+
+@media (min-width: 48rem) {
+  .notifications-view {
+    max-width: 56rem;
+  }
+}
+
+/* Rows are a compact list on the page ground, NOT a wall of equal cards:
+   unread steps UP through a subtle raised surface + typography weight,
+   read stays quiet (plan-11 P2: no heavy borders, no new badges — the
+   pre-existing 未读 badge remains the explicit non-color cue, §12). */
 .notif-list {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3336,24 +3635,34 @@ body {
   grid-template-columns: auto 1fr;
   gap: var(--space-3);
   padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+/* The white lift reads against the warm page ground and stays distinct
+   from --surface-brand, which the rankings me-anchor owns — identity and
+   semantic status never share a treatment (cross-page rule). */
+.notif-item[data-read="false"] {
   background: var(--surface-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-}
-
-/* Read rows step DOWN (border + weight carry the hierarchy; §3/§4):
-   the 未读 badge remains the explicit non-color cue (§12). */
-.notif-item[data-read="true"] {
   border-color: var(--border);
-  background: color-mix(in oklab, var(--surface-1) 60%, var(--background));
+  box-shadow: var(--shadow-xs);
 }
 
+.notif-item[data-read="false"] .notif-title {
+  font-weight: 650;
+}
+
+/* Read rows step DOWN to quiet metadata weight on the page ground. */
 .notif-item[data-read="true"] .notif-title {
   font-weight: 400;
 }
 
-/* Event glyph tile: tone is a background tint only — the type label in
-   the row head is the textual signal (§9/§12). */
+/* Event-category anchor (plan-13 T4): the glyph tile's left keyline
+   carries the KIND of event — review / deadline / redemption / system —
+   so the list scans by category. Kind is deliberately a separate channel
+   from the tone background (the OUTCOME): a rejected redemption keeps
+   the redemption keyline on the danger tint. The type label beside the
+   tile always renders as text (§9/§12); the keyline is supplemental. */
 .notif-icon {
   display: inline-grid;
   place-items: center;
@@ -3361,8 +3670,26 @@ body {
   height: 2.25rem;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--border-strong);
   font-size: var(--text-md);
   line-height: 1;
+}
+
+.notif-item[data-category="review"] .notif-icon {
+  border-left-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+}
+
+.notif-item[data-category="deadline"] .notif-icon {
+  border-left-color: color-mix(in oklab, var(--warning) 60%, var(--border));
+}
+
+.notif-item[data-category="redemption"] .notif-icon {
+  border-left-color: color-mix(in oklab, var(--success) 50%, var(--border));
+}
+
+.notif-item[data-category="system"] .notif-icon {
+  border-left-color: color-mix(in oklab, var(--info) 45%, var(--border));
 }
 
 .notif-icon[data-tone="success"] {
@@ -3429,6 +3756,12 @@ body {
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* Long content truncates gracefully (plan-13 T4): three lines keep the
+     list scannable instead of one message owning the viewport. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .notif-actions {
@@ -3693,6 +4026,7 @@ body {
 }
 
 .review-item[data-selected="true"] {
+  background: var(--surface-brand);
   border-color: var(--primary);
   box-shadow: var(--shadow-xs);
 }

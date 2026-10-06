@@ -50,6 +50,10 @@ export interface CommentComposerProps {
   onPublished: (comment: CommentDto) => void;
   /** Reply mode: cancel returns to the plain thread view. */
   onCancel?: () => void;
+  /** Gallery/fixture seed ONLY (plan-13 T3): composes the anonymous-mode
+   * preview state without a click; the app always starts from the V1
+   * DEFAULT_IDENTITY_MODE ruling. */
+  initialMode?: IdentityMode;
 }
 
 export function CommentComposer({
@@ -57,11 +61,14 @@ export function CommentComposer({
   parent,
   onPublished,
   onCancel,
+  initialMode,
 }: CommentComposerProps) {
   const contentId = useId();
   const identityId = useId();
   const session = useSession();
-  const [mode, setMode] = useState<IdentityMode>(DEFAULT_IDENTITY_MODE);
+  const [mode, setMode] = useState<IdentityMode>(
+    initialMode ?? DEFAULT_IDENTITY_MODE,
+  );
   const [content, setContent] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<{
@@ -125,23 +132,25 @@ export function CommentComposer({
 
       <fieldset className="identity-toggle">
         <legend id={identityId}>发布身份</legend>
-        <div className="identity-options" role="radiogroup" aria-labelledby={identityId}>
-          {IDENTITY_MODE_OPTIONS.map((option) => (
-            <label key={option.key} className="identity-option">
-              <input
-                type="radio"
-                name={`${identityId}-mode`}
-                value={option.key}
-                checked={mode === option.key}
-                onChange={() => setMode(option.key)}
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
+        <div className="identity-row">
+          <div className="identity-options" role="radiogroup" aria-labelledby={identityId}>
+            {IDENTITY_MODE_OPTIONS.map((option) => (
+              <label key={option.key} className="identity-option">
+                <input
+                  type="radio"
+                  name={`${identityId}-mode`}
+                  value={option.key}
+                  checked={mode === option.key}
+                  onChange={() => setMode(option.key)}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          <p className="identity-preview" data-mode={mode} aria-live="polite">
+            {identityPreview(mode, nickname)}
+          </p>
         </div>
-        <p className="identity-preview" aria-live="polite">
-          {identityPreview(mode, nickname)}
-        </p>
       </fieldset>
 
       <div className="field">

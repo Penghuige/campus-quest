@@ -3,7 +3,8 @@
 # Backend: lint (ruff), types (mypy strict on app), unit+worker tests,
 # PostgreSQL/Redis/MinIO integration tests, and a clean-database Alembic
 # upgrade + `alembic check` proving migrations match the models.
-# Frontend: install, typecheck, lint, unit tests, production build.
+# Frontend: install, typecheck, lint, CSS integrity guard, unit tests,
+# production build.
 # Playwright is intentionally absent; it lands with the E2E plan (Plan 10).
 #
 # Triggers: pushes to main, plus pull requests targeting main. Working
@@ -221,6 +222,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: CSS integrity
+        run: npm run check:css
 
       - name: Unit tests
         run: npm run test:unit

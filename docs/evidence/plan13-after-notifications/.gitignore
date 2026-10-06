@@ -1,0 +1,4 @@
+# Plan-13 T4: after-evidence PNGs are PR-description artifacts (owner
+# rule) — nothing in this directory is committed.
+*.png
+manifest.json

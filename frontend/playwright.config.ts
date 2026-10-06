@@ -52,6 +52,17 @@ export default defineConfig({
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
+  // Plan-12 task 9: the visual-regression suite's baselines live at the
+  // default per-spec -snapshots path (e2e/<spec>-snapshots/<name>-<platform>.png
+  // — Playwright's screenshot assertions default snapshotSuffix to
+  // process.platform, playwright/lib/index.js, which is exactly the
+  // Linux-authoritative mechanism: a macOS run misses its -darwin
+  // baselines and fails instead of silently diffing across renderers).
+  // Pinning the template explicitly — it IS the Playwright default —
+  // turns the committed-baseline location into a contract: a future
+  // config edit cannot silently relocate the PNGs.
+  snapshotPathTemplate:
+    "{testDir}/{testFilePath}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}",
   // The JSON report (PR #6 final review P1) feeds the release gate's
   // unexpected-skip assertion (scripts/assert-e2e-no-skips.mjs): the
   // teacher/admin suites must RUN their tests, and a world export that

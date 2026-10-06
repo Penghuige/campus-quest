@@ -143,7 +143,7 @@ test.describe("student rewards redemption", () => {
     await expect(latest.locator(".badge", { hasText: "待审核" })).toBeVisible();
   });
 
-  test("conflict shows typed INSUFFICIENT_POINTS copy and stays retry-friendly", async ({
+  test("insufficient spendable disables the tile CTA with the quiet distance", async ({
     page,
   }) => {
     test.skip(
@@ -153,21 +153,24 @@ test.describe("student rewards redemption", () => {
     await loginAs(page, POOR_STUDENT!);
     await page.goto(`${BASE_URL}/rewards`);
 
-    const confirmButton = page
+    // Plan-13 T1 (owner P2 ruling): the tile CTA carries the state — the
+    // wallet's OWN server-verbatim spendable figure disables 兑换 and the
+    // quiet 还差 N 积分 reason replaces the attempt. Equal-strength
+    // replacement for the old "open dialog -> typed INSUFFICIENT_POINTS"
+    // assertion, which the disabled CTA makes unreachable on this seeded
+    // path; the typed-conflict mapping stays pinned by redeem-view unit
+    // tests and still answers any stale-wallet attempt (the button is
+    // enabled while the wallet is unknown).
+    const card = page
       .locator(".reward-card", {
         has: page.getByRole("button", { name: "兑换", exact: true }),
       })
-      .first()
-      .getByRole("button", { name: "兑换", exact: true });
-    await confirmButton.click();
-
-    const dialog = page.locator("dialog.dialog");
-    await dialog.getByRole("button", { name: "确认兑换" }).click();
-
-    // Typed conflict copy (code-keyed, spec §29/patterns §15), and the
-    // dialog re-arms so another attempt is possible.
-    await expect(dialog.getByRole("alert")).toContainText("可花费积分不足");
-    await expect(dialog.getByRole("button", { name: "确认兑换" })).toBeEnabled();
+      .first();
+    await expect(
+      card.getByRole("button", { name: "兑换", exact: true }),
+    ).toBeDisabled();
+    await expect(card.locator(".reward-cta-note")).toContainText("还差");
+    await expect(card.locator(".reward-cta-note")).toContainText("积分");
   });
 });
 
@@ -198,7 +201,9 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
     // submission.spec alphabetically, so nothing else has granted yet;
     // the earlier legacy redeem in THIS file only froze its 50).
     const metrics = page.locator("[aria-label='积分余额']");
-    await expect(metrics.getByText("累计获得").locator("..")).toContainText("100");
+    await expect(metrics.locator(".balance-quiet")).toContainText(
+      "累计获得 100",
+    );
 
     // Redeem through the dialog; the server answer carries the id the
     // Admin chain below decides on.
@@ -236,8 +241,12 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
     // spec §15.1).
     await page.reload();
     const metricsAfter = page.locator("[aria-label='积分余额']");
-    await expect(metricsAfter.getByText("可用积分").locator("..")).toContainText("50");
-    await expect(metricsAfter.getByText("累计获得").locator("..")).toContainText("100");
+    await expect(metricsAfter.locator(".balance-quiet")).toContainText(
+      "可用积分 50",
+    );
+    await expect(metricsAfter.locator(".balance-quiet")).toContainText(
+      "累计获得 100",
+    );
 
     // The ranking boards carry the seeded projection: the student's
     // own anchor is present with the earned score.

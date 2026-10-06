@@ -27,12 +27,24 @@ import type { NotificationItemDto } from "@/features/notifications/api";
 /** Semantic tone (design §4) — a tint; the text label is the real signal. */
 export type NotificationTone = "info" | "success" | "warning" | "danger";
 
+/**
+ * The scan-by-kind grouping (plan-13 T4 / plan-11 P2): the eight frozen
+ * event types collapse to the four product categories the ruling names —
+ * review result / deadline / redemption / system. Category is a KIND
+ * signal (what the message is about), deliberately separate from tone
+ * (how it turned out): a rejected redemption keeps the redemption
+ * category on a danger tone. Unknown future types join `system`.
+ */
+export type NotificationCategory = "review" | "deadline" | "redemption" | "system";
+
 export interface NotificationEventView {
   /** Product wording (never the raw enum string; design §9 status badges). */
   label: string;
   /** Distinct glyph per event type (aria-hidden; the label carries meaning). */
   glyph: string;
   tone: NotificationTone;
+  /** The category keyline anchor (text label always present beside it). */
+  category: NotificationCategory;
 }
 
 const EVENT_VIEWS: Readonly<Record<string, NotificationEventView>> = {
@@ -40,26 +52,50 @@ const EVENT_VIEWS: Readonly<Record<string, NotificationEventView>> = {
     label: "截止提醒",
     glyph: "⏰",
     tone: "warning",
+    category: "deadline",
   },
-  ASSIGNMENT_DEADLINE_4H: { label: "截止临近", glyph: "⏱", tone: "warning" },
-  REVISION_REQUIRED: { label: "需修改", glyph: "✏️", tone: "warning" },
-  SUBMISSION_APPROVED: { label: "审核通过", glyph: "✅", tone: "success" },
+  ASSIGNMENT_DEADLINE_4H: {
+    label: "截止临近",
+    glyph: "⏱",
+    tone: "warning",
+    category: "deadline",
+  },
+  REVISION_REQUIRED: {
+    label: "需修改",
+    glyph: "✏️",
+    tone: "warning",
+    category: "review",
+  },
+  SUBMISSION_APPROVED: {
+    label: "审核通过",
+    glyph: "✅",
+    tone: "success",
+    category: "review",
+  },
   SUBMISSION_VALIDATION_FAILED: {
     label: "校验未通过",
     glyph: "⚠️",
     tone: "danger",
+    category: "review",
   },
   REWARD_REDEMPTION_APPROVED: {
     label: "兑换成功",
     glyph: "🎁",
     tone: "success",
+    category: "redemption",
   },
   REWARD_REDEMPTION_REJECTED: {
     label: "兑换未通过",
     glyph: "📭",
     tone: "danger",
+    category: "redemption",
   },
-  ACCOUNT_SECURITY: { label: "账号安全", glyph: "🔐", tone: "info" },
+  ACCOUNT_SECURITY: {
+    label: "账号安全",
+    glyph: "🔐",
+    tone: "info",
+    category: "system",
+  },
 };
 
 /** Degrade an unknown event type to a generic entry (never throws). */
@@ -67,6 +103,7 @@ export const UNKNOWN_EVENT_VIEW: NotificationEventView = {
   label: "通知",
   glyph: "🔔",
   tone: "info",
+  category: "system",
 };
 
 /** The view for one event_type: a known mapping or the generic fallback. */
@@ -102,6 +139,8 @@ export interface InboxItemView {
   typeLabel: string;
   glyph: string;
   tone: NotificationTone;
+  /** The scan-by-kind anchor (the event's category, verbatim). */
+  category: NotificationCategory;
   title: string;
   body: string;
   /** The server's read verdict (read_at !== null). */
@@ -127,6 +166,7 @@ export function inboxItemView(
     typeLabel: event.label,
     glyph: event.glyph,
     tone: event.tone,
+    category: event.category,
     title: item.title,
     body: item.body,
     isRead: item.read_at !== null,

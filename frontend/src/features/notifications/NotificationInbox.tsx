@@ -22,6 +22,15 @@
  * the same server truth (unread first page total) — no shared client
  * cache to invalidate; the bell's focus/interval revalidation reconciles
  * it within its fresh window.
+ *
+ * Plan-13 T4 hierarchy contract (plan-11 P2: spacing / unread weight /
+ * event-type anchors; NO new badges): unread rows step UP through
+ * typography weight + a subtle raised surface, read rows stay quiet on
+ * the page ground; each row's icon tile carries a per-category keyline
+ * (review / deadline / redemption / system) beside its always-present
+ * text label; long bodies truncate to a scannable measure; the filter
+ * tabs read as the shell's segmented control. The 未读 badge predates
+ * this pass and stays (non-color cue, §12).
  */
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -207,7 +216,7 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
       : [];
 
   return (
-    <section className="section" aria-label="通知收件箱">
+    <section className="section notifications-view" aria-label="通知收件箱">
       <div className="section-head">
         <h2 className="section-title">消息</h2>
         {unreadTotal !== null && unreadTotal > 0 ? (
@@ -217,7 +226,7 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
         ) : null}
       </div>
 
-      <nav className="tab-bar" aria-label="通知筛选">
+      <nav className="tab-bar segmented-tabs" aria-label="通知筛选">
         {INBOX_FILTERS.map((tab) => (
           <Link
             key={tab.key}
@@ -307,10 +316,20 @@ interface NotificationRowProps {
  * always, tone supplemental), the server's read verdict as a 未读 badge
  * (a non-color cue; §12), absolute time in the business timezone
  * (patterns §14), and the owner-only 标为已读 action while unread.
+ *
+ * Plan-13 T4 scanability: `data-category` carries the event's KIND
+ * (review / deadline / redemption / system) for the icon-tile keyline —
+ * category is separate from tone (a rejected redemption keeps the
+ * redemption kind on the danger outcome tint). Exported for the dev
+ * gallery's fixture rows (the thin e2e world seeds zero notifications).
  */
-function NotificationRow({ view, item, markError, onMarkRead }: NotificationRowProps) {
+export function NotificationRow({ view, item, markError, onMarkRead }: NotificationRowProps) {
   return (
-    <li className="notif-item" data-read={view.isRead ? "true" : "false"}>
+    <li
+      className="notif-item"
+      data-read={view.isRead ? "true" : "false"}
+      data-category={view.category}
+    >
       <span className="notif-icon" data-tone={view.tone} aria-hidden="true">
         {view.glyph}
       </span>

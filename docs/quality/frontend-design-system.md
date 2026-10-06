@@ -100,7 +100,7 @@ Prefer OKLCH-compatible theme variables when the selected Tailwind and shadcn se
 
 Default experience should be light-first, with tokens structured so a complete dark theme remains possible.
 
-**Identity ruling (Plan 11 direction shoot-out, owner pick "ink")**: the product's identity is a DARK navigation rail (sidebar / mobile bottom nav, `oklch(21% 0.018 262)`) beside warm light content — the rail is quiet in weight but bold in tone. The primary is `oklch(50% 0.18 264)` (#2b59c8), one notch more saturated than V1 so it carries the dark rail; display type (page titles, hero, metric numerals) rides the display rung (`--text-2xl` / 1.625rem) — scale contrast is the product's typographic signature.
+**Identity ruling (Plan 11 direction shoot-out, owner pick "ink")**: the product's identity is a DARK navigation rail (the wide sidebar, `oklch(21% 0.018 262)`; the narrow student bottom nav is a light frosted bar — see §8) beside warm light content — the rail is quiet in weight but bold in tone. The primary is `oklch(50% 0.18 264)` (#2b59c8), one notch more saturated than V1 so it carries the dark rail; display type (page titles, hero, metric numerals) rides the display rung (`--text-2xl` / 1.625rem) — scale contrast is the product's typographic signature.
 
 Recommended behavior:
 
@@ -161,6 +161,13 @@ Mobile:
 
 A page with operational data should prioritize the work, not empty whitespace.
 
+Reading surfaces cap their content column on a shared view step: 42rem
+below the 48rem breakpoint, 56rem at and above it (the `.task-detail`
+step — rewards, rankings, community, rating, and notifications all ride
+it). A capped detail column never leaves its sibling sections at full
+width, and full width is reserved for genuinely wide work (tables,
+shelf grids), not reading content.
+
 ## 7. Shape and elevation
 
 Recommended character:
@@ -190,8 +197,10 @@ bands by viewport:
   (bell, user — no nav, no brand).
 - **Medium (40–64rem)**: the horizontal top nav keeps every
   destination.
-- **Narrow (<40rem)**: Student gets a fixed 5-slot bottom nav — the
-  same INK dark rail — with safe-area inset and reserved content
+- **Narrow (<40rem)**: Student gets a fixed 5-slot bottom nav — a
+  light frosted bar (translucent `--surface-1` + backdrop blur,
+  saturated primary active accent; the INK dark rail stays on the
+  wide sidebar) — with safe-area inset and reserved content
   bottom padding (the fixed bar never covers a primary action);
   Teacher/Admin get a hamburger menu sheet carrying the FULL staff
   list (native dialog semantics: focus trap, Escape, backdrop close).
@@ -266,7 +275,21 @@ prose links (`.link`) keep theirs.
 
 Avoid two adjacent primary buttons competing for attention.
 
+A CTA carries its own availability state: facts about the CATALOG (out
+of stock, window closed) render as quiet state text in place of the
+action; facts about the USER (insufficient points, ineligible) keep a
+disabled control plus the reason. No duplicate state badge beside an
+already-expressive CTA.
+
 Icon-only buttons require accessible labels and, where helpful, tooltips.
+
+### Segmented tabs
+
+URL-state tab sets (ranking period, inbox filter, comment sort) render
+as ONE segmented control (`.tab-bar.segmented-tabs`): a quiet track
+with a hairline keyline, the current segment raised to `--surface-1`
+with added weight. The control hugs its segments (the class carries
+`justify-self: start`); URLs stay the state — the link IS the state.
 
 ### Cards
 
@@ -291,6 +314,21 @@ Task rarity section below) — quiet for NORMAL — with its TEXT label
 in the metadata row; color never carries rarity
 alone. Interactive cards may take the 1px hover lift
 (`--lift-hover`, reduced-motion safe).
+
+Discrete shelf/list objects may carry ONE quiet identity chip (a
+2.5rem tile with an existing glyph, e.g. `.reward-icon`) as the object
+marker — never per-object decorative art.
+
+### Metrics and stat emphasis
+
+When one figure gates the page's primary action (spendable balance,
+current rank), it renders as the dominant stat (`.stat-focus`) directly
+on the page ground — never as one card in an equal-metric row.
+Secondary facts join ONE quiet `·`-separated metadata line
+(`.balance-quiet`); conditional alerts (freeze, debt) keep full
+sentences as `.progress-note`. An optional goal rail (thin track,
+filled progress, endpoint node) may attach to the dominant stat for
+progress toward the next threshold.
 
 ### Identity vs status (Plan 11 core rule)
 
@@ -385,6 +423,25 @@ Always provide:
 
 Do not use danger styling for low rank.
 
+Plan 13 grammar:
+
+- the period switch is a segmented control (above);
+- top-N distinction is restrained: numeric weight plus at most ONE
+  subtle keyline on the row — never podium geometry, never animated
+  crowns;
+- the current-user anchor is ONE consistent grammar wherever a list
+  contains the caller: `--surface-brand` row tint + strong keyline +
+  inset primary bar + a non-color 我 tag; the identity anchor always
+  outranks status accents (identity and status never share a
+  treatment — rule order at equal specificity carries this);
+- honor rides the nickname line as quiet muted text — identity
+  context, not a status chip;
+- around-me is panel-wrapped as one object; when the caller is
+  outside the top list, ONE quiet neighborhood lead re-states their
+  global position so the window reads as a continuous story, and it
+  is suppressed when the top list already carries the standing
+  (derive from the rollup, never re-compare component-side).
+
 ### Comments
 
 Anonymous mode must be explicit before posting.
@@ -398,6 +455,41 @@ Comment UI should visually separate:
 - moderation or deleted state.
 
 Deleted parent comments remain as tombstones so child context survives.
+
+Plan 13 thread grammar:
+
+- threads render as hairline-separated groups on the page ground with
+  ONE indent rail for children; cards-in-cards are banned under a
+  section that already frames input furniture (the composer is the
+  thread's only panel);
+- shared metadata rows take middot separators from a scoped rule
+  (thread vs moderation), never a blanket separator rule;
+- engagement is compact and inline-quiet: borderless icon+count
+  chips, pressed = quiet primary wash on transparent; counts are
+  always tabular and render only when known — never fabricated zeros;
+- explicit states on frozen copy (e.g. the anonymous preview) ride
+  `data-*` hooks — presentation carries the urgency, copy stays
+  unchanged.
+
+### Inbox lists
+
+Read/unread grammar: unread steps up through typography weight plus a
+raised `--surface-1` lift on the page ground; read stays a quiet
+ground row. Never heavy borders; never an unread tint that collides
+with the identity anchor — `--surface-brand` belongs to the
+current-user row.
+
+When a row has both a CATEGORY and a RESULT, use two channels: kind
+rides a quiet structural anchor (a 2px left keyline on the glyph tile,
+semantic-token mix over `--border`, the base keyline identical across
+categories so there is no layout shift, a text label always beside
+it); outcome rides the semantic tint. Never merge kind and outcome
+into one color.
+
+Long body copy clamps (`-webkit-line-clamp`) to keep lists scannable;
+keep `pre-wrap` so server newlines survive the clamp. If content
+beyond the clamp has no reachable detail view, record that as a known
+product cost.
 
 ## 10. Loading, empty, error, and permission states
 

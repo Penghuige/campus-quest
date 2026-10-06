@@ -111,7 +111,7 @@ function ColumnStats({
     return null;
   }
   return (
-    <div className="report-group report-columns">
+    <div className="report-group">
       <h4 className="report-group-title">列检查</h4>
       <dl className="report-column-facts">
         {missing.length > 0 ? (

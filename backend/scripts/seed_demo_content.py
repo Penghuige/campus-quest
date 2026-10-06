@@ -434,6 +434,15 @@ async def main() -> None:
             rarity=TaskRarity.EPIC, points=180, duration_minutes=14 * 24 * 60,
             slots=2, keyword="复习资料",
         )
+        await _task(
+            session, world, teacher.id,
+            title="校园文创设计众筹数据采集",
+            description="采集校园文创设计众筹活动的方案与预约数据，"
+                        "审核标准最高、周期充裕、名额唯一。数据将用于"
+                        "文创中心选品决策。",
+            rarity=TaskRarity.LEGENDARY, points=260, duration_minutes=10 * 24 * 60,
+            slots=1, keyword="文创众筹",
+        )
         t_checkin = await _task(
             session, world, teacher.id,
             title="新生校园地标打卡数据采集",

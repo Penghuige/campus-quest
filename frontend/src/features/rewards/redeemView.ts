@@ -90,6 +90,83 @@ function formatWindowBound(iso: string): string {
   return formatDeadlineDateTime(Date.parse(iso), BUSINESS_TIME_CONFIG);
 }
 
+// --- next-reward progress + tile CTA (rewards page hero, plan-13 T1) --------
+
+/**
+ * The rewards page's "还差多少能兑换什么" strip. Distance is measured
+ * from SPENDABLE points — the figure that actually gates a redemption
+ * (the dashboard's `pointsProgressView` uses the available balance for
+ * ITS headline; here the P2 ruling makes spendable the one dominant
+ * number, so the progress reads off the same figure). Candidates are the
+ * server's own purchasable verdicts (window open, stock remaining);
+ * cheapest wins. Null when nothing is purchasable — the shelf's empty
+ * state already says so.
+ */
+export interface NextRewardView {
+  rewardName: string;
+  rewardCost: number;
+  /** Points still needed; null when the reward is already affordable. */
+  remainingPoints: number | null;
+  /** Spendable / cost, clamped to 0..1 (display only). */
+  ratio: number;
+}
+
+export function nextRewardView(
+  spendablePoints: number,
+  rewards: RewardItemDto[],
+): NextRewardView | null {
+  const target = rewards
+    .filter(
+      (item) =>
+        item.window_open &&
+        item.point_cost > 0 &&
+        (item.stock === null || item.stock > 0),
+    )
+    .reduce<RewardItemDto | null>(
+      (best, item) =>
+        best === null || item.point_cost < best.point_cost ? item : best,
+      null,
+    );
+  if (target === null) {
+    return null;
+  }
+  const remaining = Math.max(target.point_cost - spendablePoints, 0);
+  return {
+    rewardName: target.name,
+    rewardCost: target.point_cost,
+    remainingPoints: remaining === 0 ? null : remaining,
+    ratio: Math.min(spendablePoints / target.point_cost, 1),
+  };
+}
+
+/**
+ * The tile's call-to-action. Window/stock stay the server's verdicts
+ * (rewardShelfView); the SPENDABLE shortfall is a presentation read of
+ * the wallet's own server-verbatim figure, never a client-side
+ * re-judgment of eligibility — the backend stays authoritative and the
+ * typed INSUFFICIENT_POINTS conflict still answers any stale-wallet
+ * attempt. `spendablePoints` is null while the wallet has not loaded:
+ * then the button keeps the pre-plan-13 behavior (enabled; the typed
+ * conflict teaches).
+ */
+export type RewardCtaView =
+  | { kind: "redeem" }
+  | { kind: "insufficient"; missingPoints: number }
+  | { kind: "unavailable" };
+
+export function rewardCtaView(
+  item: RewardItemDto,
+  spendablePoints: number | null,
+): RewardCtaView {
+  if (rewardShelfView(item).state !== "redeemable") {
+    return { kind: "unavailable" };
+  }
+  if (spendablePoints !== null && spendablePoints < item.point_cost) {
+    return { kind: "insufficient", missingPoints: item.point_cost - spendablePoints };
+  }
+  return { kind: "redeem" };
+}
+
 // --- typed conflict copy ----------------------------------------------------------
 
 /** Presentation view of one failed redemption attempt. */

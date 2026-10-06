@@ -12,8 +12,10 @@ import { redeemReward, type RewardItemDto } from "../features/points/api";
 import {
   describeRedeemError,
   newIdempotencyKey,
+  nextRewardView,
   REDEEM_ERROR_TEXT,
   redemptionStatusView,
+  rewardCtaView,
   rewardShelfView,
   rewardWindowLabel,
 } from "../features/rewards/redeemView";
@@ -121,6 +123,77 @@ describe("reward shelf states (server verdicts verbatim)", () => {
       rewardWindowLabel(reward({ available_until: "2026-09-30T18:00:00Z" })) ?? "",
       /截止$/,
     );
+  });
+});
+
+describe("next reward view (spendable-based distance; plan-13 T1)", () => {
+  test("targets the cheapest purchasable item, distance from SPENDABLE", () => {
+    const view = nextRewardView(120, [
+      reward({ id: "a", name: "贵", point_cost: 500 }),
+      reward({ id: "b", name: "便宜", point_cost: 300 }),
+    ]);
+    assert.ok(view !== null);
+    assert.equal(view.rewardName, "便宜");
+    assert.equal(view.rewardCost, 300);
+    assert.equal(view.remainingPoints, 180);
+    assert.equal(view.ratio, 120 / 300);
+  });
+
+  test("server verdicts respected: closed window / zero stock are not candidates", () => {
+    const view = nextRewardView(0, [
+      reward({ name: "窗口关闭", window_open: false, point_cost: 100 }),
+      reward({ name: "无库存", stock: 0, point_cost: 150 }),
+      reward({ name: "无限库存", stock: null, point_cost: 400 }),
+    ]);
+    assert.equal(view?.rewardName, "无限库存");
+    assert.equal(view?.remainingPoints, 400);
+  });
+
+  test("already affordable -> remaining null and ratio clamped to 1", () => {
+    const view = nextRewardView(999, [reward({ point_cost: 300 })]);
+    assert.equal(view?.remainingPoints, null);
+    assert.equal(view?.ratio, 1);
+  });
+
+  test("no purchasable candidate -> null (the shelf's empty state speaks)", () => {
+    assert.equal(nextRewardView(100, []), null);
+    assert.equal(
+      nextRewardView(100, [reward({ window_open: false }), reward({ stock: 0 })]),
+      null,
+    );
+  });
+});
+
+describe("reward tile CTA (plan-13 T1 states)", () => {
+  test("redeemable + spendable covers the cost -> primary redeem", () => {
+    assert.deepEqual(rewardCtaView(reward({ point_cost: 300 }), 300), {
+      kind: "redeem",
+    });
+    assert.deepEqual(rewardCtaView(reward({ point_cost: 300 }), 800), {
+      kind: "redeem",
+    });
+  });
+
+  test("redeemable + spendable short -> disabled with the quiet distance", () => {
+    assert.deepEqual(rewardCtaView(reward({ point_cost: 300 }), 120), {
+      kind: "insufficient",
+      missingPoints: 180,
+    });
+  });
+
+  test("wallet unknown (null) -> redeem stays enabled; the server's typed conflict teaches", () => {
+    assert.deepEqual(rewardCtaView(reward({ point_cost: 300 }), null), {
+      kind: "redeem",
+    });
+  });
+
+  test("out-of-stock / closed window -> quiet unavailable regardless of spendable", () => {
+    assert.deepEqual(rewardCtaView(reward({ stock: 0 }), 9999), {
+      kind: "unavailable",
+    });
+    assert.deepEqual(rewardCtaView(reward({ window_open: false }), 9999), {
+      kind: "unavailable",
+    });
   });
 });
 

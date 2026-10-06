@@ -40,7 +40,7 @@ export function StaffMenuSheet({
         onClick={() => dialogRef.current?.showModal()}
       >
         <MenuIcon />
-        <span className="app-menubtn-label">菜单</span>
+        <span>菜单</span>
       </button>
       <dialog
         ref={dialogRef}

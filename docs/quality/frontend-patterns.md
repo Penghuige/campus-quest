@@ -189,7 +189,8 @@ only page-level `--surface-brand` consumer (Plan 11).
 title + rarity + rating
 任务说明 / requirements          reward / deadline / availability
                                 [领取任务]
-community section
+community thread (hairline-separated groups, one indent rail)
+rating section (sibling on the same 56rem view step)
 ~~~
 
 The decision information precedes the claim action (Plan 11 owner
@@ -215,19 +216,43 @@ The neutral assignment panel and the progress strip are Plan 11
 rulings; the validation report should prioritize errors first, then
 warnings, then successful checks.
 
+### Rewards
+
+~~~text
+balance hero: ONE dominant spendable stat on the page ground
+  + quiet earned/frozen metadata line + next-reward goal rail
+reward shelf grid — tiles: identity chip + name lead, cost is the
+  primary signal, stock/window quiet metadata, CTA carries availability
+recent redemptions
+~~~
+
+The spendable figure gates redemption, so it owns the hierarchy — no
+equal-metric balance row (design-system §9 metrics).
+
 ### Rankings
 
 ~~~text
-Daily | Monthly | All
+segmented period tabs (Daily | Monthly | All)
 
-Top list
+Top list — restrained top-3 (numeric weight + one subtle keyline);
+current-user anchor row wherever the caller appears
 
 ----------------
 
-Around me
+Around me — panel-wrapped as one object; the neighborhood lead
+renders only when the caller is outside the top list
 ~~~
 
 Keep current-user highlight consistent.
+
+### Notifications
+
+~~~text
+filter tabs (segmented) + unread count badge
+inbox rows on the page ground: unread raised + weighted, read quiet;
+kind keyline on the glyph tile, outcome on the semantic tint;
+body clamped, per-row action link
+~~~
 
 ### Teacher review
 
@@ -383,7 +408,28 @@ Before creating a component:
 
 A component is not reusable merely because it has many props. Prefer small semantic composition over universal mega-components.
 
-## 17. Performance patterns
+## 17. Thin-world visual evidence (dev gallery)
+
+The e2e world seeds a thin fixture set, so many presentation states
+(top-3 boards, CTA variants, populated threads, an unread inbox) can
+never render live. Compose those states in `/dev/gallery` with
+deterministic fixtures (real feature components, fixed timestamps) and
+let the pixel baseline guard them — do NOT fatten world seeding for
+presentation evidence.
+
+Rules:
+
+- gallery fixtures render the REAL row/tile components; duplicating
+  markup in the gallery is banned (it drifts);
+- when a contract has no read path for a state (vote/reaction
+  stance), an optional gallery-documented fixture-seed prop beats
+  markup duplication; the app's state source stays singular;
+- an empty-world surface pins the deterministic EMPTY state as its
+  pixel baseline (`masks: []` — an inert mask fails the mask
+  engagement contract) plus a probe note naming the mask the shot
+  must gain if the world ever seeds rows.
+
+## 18. Performance patterns
 
 Use the Vercel React best-practices skill or reference for implementation review.
 
@@ -399,7 +445,7 @@ High-priority concerns:
 
 Performance work must be measured or tied to a known pattern, not cargo-cult memoization.
 
-## 18. Accessibility patterns
+## 19. Accessibility patterns
 
 Prefer tested primitives for:
 
@@ -414,7 +460,7 @@ Do not replace native button, link, or input semantics with clickable divs.
 
 When mutation succeeds or fails in a way not obvious from focus movement, provide an accessible announcement.
 
-## 19. Pattern anti-list
+## 20. Pattern anti-list
 
 Do not introduce:
 
