@@ -12,8 +12,14 @@
  * a 409 CONFLICT (state flowed on elsewhere) renders through
  * `describeAdminMutationError` and suggests a refresh.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -327,18 +333,10 @@ function AccountStatusDialog({
   onCancel: () => void;
 }) {
   const action = accountActionView(kind);
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -373,69 +371,73 @@ function AccountStatusDialog({
       : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="account-status-title"
-      className="dialog"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="account-status-title" className="dialog-title">
-          {action.title}
-        </h3>
-        <p className="report-target">{action.body(user)}</p>
-        <div className="field">
-          <label className="field-label" htmlFor="account-status-reason">
-            操作原因
-          </label>
-          <textarea
-            id="account-status-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (fieldError !== null) {
-                setFieldError(null);
-              }
-            }}
-            aria-invalid={fieldError !== null}
-            disabled={busy}
-            required
-          />
-          {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
-            </p>
-            {errorView.requestId !== null ? (
-              <p className="req-id">请求 ID：{errorView.requestId}</p>
-            ) : null}
+      <DialogContent
+        asChild
+        aria-labelledby="account-status-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="account-status-title">{action.title}</DialogTitle>
+          <p className="report-target">{action.body(user)}</p>
+          <div className="field">
+            <label className="field-label" htmlFor="account-status-reason">
+              操作原因
+            </label>
+            <textarea
+              id="account-status-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (fieldError !== null) {
+                  setFieldError(null);
+                }
+              }}
+              aria-invalid={fieldError !== null}
+              disabled={busy}
+              required
+            />
+            {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button
-            type="submit"
-            className={`btn ${action.buttonClass === "btn-danger" ? "btn-danger" : "btn-primary"}`}
-            disabled={busy}
-            aria-busy={busy}
-          >
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>{action.confirmLabel}</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+              {errorView.requestId !== null ? (
+                <p className="req-id">请求 ID：{errorView.requestId}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button
+              type="submit"
+              className={`btn ${action.buttonClass === "btn-danger" ? "btn-danger" : "btn-primary"}`}
+              disabled={busy}
+              aria-busy={busy}
+            >
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>{action.confirmLabel}</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

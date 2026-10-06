@@ -18,8 +18,14 @@
  * they stay ABSENT on edit (never blindly clobbered); they are
  * settable at create.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -282,19 +288,11 @@ function RewardFormDialog({
   onDone: (verdict: AdminRewardItemDto) => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [values, setValues] = useState<RewardFormValues>(initial);
   const [errors, setErrors] = useState<RewardFormErrors>({});
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   function set<K extends keyof RewardFormValues>(key: K, value: RewardFormValues[K]) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -349,189 +347,194 @@ function RewardFormDialog({
       : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog dialog-wide"
-      aria-labelledby="reward-form-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="reward-form-title" className="dialog-title">
-          {title}
-        </h3>
-        <div className="form-grid">
-          <div className="field">
-            <label className="field-label" htmlFor="reward-name">名称</label>
-            <input
-              id="reward-name"
-              className="input"
-              value={values.name}
-              onChange={(event) => set("name", event.target.value)}
-              aria-invalid={errors.name !== undefined}
-              disabled={busy}
-              required
-            />
-            {errors.name !== undefined ? <p className="field-error">{errors.name}</p> : null}
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="reward-cost">兑换积分</label>
-            <input
-              id="reward-cost"
-              className="input"
-              inputMode="numeric"
-              value={values.pointCost}
-              onChange={(event) => set("pointCost", event.target.value)}
-              aria-invalid={errors.pointCost !== undefined}
-              disabled={busy}
-              required
-            />
-            {errors.pointCost !== undefined ? (
-              <p className="field-error">{errors.pointCost}</p>
-            ) : null}
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="reward-stock">库存（留空 = 不限）</label>
-            <input
-              id="reward-stock"
-              className="input"
-              inputMode="numeric"
-              value={values.stock}
-              onChange={(event) => set("stock", event.target.value)}
-              aria-invalid={errors.stock !== undefined}
-              disabled={busy}
-            />
-            {errors.stock !== undefined ? <p className="field-error">{errors.stock}</p> : null}
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="reward-term-limit">
-              学期限购（留空 = 不限）
-            </label>
-            <input
-              id="reward-term-limit"
-              className="input"
-              inputMode="numeric"
-              value={values.perUserTermLimit}
-              onChange={(event) => set("perUserTermLimit", event.target.value)}
-              aria-invalid={errors.perUserTermLimit !== undefined}
-              disabled={busy}
-            />
-            {errors.perUserTermLimit !== undefined ? (
-              <p className="field-error">{errors.perUserTermLimit}</p>
-            ) : null}
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="reward-from">可用起（留空 = 不限）</label>
-            <input
-              id="reward-from"
-              className="input"
-              type="datetime-local"
-              value={values.availableFromLocal}
-              onChange={(event) => set("availableFromLocal", event.target.value)}
-              disabled={busy}
-            />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="reward-until">可用止（留空 = 不限）</label>
-            <input
-              id="reward-until"
-              className="input"
-              type="datetime-local"
-              value={values.availableUntilLocal}
-              onChange={(event) => set("availableUntilLocal", event.target.value)}
-              disabled={busy}
-            />
-          </div>
-        </div>
-        {errors.window !== undefined ? <p className="field-error">{errors.window}</p> : null}
-        {showCreateFields ? (
-          <>
+      <DialogContent
+        asChild
+        size="wide"
+        aria-labelledby="reward-form-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="reward-form-title">{title}</DialogTitle>
+          <div className="form-grid">
             <div className="field">
-              <label className="field-label" htmlFor="reward-description">描述（选填）</label>
-              <textarea
-                id="reward-description"
+              <label className="field-label" htmlFor="reward-name">名称</label>
+              <input
+                id="reward-name"
                 className="input"
-                rows={2}
-                value={values.description}
-                onChange={(event) => set("description", event.target.value)}
+                value={values.name}
+                onChange={(event) => set("name", event.target.value)}
+                aria-invalid={errors.name !== undefined}
                 disabled={busy}
+                required
               />
+              {errors.name !== undefined ? <p className="field-error">{errors.name}</p> : null}
             </div>
             <div className="field">
-              <label className="field-label" htmlFor="reward-instructions">
-                发放说明（选填，学生兑换后可见）
+              <label className="field-label" htmlFor="reward-cost">兑换积分</label>
+              <input
+                id="reward-cost"
+                className="input"
+                inputMode="numeric"
+                value={values.pointCost}
+                onChange={(event) => set("pointCost", event.target.value)}
+                aria-invalid={errors.pointCost !== undefined}
+                disabled={busy}
+                required
+              />
+              {errors.pointCost !== undefined ? (
+                <p className="field-error">{errors.pointCost}</p>
+              ) : null}
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="reward-stock">库存（留空 = 不限）</label>
+              <input
+                id="reward-stock"
+                className="input"
+                inputMode="numeric"
+                value={values.stock}
+                onChange={(event) => set("stock", event.target.value)}
+                aria-invalid={errors.stock !== undefined}
+                disabled={busy}
+              />
+              {errors.stock !== undefined ? <p className="field-error">{errors.stock}</p> : null}
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="reward-term-limit">
+                学期限购（留空 = 不限）
               </label>
-              <textarea
-                id="reward-instructions"
+              <input
+                id="reward-term-limit"
                 className="input"
-                rows={2}
-                value={values.fulfillmentInstructions}
-                onChange={(event) => set("fulfillmentInstructions", event.target.value)}
+                inputMode="numeric"
+                value={values.perUserTermLimit}
+                onChange={(event) => set("perUserTermLimit", event.target.value)}
+                aria-invalid={errors.perUserTermLimit !== undefined}
+                disabled={busy}
+              />
+              {errors.perUserTermLimit !== undefined ? (
+                <p className="field-error">{errors.perUserTermLimit}</p>
+              ) : null}
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="reward-from">可用起（留空 = 不限）</label>
+              <input
+                id="reward-from"
+                className="input"
+                type="datetime-local"
+                value={values.availableFromLocal}
+                onChange={(event) => set("availableFromLocal", event.target.value)}
                 disabled={busy}
               />
             </div>
             <div className="field">
-              <label className="field-hint">
-                <input
-                  type="checkbox"
-                  checked={values.requiresManualReview}
-                  onChange={(event) => set("requiresManualReview", event.target.checked)}
+              <label className="field-label" htmlFor="reward-until">可用止（留空 = 不限）</label>
+              <input
+                id="reward-until"
+                className="input"
+                type="datetime-local"
+                value={values.availableUntilLocal}
+                onChange={(event) => set("availableUntilLocal", event.target.value)}
+                disabled={busy}
+              />
+            </div>
+          </div>
+          {errors.window !== undefined ? <p className="field-error">{errors.window}</p> : null}
+          {showCreateFields ? (
+            <>
+              <div className="field">
+                <label className="field-label" htmlFor="reward-description">描述（选填）</label>
+                <textarea
+                  id="reward-description"
+                  className="input"
+                  rows={2}
+                  value={values.description}
+                  onChange={(event) => set("description", event.target.value)}
                   disabled={busy}
-                />{" "}
-                需要人工审核兑换
-              </label>
-            </div>
-          </>
-        ) : (
-          <p className="field-hint">
-            编辑仅管理目录读取到的字段（名称/积分/库存/限购/时间窗/描述）；发放说明与审核标记在创建时设置，编辑不会改动。
-          </p>
-        )}
-        <div className="field">
-          <label className="field-label" htmlFor="reward-reason">操作原因</label>
-          <textarea
-            id="reward-reason"
-            className="input"
-            rows={2}
-            value={values.reason}
-            onChange={(event) => {
-              set("reason", event.target.value);
-              if (reasonError !== null) {
-                setReasonError(null);
-              }
-            }}
-            aria-invalid={reasonError !== null}
-            disabled={busy}
-            required
-          />
-          {reasonError !== null ? <p className="field-error">{reasonError}</p> : null}
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="reward-instructions">
+                  发放说明（选填，学生兑换后可见）
+                </label>
+                <textarea
+                  id="reward-instructions"
+                  className="input"
+                  rows={2}
+                  value={values.fulfillmentInstructions}
+                  onChange={(event) => set("fulfillmentInstructions", event.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              <div className="field">
+                <label className="field-hint">
+                  <input
+                    type="checkbox"
+                    checked={values.requiresManualReview}
+                    onChange={(event) => set("requiresManualReview", event.target.checked)}
+                    disabled={busy}
+                  />{" "}
+                  需要人工审核兑换
+                </label>
+              </div>
+            </>
+          ) : (
+            <p className="field-hint">
+              编辑仅管理目录读取到的字段（名称/积分/库存/限购/时间窗/描述）；发放说明与审核标记在创建时设置，编辑不会改动。
             </p>
-            {errorView.requestId !== null ? (
-              <p className="req-id">请求 ID：{errorView.requestId}</p>
-            ) : null}
+          )}
+          <div className="field">
+            <label className="field-label" htmlFor="reward-reason">操作原因</label>
+            <textarea
+              id="reward-reason"
+              className="input"
+              rows={2}
+              value={values.reason}
+              onChange={(event) => {
+                set("reason", event.target.value);
+                if (reasonError !== null) {
+                  setReasonError(null);
+                }
+              }}
+              aria-invalid={reasonError !== null}
+              disabled={busy}
+              required
+            />
+            {reasonError !== null ? <p className="field-error">{reasonError}</p> : null}
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>{submitLabel}</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+              {errorView.requestId !== null ? (
+                <p className="req-id">请求 ID：{errorView.requestId}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="dialog-actions">
+            <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>{submitLabel}</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -545,18 +548,10 @@ function DisableRewardDialog({
   onDone: (verdict: AdminRewardItemDto) => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -585,63 +580,67 @@ function DisableRewardDialog({
       : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="reward-disable-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="reward-disable-title" className="dialog-title">
-          下架奖励
-        </h3>
-        <p className="report-target">
-          下架后「{target.name}」不再对学生可见、不能发起新兑换；已创建的兑换保持原快照并继续处理。
-          下架原因必填并记入审计日志。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="reward-disable-reason">下架原因</label>
-          <textarea
-            id="reward-disable-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (fieldError !== null) {
-                setFieldError(null);
-              }
-            }}
-            aria-invalid={fieldError !== null}
-            disabled={busy}
-            required
-          />
-          {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
-            </p>
+      <DialogContent
+        asChild
+        aria-labelledby="reward-disable-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="reward-disable-title">下架奖励</DialogTitle>
+          <p className="report-target">
+            下架后「{target.name}」不再对学生可见、不能发起新兑换；已创建的兑换保持原快照并继续处理。
+            下架原因必填并记入审计日志。
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="reward-disable-reason">下架原因</label>
+            <textarea
+              id="reward-disable-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (fieldError !== null) {
+                  setFieldError(null);
+                }
+              }}
+              aria-invalid={fieldError !== null}
+              disabled={busy}
+              required
+            />
+            {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>确认下架</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>确认下架</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

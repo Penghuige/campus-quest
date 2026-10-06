@@ -182,7 +182,7 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "停用" }).click();
 
-    const dialog = page.locator("dialog[aria-labelledby='account-status-title']");
+    const dialog = page.getByRole("dialog", { name: "停用账号" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "确认停用" }).click();
     await expect(dialog.getByText("操作原因必填（将记入审计日志）")).toBeVisible();
@@ -194,8 +194,9 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
 
     // Restore for reruns: reactivate with a reason.
     await row.getByRole("button", { name: "恢复" }).click();
-    await dialog.getByLabel("操作原因").fill("e2e：恢复账号");
-    await dialog.getByRole("button", { name: "确认恢复" }).click();
+    const restore = page.getByRole("dialog", { name: "恢复账号" });
+    await restore.getByLabel("操作原因").fill("e2e：恢复账号");
+    await restore.getByRole("button", { name: "确认恢复" }).click();
     await expect(row.getByText("正常")).toBeVisible();
   });
 
@@ -208,7 +209,7 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
 
     // Reject: blank reason is refused client-side (the transport mirror).
     await page.getByRole("button", { name: "拒绝申请" }).click();
-    const reject = page.locator("dialog[aria-labelledby='redemption-reject-title']");
+    const reject = page.getByRole("dialog", { name: "拒绝兑换申请" });
     await expect(reject).toBeVisible();
     await reject.getByRole("button", { name: "确认拒绝" }).click();
     await expect(reject.getByText("拒绝原因必填（将通过通知送达申请者）")).toBeVisible();
@@ -217,7 +218,7 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     // Approve: explicit confirm, then the row lands in 待发放 and fulfill
     // becomes available on the server verdict.
     await page.getByRole("button", { name: "通过并扣减积分" }).click();
-    const approve = page.locator("dialog[aria-labelledby='redemption-approve-title']");
+    const approve = page.getByRole("dialog", { name: "通过兑换申请" });
     await expect(approve.getByText(/将扣减积分并进入待发放状态/)).toBeVisible();
     await approve.getByRole("button", { name: "确认通过" }).click();
     // .first(): after approval the badge renders on BOTH the queue row
@@ -226,7 +227,7 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     await expect(page.getByText("已批准 · 待发放").first()).toBeVisible();
 
     await page.getByRole("button", { name: "标记已发放" }).click();
-    const fulfill = page.locator("dialog[aria-labelledby='redemption-fulfill-title']");
+    const fulfill = page.getByRole("dialog", { name: "标记已发放" });
     await fulfill.getByRole("button", { name: "确认发放" }).click();
     await expect(page.getByText("已发放").first()).toBeVisible();
   });
@@ -239,7 +240,7 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     await termInput.fill("e2e-term-2026-2");
     await termCard.getByRole("button", { name: "保存修改" }).click();
 
-    const confirm = page.locator("dialog[aria-labelledby='setting-confirm-title']");
+    const confirm = page.getByRole("dialog", { name: "修改当前学期" });
     await expect(confirm).toBeVisible();
     await expect(confirm.getByText(/切换学期后，新创建的兑换将快照新学期/)).toBeVisible();
     await confirm.getByRole("button", { name: "确认修改" }).click();

@@ -17,8 +17,14 @@
  * The toggle's reason is transport-OPTIONAL (it rides the per-entry
  * audit rows when present); disable still asks for one.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -506,14 +512,6 @@ function WhitelistDisableDialog({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -541,56 +539,60 @@ function WhitelistDisableDialog({
       : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby="whitelist-disable-title"
-      className="dialog"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="whitelist-disable-title" className="dialog-title">
-          停用白名单条目
-        </h3>
-        <p className="report-target">
-          停用后学号 <span className="mono">{entry.student_number}</span>{" "}
-          将不能用于注册（已注册账号不受影响）。可随时重新启用。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="whitelist-disable-reason">
-            停用原因（选填，记入审计日志）
-          </label>
-          <textarea
-            id="whitelist-disable-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            disabled={busy}
-          />
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
-            </p>
+      <DialogContent
+        asChild
+        aria-labelledby="whitelist-disable-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="whitelist-disable-title">停用白名单条目</DialogTitle>
+          <p className="report-target">
+            停用后学号 <span className="mono">{entry.student_number}</span>{" "}
+            将不能用于注册（已注册账号不受影响）。可随时重新启用。
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="whitelist-disable-reason">
+              停用原因（选填，记入审计日志）
+            </label>
+            <textarea
+              id="whitelist-disable-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              disabled={busy}
+            />
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>确认停用</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>确认停用</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

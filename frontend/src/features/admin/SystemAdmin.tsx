@@ -28,8 +28,14 @@
  * remain this panel's only row source, so it still edits by id (from
  * the create response or the audit trail) until that wiring lands.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -447,35 +453,28 @@ function ConfirmSettingDialog({
   onConfirm: (reason: string | undefined) => Promise<void>;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   /** Blank-after-trim is OMITTED (None is legal server-side), never sent. */
   const reasonToSend = reason.trim().length > 0 ? reason.trim() : undefined;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="setting-confirm-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <div className="dialog-body">
-        <h3 id="setting-confirm-title" className="dialog-title">
-          {title}
-        </h3>
+      <DialogContent
+        aria-labelledby="setting-confirm-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <DialogTitle id="setting-confirm-title">{title}</DialogTitle>
         <p className="report-target">
           确认后立即生效并记入审计日志：{diff}
           {title.includes("学期")
@@ -507,7 +506,7 @@ function ConfirmSettingDialog({
             ) : null}
           </div>
         ) : null}
-        <div className="dialog-actions">
+        <DialogFooter>
           <button
             type="button"
             className="btn btn-primary"
@@ -521,9 +520,9 @@ function ConfirmSettingDialog({
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
             取消
           </button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
