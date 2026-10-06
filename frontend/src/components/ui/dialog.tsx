@@ -12,9 +12,11 @@
  * NO open/close animation (the product has none).
  *
  * Radix supplies the behavior contract (selector contract Class A):
- * role="dialog", aria-modal, aria-labelledby/aria-describedby wiring,
- * focus trap, Escape, outside-click close. There is intentionally no
- * built-in close button — the product dialogs close through their own
+ * role="dialog", aria-labelledby/aria-describedby wiring, focus trap,
+ * Escape, outside-click close. Modality is enforced by aria-hiding
+ * sibling content (hideOthers) + scroll lock; @radix-ui/react-dialog
+ * 1.2 does not emit aria-modal. There is intentionally no built-in
+ * close button — the product dialogs close through their own
  * action rows (use DialogClose asChild on those buttons).
  */
 import * as React from "react";
