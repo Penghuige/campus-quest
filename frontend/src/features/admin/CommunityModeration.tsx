@@ -20,8 +20,14 @@
  * nickname/id ride the report rows — the §23 moderator surface — and go
  * no further than this section.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -265,18 +271,10 @@ function ModerationDeleteDialog({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -300,57 +298,61 @@ function ModerationDeleteDialog({
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="moderation-delete-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="moderation-delete-title" className="dialog-title">
-          删除评论
-        </h3>
-        <p className="report-target">
-          {row.authorDisplay} 的评论将以删除状态保留（学生端显示为已删除）；删除原因必填并记入审计日志。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="moderation-reason">
-            删除原因
-          </label>
-          <textarea
-            id="moderation-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (fieldError !== null) {
-                setFieldError(null);
-              }
-            }}
-            aria-invalid={fieldError !== null}
-            disabled={busy}
-            required
-          />
-          {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
-        </div>
-        {error !== null ? <SectionError error={error} /> : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>确认删除</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+      <DialogContent
+        asChild
+        aria-labelledby="moderation-delete-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="moderation-delete-title">删除评论</DialogTitle>
+          <p className="report-target">
+            {row.authorDisplay} 的评论将以删除状态保留（学生端显示为已删除）；删除原因必填并记入审计日志。
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="moderation-reason">
+              删除原因
+            </label>
+            <textarea
+              id="moderation-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (fieldError !== null) {
+                  setFieldError(null);
+                }
+              }}
+              aria-invalid={fieldError !== null}
+              disabled={busy}
+              required
+            />
+            {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
+          </div>
+          {error !== null ? <SectionError error={error} /> : null}
+          <DialogFooter>
+            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>确认删除</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

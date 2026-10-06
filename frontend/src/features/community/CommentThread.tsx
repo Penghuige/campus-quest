@@ -27,7 +27,13 @@
  * The sort tabs adopt the .segmented-tabs control grammar (T2 fold).
  */
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 import {
   EmptyState,
@@ -347,9 +353,13 @@ export function CommentRowItem({
 // --- report dialog (spec §23: closed categories; filing removes nothing) ------------
 
 /**
- * Report form over a NATIVE `<dialog>` (the T5 RedeemDialog pattern:
- * platform focus containment + Escape; no dialog primitive is
- * installed, so no bespoke trap). The submitted state is deliberately
+ * Report form on the plan-14 Dialog primitive (components/ui/dialog):
+ * Radix supplies the focus trap + Escape; the shell is the `.cq-dialog*`
+ * replication of the legacy `.dialog` values. The accessible name is the
+ * CONSTANT aria-label 举报评论 (the legacy contract) in both states, so
+ * no DialogTitle/labelledby wiring; the form is the content element via
+ * `DialogContent asChild`, keeping the grid that lived on
+ * `form.dialog-body`. The submitted state is deliberately
  * NON-DESTRUCTIVE: the reported comment stays visible while moderation
  * reviews — the confirmation says so.
  */
@@ -360,20 +370,12 @@ function ReportDialog({
   comment: CommentRowView;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [category, setCategory] = useState("");
   const [note, setNote] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -420,97 +422,105 @@ function ReportDialog({
     }
   }
 
-  function close() {
-    const dialog = dialogRef.current;
-    if (dialog !== null) {
-      dialog.close();
-    }
-    onClose();
-  }
-
   return (
-    <dialog className="dialog" ref={dialogRef} onClose={close} aria-label="举报评论">
-      {done ? (
-        <div className="dialog-body">
-          <h3 className="dialog-title">举报已提交</h3>
-          <p className="report-confirmation" role="status">
-            感谢你的反馈。该评论在审核期间保持可见，审核结果不会通知举报人。
-          </p>
-          <div className="dialog-actions">
-            <button type="button" className="btn btn-primary" onClick={close}>
-              完成
-            </button>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        asChild
+        aria-label="举报评论"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        {done ? (
+          <div>
+            <h3 className="cq-dialog-title">举报已提交</h3>
+            <p className="report-confirmation" role="status">
+              感谢你的反馈。该评论在审核期间保持可见，审核结果不会通知举报人。
+            </p>
+            <DialogFooter>
+              <button type="button" className="btn btn-primary" onClick={onClose}>
+                完成
+              </button>
+            </DialogFooter>
           </div>
-        </div>
-      ) : (
-        <form className="dialog-body" onSubmit={onSubmit}>
-          <h3 className="dialog-title">举报评论</h3>
-          <p className="report-target">
-            举报 {comment.authorDisplay} 的评论：
-            「{commentExcerpt(comment.content)}」
-          </p>
-          <fieldset className="field">
-            <legend className="field-label">举报类别</legend>
-            <div className="report-categories" role="radiogroup" aria-label="举报类别">
-              {REPORT_CATEGORY_OPTIONS.map((option) => (
-                <label key={option.value} className="identity-option">
-                  <input
-                    type="radio"
-                    name="report-category"
-                    value={option.value}
-                    checked={category === option.value}
-                    onChange={() => setCategory(option.value)}
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
+        ) : (
+          <form onSubmit={onSubmit}>
+            <h3 className="cq-dialog-title">举报评论</h3>
+            <p className="report-target">
+              举报 {comment.authorDisplay} 的评论：
+              「{commentExcerpt(comment.content)}」
+            </p>
+            <fieldset className="field">
+              <legend className="field-label">举报类别</legend>
+              <div className="report-categories" role="radiogroup" aria-label="举报类别">
+                {REPORT_CATEGORY_OPTIONS.map((option) => (
+                  <label key={option.value} className="identity-option">
+                    <input
+                      type="radio"
+                      name="report-category"
+                      value={option.value}
+                      checked={category === option.value}
+                      onChange={() => setCategory(option.value)}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="field">
+              <label className="field-label" htmlFor="report-note">
+                补充说明（可选）
+              </label>
+              <textarea
+                id="report-note"
+                className="input"
+                rows={3}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                aria-invalid={fieldError !== null}
+                aria-describedby={fieldError !== null ? "report-note-error" : undefined}
+              />
+              {fieldError !== null ? (
+                <p className="field-error" id="report-note-error" role="alert">
+                  {fieldError}
+                </p>
+              ) : (
+                <p className="field-hint">举报会进入老师的审核队列，评论不会被立即隐藏。</p>
+              )}
             </div>
-          </fieldset>
-          <div className="field">
-            <label className="field-label" htmlFor="report-note">
-              补充说明（可选）
-            </label>
-            <textarea
-              id="report-note"
-              className="input"
-              rows={3}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              aria-invalid={fieldError !== null}
-              aria-describedby={fieldError !== null ? "report-note-error" : undefined}
-            />
-            {fieldError !== null ? (
-              <p className="field-error" id="report-note-error" role="alert">
-                {fieldError}
-              </p>
-            ) : (
-              <p className="field-hint">举报会进入老师的审核队列，评论不会被立即隐藏。</p>
-            )}
-          </div>
-          {submitError !== null ? (
-            <div className="alert alert-error" role="alert">
-              <p>
-                <span className="alert-marker" aria-hidden="true">!</span>
-                {submitError}
-              </p>
-            </div>
-          ) : null}
-          <div className="dialog-actions">
-            <button type="button" className="btn btn-secondary" onClick={close}>
-              取消
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={busy}
-              aria-busy={busy}
-            >
-              {busy ? <span className="spinner" aria-hidden="true" /> : null}
-              <span>提交举报</span>
-            </button>
-          </div>
-        </form>
-      )}
-    </dialog>
+            {submitError !== null ? (
+              <div className="alert alert-error" role="alert">
+                <p>
+                  <span className="alert-marker" aria-hidden="true">!</span>
+                  {submitError}
+                </p>
+              </div>
+            ) : null}
+            <DialogFooter>
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                取消
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy}
+                aria-busy={busy}
+              >
+                {busy ? <span className="spinner" aria-hidden="true" /> : null}
+                <span>提交举报</span>
+              </button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
