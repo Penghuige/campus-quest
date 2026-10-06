@@ -268,6 +268,15 @@ for (const shot of SHOTS) {
     );
     await authenticate(page, shot.auth);
     await page.goto(`${BASE_URL}${path}`);
+    // Font determinism (C3 ⑧, first CI run's lesson): the local dev box
+    // resolves zh sans to Microsoft YaHei (msyh.ttf) while CI falls to
+    // the pinned fonts-noto-cjk — different metrics, 1-2px page-height
+    // drift, every shot red on size mismatch. Force the token to the
+    // family BOTH environments carry so baselines are shot and compared
+    // under the same metrics everywhere.
+    await page.addStyleTag({
+      content: `:root { --font-sans: "Noto Sans CJK SC", sans-serif; }`,
+    });
     // The capture harness's wrong-artifact guard: the shot is only valid
     // if THIS pass rendered the page's own header and (for authenticated
     // surfaces) the desktop sidebar landmark.
