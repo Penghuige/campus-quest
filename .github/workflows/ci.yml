@@ -307,10 +307,17 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Deterministic CJK rendering: the baselines were shot against
-      # the system font stack with Noto CJK; pin the distro package so
-      # the runner's font version is not a variable.
-      - name: Pin CJK fonts
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      # fonts-noto-cjk 1:20230817+repack1-3 (font version 2.004) on the
+      # dev box. ubuntu-latest's rolling install serves a newer repack
+      # whose rasterization differs on dense text (the admin table shot
+      # crossed the 1% ratio while 10 sparse pages absorbed it) — so the
+      # EXACT version is pinned; a superseded archive version fails the
+      # install loudly instead of drifting silently.
+      - name: Pin CJK fonts (exact baseline version)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --allow-downgrades \
+            fonts-noto-cjk=1:20230817+repack1-3
 
       - name: Load pinned MinIO images from the release mirror
         run: |
