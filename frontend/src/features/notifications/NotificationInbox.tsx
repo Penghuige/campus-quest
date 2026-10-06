@@ -58,6 +58,7 @@ import {
   INBOX_FILTERS,
   type InboxFilterKey,
 } from "./inboxView";
+import { Button } from "@/components/ui/button";
 
 export interface NotificationInboxProps {
   /** The URL filter the page parsed (remounts per tab; patterns §4). */
@@ -277,9 +278,8 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
 
           {canLoadMore(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
@@ -290,7 +290,7 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
                 <span>
                   加载更多通知（{items.length}/{total}）
                 </span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -350,13 +350,13 @@ export function NotificationRow({ view, item, markError, onMarkRead }: Notificat
         <p className="notif-body">{view.body}</p>
         {!view.isRead ? (
           <div className="notif-actions">
-            <button
-              type="button"
-              className="btn btn-ghost comment-action"
+            <Button
+              variant="ghost"
+              className="comment-action"
               onClick={() => onMarkRead(item)}
             >
               标为已读
-            </button>
+            </Button>
           </div>
         ) : null}
         {markError !== null ? (

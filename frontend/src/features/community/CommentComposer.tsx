@@ -55,6 +55,7 @@ export interface CommentComposerProps {
    * DEFAULT_IDENTITY_MODE ruling. */
   initialMode?: IdentityMode;
 }
+import { Button } from "@/components/ui/button";
 
 export function CommentComposer({
   taskId,
@@ -123,9 +124,9 @@ export function CommentComposer({
             ：{parent.excerpt}
           </p>
           {onCancel !== undefined ? (
-            <button type="button" className="btn btn-ghost" onClick={onCancel}>
+            <Button variant="ghost" onClick={onCancel}>
               取消回复
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -199,15 +200,15 @@ export function CommentComposer({
       ) : null}
 
       <div className="composer-actions">
-        <button
+        <Button
           type="submit"
-          className="btn btn-primary"
+          variant="primary"
           disabled={busy}
           aria-busy={busy}
         >
           {busy ? <span className="spinner" aria-hidden="true" /> : null}
           <span>{parent !== undefined ? "发布回复" : "发布评论"}</span>
-        </button>
+        </Button>
       </div>
     </form>
   );

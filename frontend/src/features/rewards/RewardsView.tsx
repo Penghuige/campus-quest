@@ -51,6 +51,7 @@ interface LatestRedemption {
   redemption: RedemptionDto;
   itemName: string;
 }
+import { Button } from "@/components/ui/button";
 
 export function RewardsView() {
   const wallet = useSection(() => myWallet(), "GET /api/v1/points/me");
@@ -316,14 +317,13 @@ export function RewardCard({
           {/* Spendability is the server's call (patterns §3): only the
               wallet's OWN spendable figure disables the button, and any
               stale-wallet attempt still meets the typed conflict. */}
-          <button
-            type="button"
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => onRedeem(item)}
             disabled={cta.kind === "insufficient"}
           >
             兑换
-          </button>
+          </Button>
           {cta.kind === "insufficient" ? (
             <p className="reward-cta-note">还差 {cta.missingPoints} 积分</p>
           ) : null}

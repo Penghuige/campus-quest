@@ -35,6 +35,7 @@ export interface ClaimButtonProps {
   /** Boundary hook: refetch owning server state after a successful claim. */
   onClaimed?: () => void;
 }
+import { Button } from "@/components/ui/button";
 
 export function ClaimButton({
   taskId,
@@ -72,16 +73,16 @@ export function ClaimButton({
 
   return (
     <div className="section">
-      <button
-        type="button"
-        className="btn btn-primary btn-block"
+      <Button
+        block
+        variant="primary"
         onClick={() => void onClaim()}
         disabled={busy}
         aria-busy={busy}
       >
         {busy ? <span className="spinner" aria-hidden="true" /> : null}
         <span>领取任务</span>
-      </button>
+      </Button>
       <p className="field-hint">
         领取后系统会随机分配一个任务单元，并展示分配给你的平台与关键词。
       </p>

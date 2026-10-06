@@ -21,6 +21,7 @@ import {
 import { listTasks, type TaskCardDto, type TaskListPageDto } from "./api";
 import { TaskCard } from "./TaskCard";
 import { useNow } from "./useNow";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 12;
 
@@ -123,9 +124,8 @@ export function TaskDiscovery() {
           </p>
         ) : null}
         {canLoadMore ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={() => void loadMore()}
             disabled={loadingMore}
             aria-busy={loadingMore}
@@ -134,7 +134,7 @@ export function TaskDiscovery() {
               <span className="spinner" aria-hidden="true" />
             ) : null}
             <span>加载更多</span>
-          </button>
+          </Button>
         ) : null}
         {moreError !== null ? (
           <SectionError error={moreError} onRetry={() => void loadMore()} />
