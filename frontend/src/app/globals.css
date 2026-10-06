@@ -7,12 +7,55 @@
  * values. Light theme ships first; grouping tokens under :root keeps a later
  * dark theme a matter of re-declaring the same variables (§4).
  *
- * Tailwind/shadcn note: the design system prefers tokens "consumed by Tailwind
- * and shadcn primitives", but no styling stack is installed yet (Plan 09
- * deliberately adds zero runtime dependencies). These variables are the stable
- * token contract; when Tailwind lands it should map its theme onto THESE
- * names rather than fork them.
+ * Tailwind note (Plan 14 C0): Tailwind v4 consumes the tokens through the
+ * `@theme inline` bridge below — every `--color-*` theme entry REFERENCES the
+ * `var(--…)` defined in :root, so utilities resolve to the SAME variables and
+ * `@theme inline` itself emits nothing. Utilities import ONLY (no preflight):
+ * the hand-written styles below keep full cascade control, and the compiled
+ * utilities land in @layer utilities, which unlayered author CSS overrides.
  */
+
+@import "tailwindcss/utilities" layer(utilities);
+
+/* Token bridge: the full §3 color set (surface / text / border / semantic /
+ * rarity). `inline` theme entries never emit declarations — they only teach
+ * the compiler that `bg-surface-1` means `var(--surface-1)`. */
+@theme inline {
+  /* surface */
+  --color-background: var(--background);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-brand: var(--surface-brand);
+  --color-overlay: var(--overlay);
+  --color-overlay-scrim: var(--overlay-scrim);
+  /* text */
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-inverse-foreground: var(--inverse-foreground);
+  /* border */
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-focus-ring: var(--focus-ring);
+  /* semantic */
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
+  --color-warning-muted: var(--warning-muted);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-muted: var(--danger-muted);
+  --color-info: var(--info);
+  /* rarity */
+  --color-rarity-normal: var(--rarity-normal);
+  --color-rarity-rare: var(--rarity-rare);
+  --color-rarity-epic: var(--rarity-epic);
+  --color-rarity-legendary: var(--rarity-legendary);
+}
 
 :root {
   /* surface — Plan 11 §5: warm-neutral ground (less blue-grey than the
@@ -4075,6 +4118,73 @@ body {
   border-top: 1px solid var(--border);
   padding-top: var(--space-3);
   justify-content: flex-start;
+}
+
+/* ==== Plan-14 T4: shadcn-pattern Dialog primitive (src/components/ui/dialog).
+   Replicates the native .dialog contract verbatim — same tokens, same values
+   (see .dialog / .dialog-body / .dialog-title / .dialog-actions / .dialog-wide
+   above). The Radix portal renders plain divs outside the top layer, so the
+   primitive carries its own fixed positioning, centering transform, scrim
+   element (instead of ::backdrop), and z-index. NO open/close animation: the
+   product dialog has none, so no reduced-motion override is needed either.
+   The old .dialog classes stay untouched until the C3 retirement. */
+.cq-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--overlay-scrim);
+}
+
+.cq-dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  width: min(26rem, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--foreground);
+  background: var(--surface-1);
+}
+
+.cq-dialog-wide {
+  width: min(40rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.cq-dialog-wide .input {
+  width: 100%;
+}
+
+.cq-dialog-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Primitive default for the Radix Description (the product dialogs use
+   .field-hint for this role today; T5-T8 may keep either via className). */
+.cq-dialog-description {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.cq-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cq-dialog-footer .btn {
+  flex: 1 1 auto;
 }
 
 /* ==== consolidated prefers-reduced-motion overrides ==========================

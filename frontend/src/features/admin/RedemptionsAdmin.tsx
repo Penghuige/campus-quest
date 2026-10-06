@@ -15,8 +15,14 @@
  * and fulfill show explicit confirms (approve releases points from the
  * system; fulfill marks physical delivery complete).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -340,16 +346,8 @@ function ApproveDialog({
   onDone: (verdict: RedemptionReviewDto) => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onConfirm() {
     if (busy) {
@@ -369,21 +367,22 @@ function ApproveDialog({
     error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="redemption-approve-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <div className="dialog-body">
-        <h3 id="redemption-approve-title" className="dialog-title">
-          通过兑换申请
-        </h3>
+      <DialogContent
+        aria-labelledby="redemption-approve-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <DialogTitle id="redemption-approve-title">通过兑换申请</DialogTitle>
         <p className="report-target">
           确认后「{row.item_name}」（{row.points} 积分，申请人{" "}
           {row.requester_nickname ?? "—"}）将扣减积分并进入待发放状态；
@@ -397,7 +396,7 @@ function ApproveDialog({
             </p>
           </div>
         ) : null}
-        <div className="dialog-actions">
+        <DialogFooter>
           <button
             type="button"
             className="btn btn-primary"
@@ -411,9 +410,9 @@ function ApproveDialog({
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
             取消
           </button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -427,18 +426,10 @@ function RejectDialog({
   onDone: (verdict: RedemptionReviewDto) => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -465,65 +456,69 @@ function RejectDialog({
     error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="redemption-reject-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="redemption-reject-title" className="dialog-title">
-          拒绝兑换申请
-        </h3>
-        <p className="report-target">
-          拒绝后「{row.item_name}」的占用将释放，积分退回申请者可用余额；
-          拒绝原因会随通知送达申请者。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="redemption-reject-reason">
-            拒绝原因
-          </label>
-          <textarea
-            id="redemption-reject-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (fieldError !== null) {
-                setFieldError(null);
-              }
-            }}
-            aria-invalid={fieldError !== null}
-            disabled={busy}
-            required
-          />
-          {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
-            </p>
+      <DialogContent
+        asChild
+        aria-labelledby="redemption-reject-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="redemption-reject-title">拒绝兑换申请</DialogTitle>
+          <p className="report-target">
+            拒绝后「{row.item_name}」的占用将释放，积分退回申请者可用余额；
+            拒绝原因会随通知送达申请者。
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="redemption-reject-reason">
+              拒绝原因
+            </label>
+            <textarea
+              id="redemption-reject-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (fieldError !== null) {
+                  setFieldError(null);
+                }
+              }}
+              aria-invalid={fieldError !== null}
+              disabled={busy}
+              required
+            />
+            {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>确认拒绝</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>确认拒绝</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -537,17 +532,9 @@ function FulfillDialog({
   onDone: (verdict: RedemptionReviewDto) => void;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -571,56 +558,60 @@ function FulfillDialog({
     error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="redemption-fulfill-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="redemption-fulfill-title" className="dialog-title">
-          标记已发放
-        </h3>
-        <p className="report-target">
-          确认「{row.item_name}」（申请人 {row.requester_nickname ?? "—"}）已完成发放；
-          该操作将记录发放时间，不可撤销。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="redemption-fulfill-note">
-            发放备注（选填）
-          </label>
-          <textarea
-            id="redemption-fulfill-note"
-            className="input"
-            rows={2}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            disabled={busy}
-          />
-        </div>
-        {errorView !== null ? (
-          <div className="alert alert-error" role="alert">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              {errorView.message}
-            </p>
+      <DialogContent
+        asChild
+        aria-labelledby="redemption-fulfill-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="redemption-fulfill-title">标记已发放</DialogTitle>
+          <p className="report-target">
+            确认「{row.item_name}」（申请人 {row.requester_nickname ?? "—"}）已完成发放；
+            该操作将记录发放时间，不可撤销。
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="redemption-fulfill-note">
+              发放备注（选填）
+            </label>
+            <textarea
+              id="redemption-fulfill-note"
+              className="input"
+              rows={2}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              disabled={busy}
+            />
           </div>
-        ) : null}
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
-            {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>确认发放</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {errorView !== null ? (
+            <div className="alert alert-error" role="alert">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                {errorView.message}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>确认发放</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -2,7 +2,10 @@
 /**
  * The explicit anonymous-identity reveal dialog (spec §21.4; plan Task
  * 10 step 2; G11/G12): the ONE surface where a comment author's student
- * number is representable at all.
+ * number is representable at all. On the plan-14 Dialog primitive
+ * (components/ui/dialog; the form is the content element via
+ * `DialogContent asChild`, keeping the grid that lived on
+ * `form.dialog-body`).
  *
  * Binding rules this component exists to enforce:
  * - the reason is MANDATORY and capped (the backend refuses blanks and
@@ -13,8 +16,14 @@
  *   community-moderation context — comment listings never auto-fetch
  *   identities, and the audit row is written server-side on every call.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SectionError } from "@/components/ui/sectionStates";
 
 import { revealCommentIdentity, type RevealIdentityDto } from "./adminApi";
@@ -33,20 +42,12 @@ export function RevealIdentityDialog({
   authorDisplay: string;
   onCancel: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   /** Identity exists in state ONLY after a successful reveal call. */
   const [revealed, setRevealed] = useState<RevealIdentityDto | null>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,87 +72,91 @@ export function RevealIdentityDialog({
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="reveal-identity-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onCancel();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="reveal-identity-title" className="dialog-title">
-          揭示匿名评论身份
-        </h3>
-        <p className="report-target">
-          目标评论作者显示为 {authorDisplay}。揭示身份属于高权限操作，每次调用都会记入审计日志；
-          请仅在治理需要时使用，并填写具体追溯原因。
-        </p>
-        <div className="field">
-          <label className="field-label" htmlFor="reveal-reason">
-            追溯原因
-          </label>
-          <textarea
-            id="reveal-reason"
-            className="input"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (fieldError !== null) {
-                setFieldError(null);
-              }
-            }}
-            aria-invalid={fieldError !== null}
-            aria-describedby="reveal-reason-hint"
-            maxLength={REVEAL_REASON_MAX_LENGTH}
-            disabled={busy || revealed !== null}
-            required
-          />
-          <p className="field-hint" id="reveal-reason-hint">
-            必填，不超过 {REVEAL_REASON_MAX_LENGTH} 字符。
+      <DialogContent
+        asChild
+        aria-labelledby="reveal-identity-title"
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had no backdrop-click close.
+          event.preventDefault();
+        }}
+      >
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="reveal-identity-title">揭示匿名评论身份</DialogTitle>
+          <p className="report-target">
+            目标评论作者显示为 {authorDisplay}。揭示身份属于高权限操作，每次调用都会记入审计日志；
+            请仅在治理需要时使用，并填写具体追溯原因。
           </p>
-          {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
-        </div>
-        {revealed !== null ? (
-          <div className="alert alert-warning" role="status">
-            <p>
-              <span className="alert-marker" aria-hidden="true">!</span>
-              身份已揭示（本次揭示已记入审计日志）：
+          <div className="field">
+            <label className="field-label" htmlFor="reveal-reason">
+              追溯原因
+            </label>
+            <textarea
+              id="reveal-reason"
+              className="input"
+              rows={3}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (fieldError !== null) {
+                  setFieldError(null);
+                }
+              }}
+              aria-invalid={fieldError !== null}
+              aria-describedby="reveal-reason-hint"
+              maxLength={REVEAL_REASON_MAX_LENGTH}
+              disabled={busy || revealed !== null}
+              required
+            />
+            <p className="field-hint" id="reveal-reason-hint">
+              必填，不超过 {REVEAL_REASON_MAX_LENGTH} 字符。
             </p>
-            <p>
-              昵称：<strong>{revealed.nickname}</strong>　学号：
-              <span className="mono">{revealed.username}</span>
-            </p>
-            <p className="req-id">用户 ID：{revealed.user_id}</p>
+            {fieldError !== null ? <p className="field-error">{fieldError}</p> : null}
           </div>
-        ) : null}
-        {error !== null ? <SectionError error={error} /> : null}
-        <div className="dialog-actions">
-          {revealed === null ? (
-            <button
-              type="submit"
-              className="btn btn-danger"
-              disabled={busy}
-              aria-busy={busy}
-            >
-              {busy ? <span className="spinner" aria-hidden="true" /> : null}
-              <span>确认揭示身份</span>
-            </button>
+          {revealed !== null ? (
+            <div className="alert alert-warning" role="status">
+              <p>
+                <span className="alert-marker" aria-hidden="true">!</span>
+                身份已揭示（本次揭示已记入审计日志）：
+              </p>
+              <p>
+                昵称：<strong>{revealed.nickname}</strong>　学号：
+                <span className="mono">{revealed.username}</span>
+              </p>
+              <p className="req-id">用户 ID：{revealed.user_id}</p>
+            </div>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={busy}
-          >
-            {revealed !== null ? "关闭" : "取消"}
-          </button>
-        </div>
-      </form>
-    </dialog>
+          {error !== null ? <SectionError error={error} /> : null}
+          <DialogFooter>
+            {revealed === null ? (
+              <button
+                type="submit"
+                className="btn btn-danger"
+                disabled={busy}
+                aria-busy={busy}
+              >
+                {busy ? <span className="spinner" aria-hidden="true" /> : null}
+                <span>确认揭示身份</span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onCancel}
+              disabled={busy}
+            >
+              {revealed !== null ? "关闭" : "取消"}
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

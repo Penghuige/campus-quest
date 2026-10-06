@@ -1,9 +1,18 @@
 "use client";
 /**
  * Create-task dialog (spec §6; patterns §6 forms): the DRAFT-creation
- * form over a native `<dialog>`. The fields are the publish-validation
- * set (binding constraint) rendered by the shared `TaskFormFields`
- * (the edit dialog reuses them under the V1 edit rule).
+ * form on the plan-14 Dialog primitive (components/ui/dialog) — Radix
+ * supplies role=dialog/focus-trap/Escape (modality via hideOthers +
+ * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell is
+ * the `.cq-dialog*` replication of the legacy `.dialog` values. The
+ * fields are the publish-validation set (binding constraint) rendered
+ * by the shared `TaskFormFields` (the edit dialog reuses them under the
+ * V1 edit rule).
+ *
+ * The form IS the content element (`DialogContent asChild`): the legacy
+ * grid/gap lived on `form.dialog-body`, and the primitive's grid lives
+ * on `.cq-dialog-content` — a bare nested form would collapse into one
+ * grid item and lose the child gaps.
  *
  * Client mirrors are CONVENIENCE ONLY (`validateTaskForm`): a bad band
  * never leaves the browser; every business verdict (unsupported values,
@@ -11,8 +20,14 @@
  * server's typed envelope, rendered code-keyed under the form. Success
  * hands the CREATED task (the server echo) to the parent.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FormErrorSummary } from "@/features/auth/FormErrorSummary";
 
 import { createTeacherTask, type TeacherTaskDto } from "./teacherApi";
@@ -34,29 +49,21 @@ export interface CreateTaskDialogProps {
 }
 
 export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  // Mounting the inner dialog per open starts every field fresh — the
+  // legacy reset-on-open effect's job, without an effect.
+  return open ? (
+    <CreateTaskDialogInner onClose={onClose} onCreated={onCreated} />
+  ) : null;
+}
+
+function CreateTaskDialogInner({
+  onClose,
+  onCreated,
+}: Omit<CreateTaskDialogProps, "open">) {
   const [values, setValues] = useState<TaskFormValues>(EMPTY_TASK_FORM);
   const [fieldErrors, setFieldErrors] = useState<TaskFormErrors>({});
   const [summary, setSummary] = useState<ReturnType<typeof describeTaskMutationError> | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  // Controlled open/close over the native dialog; every fresh open resets.
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) {
-      return;
-    }
-    if (open && !dialog.open) {
-      setValues(EMPTY_TASK_FORM);
-      setFieldErrors({});
-      setSummary(null);
-      setSubmitting(false);
-      dialog.showModal();
-    }
-    if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
 
   function setField<K extends TaskFormFieldKey>(key: K, value: TaskFormValues[K]) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -92,59 +99,51 @@ export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogP
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog dialog-wide"
-      aria-labelledby="create-task-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!submitting) {
-          onClose();
-        }
-      }}
-      onClick={(event) => {
-        if (event.target === dialogRef.current && !submitting) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !submitting) {
           onClose();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="create-task-title" className="dialog-title">
-          新建任务
-        </h3>
-        <p className="field-hint">
-          创建后任务为草稿状态：需要先在详情页导入任务单元，再通过发布校验。
-        </p>
+      <DialogContent asChild size="wide" aria-labelledby="create-task-title">
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="create-task-title">新建任务</DialogTitle>
+          <p className="field-hint">
+            创建后任务为草稿状态：需要先在详情页导入任务单元，再通过发布校验。
+          </p>
 
-        <FormErrorSummary view={summary} />
+          <FormErrorSummary view={summary} />
 
-        <TaskFormFields
-          values={values}
-          fieldErrors={fieldErrors}
-          disabled={submitting}
-          setField={setField}
-        />
-
-        <div className="dialog-actions">
-          <button
-            type="submit"
-            className="btn btn-primary"
+          <TaskFormFields
+            values={values}
+            fieldErrors={fieldErrors}
             disabled={submitting}
-            aria-busy={submitting}
-          >
-            {submitting ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>创建草稿</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={submitting}
-          >
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+            setField={setField}
+          />
+
+          <DialogFooter>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting}
+              aria-busy={submitting}
+            >
+              {submitting ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>创建草稿</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

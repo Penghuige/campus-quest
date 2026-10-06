@@ -2,7 +2,9 @@
 /**
  * Edit-task dialog (spec §6.2 V1 edit rule) — the create form reused
  * over the SAME shared fields (`TaskFormFields`), prefilled from the
- * task detail.
+ * task detail, on the plan-14 Dialog primitive (components/ui/dialog;
+ * the form is the content element via `DialogContent asChild`, keeping
+ * the legacy grid/gap that lived on `form.dialog-body`).
  *
  * This closes the load-bearing gap: a DRAFT created without the
  * submission schema (create is DRAFT-legal) becomes publishable by
@@ -24,8 +26,14 @@
  * product-worded line — server-authoritative, never guessed. A no-op
  * diff closes the dialog without a request.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FormErrorSummary } from "@/features/auth/FormErrorSummary";
 
 import { updateTeacherTask, type TeacherTaskDto } from "./teacherApi";
@@ -49,7 +57,20 @@ export interface EditTaskDialogProps {
 }
 
 export function EditTaskDialog({ task, open, onClose, onUpdated }: EditTaskDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  // Mounting the inner dialog per open re-seeds the form from the
+  // CURRENT task prop — the legacy reset-on-open effect's job, without
+  // an effect (the parent refetches the task only after the dialog
+  // closes, so no mid-open re-seed case exists).
+  return open ? (
+    <EditTaskDialogInner task={task} onClose={onClose} onUpdated={onUpdated} />
+  ) : null;
+}
+
+function EditTaskDialogInner({
+  task,
+  onClose,
+  onUpdated,
+}: Omit<EditTaskDialogProps, "open">) {
   const [values, setValues] = useState<TaskFormValues>(() => taskFormFromTask(task));
   const [fieldErrors, setFieldErrors] = useState<TaskFormErrors>({});
   const [summary, setSummary] = useState<ReturnType<typeof describeEditError> | null>(null);
@@ -57,25 +78,6 @@ export function EditTaskDialog({ task, open, onClose, onUpdated }: EditTaskDialo
 
   const frozen: ReadonlySet<TaskFormFieldKey> =
     task.status === "DRAFT" ? new Set() : POST_PUBLISH_FROZEN_FIELDS;
-
-  // Controlled open/close; every fresh open re-seeds from the CURRENT
-  // task prop (the detail refetches after lifecycle transitions).
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) {
-      return;
-    }
-    if (open && !dialog.open) {
-      setValues(taskFormFromTask(task));
-      setFieldErrors({});
-      setSummary(null);
-      setSubmitting(false);
-      dialog.showModal();
-    }
-    if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open, task]);
 
   function setField<K extends TaskFormFieldKey>(key: K, value: TaskFormValues[K]) {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -118,62 +120,54 @@ export function EditTaskDialog({ task, open, onClose, onUpdated }: EditTaskDialo
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog dialog-wide"
-      aria-labelledby="edit-task-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!submitting) {
-          onClose();
-        }
-      }}
-      onClick={(event) => {
-        if (event.target === dialogRef.current && !submitting) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !submitting) {
           onClose();
         }
       }}
     >
-      <form className="dialog-body" onSubmit={onSubmit} noValidate>
-        <h3 id="edit-task-title" className="dialog-title">
-          编辑任务
-        </h3>
-        <p className="field-hint">
-          {task.status === "DRAFT"
-            ? "草稿阶段可修改全部字段；提交校验 schema 与版本在发布前必须配置。"
-            : "任务已发布：仅标题与描述可修改，契约字段（奖励、截止、文件策略、schema）已冻结。"}
-        </p>
+      <DialogContent asChild size="wide" aria-labelledby="edit-task-title">
+        <form onSubmit={onSubmit} noValidate>
+          <DialogTitle id="edit-task-title">编辑任务</DialogTitle>
+          <p className="field-hint">
+            {task.status === "DRAFT"
+              ? "草稿阶段可修改全部字段；提交校验 schema 与版本在发布前必须配置。"
+              : "任务已发布：仅标题与描述可修改，契约字段（奖励、截止、文件策略、schema）已冻结。"}
+          </p>
 
-        <FormErrorSummary view={summary} />
+          <FormErrorSummary view={summary} />
 
-        <TaskFormFields
-          values={values}
-          fieldErrors={fieldErrors}
-          disabled={submitting}
-          frozen={frozen}
-          setField={setField}
-        />
-
-        <div className="dialog-actions">
-          <button
-            type="submit"
-            className="btn btn-primary"
+          <TaskFormFields
+            values={values}
+            fieldErrors={fieldErrors}
             disabled={submitting}
-            aria-busy={submitting}
-          >
-            {submitting ? <span className="spinner" aria-hidden="true" /> : null}
-            <span>保存修改</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={submitting}
-          >
-            取消
-          </button>
-        </div>
-      </form>
-    </dialog>
+            frozen={frozen}
+            setField={setField}
+          />
+
+          <DialogFooter>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting}
+              aria-busy={submitting}
+            >
+              {submitting ? <span className="spinner" aria-hidden="true" /> : null}
+              <span>保存修改</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              取消
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

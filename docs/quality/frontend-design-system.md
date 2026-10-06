@@ -491,6 +491,21 @@ keep `pre-wrap` so server newlines survive the clamp. If content
 beyond the clamp has no reachable detail view, record that as a known
 product cost.
 
+### Dialogs
+
+`components/ui/dialog` owns every dialog: the shadcn-pattern Radix
+primitive styled to the legacy `.dialog` contract (26rem card, 40rem
+wide variant, `--overlay-scrim` scrim, no open/close animation). New
+code MUST compose `Dialog` / `DialogContent` / `DialogTitle` /
+`DialogFooter`; hand-rolled native `<dialog>` + `showModal()` is
+forbidden. Title wiring pairs `DialogContent aria-labelledby` with an
+explicit `DialogTitle id`; helper copy stays a `.field-hint` paragraph
+rather than `DialogDescription` (they size differently). Dialogs close
+through their own action rows (`DialogClose` asChild on those
+buttons) — there is no chrome close button. StaffMenuSheet's native
+menu is the one sanctioned legacy exception; it retires with the
+`.dialog*` CSS in plan-14 phase C3.
+
 ## 10. Loading, empty, error, and permission states
 
 Every feature page MUST define these states before implementation is considered complete.

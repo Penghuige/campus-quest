@@ -114,7 +114,7 @@ test.describe("student rewards redemption", () => {
     await expect(confirmButton).toBeEnabled();
     await confirmButton.click();
 
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog", { name: "确认兑换" });
     await expect(dialog).toBeVisible();
     await expect(
       dialog.getByRole("heading", { name: "确认兑换" }),
@@ -125,13 +125,16 @@ test.describe("student rewards redemption", () => {
     // Confirm -> the server freezes the points; the SUCCESS state shows
     // the pending-review lifecycle (spec §16.1), not a fake fulfillment.
     await dialog.getByRole("button", { name: "确认兑换" }).click();
+    const doneDialog = page.getByRole("dialog", { name: "兑换申请已提交" });
     await expect(
-      dialog.getByRole("heading", { name: "兑换申请已提交" }),
+      doneDialog.getByRole("heading", { name: "兑换申请已提交" }),
     ).toBeVisible();
-    await expect(dialog.locator(".badge", { hasText: "待审核" })).toBeVisible();
+    await expect(
+      doneDialog.locator(".badge", { hasText: "待审核" }),
+    ).toBeVisible();
 
-    await dialog.getByRole("button", { name: "完成" }).click();
-    await expect(dialog).not.toBeVisible();
+    await doneDialog.getByRole("button", { name: "完成" }).click();
+    await expect(doneDialog).not.toBeVisible();
 
     // The wallet refetch is authoritative: the freeze note appears and
     // the 最近兑换 receipt carries the server's own figures (several
@@ -213,11 +216,13 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
         response.status() === 201,
     );
     await card.getByRole("button", { name: "兑换", exact: true }).click();
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog", { name: "确认兑换" });
     await dialog.getByRole("button", { name: "确认兑换" }).click();
     const redemption = (await (await redeemResponse).json()) as { id: string };
     await expect(
-      dialog.getByRole("heading", { name: "兑换申请已提交" }),
+      page
+        .getByRole("dialog", { name: "兑换申请已提交" })
+        .getByRole("heading", { name: "兑换申请已提交" }),
     ).toBeVisible();
 
     // Admin approve then fulfill through the REAL API (the review

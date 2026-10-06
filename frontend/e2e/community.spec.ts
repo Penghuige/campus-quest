@@ -373,7 +373,7 @@ test.describe("report (§23: filing removes nothing)", () => {
     await expect(article).toBeVisible();
 
     await article.getByRole("button", { name: "举报", exact: true }).click();
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog", { name: "举报评论" });
     await expect(dialog).toBeVisible();
     // Hidden native radios (the identity-option pattern): click the label.
     await dialog.getByText("骚扰辱骂", { exact: true }).click();
@@ -395,7 +395,7 @@ test.describe("report (§23: filing removes nothing)", () => {
   }) => {
     const article = page.locator(".comment").first();
     await article.getByRole("button", { name: "举报", exact: true }).click();
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog", { name: "举报评论" });
     await dialog.getByRole("button", { name: "提交举报" }).click();
     await expect(dialog.getByText("请选择举报类别")).toBeVisible();
     await dialog.getByRole("button", { name: "取消" }).click();
@@ -510,7 +510,7 @@ test.describe("admin identity reveal on the moderation surface (spec §21.4; pla
 
     // Open the reveal dialog on that row.
     await anonymousRow.getByRole("button", { name: "揭示身份" }).click();
-    const dialog = page.locator("dialog[aria-labelledby='reveal-identity-title']");
+    const dialog = page.getByRole("dialog", { name: "揭示匿名评论身份" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(/每次调用都会记入审计日志/)).toBeVisible();
 

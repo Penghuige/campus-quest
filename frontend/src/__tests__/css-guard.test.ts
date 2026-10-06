@@ -1,0 +1,86 @@
+/**
+ * Plan-14 T2: the CSS integrity guard must treat Tailwind utilities from
+ * the compiled pipeline (postcss + @tailwindcss/postcss, the same pipeline
+ * the app builds with) as defined classes. Before the guard learned this,
+ * any utility in a className was a used-but-undefined false positive.
+ *
+ * The guard is driven as a subprocess against a throwaway git fixture dir
+ * (the guard lists tsx via `git grep`, so the fixture is `git init`ed and
+ * staged — no repo index is touched).
+ */
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+const frontendRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const guardScript = join(frontendRoot, "scripts/check-css-integrity.mjs");
+
+const FIXTURE_GLOBALS = `@import "tailwindcss/utilities" layer(utilities);
+
+@theme inline {
+  --color-surface-1: var(--surface-1);
+  --breakpoint-md: 48rem;
+}
+
+:root {
+  --surface-1: oklch(100% 0 0);
+}
+
+.fixture-card {
+  background: var(--surface-1);
+}
+`;
+
+function makeFixture(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "cq-css-guard-"));
+  mkdirSync(join(dir, "src/app"), { recursive: true });
+  writeFileSync(join(dir, "src/app/globals.css"), FIXTURE_GLOBALS);
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(dir, "src", name), body);
+  }
+  // Tailwind resolves `@import "tailwindcss/…"` by walking node_modules
+  // up from the CSS file — point the fixture at the real install.
+  symlinkSync(join(frontendRoot, "node_modules"), join(dir, "node_modules"));
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+  return dir;
+}
+
+function runGuard(dir: string) {
+  return spawnSync(process.execPath, [guardScript], {
+    cwd: dir,
+    encoding: "utf8",
+  });
+}
+
+test("compiled Tailwind utilities (incl. variants) are defined classes", () => {
+  const dir = makeFixture({
+    "Widget.tsx": `export function Widget() {
+  return <div className="fixture-card flex items-center bg-surface-1 md:grid">hi</div>;
+}
+`,
+  });
+  const result = runGuard(dir);
+  assert.equal(
+    result.status,
+    0,
+    `guard must accept compiled utilities; stderr:\n${result.stderr}`,
+  );
+  assert.match(result.stdout, /CSS integrity OK/);
+});
+
+test("a class that is neither hand-written nor compiled still errors", () => {
+  const dir = makeFixture({
+    "Widget.tsx": `export function Widget() {
+  return <div className="fixture-card definitely-not-a-real-class">hi</div>;
+}
+`,
+  });
+  const result = runGuard(dir);
+  assert.equal(result.status, 1, "guard must reject the unknown class");
+  assert.match(result.stderr, /definitely-not-a-real-class/);
+});

@@ -18,8 +18,14 @@
  * revision-required blocks on a mandatory note; invalidate-reward-lock
  * blocks on a mandatory reason and leads with the prominent warning.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -459,14 +465,6 @@ function ApproveDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   async function onConfirm() {
     if (busy) {
@@ -485,26 +483,16 @@ function ApproveDialog({
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="approve-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
-          onClose();
-        }
-      }}
-      onClick={(event) => {
-        if (event.target === dialogRef.current && !busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onClose();
         }
       }}
     >
-      <div className="dialog-body">
-        <h3 id="approve-title" className="dialog-title">
-          通过该提交
-        </h3>
+      <DialogContent aria-labelledby="approve-title">
+        <DialogTitle id="approve-title">通过该提交</DialogTitle>
         <p className="field-hint">
           确认后该领取将标记为已完成
           {item.locked_reward_points !== null
@@ -513,7 +501,7 @@ function ApproveDialog({
           ；此操作会立即生效并记入积分流水。
         </p>
         {error !== null ? <SectionError error={error} /> : null}
-        <div className="dialog-actions">
+        <DialogFooter>
           <button type="button" className="btn btn-primary" onClick={() => void onConfirm()} disabled={busy} aria-busy={busy}>
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>确认通过</span>
@@ -521,9 +509,9 @@ function ApproveDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
             取消
           </button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -547,14 +535,6 @@ function RevisionDialog({
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
 
   const invalidate = mode === "invalidate";
   const dialogTitle = invalidate ? "判无效（取消奖励锁定）" : "退回修改";
@@ -587,24 +567,25 @@ function RevisionDialog({
   }
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby={invalidate ? "invalidate-title" : "revision-title"}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) {
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) {
           onClose();
         }
       }}
     >
-      <div className="dialog-body">
-        <h3
-          id={invalidate ? "invalidate-title" : "revision-title"}
-          className="dialog-title"
-        >
+      <DialogContent
+        aria-labelledby={invalidate ? "invalidate-title" : "revision-title"}
+        onPointerDownOutside={(event) => {
+          // The legacy dialog had NO backdrop-click close (a half-typed
+          // mandatory note must survive an accidental scrim click).
+          event.preventDefault();
+        }}
+      >
+        <DialogTitle id={invalidate ? "invalidate-title" : "revision-title"}>
           {dialogTitle}
-        </h3>
+        </DialogTitle>
         {invalidate ? (
           <div className="alert alert-error" role="alert">
             <p>
@@ -646,7 +627,7 @@ function RevisionDialog({
           ) : null}
         </div>
         {error !== null ? <SectionError error={error} /> : null}
-        <div className="dialog-actions">
+        <DialogFooter>
           <button
             type="button"
             className={`btn ${invalidate ? "btn-danger" : "btn-primary"}`}
@@ -660,9 +641,9 @@ function RevisionDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
             取消
           </button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
