@@ -74,7 +74,7 @@ function base32Decode(input: string): Buffer {
 }
 
 /** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits). */
-function totpCode(secret: string, atMs: number = Date.now()): string {
+export function totpCode(secret: string, atMs: number = Date.now()): string {
   const counter = Math.floor(atMs / 30_000);
   const block = Buffer.alloc(8);
   block.writeBigUInt64BE(BigInt(counter));

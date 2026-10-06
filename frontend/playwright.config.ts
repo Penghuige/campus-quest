@@ -50,7 +50,10 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
+  // The visual suite NEVER retries (C3 promotion): a pixel flake is a
+  // font/rendering drift signal that must surface, not be masked by a
+  // passing second attempt.
+  retries: process.env.CQ_VISUAL ? 0 : process.env.CI ? 1 : 0,
   workers: 1,
   // Plan-12 task 9: the visual-regression suite's baselines live at the
   // default per-spec -snapshots path (e2e/<spec>-snapshots/<name>-<platform>.png

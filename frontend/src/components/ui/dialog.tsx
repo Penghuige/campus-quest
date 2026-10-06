@@ -61,7 +61,8 @@ function DialogContent({
   size = "default",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  /** "default" = 26rem card (.dialog); "wide" = 40rem (.dialog-wide). */
+  /** "default" = 26rem card; "wide" = 40rem (the retired .dialog
+   *  contract's widths, carried by .cq-dialog-content/.cq-dialog-wide). */
   size?: "default" | "wide";
 }) {
   return (
