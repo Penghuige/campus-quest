@@ -268,14 +268,18 @@ for (const shot of SHOTS) {
     );
     await authenticate(page, shot.auth);
     await page.goto(`${BASE_URL}${path}`);
-    // Font determinism (C3 ⑧, first CI run's lesson): the local dev box
+    // Font determinism (C3 ⑧, CI lessons 1+2): (a) the local dev box
     // resolves zh sans to Microsoft YaHei (msyh.ttf) while CI falls to
     // the pinned fonts-noto-cjk — different metrics, 1-2px page-height
-    // drift, every shot red on size mismatch. Force the token to the
-    // family BOTH environments carry so baselines are shot and compared
-    // under the same metrics everywhere.
+    // drift. (b) the `.mono` stack opens with ui-monospace, which
+    // resolves to Noto Sans Mono locally but DejaVu Sans Mono on the
+    // runner — deterministic per-glyph deltas on digit-dense surfaces
+    // (the admin table's username column). Pin BOTH stacks to families
+    // both environments carry (Liberation Mono ships with every Ubuntu
+    // image) so baselines compare identical rendering everywhere.
     await page.addStyleTag({
-      content: `:root { --font-sans: "Noto Sans CJK SC", sans-serif; }`,
+      content: `:root { --font-sans: "Noto Sans CJK SC", sans-serif; }
+        .mono { font-family: "Liberation Mono", monospace !important; }`,
     });
     // The capture harness's wrong-artifact guard: the shot is only valid
     // if THIS pass rendered the page's own header and (for authenticated
