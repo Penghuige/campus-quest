@@ -44,6 +44,7 @@ import {
   redemptionActions,
   redemptionStatusView,
 } from "./adminView";
+import { Button } from "@/components/ui/button";
 
 const PAGE_LIMIT = 20;
 
@@ -118,16 +119,15 @@ export function RedemptionsAdmin() {
     <section className="section" aria-label="兑换审核队列">
       <div className="section-head">
         <h2 className="section-title">兑换审核队列</h2>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="ghost"
           onClick={() => {
             setPhase("loading");
             setReloadSeed((seed) => seed + 1);
           }}
         >
           刷新队列
-        </button>
+        </Button>
       </div>
       <p className="field-hint">
         队列按时间先后列出待审核的兑换申请；审核通过后即可标记发放完成。
@@ -159,16 +159,15 @@ export function RedemptionsAdmin() {
             ))}
             {hasMorePages(items.length, total) ? (
               <div className="load-more">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
+                <Button
+                  variant="secondary"
                   onClick={() => void loadMore()}
                   disabled={loadingMore}
                   aria-busy={loadingMore}
                 >
                   {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                   <span>加载更多（{items.length}/{total}）</span>
-                </button>
+                </Button>
                 {moreError !== null ? (
                   <SectionError error={moreError} onRetry={() => void loadMore()} />
                 ) : null}
@@ -314,19 +313,19 @@ function RedemptionDetail({
       {actions.length > 0 ? (
         <div className="review-actions">
           {actions.includes("approve") ? (
-            <button type="button" className="btn btn-primary" onClick={onApprove}>
+            <Button variant="primary" onClick={onApprove}>
               通过并扣减积分
-            </button>
+            </Button>
           ) : null}
           {actions.includes("reject") ? (
-            <button type="button" className="btn btn-danger" onClick={onReject}>
+            <Button variant="danger" onClick={onReject}>
               拒绝申请
-            </button>
+            </Button>
           ) : null}
           {actions.includes("fulfill") ? (
-            <button type="button" className="btn btn-primary" onClick={onFulfill}>
+            <Button variant="primary" onClick={onFulfill}>
               标记已发放
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : (
@@ -397,19 +396,18 @@ function ApproveDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <button
-            type="button"
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => void onConfirm()}
             disabled={busy}
             aria-busy={busy}
           >
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>确认通过</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+          </Button>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
             取消
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -508,13 +506,13 @@ function RejectDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>确认拒绝</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -602,13 +600,13 @@ function FulfillDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>确认发放</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

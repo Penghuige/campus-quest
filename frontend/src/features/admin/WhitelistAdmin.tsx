@@ -60,6 +60,7 @@ export function WhitelistAdmin() {
     </>
   );
 }
+import { Button } from "@/components/ui/button";
 
 // --- import (preview -> confirm) ---------------------------------------------------------
 
@@ -130,14 +131,13 @@ function WhitelistImport() {
       <div className="section-head">
         <h2 className="section-title">批量导入</h2>
         {phase.kind === "preview" || phase.kind === "confirming" ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
+          <Button
+            variant="ghost"
             onClick={reset}
             disabled={phase.kind === "confirming"}
           >
             重新编辑
-          </button>
+          </Button>
         ) : null}
       </div>
       <p className="field-hint">
@@ -162,9 +162,9 @@ function WhitelistImport() {
             />
           </div>
           <div className="dialog-actions">
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="primary"
               disabled={content.trim().length === 0 || phase.kind === "previewing"}
               aria-busy={phase.kind === "previewing"}
             >
@@ -172,7 +172,7 @@ function WhitelistImport() {
                 <span className="spinner" aria-hidden="true" />
               ) : null}
               <span>预览导入</span>
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
@@ -217,9 +217,8 @@ function WhitelistImport() {
               />{" "}
               导入后立即启用（可导入注册）
             </label>
-            <button
-              type="button"
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               onClick={() => void onConfirm()}
               disabled={
                 !canConfirmWhitelistImport(phase.preview) || phase.kind === "confirming"
@@ -230,7 +229,7 @@ function WhitelistImport() {
                 <span className="spinner" aria-hidden="true" />
               ) : null}
               <span>确认导入 {phase.preview.importable.length} 行</span>
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
@@ -241,9 +240,9 @@ function WhitelistImport() {
             已成功导入 {phase.created} 个学号（{phase.enable ? "启用" : "停用"}状态）。
           </p>
           <p>
-            <button type="button" className="btn btn-secondary" onClick={reset}>
+            <Button variant="secondary" onClick={reset}>
               继续导入
-            </button>
+            </Button>
           </p>
         </div>
       ) : null}
@@ -368,16 +367,15 @@ function WhitelistEntries() {
     <section className="section" aria-label="白名单条目">
       <div className="section-head">
         <h2 className="section-title">白名单条目</h2>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="ghost"
           onClick={() => {
             setPhase("loading");
             setReloadSeed((seed) => seed + 1);
           }}
         >
           刷新
-        </button>
+        </Button>
       </div>
       {phase === "loading" ? (
         <SectionSkeleton lines={6} />
@@ -436,24 +434,22 @@ function WhitelistEntries() {
                     <td>
                       <div className="row-actions">
                         {entry.enabled ? (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
+                          <Button
+                            variant="secondary"
                             onClick={() => setDisabling(entry)}
                             disabled={busyNumber !== null}
                           >
                             停用
-                          </button>
+                          </Button>
                         ) : (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
+                          <Button
+                            variant="secondary"
                             onClick={() => void enableEntry(entry)}
                             disabled={busyNumber !== null}
                             aria-busy={busyNumber === entry.student_number}
                           >
                             启用
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -467,16 +463,15 @@ function WhitelistEntries() {
           </p>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
               >
                 {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>加载更多（{items.length}/{total}）</span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -583,13 +578,13 @@ function WhitelistDisableDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>确认停用</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

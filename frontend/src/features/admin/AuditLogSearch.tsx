@@ -23,6 +23,7 @@ import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 
 import { listAuditLogs, type AuditLogDto } from "./adminApi";
 import { roleLabel } from "./adminView";
+import { Button } from "@/components/ui/button";
 
 const PAGE_LIMIT = 20;
 
@@ -146,12 +147,11 @@ export function AuditLogSearch() {
           </div>
         </div>
         <div className="dialog-actions">
-          <button type="submit" className="btn btn-primary" disabled={phase === "loading"}>
+          <Button type="submit" variant="primary" disabled={phase === "loading"}>
             检索
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               setFilters({ action: "", actor: "", targetType: "" });
               setPhase("loading");
@@ -159,7 +159,7 @@ export function AuditLogSearch() {
             }}
           >
             清空条件
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -205,16 +205,15 @@ export function AuditLogSearch() {
           </p>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
               >
                 {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>加载更多（{items.length}/{total}）</span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
