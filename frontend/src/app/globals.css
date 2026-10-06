@@ -7,12 +7,55 @@
  * values. Light theme ships first; grouping tokens under :root keeps a later
  * dark theme a matter of re-declaring the same variables (§4).
  *
- * Tailwind/shadcn note: the design system prefers tokens "consumed by Tailwind
- * and shadcn primitives", but no styling stack is installed yet (Plan 09
- * deliberately adds zero runtime dependencies). These variables are the stable
- * token contract; when Tailwind lands it should map its theme onto THESE
- * names rather than fork them.
+ * Tailwind note (Plan 14 C0): Tailwind v4 consumes the tokens through the
+ * `@theme inline` bridge below — every `--color-*` theme entry REFERENCES the
+ * `var(--…)` defined in :root, so utilities resolve to the SAME variables and
+ * `@theme inline` itself emits nothing. Utilities import ONLY (no preflight):
+ * the hand-written styles below keep full cascade control, and the compiled
+ * utilities land in @layer utilities, which unlayered author CSS overrides.
  */
+
+@import "tailwindcss/utilities" layer(utilities);
+
+/* Token bridge: the full §3 color set (surface / text / border / semantic /
+ * rarity). `inline` theme entries never emit declarations — they only teach
+ * the compiler that `bg-surface-1` means `var(--surface-1)`. */
+@theme inline {
+  /* surface */
+  --color-background: var(--background);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-brand: var(--surface-brand);
+  --color-overlay: var(--overlay);
+  --color-overlay-scrim: var(--overlay-scrim);
+  /* text */
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-inverse-foreground: var(--inverse-foreground);
+  /* border */
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-focus-ring: var(--focus-ring);
+  /* semantic */
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
+  --color-warning-muted: var(--warning-muted);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-muted: var(--danger-muted);
+  --color-info: var(--info);
+  /* rarity */
+  --color-rarity-normal: var(--rarity-normal);
+  --color-rarity-rare: var(--rarity-rare);
+  --color-rarity-epic: var(--rarity-epic);
+  --color-rarity-legendary: var(--rarity-legendary);
+}
 
 :root {
   /* surface — Plan 11 §5: warm-neutral ground (less blue-grey than the
