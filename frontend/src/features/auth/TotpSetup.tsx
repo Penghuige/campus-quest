@@ -67,6 +67,7 @@ export interface TotpSetupProps {
   /** The pending staff session's short-lived access token (body-only). */
   accessToken: string;
 }
+import { Button } from "@/components/ui/button";
 
 export function TotpSetup({ accessToken }: TotpSetupProps) {
   const [step, setStep] = useState<TotpStep>({ kind: "loading" });
@@ -168,9 +169,9 @@ export function TotpSetup({ accessToken }: TotpSetupProps) {
           <p className="req-id">请求 ID：{view.requestId}</p>
         ) : null}
         <p>
-          <button type="button" className="btn btn-secondary" onClick={retryBegin}>
+          <Button variant="secondary" onClick={retryBegin}>
             重新加载
-          </button>
+          </Button>
         </p>
       </div>
     );
@@ -202,15 +203,15 @@ export function TotpSetup({ accessToken }: TotpSetupProps) {
           <CopyButton value={copyAllRecoveryCodesText(codes)} label="复制全部恢复代码" />
         </div>
         {/* Not inside a form: an explicit action button, not a submit. */}
-        <button
-          type="button"
-          className="btn btn-primary btn-block"
+        <Button
+          block
+          variant="primary"
           onClick={() =>
             setStep({ kind: "codes", view: confirmRecoveryCodesSeen(step.view) })
           }
         >
           我已妥善保存，完成绑定
-        </button>
+        </Button>
       </div>
     );
   }

@@ -3,8 +3,14 @@
  * (§9 Buttons, §10 Loading): disabled + inline spinner while the mutation is
  * in flight, `aria-busy` announces the state, and the label stays visible so
  * the button's width and meaning do not shift.
+ *
+ * C2-auth: rides the shared Button primitive (class-mapping route) — the
+ * variant/block props and the .btn* classes now come from one place; the
+ * output className string is byte-identical to the hand-rolled version.
  */
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+
+import { Button } from "@/components/ui/button";
 
 export interface SubmitButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "type"> {
@@ -25,25 +31,18 @@ export function SubmitButton({
   className,
   ...rest
 }: SubmitButtonProps) {
-  const classes = [
-    "btn",
-    variant === "primary" ? "btn-primary" : "btn-secondary",
-    block ? "btn-block" : "",
-    className ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
   return (
-    <button
+    <Button
       type="submit"
-      className={classes}
+      variant={variant}
+      block={block}
       disabled={disabled === true || loading}
       aria-busy={loading}
+      className={className}
       {...rest}
     >
       {loading ? <span className="spinner" aria-hidden="true" /> : null}
       <span>{children}</span>
-    </button>
+    </Button>
   );
 }

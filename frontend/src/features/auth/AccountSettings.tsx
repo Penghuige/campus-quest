@@ -58,6 +58,7 @@ import {
   emailPanelView,
   validatePasswordConfirmation,
 } from "@/features/auth/accountView";
+import { Button } from "@/components/ui/button";
 
 /** Re-auth failure copy for the settings forms (login copy doesn't fit). */
 const REAUTH_ERROR_TEXT = "当前密码不正确，请重新输入";
@@ -385,22 +386,22 @@ function PhoneChangeForm({
               }}
             />
             <SubmitButton loading={submitting}>确认更换手机号</SubmitButton>
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
+            <Button
+              block
+              variant="secondary"
               onClick={() => void sendChallenge(true)}
               disabled={remaining > 0 || requesting}
             >
               {remaining > 0 ? `重新发送（${remaining} 秒）` : "重新发送验证码"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
+            </Button>
+            <Button
+              block
+              variant="secondary"
               onClick={() => backToRequest("已取消，可重新填写。")}
               disabled={submitting}
             >
               取消更换
-            </button>
+            </Button>
           </form>
         )}
         {note !== null ? (
@@ -594,23 +595,22 @@ function EmailPanel({
               }}
             />
             <SubmitButton loading={unbinding}>确认解绑邮箱</SubmitButton>
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
+            <Button
+              block
+              variant="secondary"
               onClick={() => setUnbindOpen(false)}
               disabled={unbinding}
             >
               取消
-            </button>
+            </Button>
           </form>
         ) : (
-          <button
-            type="button"
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={() => setUnbindOpen(true)}
           >
             解绑邮箱
-          </button>
+          </Button>
         )}
         {note !== null ? (
           <p className="field-hint" role="status">

@@ -40,6 +40,7 @@ import {
 } from "./errors";
 import { useCooldown } from "./useCooldown";
 import { validateOtpCode, validatePassword, validateUsername } from "./validation";
+import { Button } from "@/components/ui/button";
 
 type ResetFields = Extract<AuthFieldName, "username" | "code" | "password">;
 
@@ -245,14 +246,14 @@ export function PasswordResetForm() {
         }}
       />
       <SubmitButton loading={submitting}>重置密码</SubmitButton>
-      <button
-        type="button"
-        className="btn btn-secondary btn-block"
+      <Button
+        block
+        variant="secondary"
         onClick={() => void requestCode(username.trim())}
         disabled={requesting || remaining > 0 || submitting}
       >
         {resendButtonLabel(remaining, "重新发送验证码", requesting)}
-      </button>
+      </Button>
       <p className="auth-alt-action">
         想起密码了？
         <Link className="link" href="/login">

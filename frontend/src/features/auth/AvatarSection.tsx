@@ -47,6 +47,7 @@ async function fetchAvatarBlob(userId: string): Promise<Blob | null> {
   }
   return response.blob();
 }
+import { Button } from "@/components/ui/button";
 
 
 export function AvatarSection() {
@@ -223,14 +224,13 @@ export function AvatarSection() {
             />
           </label>
           {me.has_avatar === true ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
               onClick={onDelete}
               disabled={busy !== null}
             >
               {busy === "delete" ? "移除中…" : confirmingDelete ? "确认移除？" : "移除头像"}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
