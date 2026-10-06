@@ -131,6 +131,7 @@ playwright-e2e:
 	# EMPTY_TASK_URL world export) is allow-listed — and logged.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs \
 	  teacher.spec.ts admin.spec.ts task-claim.spec.ts sidebar-collapse.spec.ts \
+	  profile-tabs.spec.ts \
 	  --allow-skip "task-claim.spec.ts:conflict shows typed copy"
 
 release-gate: release-test-db backend-unit backend-integration backend-worker \

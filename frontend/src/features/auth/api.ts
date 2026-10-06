@@ -10,6 +10,7 @@
  * the HttpOnly cookie the backend sets.
  */
 import { apiRequest } from "../../lib/api";
+import { resolveApiPath } from "../../lib/apiBase";
 import {
   beginAuthTransition,
   broadcastContextReset,
@@ -329,4 +330,41 @@ export function changePassword(
     method: "POST",
     body: { current_password: currentPassword, new_password: newPassword },
   });
+}
+
+// --- avatar (defect #4; backend contract = avatar proposal D1–D6) -------------
+
+/**
+ * Upload the account avatar (POST /me/avatar): RAW-BODY direct upload
+ * (the ratified D2 revision — the backend reads the whole request
+ * body as image bytes with a bounded streaming limit, no multipart
+ * parsing): the already-square-cropped image rides as the body
+ * itself, and apiRequest deliberately sets NO Content-Type for native
+ * bodies — the server authenticates by magic bytes, not the declared
+ * type. One change per 10 minutes per account (RATE_LIMITED).
+ */
+export function uploadAvatar(image: Blob): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/avatar`, {
+    method: "POST",
+    body: image,
+  });
+}
+
+/**
+ * Remove the avatar (DELETE /me/avatar): the UI falls back to the
+ * initial-letter avatar (D5 — a purely client-side fallback).
+ */
+export function deleteAvatar(): Promise<void> {
+  return apiRequest<void>(`${ME}/avatar`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * The avatar display URL (GET /users/{id}/avatar — D3's streaming
+ * proxy, private cache + ETag; never a presigned redirect). Needs a
+ * signed-in tab bearer, so this is for authenticated fetches only.
+ */
+export function avatarUrl(userId: string): string {
+  return resolveApiPath(`/api/v1/users/${encodeURIComponent(userId)}/avatar`);
 }
