@@ -312,6 +312,16 @@ Use full page when:
 
 Avoid nested modals.
 
+The implementation is `components/ui/dialog` (shadcn-pattern Radix):
+every product dialog renders through it, so role/labelledby wiring,
+focus trap, Escape, and outside-click semantics live in one place and
+e2e locates dialogs by `getByRole("dialog", { name })`. Hand-rolled
+native `<dialog>` / `showModal()` is forbidden for new code;
+StaffMenuSheet's transient navigation menu is the one sanctioned
+exception (its legacy `.dialog` CSS retires in plan-14 phase C3).
+Busy-submitting dialogs guard asynchronous closes in `onOpenChange`
+rather than disabling the platform's Escape handling.
+
 ## 11. File upload pattern
 
 State model:

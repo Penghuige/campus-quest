@@ -7,9 +7,9 @@
  * Render rules (the page's reason to exist is fidelity, not novelty):
  * - it composes ONLY existing global classes (globals.css) and shared
  *   components (TaskCard, RewardCard via the client RewardTileGallery
- *   wrapper, the sectionStates primitives, navIcons glyphs) — no
- *   gallery-local styling exists or may be added (inline controls are
- *   separated by plain markup whitespace, not CSS);
+ *   wrapper, the sectionStates primitives, the Dialog primitive,
+ *   navIcons glyphs) — no gallery-local styling exists or may be added
+ *   (inline controls are separated by plain markup whitespace, not CSS);
  * - fixture data is inline and fully deterministic (no clocks, no
  *   randomness) so the pixel baseline is stable.
  *
@@ -40,6 +40,12 @@ import {
   RarityNormalIcon,
   RarityRareIcon,
 } from "@/components/shell/navIcons";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   EmptyState,
   SectionError,
@@ -329,27 +335,30 @@ export default function DevGalleryPage() {
         ))}
       </section>
 
-      {/* LAST section by construction: a non-modal `<dialog open>` keeps
-          the UA's absolute centering (the .dialog class adds no position),
-          so it paints out of flow — at the page end it overlays nothing. */}
+      {/* LAST section by construction: the shared Dialog primitive in a
+          force-open MODAL presentation (`open`, controlled, no
+          onOpenChange) — the portal paints scrim + 26rem card fixed at
+          the viewport center exactly like a real open product dialog,
+          and the shot needs no interaction. Radix 1.2 renders its
+          Overlay ONLY in modal mode (dist: `context.modal ? … : null`),
+          so the scrim that is part of the product look requires modal;
+          the controlled `open` keeps it pinned and deterministic. */}
       <section className="section" aria-label="对话框">
         <h2 className="section-title">对话框（打开状态）</h2>
-        <dialog className="dialog" open aria-labelledby="gallery-dialog-title">
-          <div className="dialog-body">
-            <h3 id="gallery-dialog-title" className="dialog-title">
-              确认操作
-            </h3>
-            <p>对话框正文沿用全局 .dialog 排版。</p>
-            <div className="dialog-actions">
+        <Dialog open>
+          <DialogContent aria-labelledby="gallery-dialog-title">
+            <DialogTitle id="gallery-dialog-title">确认操作</DialogTitle>
+            <p>对话框正文沿用共享 Dialog 原语排版。</p>
+            <DialogFooter>
               <button type="button" className="btn btn-ghost">
                 取消
               </button>
               <button type="button" className="btn btn-primary">
                 完成
               </button>
-            </div>
-          </div>
-        </dialog>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </section>
     </main>
   );
