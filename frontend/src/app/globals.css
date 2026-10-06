@@ -2796,9 +2796,12 @@ body {
    a quiet track with a hairline keyline, the current segment raised to
    surface-1. Behavior/URLs unchanged (the link IS the state). Modifier
    on .tab-bar so other tab bars (community sort) keep the flat grammar
-   until their own surface pass. */
+   until their own surface pass. The control hugs its segments even
+   inside a .section grid (default stretch would fake a full-width
+   track); justify-self is a no-op for flex/block parents. */
 .segmented-tabs {
   display: inline-flex;
+  justify-self: start;
   gap: var(--gap-hairline);
   padding: var(--gap-hairline);
   background: var(--surface-2);
@@ -3023,13 +3026,16 @@ body {
 /* Plan-13 T3: the community section takes the .task-detail 56rem step.
    The thread + composer render OUTSIDE .task-detail's grid (the page
    composes them as siblings), so they used to span the full app-main
-   width — an orphan wide strip under a 56rem detail column. */
-.community-section {
+   width — an orphan wide strip under a 56rem detail column. T5: the
+   rating section (the page's third sibling) joins the same step. */
+.community-section,
+.task-rating {
   max-width: 42rem;
 }
 
 @media (min-width: 48rem) {
-  .community-section {
+  .community-section,
+  .task-rating {
     max-width: 56rem;
   }
 }
@@ -3541,12 +3547,6 @@ body {
   .notifications-view {
     max-width: 56rem;
   }
-}
-
-.notifications-view > .tab-bar {
-  /* The segmented control hugs its segments — the .section grid's
-     default stretch would fake a full-width track. */
-  justify-self: start;
 }
 
 /* Rows are a compact list on the page ground, NOT a wall of equal cards:
