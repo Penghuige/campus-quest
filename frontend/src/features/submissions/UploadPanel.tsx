@@ -63,6 +63,7 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
+import { Button } from "@/components/ui/button";
 
 export function UploadPanel({
   claimId,
@@ -349,9 +350,9 @@ export function UploadPanel({
       ) : null}
 
       {state.phase === "idle" && state.filename !== null ? (
-        <button type="button" className="btn btn-primary" onClick={onStartUpload}>
+        <Button variant="primary" onClick={onStartUpload}>
           开始上传
-        </button>
+        </Button>
       ) : null}
 
       {state.phase === "prepare-failed" ||
@@ -375,13 +376,12 @@ export function UploadPanel({
             校验还在进行中，暂时获取不到最新状态。
           </p>
           <p>
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
               onClick={onManualValidationRefresh}
             >
               刷新校验状态
-            </button>
+            </Button>
           </p>
         </div>
       ) : null}
@@ -405,9 +405,9 @@ export function UploadPanel({
               任务已回到可提交状态，重新上传会生成新的版本，不影响之前的尝试。
             </p>
             <p>
-              <button type="button" className="btn btn-primary" onClick={onReset}>
+              <Button variant="primary" onClick={onReset}>
                 重新上传文件
-              </button>
+              </Button>
             </p>
           </div>
           <ValidationReport report={state.validation.report} />
@@ -425,9 +425,9 @@ export function UploadPanel({
       state.phase !== "prepare-failed" &&
       state.phase !== "upload-failed" ? (
         <p>
-          <button type="button" className="btn btn-secondary" onClick={onReset}>
+          <Button variant="secondary" onClick={onReset}>
             {state.phase === "under-review" ? "收起" : "重新选择文件"}
-          </button>
+          </Button>
         </p>
       ) : null}
     </section>
@@ -464,18 +464,18 @@ function FlowErrorAlert({
         {phase === "retry-finalize" ? (
           // Patterns §11: the PUT landed — retry finalize only (the
           // server's intent replay returns the same submission, §32).
-          <button type="button" className="btn btn-primary" onClick={onRetryFinalize}>
+          <Button variant="primary" onClick={onRetryFinalize}>
             重试完成提交
-          </button>
+          </Button>
         ) : null}
         {phase === "upload-failed" || phase === "prepare-failed" ? (
-          <button type="button" className="btn btn-primary" onClick={onRetryUpload}>
+          <Button variant="primary" onClick={onRetryUpload}>
             重试上传
-          </button>
+          </Button>
         ) : null}
-        <button type="button" className="btn btn-secondary" onClick={onReset}>
+        <Button variant="secondary" onClick={onReset}>
           重新选择文件
-        </button>
+        </Button>
       </p>
     </div>
   );

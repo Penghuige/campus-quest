@@ -69,6 +69,7 @@ export interface CommentThreadProps {
   /** Server sort (patterns §4: the tab rides the URL; the page remounts per tab). */
   sort: CommentSortKey;
 }
+import { Button } from "@/components/ui/button";
 
 export function CommentThread({ taskId, sort }: CommentThreadProps) {
   const [items, setItems] = useState<CommentDto[]>([]);
@@ -221,9 +222,8 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
 
           {items.length < total ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
@@ -234,7 +234,7 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
                 <span>
                   加载更多评论（{items.length}/{total}）
                 </span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -309,23 +309,23 @@ export function CommentRowItem({
         <>
           <p className="comment-content">{row.content}</p>
           <footer className="comment-actions">
-            <button
-              type="button"
-              className="btn btn-ghost comment-action"
+            <Button
+              variant="ghost"
+              className="comment-action"
               aria-expanded={replying}
               onClick={() => onReply(replying ? null : row)}
             >
               回复
-            </button>
+            </Button>
             <CommentVotes commentId={row.id} />
             <CommentReactions commentId={row.id} />
-            <button
-              type="button"
-              className="btn btn-ghost comment-action"
+            <Button
+              variant="ghost"
+              className="comment-action"
               onClick={() => onReport(row)}
             >
               举报
-            </button>
+            </Button>
           </footer>
           {replying ? (
             <div className="comment-reply-composer">
@@ -446,9 +446,9 @@ function ReportDialog({
               感谢你的反馈。该评论在审核期间保持可见，审核结果不会通知举报人。
             </p>
             <DialogFooter>
-              <button type="button" className="btn btn-primary" onClick={onClose}>
+              <Button variant="primary" onClick={onClose}>
                 完成
-              </button>
+              </Button>
             </DialogFooter>
           </div>
         ) : (
@@ -505,18 +505,18 @@ function ReportDialog({
               </div>
             ) : null}
             <DialogFooter>
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
+              <Button variant="secondary" onClick={onClose}>
                 取消
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
-                className="btn btn-primary"
+                variant="primary"
                 disabled={busy}
                 aria-busy={busy}
               >
                 {busy ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>提交举报</span>
-              </button>
+              </Button>
             </DialogFooter>
           </form>
         )}

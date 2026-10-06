@@ -73,6 +73,7 @@ async function findOwnClaim(claimId: string): Promise<MyClaimDto | null> {
   }
   return null;
 }
+import { Button } from "@/components/ui/button";
 
 export function ClaimDetailView({ claimId }: { claimId: string }) {
   const [claim, setClaim] = useState<MyClaimDto | null>(null);
@@ -385,31 +386,29 @@ function AbandonControl({
         <div className="alert alert-warning">
           <p>确认放弃这个任务？放弃会释放任务单元，今天放弃次数有限。</p>
           <p>
-            <button
-              type="button"
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               onClick={() => void onConfirm()}
               disabled={busy}
               aria-busy={busy}
             >
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               确认放弃
-            </button>{" "}
-            <button
-              type="button"
-              className="btn btn-secondary"
+            </Button>{" "}
+            <Button
+              variant="secondary"
               onClick={() => setConfirming(false)}
               disabled={busy}
             >
               取消
-            </button>
+            </Button>
           </p>
         </div>
       ) : (
         <p>
-          <button type="button" className="btn btn-secondary" onClick={() => setConfirming(true)}>
+          <Button variant="secondary" onClick={() => setConfirming(true)}>
             放弃任务
-          </button>
+          </Button>
         </p>
       )}
       {failure !== null ? (
