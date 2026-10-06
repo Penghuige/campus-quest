@@ -138,7 +138,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     // Create dialog: the publish-validation fields; obvious mistakes stay
     // client-side (a too-short reward never sends).
     await page.getByRole("button", { name: "新建任务" }).first().click();
-    const dialog = page.locator("dialog[aria-labelledby='create-task-title']");
+    const dialog = page.getByRole("dialog", { name: "新建任务" });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("基础奖励积分").fill("0");
     await dialog.getByRole("button", { name: "创建草稿" }).click();
@@ -187,7 +187,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     // Edit-in the publish-required schema (the create dialog left it
     // draft-legal): the edit dialog reuses the create fields, prefilled.
     await page.getByRole("button", { name: "编辑", exact: true }).click();
-    const editDialog = page.locator("dialog[aria-labelledby='edit-task-title']");
+    const editDialog = page.getByRole("dialog", { name: "编辑任务" });
     await expect(editDialog).toBeVisible();
     await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
     await editDialog.locator("#task-schema-version").fill("1");
@@ -198,7 +198,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // Publish from the detail head: explicit confirm, then the badge flips.
     await page.getByRole("button", { name: "发布", exact: true }).click();
-    const confirm = page.locator("dialog[aria-labelledby='lifecycle-confirm-title']");
+    const confirm = page.getByRole("dialog", { name: "发布任务" });
     await expect(confirm).toBeVisible();
     await expect(confirm.getByText(/发布后任务立即对学生可见/)).toBeVisible();
     await confirm.getByRole("button", { name: "确认发布" }).click();

@@ -3,8 +3,8 @@
  * Task lifecycle actions (spec §6.2; design §9 Buttons + §10 explicit
  * confirmations): the verbs available from the task's current status,
  * rendered from the pure `lifecycleActions` model. Close/archive/publish
- * open an explicit native-dialog confirmation whose copy states the
- * CONSEQUENCE; pause/resume are reversible and run directly.
+ * open an explicit confirmation (plan-14 Dialog primitive) whose copy
+ * states the CONSEQUENCE; pause/resume are reversible and run directly.
  *
  * No optimistic anything (patterns §7): the button stays disabled until
  * the server answers, and the parent updates from the
@@ -12,8 +12,14 @@
  * typed envelope copy (e.g. publish gates answering VALIDATION_ERROR or
  * TASK_NOT_CLAIMABLE) instead of a client-side guess.
  */
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useState } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SectionError } from "@/components/ui/sectionStates";
 
 import { runTaskLifecycle, type TaskTransitionDto } from "./teacherApi";
@@ -111,37 +117,17 @@ function LifecycleConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog !== null && !dialog.open) {
-      dialog.showModal();
-    }
-  }, []);
-
-  function onBackdropClick(event: MouseEvent<HTMLDialogElement>) {
-    if (event.target === dialogRef.current) {
-      onCancel();
-    }
-  }
-
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="lifecycle-confirm-title"
-      onCancel={(event) => {
-        // Keep React the source of truth over the native close.
-        event.preventDefault();
-        onCancel();
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) {
+          onCancel();
+        }
       }}
-      onClick={onBackdropClick}
     >
-      <div className="dialog-body">
-        <h3 id="lifecycle-confirm-title" className="dialog-title">
-          {action.confirmTitle}
-        </h3>
+      <DialogContent aria-labelledby="lifecycle-confirm-title">
+        <DialogTitle id="lifecycle-confirm-title">{action.confirmTitle}</DialogTitle>
         {action.buttonClass === "btn-danger" ? (
           <div className="alert alert-error" role="alert">
             <p>
@@ -152,7 +138,7 @@ function LifecycleConfirmDialog({
         ) : (
           <p className="field-hint">{action.confirmBody}</p>
         )}
-        <div className="dialog-actions">
+        <DialogFooter>
           <button
             type="button"
             className={`btn ${action.buttonClass}`}
@@ -172,8 +158,8 @@ function LifecycleConfirmDialog({
           >
             取消
           </button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
