@@ -25,6 +25,7 @@ import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import { ReviewIcon, TasksIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { teacherWorkspaceGate } from "@/features/auth/workspace";
+import { Button } from "@/components/ui/button";
 
 /* Plan 11 Task 3: the shared sidebar geometry (frozen contract);
  * per-task surfaces (import, statistics, community moderation) hang
@@ -66,9 +67,9 @@ export function TeacherShell({ children }: { children: ReactNode }) {
               <h1 className="auth-title">员工工作台</h1>
               <p className="auth-subtitle">任务管理与提交审核需要员工账号登录</p>
             </div>
-            <Link className="btn btn-primary btn-block" href="/staff/login">
-              前往员工登录
-            </Link>
+            <Button asChild variant="primary" block>
+              <Link href="/staff/login">前往员工登录</Link>
+            </Button>
             <p className="auth-alt-action">
               <Link className="link" href="/login">
                 返回学生入口

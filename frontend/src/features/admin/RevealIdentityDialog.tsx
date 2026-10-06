@@ -28,6 +28,7 @@ import { SectionError } from "@/components/ui/sectionStates";
 
 import { revealCommentIdentity, type RevealIdentityDto } from "./adminApi";
 import { adminReasonReady } from "./adminView";
+import { Button } from "@/components/ui/button";
 
 /** Mirrors the backend's RevealRequest cap (raw body, 1000 chars). */
 export const REVEAL_REASON_MAX_LENGTH = 1000;
@@ -136,24 +137,23 @@ export function RevealIdentityDialog({
           {error !== null ? <SectionError error={error} /> : null}
           <DialogFooter>
             {revealed === null ? (
-              <button
+              <Button
                 type="submit"
-                className="btn btn-danger"
+                variant="danger"
                 disabled={busy}
                 aria-busy={busy}
               >
                 {busy ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>确认揭示身份</span>
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
               onClick={onCancel}
               disabled={busy}
             >
               {revealed !== null ? "关闭" : "取消"}
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

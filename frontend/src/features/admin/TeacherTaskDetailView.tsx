@@ -30,6 +30,7 @@ import { AssignmentImport } from "./AssignmentImport";
 import { CollaboratorsPanel } from "./CollaboratorsPanel";
 import { CommunityModeration } from "./CommunityModeration";
 import { TaskStatisticsPanel } from "./TaskStatisticsPanel";
+import { Button } from "@/components/ui/button";
 
 type DetailState =
   | { kind: "loading" }
@@ -139,13 +140,12 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
         </div>
         <div className="dialog-actions">
           {taskEditable(task.status) ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
               onClick={() => setEditOpen(true)}
             >
               编辑
-            </button>
+            </Button>
           ) : null}
           <TaskLifecycleActions
             taskId={task.id}

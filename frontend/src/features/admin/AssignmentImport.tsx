@@ -44,6 +44,7 @@ export interface AssignmentImportProps {
    */
   onImported?: (result: ImportConfirmDto) => void;
 }
+import { Button } from "@/components/ui/button";
 
 type ImportPhase =
   | { kind: "idle" }
@@ -108,14 +109,13 @@ export function AssignmentImport({ taskId, onImported }: AssignmentImportProps) 
       <div className="section-head">
         <h3 className="section-title">任务单元导入</h3>
         {phase.kind === "preview" || phase.kind === "confirming" ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
+          <Button
+            variant="ghost"
             onClick={() => setPhase({ kind: "idle" })}
             disabled={phase.kind === "confirming"}
           >
             重新选择文件
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -252,16 +252,15 @@ function ImportPreviewTable({
       ) : null}
 
       <div className="dialog-actions import-confirm-row">
-        <button
-          type="button"
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           onClick={onConfirm}
           disabled={!view.canConfirm || confirming}
           aria-busy={confirming}
         >
           {confirming ? <span className="spinner" aria-hidden="true" /> : null}
           <span>确认导入{preview.valid_count > 0 ? ` ${preview.valid_count} 行` : ""}</span>
-        </button>
+        </Button>
         {view.confirmHint !== null ? (
           <p className="field-hint">{view.confirmHint}</p>
         ) : null}

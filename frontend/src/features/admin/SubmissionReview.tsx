@@ -56,6 +56,7 @@ import {
   rewardLockView,
   versionText,
 } from "./teacherView";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
@@ -181,9 +182,8 @@ export function SubmissionReview() {
             ))}
             {hasMorePages(items.length, total) ? (
               <div className="load-more">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
+                <Button
+                  variant="secondary"
                   onClick={() => void loadMore()}
                   disabled={loadingMore}
                   aria-busy={loadingMore}
@@ -192,7 +192,7 @@ export function SubmissionReview() {
                   <span>
                     加载更多（{items.length}/{total}）
                   </span>
-                </button>
+                </Button>
                 {moreError !== null ? (
                   <SectionError error={moreError} onRetry={() => void loadMore()} />
                 ) : null}
@@ -316,16 +316,15 @@ function ReviewDetail({
     <div className="review-detail">
       <div className="section-head">
         <h2 className="section-title">审核提交</h2>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="ghost"
           onClick={() => void onDownload()}
           disabled={downloading}
           aria-busy={downloading}
         >
           {downloading ? <span className="spinner" aria-hidden="true" /> : null}
           <span>下载文件</span>
-        </button>
+        </Button>
       </div>
       {downloadError !== null ? (
         <SectionError error={downloadError} onRetry={() => void onDownload()} />
@@ -394,27 +393,24 @@ function ReviewDetail({
       ) : null}
 
       <div className="dialog-actions review-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           onClick={() => setDialog("approve")}
         >
           通过并发放奖励
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => setDialog("revision")}
         >
           退回修改
-        </button>
-        <button
-          type="button"
-          className="btn btn-danger"
+        </Button>
+        <Button
+          variant="danger"
           onClick={() => setDialog("invalidate")}
         >
           判无效
-        </button>
+        </Button>
       </div>
 
       {dialog === "approve" ? (
@@ -502,13 +498,13 @@ function ApproveDialog({
         </p>
         {error !== null ? <SectionError error={error} /> : null}
         <DialogFooter>
-          <button type="button" className="btn btn-primary" onClick={() => void onConfirm()} disabled={busy} aria-busy={busy}>
+          <Button variant="primary" onClick={() => void onConfirm()} disabled={busy} aria-busy={busy}>
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>确认通过</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
+          </Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
             取消
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -628,19 +624,18 @@ function RevisionDialog({
         </div>
         {error !== null ? <SectionError error={error} /> : null}
         <DialogFooter>
-          <button
-            type="button"
-            className={`btn ${invalidate ? "btn-danger" : "btn-primary"}`}
+          <Button
+            variant={invalidate ? "danger" : "primary"}
             onClick={() => void onSubmit()}
             disabled={busy}
             aria-busy={busy}
           >
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>{invalidate ? "确认判无效" : "确认退回"}</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
+          </Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
             取消
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -689,9 +684,9 @@ function OutcomeAlert({
         </p>
       )}
       <p>
-        <button type="button" className="btn btn-ghost" onClick={onDismiss}>
+        <Button variant="ghost" onClick={onDismiss}>
           知道了
-        </button>
+        </Button>
       </p>
     </div>
   );
