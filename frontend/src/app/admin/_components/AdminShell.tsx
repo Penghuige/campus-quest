@@ -33,6 +33,7 @@ import {
 } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { adminWorkspaceGate } from "@/features/auth/workspace";
+import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
@@ -75,9 +76,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <h1 className="auth-title">管理后台</h1>
               <p className="auth-subtitle">运营管理需要管理员账号登录</p>
             </div>
-            <Link className="btn btn-primary btn-block" href="/staff/login">
-              前往员工登录
-            </Link>
+            <Button asChild variant="primary" block>
+            <Link href="/staff/login">前往员工登录</Link>
+          </Button>
             <p className="auth-alt-action">
               <Link className="link" href="/login">
                 返回学生入口

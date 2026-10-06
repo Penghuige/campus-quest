@@ -47,6 +47,7 @@ import {
   userStatusView,
   type AccountActionKind,
 } from "./adminView";
+import { Button, type ButtonVariant } from "@/components/ui/button";
 
 const PAGE_LIMIT = 20;
 
@@ -66,6 +67,13 @@ const STATUS_FILTERS: readonly { value: UserStatusDto | ""; label: string }[] = 
 ];
 
 type Filters = { role: RoleDto | ""; status: UserStatusDto | "" };
+
+/** adminView's literal class unions -> Button variant props (C2 map). */
+const BUTTON_VARIANT: Record<"btn-primary" | "btn-secondary" | "btn-danger", ButtonVariant> = {
+  "btn-primary": "primary",
+  "btn-secondary": "secondary",
+  "btn-danger": "danger",
+};
 
 export function AdminUserAccounts() {
   const [filters, setFilters] = useState<Filters>({ role: "", status: "" });
@@ -142,16 +150,15 @@ export function AdminUserAccounts() {
     <section className="section" aria-label="账号目录">
       <div className="section-head">
         <h2 className="section-title">账号目录</h2>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="ghost"
           onClick={() => {
             setPhase("loading");
             setReloadSeed((seed) => seed + 1);
           }}
         >
           刷新
-        </button>
+        </Button>
       </div>
 
       <form
@@ -246,16 +253,15 @@ export function AdminUserAccounts() {
           </p>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
               >
                 {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>加载更多（{items.length}/{total}）</span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -305,14 +311,13 @@ function UserRow({
       <td>
         <div className="row-actions">
           {accountActions(user.status).map((action) => (
-            <button
+            <Button
               key={action.kind}
-              type="button"
-              className={`btn ${action.buttonClass}`}
+              variant={BUTTON_VARIANT[action.buttonClass]}
               onClick={() => onAct(action.kind)}
             >
               {action.label}
-            </button>
+            </Button>
           ))}
         </div>
       </td>
@@ -423,18 +428,18 @@ function AccountStatusDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button
+            <Button
               type="submit"
-              className={`btn ${action.buttonClass === "btn-danger" ? "btn-danger" : "btn-primary"}`}
+              variant={action.buttonClass === "btn-danger" ? "danger" : "primary"}
               disabled={busy}
               aria-busy={busy}
             >
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>{action.confirmLabel}</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

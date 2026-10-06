@@ -85,6 +85,7 @@ import {
   TEMPLATE_CHANNEL_OPTIONS,
   TEMPLATE_EVENT_TYPE_OPTIONS,
 } from "./adminView";
+import { Button } from "@/components/ui/button";
 
 export function SystemAdmin() {
   return (
@@ -137,9 +138,9 @@ function SettingsSection() {
     <section className="section" aria-label="系统设置">
       <div className="section-head">
         <h2 className="section-title">系统设置</h2>
-        <button type="button" className="btn btn-ghost" onClick={refresh}>
+        <Button variant="ghost" onClick={refresh}>
           刷新
-        </button>
+        </Button>
       </div>
       {phase.kind === "loading" ? (
         <SectionSkeleton lines={8} />
@@ -385,14 +386,13 @@ function SettingKeyEditor({
         </>
       ) : null}
       <div className="dialog-actions">
-        <button
-          type="button"
-          className="btn btn-secondary"
+        <Button
+          variant="secondary"
           disabled={next === null || busy}
           onClick={() => setConfirming(true)}
         >
           保存修改
-        </button>
+        </Button>
       </div>
       {confirming && next !== null ? (
         <ConfirmSettingDialog
@@ -507,19 +507,18 @@ function ConfirmSettingDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <button
-            type="button"
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => void onConfirm(reasonToSend)}
             disabled={busy}
             aria-busy={busy}
           >
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>确认修改</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+          </Button>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
             取消
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -659,15 +658,15 @@ function TemplatesSection() {
             </div>
           ) : null}
           <div className="dialog-actions">
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="primary"
               disabled={creating || !adminReasonReady(title) || !adminReasonReady(body)}
               aria-busy={creating}
             >
               {creating ? <span className="spinner" aria-hidden="true" /> : null}
               <span>创建模板</span>
-            </button>
+            </Button>
           </div>
         </form>
         <TemplateByIdPanel onVerdict={upsert} />
@@ -810,32 +809,29 @@ function TemplateByIdPanel({
         </div>
       ) : null}
       <div className="dialog-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           onClick={() => void run("update")}
           disabled={busy !== null}
           aria-busy={busy === "update"}
         >
           {busy === "update" ? <span className="spinner" aria-hidden="true" /> : null}
           <span>更新内容</span>
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => void run("enable")}
           disabled={busy !== null}
         >
           启用
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => void run("disable")}
           disabled={busy !== null}
         >
           停用
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -900,16 +896,15 @@ function FailuresSection() {
     <section className="section" aria-label="通知投递失败">
       <div className="section-head">
         <h2 className="section-title">通知投递失败</h2>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="ghost"
           onClick={() => {
             setPhase("loading");
             setReloadSeed((seed) => seed + 1);
           }}
         >
           刷新
-        </button>
+        </Button>
       </div>
       <p className="field-hint">
         投递失败的通知及其服务端安全错误摘要（错误信息已由后端做安全处理，不含敏感内容）。
@@ -969,16 +964,15 @@ function FailuresSection() {
           </p>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
               >
                 {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>加载更多（{items.length}/{total}）</span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -1124,10 +1118,10 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
         </div>
       ) : null}
       <div className="dialog-actions">
-        <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+        <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>
           {busy ? <span className="spinner" aria-hidden="true" /> : null}
           <span>{isRelease ? "确认释放占用" : "确认强制失败"}</span>
-        </button>
+        </Button>
       </div>
     </form>
   );

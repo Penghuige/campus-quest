@@ -75,6 +75,7 @@ type Row =
 function rowId(row: Row): string {
   return row.row.id;
 }
+import { Button } from "@/components/ui/button";
 
 function RewardCatalogue() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -123,23 +124,21 @@ function RewardCatalogue() {
       <div className="section-head">
         <h2 className="section-title">奖励目录</h2>
         <div className="row-actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
+          <Button
+            variant="ghost"
             onClick={() => {
               setPhase("loading");
               setReloadSeed((seed) => seed + 1);
             }}
           >
             刷新
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => setCreating(true)}
           >
             新建奖励
-          </button>
+          </Button>
         </div>
       </div>
       <p className="field-hint">
@@ -255,13 +254,13 @@ function CatalogueRow({
       </td>
       <td>
         <div className="row-actions">
-          <button type="button" className="btn btn-secondary" onClick={onEdit}>
+          <Button variant="secondary" onClick={onEdit}>
             编辑
-          </button>
+          </Button>
           {enabled ? (
-            <button type="button" className="btn btn-danger" onClick={onDisable}>
+            <Button variant="danger" onClick={onDisable}>
               下架
-            </button>
+            </Button>
           ) : null}
         </div>
       </td>
@@ -524,13 +523,13 @@ function RewardFormDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>{submitLabel}</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -630,13 +629,13 @@ function DisableRewardDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>确认下架</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -774,19 +773,18 @@ function GrantForm({ mode }: { mode: "grant" | "revoke" }) {
         </div>
       ) : null}
       <div className="dialog-actions">
-        <button
+        <Button
           type="submit"
-          className={`btn ${mode === "grant" ? "btn-primary" : "btn-danger"}`}
+          variant={mode === "grant" ? "primary" : "danger"}
           disabled={busy || done}
           aria-busy={busy}
         >
           {busy ? <span className="spinner" aria-hidden="true" /> : null}
           <span>{mode === "grant" ? "确认授予" : "确认撤销"}</span>
-        </button>
+        </Button>
         {done ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={() => {
               setTeacherId("");
               setReason("");
@@ -794,7 +792,7 @@ function GrantForm({ mode }: { mode: "grant" | "revoke" }) {
             }}
           >
             再操作一次
-          </button>
+          </Button>
         ) : null}
       </div>
     </form>
