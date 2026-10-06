@@ -114,7 +114,7 @@ test.describe("student rewards redemption", () => {
     await expect(confirmButton).toBeEnabled();
     await confirmButton.click();
 
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(
       dialog.getByRole("heading", { name: "确认兑换" }),
@@ -213,7 +213,7 @@ test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", (
         response.status() === 201,
     );
     await card.getByRole("button", { name: "兑换", exact: true }).click();
-    const dialog = page.locator("dialog.dialog");
+    const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "确认兑换" }).click();
     const redemption = (await (await redeemResponse).json()) as { id: string };
     await expect(

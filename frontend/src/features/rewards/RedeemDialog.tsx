@@ -2,11 +2,10 @@
 /**
  * Redemption confirm dialog (spec §16.1; patterns §6/§7/§10).
  *
- * A short focused confirmation over a native `<dialog>`: showModal()
- * gives the browser's own focus containment, Escape handling, and
- * inert-background semantics without a bespoke modal (patterns §19's
- * ban is on hand-rolled traps WHEN a primitive exists; no dialog
- * primitive is installed, and the native element is the platform's).
+ * A short focused confirmation on the plan-14 Dialog primitive
+ * (components/ui/dialog): Radix supplies role=dialog, aria-modal, the
+ * focus trap, Escape, and outside-click close; the visual shell is the
+ * `.cq-dialog*` replication of the legacy `.dialog` values.
  *
  * Mutation rules (patterns §7): NO optimistic anything — the confirm
  * button stays disabled until the server answers; success renders the
@@ -15,8 +14,14 @@
  * so another attempt is possible (with a FRESH Idempotency-Key — see
  * redeemView.newIdempotencyKey).
  */
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useState } from "react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { redeemReward, type RedemptionDto, type RewardItemDto } from "@/features/points/api";
 import {
   describeRedeemError,
@@ -45,42 +50,39 @@ export function RedeemDialog({
   onClose,
   onRedeemed,
 }: RedeemDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent aria-labelledby="redeem-dialog-title">
+        {/* The primitive unmounts the content on close, so the body's
+            attempt state starts fresh on every open — the legacy reset-
+            on-open effect's job, without an effect. */}
+        <RedeemDialogBody
+          reward={reward}
+          spendablePoints={spendablePoints}
+          onClose={onClose}
+          onRedeemed={onRedeemed}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RedeemDialogBody({
+  reward,
+  spendablePoints,
+  onClose,
+  onRedeemed,
+}: Omit<RedeemDialogProps, "open">) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [redemption, setRedemption] = useState<RedemptionDto | null>(null);
-
-  // Controlled open/close over the native dialog: the parent flips
-  // `open`; every fresh open resets the attempt state.
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) {
-      return;
-    }
-    if (open && !dialog.open) {
-      setSubmitting(false);
-      setError(null);
-      setRedemption(null);
-      dialog.showModal();
-    }
-    if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
-
-  // Escape/cancel: keep React the source of truth instead of letting
-  // the native close race the controlled state.
-  function onCancel(event: React.SyntheticEvent<HTMLDialogElement>) {
-    event.preventDefault();
-    onClose();
-  }
-
-  // Backdrop click closes (the dialog element itself is the backdrop).
-  function onBackdropClick(event: MouseEvent<HTMLDialogElement>) {
-    if (event.target === dialogRef.current) {
-      onClose();
-    }
-  }
 
   async function submit() {
     setSubmitting(true);
@@ -101,17 +103,10 @@ export function RedeemDialog({
   const status = done ? redemptionStatusView(redemption.status) : null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="dialog"
-      aria-labelledby="redeem-dialog-title"
-      onCancel={onCancel}
-      onClick={onBackdropClick}
-    >
-      <div className="dialog-body">
-        <h2 id="redeem-dialog-title" className="dialog-title">
-          {done ? "兑换申请已提交" : "确认兑换"}
-        </h2>
+    <>
+      <DialogTitle id="redeem-dialog-title">
+        {done ? "兑换申请已提交" : "确认兑换"}
+      </DialogTitle>
 
         {!done ? (
           <>
@@ -147,7 +142,7 @@ export function RedeemDialog({
                 ) : null}
               </div>
             ) : null}
-            <div className="dialog-actions">
+            <DialogFooter>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -167,7 +162,7 @@ export function RedeemDialog({
               >
                 取消
               </button>
-            </div>
+            </DialogFooter>
           </>
         ) : (
           <>
@@ -185,14 +180,13 @@ export function RedeemDialog({
                 <span className={`badge badge-${status.tone}`}>{status.label}</span>
               </p>
             ) : null}
-            <div className="dialog-actions">
+            <DialogFooter>
               <button type="button" className="btn btn-primary" onClick={onClose} autoFocus>
                 完成
               </button>
-            </div>
+            </DialogFooter>
           </>
         )}
-      </div>
-    </dialog>
+    </>
   );
 }

@@ -57,7 +57,9 @@ List: 恢复代码 (staff TOTP recovery codes)
 
 ### Dialog semantics (`aria-labelledby`)
 
-Native `dialog` elements whose title ids the specs address directly:
+Dialog surfaces whose title ids the specs address directly (native
+`<dialog>` before plan-14; the Radix-backed `components/ui/dialog`
+primitive since — role=dialog + labelledby preserved byte-identical):
 `create-task-title` · `edit-task-title` · `import` preview surfaces ·
 `lifecycle-confirm-title` · `redemption-approve-title` ·
 `redemption-reject-title` · `redemption-fulfill-title` ·
