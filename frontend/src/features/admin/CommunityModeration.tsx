@@ -73,6 +73,7 @@ export function CommunityModeration({ taskId }: { taskId: string }) {
     </section>
   );
 }
+import { Button } from "@/components/ui/button";
 
 // --- moderation comment listing -------------------------------------------------------
 
@@ -179,9 +180,8 @@ function ModerationComments({
           </ul>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
@@ -190,7 +190,7 @@ function ModerationComments({
                 <span>
                   加载更多评论（{items.length}/{total}）
                 </span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}
@@ -247,14 +247,14 @@ function ModerationRow({
           </span>
         ) : null}
         {canReveal && row.isAnonymous ? (
-          <button type="button" className="btn btn-ghost comment-action" onClick={onReveal}>
+          <Button variant="ghost" className="comment-action" onClick={onReveal}>
             揭示身份
-          </button>
+          </Button>
         ) : null}
         {!row.deleted ? (
-          <button type="button" className="btn btn-ghost comment-action" onClick={onDelete}>
+          <Button variant="ghost" className="comment-action" onClick={onDelete}>
             删除评论
-          </button>
+          </Button>
         ) : null}
       </div>
     </li>
@@ -342,13 +342,13 @@ function ModerationDeleteDialog({
           </div>
           {error !== null ? <SectionError error={error} /> : null}
           <DialogFooter>
-            <button type="submit" className="btn btn-danger" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>确认删除</span>
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -434,9 +434,8 @@ function ReportQueue({ taskId }: { taskId: string }) {
           </ul>
           {hasMorePages(items.length, total) ? (
             <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
@@ -445,7 +444,7 @@ function ReportQueue({ taskId }: { taskId: string }) {
                 <span>
                   加载更多举报（{items.length}/{total}）
                 </span>
-              </button>
+              </Button>
               {moreError !== null ? (
                 <SectionError error={moreError} onRetry={() => void loadMore()} />
               ) : null}

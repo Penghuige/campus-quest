@@ -28,6 +28,7 @@ import {
   type CollaboratorDto,
 } from "./teacherApi";
 import { COLLABORATOR_PERMISSIONS, permissionLabels } from "./teacherView";
+import { Button } from "@/components/ui/button";
 
 export function CollaboratorsPanel({ taskId }: { taskId: string }) {
   const [teacherId, setTeacherId] = useState("");
@@ -147,13 +148,12 @@ export function CollaboratorsPanel({ taskId }: { taskId: string }) {
       </fieldset>
 
       <div className="dialog-actions">
-        <button type="button" className="btn btn-primary" onClick={() => void onAdd()} disabled={busy} aria-busy={busy}>
+        <Button variant="primary" onClick={() => void onAdd()} disabled={busy} aria-busy={busy}>
           {busy ? <span className="spinner" aria-hidden="true" /> : null}
           <span>添加 / 更新权限</span>
-        </button>
-        <button
-          type="button"
-          className="btn btn-danger"
+        </Button>
+        <Button
+          variant="danger"
           onClick={() => {
             const trimmed = teacherId.trim();
             setIdError(uuidShapeOk(trimmed) ? null : "请输入要移除的教师账号 ID（UUID）");
@@ -164,7 +164,7 @@ export function CollaboratorsPanel({ taskId }: { taskId: string }) {
           disabled={busy}
         >
           移除权限
-        </button>
+        </Button>
       </div>
 
       {grants.length > 0 ? (
@@ -177,14 +177,14 @@ export function CollaboratorsPanel({ taskId }: { taskId: string }) {
                 <span className="collab-perms">
                   {permissionLabels(grant.permissions).join("、")}
                 </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost comment-action"
+                <Button
+  variant="ghost"
+  className="comment-action"
                   onClick={() => void onRemove(grant.teacher_id)}
                   disabled={busy}
                 >
                   移除
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

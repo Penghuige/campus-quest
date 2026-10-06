@@ -34,6 +34,14 @@ export interface TaskLifecycleActionsProps {
   /** Render size: rows stay compact, the detail page uses standard buttons. */
   size?: "compact" | "default";
 }
+import { Button, type ButtonVariant } from "@/components/ui/button";
+
+/** teacherView's literal class unions -> Button variant props (C2 map). */
+const BUTTON_VARIANT: Record<"btn-primary" | "btn-secondary" | "btn-danger", ButtonVariant> = {
+  "btn-primary": "primary",
+  "btn-secondary": "secondary",
+  "btn-danger": "danger",
+};
 
 export function TaskLifecycleActions({
   taskId,
@@ -65,10 +73,9 @@ export function TaskLifecycleActions({
   return (
     <div className={size === "compact" ? "row-actions" : "dialog-actions"}>
       {actions.map((action) => (
-        <button
+        <Button
           key={action.verb}
-          type="button"
-          className={`btn ${action.buttonClass}`}
+          variant={BUTTON_VARIANT[action.buttonClass]}
           disabled={pending !== null}
           aria-busy={pending === action.verb}
           onClick={() => {
@@ -84,7 +91,7 @@ export function TaskLifecycleActions({
             <span className="spinner" aria-hidden="true" />
           ) : null}
           <span>{action.label}</span>
-        </button>
+        </Button>
       ))}
       {error !== null ? (
         <SectionError error={error} onRetry={undefined} />
@@ -139,9 +146,8 @@ function LifecycleConfirmDialog({
           <p className="field-hint">{action.confirmBody}</p>
         )}
         <DialogFooter>
-          <button
-            type="button"
-            className={`btn ${action.buttonClass}`}
+          <Button
+            variant={BUTTON_VARIANT[action.buttonClass]}
             onClick={onConfirm}
             disabled={busy}
             aria-busy={busy}
@@ -149,15 +155,14 @@ function LifecycleConfirmDialog({
           >
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
             <span>{action.confirmLabel}</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={onCancel}
             disabled={busy}
           >
             取消
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

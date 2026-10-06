@@ -65,6 +65,7 @@ export function EditTaskDialog({ task, open, onClose, onUpdated }: EditTaskDialo
     <EditTaskDialogInner task={task} onClose={onClose} onUpdated={onUpdated} />
   ) : null;
 }
+import { Button } from "@/components/ui/button";
 
 function EditTaskDialogInner({
   task,
@@ -148,23 +149,22 @@ function EditTaskDialogInner({
           />
 
           <DialogFooter>
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="primary"
               disabled={submitting}
               aria-busy={submitting}
             >
               {submitting ? <span className="spinner" aria-hidden="true" /> : null}
               <span>保存修改</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
+            </Button>
+            <Button
+              variant="secondary"
               onClick={onClose}
               disabled={submitting}
             >
               取消
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

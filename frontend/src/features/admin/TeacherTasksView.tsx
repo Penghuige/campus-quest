@@ -32,6 +32,7 @@ import {
 import { taskStatusView } from "./teacherView";
 import { CreateTaskDialog } from "./CreateTaskDialog";
 import { TaskLifecycleActions } from "./TaskLifecycleActions";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
@@ -116,13 +117,12 @@ export function TeacherTasksView() {
         <p className="list-count">
           {total !== null ? `共 ${total} 个任务（含协作）` : null}
         </p>
-        <button
-          type="button"
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           onClick={() => setCreateOpen(true)}
         >
           新建任务
-        </button>
+        </Button>
       </div>
 
       {phase === "loading" ? (
@@ -134,13 +134,12 @@ export function TeacherTasksView() {
           title="还没有任务"
           hint="创建第一个任务草稿，导入任务单元后即可发布给学生领取"
         >
-          <button
-            type="button"
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => setCreateOpen(true)}
           >
             新建任务
-          </button>
+          </Button>
         </EmptyState>
       ) : (
         <>
@@ -176,16 +175,15 @@ export function TeacherTasksView() {
               </p>
             ) : null}
             {hasMorePages(items.length, total ?? 0) ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
                 aria-busy={loadingMore}
               >
                 {loadingMore ? <span className="spinner" aria-hidden="true" /> : null}
                 <span>加载更多</span>
-              </button>
+              </Button>
             ) : null}
             {moreError !== null ? (
               <SectionError error={moreError} onRetry={() => void loadMore()} />
