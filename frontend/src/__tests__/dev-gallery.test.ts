@@ -34,6 +34,12 @@ test("dev gallery is production-gated and covers the primitive matrix", () => {
     // Plan-13 T2: the leaderboard's top-3 / me-anchor states (the e2e
     // world's single-entity board can never render them).
     "BoardRow",
+    // Plan-13 T3: the comment thread's named/anonymous/edited/
+    // tombstone/long-content rows + echoed engagement + composer
+    // identity-preview states (the seeded open task carries no
+    // comments; the world's one anonymous comment lives on a task the
+    // pixel matrix never visits).
+    "CommentGallery",
   ])
     assert.ok(src.includes(cls), `gallery covers ${cls}`);
 });

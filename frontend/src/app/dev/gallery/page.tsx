@@ -51,6 +51,7 @@ import type { TaskCardDto } from "@/features/tasks/api";
 import { rarityView, type RarityKey } from "@/features/tasks/display";
 
 import { RewardTileGallery } from "./RewardTileGallery";
+import { CommentGallery } from "./CommentGallery";
 
 const RARITIES: readonly RarityKey[] = ["NORMAL", "RARE", "EPIC", "LEGENDARY"];
 
@@ -247,6 +248,8 @@ export default function DevGalleryPage() {
           </ol>
         </div>
       </section>
+
+      <CommentGallery />
 
       <section className="section" aria-label="表单控件">
         <h2 className="section-title">表单控件</h2>

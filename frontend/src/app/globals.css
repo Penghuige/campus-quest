@@ -3020,29 +3020,48 @@ body {
   color: var(--foreground);
 }
 
+/* Plan-13 T3: the community section takes the .task-detail 56rem step.
+   The thread + composer render OUTSIDE .task-detail's grid (the page
+   composes them as siblings), so they used to span the full app-main
+   width — an orphan wide strip under a 56rem detail column. */
+.community-section {
+  max-width: 42rem;
+}
+
+@media (min-width: 48rem) {
+  .community-section {
+    max-width: 56rem;
+  }
+}
+
 .community-section .tab-bar {
   /* The sort tabs sit beside the section title, not on their own row. */
   flex-wrap: nowrap;
 }
 
-/* --- comment list: root groups stacked; replies indent one fixed level --- */
+/* --- comment list: root groups as hairline-separated threads on the
+   page ground (plan-13 T3: NO cards-in-cards — the composer is the
+   section's only panel; replies stay connected through the single
+   second-level indent rail below) --- */
 
 .comment-list {
   display: grid;
-  gap: var(--space-3);
 }
 
 .comment-thread {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.comment-thread:last-child {
+  border-bottom: none;
 }
 
 .comment-thread-leaf {
-  /* No replies: the group box hugs the single row (no dead space). */
+  /* No replies: the single row keeps the same hairline rhythm, hugging
+     its content (no dead reply slot). */
   padding-block: var(--space-2);
 }
 
@@ -3084,15 +3103,31 @@ body {
   content: "· ";
 }
 
+/* One quiet metadata line (plan-13 T3): author · time · 已编辑. Scoped
+   to the student THREAD — the moderation meta row mixes in badges and
+   keeps its own spacing; .comment-edited's own ::before already
+   separates there, so it is excluded from this rule. */
+.comment-thread .comment-meta > * + *:not(.comment-edited)::before {
+  content: "· ";
+  color: var(--subtle-foreground);
+}
+
 /* User text renders as plain text: pre-wrap keeps the author's line
    breaks, break-words/overflow-wrap keep long payloads (and XSS-shaped
-   strings, which display verbatim per spec §33.1) from breaking layout. */
+   strings, which display verbatim per spec §33.1) from breaking layout.
+   Plan-13 T3: a comfortable reading measure inside the 56rem section —
+   scoped to the student thread; the moderation list keeps full-width
+   rows. */
 .comment-content {
   margin: 0;
   font-size: var(--text-md);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.comment-thread .comment-content {
+  max-width: 40rem;
 }
 
 .comment-tombstone .comment-tombstone-text {
@@ -3120,7 +3155,9 @@ body {
   font-size: var(--text-xs);
 }
 
-/* --- votes + reactions (spec §22): toggle buttons with pressed state --- */
+/* --- votes + reactions (spec §22; plan-13 T3: compact inline-quiet —
+   no chip borders, the pressed state is a quiet primary wash on the
+   page ground, counts stay tabular) --- */
 
 .vote-group,
 .reaction-bar {
@@ -3134,11 +3171,11 @@ body {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 2rem;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
+  min-height: 1.75rem;
+  padding: var(--space-1);
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  background: transparent;
   font-size: var(--text-sm);
   color: var(--muted-foreground);
   cursor: pointer;
@@ -3152,8 +3189,7 @@ body {
 
 .vote-btn[aria-pressed="true"],
 .reaction-btn[aria-pressed="true"] {
-  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
-  background: color-mix(in oklab, var(--primary) 8%, var(--surface-1));
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
   color: var(--primary);
   font-weight: 550;
 }
@@ -3257,6 +3293,17 @@ body {
   color: var(--muted-foreground);
 }
 
+/* Identity choice + its preview on ONE baseline row (plan-13 T3): the
+   mode you are about to post under sits next to the choice itself, and
+   the composer compacts vertically so the input furniture never
+   outweighs the thread. */
+.identity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
 .identity-options,
 .report-categories {
   display: flex;
@@ -3306,6 +3353,14 @@ body {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--muted-foreground);
+}
+
+/* Anonymous is the deliberate opt-in (the V1 公开昵称 default ruling):
+   the state must be UNMISSABLE before posting — the copy is verbatim
+   (Class A), the presentation carries the emphasis. */
+.identity-preview[data-mode="anonymous"] {
+  color: var(--foreground);
+  font-weight: 550;
 }
 
 .load-more {

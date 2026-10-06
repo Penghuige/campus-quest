@@ -48,6 +48,10 @@ function InteractionError({ error }: { error: unknown }) {
 
 export interface CommentVotesProps {
   commentId: string;
+  /** Gallery/fixture seed ONLY (plan-13 T3): the product contract has no
+   * stance read, so the app never passes this — the first echo fills
+   * state. A fixture composes an already-echoed state. */
+  initial?: VoteResultDto;
 }
 
 /**
@@ -55,10 +59,10 @@ export interface CommentVotesProps {
  * first interaction's echo — because inventing zeros for unread state
  * would present fabricated data (patterns §3).
  */
-export function CommentVotes({ commentId }: CommentVotesProps) {
+export function CommentVotes({ commentId, initial }: CommentVotesProps) {
   // null = the viewer's stance and the totals are not loaded (no
   // initial read exists in the contract); filled by the first echo.
-  const [state, setState] = useState<VoteResultDto | null>(null);
+  const [state, setState] = useState<VoteResultDto | null>(initial ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -115,6 +119,12 @@ export function CommentVotes({ commentId }: CommentVotesProps) {
 
 export interface CommentReactionsProps {
   commentId: string;
+  /** Gallery/fixture seeds ONLY (plan-13 T3 — same rule as the votes
+   * initial): echoed per-emoji counts + the caller's own toggles, so a
+   * fixture can compose the pressed/counted state the app only reaches
+   * through a real POST echo. */
+  initialCounts?: Record<string, number>;
+  initialMine?: readonly string[];
 }
 
 /**
@@ -122,9 +132,17 @@ export interface CommentReactionsProps {
  * same emoji again is the toggle (spec §22); `mine` tracks the echoed
  * `added` verdicts so pressed-state stays truthful within a session.
  */
-export function CommentReactions({ commentId }: CommentReactionsProps) {
-  const [counts, setCounts] = useState<Record<string, number> | null>(null);
-  const [mine, setMine] = useState<ReadonlySet<string>>(new Set());
+export function CommentReactions({
+  commentId,
+  initialCounts,
+  initialMine,
+}: CommentReactionsProps) {
+  const [counts, setCounts] = useState<Record<string, number> | null>(
+    initialCounts ?? null,
+  );
+  const [mine, setMine] = useState<ReadonlySet<string>>(
+    () => new Set(initialMine ?? []),
+  );
   const [busyEmoji, setBusyEmoji] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 

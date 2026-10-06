@@ -17,6 +17,14 @@
  * §3). Tombstones render the uniform 该评论已删除 line with surviving
  * children below (§21.3); replying to a tombstone is server-refused,
  * so tombstone rows expose no reply affordance at all.
+ *
+ * Plan-13 T3 hierarchy contract (plan-11 P2 cross-page rule): one row =
+ * quiet metadata line (author / 匿名用户 · time · 已编辑) → content at a
+ * comfortable measure → ONE compact inline-quiet action row (counts
+ * tabular). Threads read as hairline-separated groups on the page
+ * ground — never cards-in-cards; replies stay connected through the
+ * single second-level indent rail. Tombstones are quieter but legible.
+ * The sort tabs adopt the .segmented-tabs control grammar (T2 fold).
  */
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -138,7 +146,7 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
     <section className="section community-section" aria-label="任务评论">
       <div className="section-head">
         <h2 className="section-title">评论区</h2>
-        <nav className="tab-bar" aria-label="评论排序">
+        <nav className="tab-bar segmented-tabs" aria-label="评论排序">
           {COMMENT_SORTS.map((option) => (
             <Link
               key={option.key}
@@ -256,8 +264,12 @@ interface CommentRowItemProps {
  * displays verbatim and never executes (no dangerouslySetInnerHTML
  * anywhere in this tree; `white-space: pre-wrap` keeps line breaks).
  * Tombstones show the uniform marker only — no actions, no text.
+ * Exported for the dev gallery's comment-row state fixtures (plan-13
+ * T3: the seeded open task carries no comments, so the gallery
+ * composes named/anonymous/voted/tombstone/long-content rows from
+ * deterministic fixtures — the T1/T2 gallery precedent).
  */
-function CommentRowItem({
+export function CommentRowItem({
   taskId,
   row,
   depth,
