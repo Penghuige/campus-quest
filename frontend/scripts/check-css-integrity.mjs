@@ -11,6 +11,12 @@ import tailwindcss from "@tailwindcss/postcss";
 const cssPath = "src/app/globals.css";
 const css = readFileSync(cssPath, "utf8");
 const errors = [];
+
+// Bracket-form arbitrary values sanctioned by an owner ruling; empty at
+// C3 adoption (the codebase has zero bracket classNames — the rule is
+// preventive). Extend only with a comment citing the ruling.
+const ALLOWED_ARBITRARY = new Set([
+]);
 const warnings = [];
 
 // --- defined classes: every .class token appearing in any selector ---
@@ -60,10 +66,24 @@ for (const f of files) {
       const lit = s[1] ?? s[2] ?? s[3];
       for (const tok of lit.split(/\s+/)) {
         // Variant syntax joins segments with colons (responsive/state
-        // prefixes); each segment stays lowercase-token shaped, and
-        // arbitrary values (bracket form) still do not match and are
-        // skipped as before.
-        if (!/^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)*$/.test(tok)) continue;
+        // prefixes); each segment stays lowercase-token shaped.
+        // C3 guard re-pointing (plan-12 Phase C): the bracket form is
+        // an ARBITRARY VALUE — Tailwind-era rule: none of those are
+        // allowed outside the @theme bridge (which only references
+        // :root vars and compiles to plain utilities). They used to
+        // be skipped silently; now they fail the gate. Extend
+        // ALLOWED_ARBITRARY only with a comment citing the producing
+        // code and the owner ruling that sanctioned it.
+        if (!/^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)*$/.test(tok)) {
+          if (/[\[\]]/.test(tok) && !/\$\{/.test(tok)) {
+            if (!ALLOWED_ARBITRARY.has(tok)) {
+              errors.push(
+                `${f}: arbitrary value "${tok}" outside the theme bridge — use a token utility or a plain CSS class`,
+              );
+            }
+          }
+          continue;
+        }
         if (/\$\{/.test(tok)) continue;
         if (!used.has(tok)) used.set(tok, []);
         used.get(tok).push(f);

@@ -136,7 +136,8 @@ playwright-e2e:
 
 release-gate: release-test-db backend-unit backend-integration backend-worker \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
-              frontend-css-guard frontend-unit frontend-build playwright-e2e
+              frontend-css-guard frontend-unit frontend-build playwright-e2e \
+              visual-regression
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #

@@ -12,6 +12,7 @@
 import type { ReactNode } from "react";
 
 import { describeSectionError } from "@/lib/errors";
+import { Button } from "./button";
 
 /** Skeleton block for a list-like section body. */
 export function SectionSkeleton({ lines = 3 }: { lines?: number }) {
@@ -90,9 +91,9 @@ export function SectionError({
       ) : null}
       {onRetry !== undefined ? (
         <p>
-          <button type="button" className="btn btn-secondary" onClick={onRetry}>
+          <Button variant="secondary" onClick={onRetry}>
             {retryLabel}
-          </button>
+          </Button>
         </p>
       ) : null}
     </div>

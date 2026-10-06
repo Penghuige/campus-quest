@@ -318,7 +318,8 @@ focus trap, Escape, and outside-click semantics live in one place and
 e2e locates dialogs by `getByRole("dialog", { name })`. Hand-rolled
 native `<dialog>` / `showModal()` is forbidden for new code;
 StaffMenuSheet's transient navigation menu is the one sanctioned
-exception (its legacy `.dialog` CSS retires in plan-14 phase C3).
+exception (kept native by the plan-14 ledger ruling; self-contained
+on `.app-menusheet*` since the C3 retirement).
 Busy-submitting dialogs guard asynchronous closes in `onOpenChange`
 rather than disabling the platform's Escape handling.
 

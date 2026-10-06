@@ -44,7 +44,7 @@ export function StaffMenuSheet({
       </button>
       <dialog
         ref={dialogRef}
-        className="dialog app-menusheet"
+        className="app-menusheet"
         aria-label={label}
         onClick={(event) => {
           if (event.target === dialogRef.current) {
@@ -52,7 +52,7 @@ export function StaffMenuSheet({
           }
         }}
       >
-        <div className="dialog-body">
+        <div className="app-menusheet-body">
           <nav className="app-menusheet-nav" aria-label={label}>
             {items.map((item) => (
               <Link

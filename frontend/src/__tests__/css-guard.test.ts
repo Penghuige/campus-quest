@@ -84,3 +84,27 @@ test("a class that is neither hand-written nor compiled still errors", () => {
   assert.equal(result.status, 1, "guard must reject the unknown class");
   assert.match(result.stderr, /definitely-not-a-real-class/);
 });
+
+test("a bracket arbitrary value fails the gate (C3: none allowed outside theme)", () => {
+  const dir = makeFixture({
+    "Widget.tsx": `export function Widget() {
+  return <div className="w-[40rem] fixture-card">hi</div>;
+}
+`,
+  });
+  const result = runGuard(dir);
+  assert.equal(result.status, 1, "guard must reject the bracket arbitrary value");
+  assert.match(result.stderr, /arbitrary value "w-\[40rem\]" outside the theme bridge/);
+});
+
+test("theme-bridge colors compile to plain utilities and pass (no brackets)", () => {
+  const dir = makeFixture({
+    "Widget.tsx": `export function Widget() {
+  return <div className="bg-surface-1 fixture-card">hi</div>;
+}
+`,
+  });
+  const result = runGuard(dir);
+  assert.equal(result.status, 0, `bridge color must pass; stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /CSS integrity OK/);
+});

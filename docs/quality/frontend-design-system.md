@@ -31,7 +31,18 @@ Rarity labels and honors may be playful. Authentication, submission, review, acc
 
 ## 3. Token-first implementation
 
-All recurring visual values MUST originate from shared tokens, preferably CSS variables consumed by Tailwind and shadcn primitives.
+All recurring visual values MUST originate from shared tokens. The
+pipeline is settled (plan-14 C0, folded back at C3): `:root` OKLCH
+custom properties in `globals.css` are the single source of truth; a
+Tailwind v4 utilities-only build (no preflight, no default scales)
+sits alongside them, with an `@theme inline` bridge mapping
+`--color-*` names to `var(--…)` references only — it re-defines
+nothing and emits nothing. New styling has three sanctioned lanes:
+theme-bridge color utilities (`bg-surface-1`), plain CSS classes over
+tokens (`.btn*`, `.cq-dialog*`), or a new `:root` token. Bracket-form
+arbitrary values are guard-banned outside the bridge
+(`scripts/check-css-integrity.mjs`); the TS mirror in
+`src/lib/designTokens.ts` is pin-tested against the CSS text.
 
 Do not scatter raw hex values or one-off radius and shadow values through feature components.
 
@@ -86,7 +97,7 @@ motion:
   lift-hover           (the 1–2px hover lift interactive cards may take)
 ~~~
 
-Prefer OKLCH-compatible theme variables when the selected Tailwind and shadcn setup supports them.
+Prefer OKLCH custom properties in `:root` (the settled pipeline above bridges them into theme utilities).
 
 ### Token usage rules
 
@@ -503,8 +514,10 @@ explicit `DialogTitle id`; helper copy stays a `.field-hint` paragraph
 rather than `DialogDescription` (they size differently). Dialogs close
 through their own action rows (`DialogClose` asChild on those
 buttons) — there is no chrome close button. StaffMenuSheet's native
-menu is the one sanctioned legacy exception; it retires with the
-`.dialog*` CSS in plan-14 phase C3.
+menu is the one sanctioned legacy exception. Since the C3 retirement
+it is self-contained (`.app-menusheet*` carries the former
+`.dialog*` shell values); it stays native `<dialog>` by the plan-14
+ledger ruling (transient nav menu, outside the five contract flows).
 
 ## 10. Loading, empty, error, and permission states
 
