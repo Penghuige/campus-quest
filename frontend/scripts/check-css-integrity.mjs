@@ -87,6 +87,7 @@ const ALLOWED_UNDEFINED = new Set([
   "revision",   // outcome.kind === "revision": SubmissionReview.tsx:688
   "grant",      // mode === "grant": RewardsAdmin.tsx:780
   "compact",    // size === "compact": TaskLifecycleActions.tsx:60
+  "wide",       // size === "wide": components/ui/dialog.tsx (DialogContent size variant)
   "ok",         // outcome.tone === "ok": TaskRating.tsx:145
   "verified",   // view.state === "verified": AccountSettings.tsx:531
   "unverified", // view.state === "unverified": AccountSettings.tsx:533

@@ -4120,6 +4120,73 @@ body {
   justify-content: flex-start;
 }
 
+/* ==== Plan-14 T4: shadcn-pattern Dialog primitive (src/components/ui/dialog).
+   Replicates the native .dialog contract verbatim — same tokens, same values
+   (see .dialog / .dialog-body / .dialog-title / .dialog-actions / .dialog-wide
+   above). The Radix portal renders plain divs outside the top layer, so the
+   primitive carries its own fixed positioning, centering transform, scrim
+   element (instead of ::backdrop), and z-index. NO open/close animation: the
+   product dialog has none, so no reduced-motion override is needed either.
+   The old .dialog classes stay untouched until the T5-T8 batches migrate. */
+.cq-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--overlay-scrim);
+}
+
+.cq-dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  width: min(26rem, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--foreground);
+  background: var(--surface-1);
+}
+
+.cq-dialog-wide {
+  width: min(40rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.cq-dialog-wide .input {
+  width: 100%;
+}
+
+.cq-dialog-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Primitive default for the Radix Description (the product dialogs use
+   .field-hint for this role today; T5-T8 may keep either via className). */
+.cq-dialog-description {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.cq-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cq-dialog-footer .btn {
+  flex: 1 1 auto;
+}
+
 /* ==== consolidated prefers-reduced-motion overrides ==========================
  *
  * AUDIT RULE (two overrides were found DEAD here): a reduced-motion
