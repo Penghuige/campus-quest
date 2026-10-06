@@ -40,6 +40,10 @@ test("dev gallery is production-gated and covers the primitive matrix", () => {
     // comments; the world's one anonymous comment lives on a task the
     // pixel matrix never visits).
     "CommentGallery",
+    // Plan-13 T4: the inbox's unread/read × event-category rows +
+    // long-content truncation (the thin e2e world seeds ZERO
+    // notifications, so no baselined surface can render them).
+    "NotificationGallery",
   ])
     assert.ok(src.includes(cls), `gallery covers ${cls}`);
 });

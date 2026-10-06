@@ -64,6 +64,46 @@ describe("event-type map (distinct icons + product wording)", () => {
   });
 });
 
+// --- event categories (plan-13 T4: the scan-by-kind anchor) -------------------------
+
+describe("event categories (review / deadline / redemption / system)", () => {
+  test("every frozen type joins exactly one of the four categories", () => {
+    const groups = new Map<string, string[]>();
+    for (const eventType of FROZEN_EVENT_TYPES) {
+      const category = notificationEventView(eventType).category;
+      groups.set(category, [...(groups.get(category) ?? []), eventType]);
+    }
+    assert.deepEqual(
+      [...groups.keys()].sort(),
+      ["deadline", "redemption", "review", "system"],
+    );
+    for (const [category, members] of groups) {
+      assert.ok(members.length > 0, `${category} must not be empty`);
+    }
+  });
+
+  test("the membership mirrors the product wording, not the enum prefix", () => {
+    assert.equal(notificationEventView("ASSIGNMENT_DEADLINE_24H").category, "deadline");
+    assert.equal(notificationEventView("ASSIGNMENT_DEADLINE_4H").category, "deadline");
+    assert.equal(notificationEventView("REVISION_REQUIRED").category, "review");
+    assert.equal(notificationEventView("SUBMISSION_APPROVED").category, "review");
+    assert.equal(notificationEventView("SUBMISSION_VALIDATION_FAILED").category, "review");
+    assert.equal(notificationEventView("REWARD_REDEMPTION_APPROVED").category, "redemption");
+    assert.equal(notificationEventView("REWARD_REDEMPTION_REJECTED").category, "redemption");
+    assert.equal(notificationEventView("ACCOUNT_SECURITY").category, "system");
+  });
+
+  test("an unknown future type falls back to the system category", () => {
+    assert.equal(notificationEventView("SOME_FUTURE_EVENT").category, "system");
+    assert.equal(UNKNOWN_EVENT_VIEW.category, "system");
+  });
+
+  test("the row view carries the event's category verbatim", () => {
+    const view = inboxItemView(item(), (iso) => Date.parse(iso));
+    assert.equal(view.category, "review");
+  });
+});
+
 // --- the URL filter ----------------------------------------------------------------
 
 describe("parseInboxFilter (?filter= URL state)", () => {
@@ -112,6 +152,7 @@ describe("inboxItemView (the row choke point)", () => {
     const view = inboxItemView(item(), (iso) => Date.parse(iso));
     assert.deepEqual(Object.keys(view).sort(), [
       "body",
+      "category",
       "createdAtMs",
       "eventType",
       "glyph",

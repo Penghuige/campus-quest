@@ -52,6 +52,7 @@ import { rarityView, type RarityKey } from "@/features/tasks/display";
 
 import { RewardTileGallery } from "./RewardTileGallery";
 import { CommentGallery } from "./CommentGallery";
+import { NotificationGallery } from "./NotificationGallery";
 
 const RARITIES: readonly RarityKey[] = ["NORMAL", "RARE", "EPIC", "LEGENDARY"];
 
@@ -250,6 +251,8 @@ export default function DevGalleryPage() {
       </section>
 
       <CommentGallery />
+
+      <NotificationGallery />
 
       <section className="section" aria-label="表单控件">
         <h2 className="section-title">表单控件</h2>

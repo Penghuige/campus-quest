@@ -62,6 +62,16 @@
  *   (claimed_at); student-task-detail — .deadline-line=1 but its text is
  *   "领取后 4320 分钟内提交" (derived from the seeded task's FIXED RELATIVE
  *   duration → deterministic, deliberately unmasked); all other candidates 0.
+ * Plan-13 T4 probe (student-notifications): the thin world seeds ZERO
+ *   notifications (backend tests/e2e/browser_world.py grows no
+ *   notification rows), so /notifications renders the deterministic
+ *   empty state — .notif-item/.notif-time count = 0 at capture state,
+ *   and a timestamp mask would be an inert no-op (forbidden by the
+ *   engagement contract below). The shot therefore declares NO masks;
+ *   populated rows with timestamps are pixel-pinned through the
+ *   dev-gallery fixture block, whose fixture timestamps are FIXED
+ *   (deterministic, mask-free). If world seeding ever grows a
+ *   notification, this shot MUST gain the .notif-time mask.
  */
 import { type Locator, type Page } from "@playwright/test";
 
@@ -175,6 +185,17 @@ const SHOTS: Shot[] = [
   },
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
   { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
+  {
+    name: "student-notifications",
+    path: "/notifications",
+    auth: "student",
+    // Plan-13 T4: masks deliberately EMPTY — the thin world seeds zero
+    // notifications, so the deterministic empty state is the captured
+    // truth and no clock-volatile element exists to mask (see the header
+    // probe note; the engagement contract makes an inert .notif-time
+    // mask fail loud, so none is declared).
+    masks: [],
+  },
   {
     name: "teacher-reviews",
     path: "/teacher/reviews",
