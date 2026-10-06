@@ -2,7 +2,8 @@
 /**
  * Create-task dialog (spec §6; patterns §6 forms): the DRAFT-creation
  * form on the plan-14 Dialog primitive (components/ui/dialog) — Radix
- * supplies role=dialog/aria-modal/focus-trap/Escape; the visual shell is
+ * supplies role=dialog/focus-trap/Escape (modality via hideOthers +
+ * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell is
  * the `.cq-dialog*` replication of the legacy `.dialog` values. The
  * fields are the publish-validation set (binding constraint) rendered
  * by the shared `TaskFormFields` (the edit dialog reuses them under the

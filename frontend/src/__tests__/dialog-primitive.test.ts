@@ -1,8 +1,9 @@
 /**
  * Plan-14 T4: shadcn-pattern Dialog primitive — composition / props-mapping
  * tests (no DOM shim in this repo's tsx --test runner; live behavior —
- * role=dialog, aria-modal, focus trap, Escape — is proven by the T5-T8
- * batch e2e, per the task brief).
+ * role=dialog, focus trap, Escape — is proven by the T5-T8 batch e2e,
+ * per the task brief; Radix 1.2 emits no aria-modal — modality is
+ * hideOthers + RemoveScroll).
  *
  * Technique: the primitive parts are plain function components with no
  * hooks, so calling them directly returns the React element descriptor —

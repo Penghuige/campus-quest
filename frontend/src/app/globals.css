@@ -4127,7 +4127,7 @@ body {
    primitive carries its own fixed positioning, centering transform, scrim
    element (instead of ::backdrop), and z-index. NO open/close animation: the
    product dialog has none, so no reduced-motion override is needed either.
-   The old .dialog classes stay untouched until the T5-T8 batches migrate. */
+   The old .dialog classes stay untouched until the C3 retirement. */
 .cq-dialog-overlay {
   position: fixed;
   inset: 0;

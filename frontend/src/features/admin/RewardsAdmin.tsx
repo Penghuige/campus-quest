@@ -523,7 +523,7 @@ function RewardFormDialog({
               ) : null}
             </div>
           ) : null}
-          <div className="dialog-actions">
+          <DialogFooter>
             <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               <span>{submitLabel}</span>
@@ -531,7 +531,7 @@ function RewardFormDialog({
             <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
               取消
             </button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

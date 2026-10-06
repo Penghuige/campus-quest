@@ -3,8 +3,9 @@
  * Redemption confirm dialog (spec §16.1; patterns §6/§7/§10).
  *
  * A short focused confirmation on the plan-14 Dialog primitive
- * (components/ui/dialog): Radix supplies role=dialog, aria-modal, the
- * focus trap, Escape, and outside-click close; the visual shell is the
+ * (components/ui/dialog): Radix supplies role=dialog, the focus trap,
+ * Escape, and outside-click close (modality via hideOthers +
+ * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell is the
  * `.cq-dialog*` replication of the legacy `.dialog` values.
  *
  * Mutation rules (patterns §7): NO optimistic anything — the confirm
