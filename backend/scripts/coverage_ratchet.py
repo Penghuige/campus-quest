@@ -37,7 +37,11 @@ _RATCHET_PATH = _BACKEND_ROOT / "coverage-ratchet.json"
 #: environment-conditional branch). A zero-epsilon ratchet would flap on
 #: that noise forever; 0.15 covers the observed drift with margin while
 #: staying far below any real regression scale. Floors still mean what
-#: they say: the CI-observed value, not floor+epsilon.
+#: they say: the CI-observed value, not floor+epsilon. A related ruling
+#: (2026-10-08, the community 95.1->94.9 calibration): a floor the CI
+#: can only SOMETIMES meet is broken by construction — floors are the
+#: CI-reproducible minimum, and single-module drift on identical code
+#: is a coverage flake to hunt, never a reason to widen epsilon.
 _EPSILON = 0.15
 
 
