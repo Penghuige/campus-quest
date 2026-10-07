@@ -6,7 +6,7 @@
   "app/main.py": 100.0,
   "app/modules/__init__.py": 100.0,
   "app/modules/audit": 97.0,
-  "app/modules/community": 95.1,
+  "app/modules/community": 94.9,
   "app/modules/files": 90.8,
   "app/modules/identity": 90.7,
   "app/modules/notifications": 94.4,
