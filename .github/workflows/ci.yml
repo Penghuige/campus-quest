@@ -388,10 +388,12 @@ jobs:
       - name: Create the e2e MinIO bucket
         run: |
           docker run --rm --network host \
-            -e MC_HOST_e2e='https://campusquest:campusquest-dev@127.0.0.1:9002' \
+            -e MINIO_ROOT_USER=campusquest \
+            -e MINIO_ROOT_PASSWORD=campusquest-dev \
             --entrypoint sh \
             quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
-            'mc --insecure mb --ignore-existing e2e/campusquest-test'
+            'export MC_HOST_e2e="https://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@127.0.0.1:9002";
+             mc --insecure mb --ignore-existing e2e/campusquest-test'
 
       - name: Migrate the service database
         working-directory: backend

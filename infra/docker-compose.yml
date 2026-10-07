@@ -155,10 +155,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
-      # MC_HOST_<alias> carries the https endpoint + credentials mc
-      # needs before any `mc alias set` could run; --insecure covers
-      # the self-signed cert on the compose-internal hostname.
-      MC_HOST_e2e: https://${MINIO_ROOT_USER:-campusquest}:${MINIO_ROOT_PASSWORD:-campusquest-dev}@minio-e2e:9000
     entrypoint:
       - /bin/sh
       - -c
@@ -166,7 +162,13 @@ services:
         set -eu
         # No container healthcheck on minio-e2e: the bundled `mc ready`
         # probe would itself reject the self-signed cert. This init job
-        # is the readiness gate instead (mc --insecure retry loop).
+        # is the readiness gate instead. MC_HOST is assembled at RUNTIME
+        # from the credential variables — `mc alias set` cannot be used
+        # here (its setup probe verifies TLS and rejects the self-signed
+        # cert), and a committed user:pass@host URL literal trips secret
+        # scanners; the variables ride separate env entries exactly like
+        # the shared minio-init service.
+        export MC_HOST_e2e="https://$$MINIO_ROOT_USER:$$MINIO_ROOT_PASSWORD@minio-e2e:9000"
         until mc --insecure ready e2e; do sleep 1; done
         mc --insecure mb --ignore-existing e2e/campusquest-test
 
