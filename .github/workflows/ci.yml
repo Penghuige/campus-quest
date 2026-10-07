@@ -394,6 +394,13 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e:visual
 
+      # P3-A: the axe accessibility gate rides the same stack — the
+      # 11-shot ratchet (new violations fail; baselined entries live in
+      # e2e/a11y-baseline.ts with reasons and MUST stay reproducing).
+      - name: Axe accessibility gate
+        working-directory: frontend
+        run: npm run test:e2e:a11y
+
       - name: Upload failure diffs
         if: failure()
         uses: actions/upload-artifact@v4
