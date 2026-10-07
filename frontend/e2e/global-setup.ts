@@ -27,7 +27,12 @@ export const backendEnv: NodeJS.ProcessEnv = {
   ...process.env,
   DATABASE_URL: "postgresql+asyncpg://test:test@localhost:15432/campusquest_test",
   REDIS_URL: "redis://localhost:6379/0",
-  S3_ENDPOINT_URL: "http://localhost:9000",
+  // Mirror playwright.config.ts's backendEnv: the e2e-only https MinIO
+  // on :9002 (mixed content is blocked from https pages) + the CA
+  // bundle that lets boto3 trust its self-signed certificate (resolved
+  // from this module's location — CWD-independent).
+  S3_ENDPOINT_URL: "https://localhost:9002",
+  AWS_CA_BUNDLE: join(here, "..", "..", "infra", "e2e-certs", "minio", "public.crt"),
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
   S3_SECRET_KEY: "campusquest-dev",
