@@ -282,3 +282,4 @@ Until that command exists, use the strongest currently implemented subset rather
 - **G16 每个派生缓存/投影需要重建故事。** 回答不了"Redis/worker/cache 全丢后从什么事实重建"的状态不应只存在于 projection。
 - **G17 Merge-carry 债务不得在合并中幸存。** 集成 PR 必须把 carry 当 checklist 全部关闭，而不是把 carry 文档合进 main 当未来承诺。
 - **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。
+- **G19 测试工件是代码。** 新 spec、no-skip 豁免、像素基线、选择器契约条目、规约-测试矩阵行、覆盖率棘轮地板——随引入它们的特性 PR 同 ship（AGENTS.md 测试工件清单为完整版）；"tests will be updated later" 与降地板强转绿都是阻塞项。

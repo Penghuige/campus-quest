@@ -252,15 +252,15 @@ Use:
 - relevant project quality document;
 - verification-before-completion.
 
-## 12. Do not create a CampusQuest custom skill yet
+## 12. CampusQuest custom skills
 
-Project-specific mechanical rules belong in AGENTS.md, quality documents, linters, tests, and CI.
+The first project skill, `campusquest-test-process` (repo `.claude/skills/`), landed 2026-10-07 when §12's original four conditions were met: the test process had become a conditional workflow (change-type → gate matrix, port-lending, baseline discipline, exemption mechanics) that static checks cannot fully carry. Invoke it when writing tests, adding features, or touching test infrastructure.
 
-Create a custom CampusQuest skill later only if:
+Keep the bar for further custom skills: conditional/non-obvious workflows with repeated agent failure modes that gates and documents cannot enforce. Mechanical rules still belong in AGENTS.md, quality docs, linters, tests, and CI — not in skills.
 
-- the workflow is conditional or non-obvious;
-- multiple Agents repeatedly fail in the same judgment-heavy way;
-- static checks cannot enforce it;
-- a baseline-versus-skill test shows the skill improves behavior.
+## 13. Evidence discipline (PR #19/#21/#22 incidents, owner-ratified 2026-10-07)
 
-Until then, prefer explicit repository instructions and automated gates.
+1. Gate commands run bare with explicit success markers (`npm run typecheck && echo CLEAN`); never pipe gate output through `tail`/`&&` chains — they mask exit codes and failure lines.
+2. Every number reported (passed/failed/coverage) comes from the current head's own log line; a missing check is stated as missing, never backfilled from an earlier round.
+3. An API-surface change carries its generated contract artifacts (OpenAPI snapshot, generated client types) in the same PR.
+4. Files from a tree carry that tree's gates: a backend PR that ships frontend artifacts runs the frontend gates on the same head (and vice versa).

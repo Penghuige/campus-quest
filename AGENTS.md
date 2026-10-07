@@ -158,3 +158,16 @@ After a batch of merges lands on main, the owner accepts at the product level:
 
 Agents keep acceptance cheap: per-head gate logs, updated generated contract artifacts (OpenAPI snapshot, generated clients) in the same PR as the API change, and QA-sheet closure after owner verification are part of deliverables, not follow-ups.
 
+## Test artifacts manifest
+
+A feature or fix PR walks this manifest before requesting review; "yes" items ship in the same PR (G19):
+
+- new/changed behavior → spec-test matrix rows for the touched domain (docs/quality/test-matrix/), predictions derived from spec text before locating tests;
+- new e2e spec or skip-gated tests → an exemption entry (frontend/e2e/noskip-exemptions.mjs) if any test may legitimately skip, with gate + reason;
+- new stable-screen UI → pixel baseline under the pinned-font discipline; never regenerate baselines to force green (font-normalization regenerations are separate commits with a walk-through note);
+- new selectors that specs depend on → docs/quality/e2e-selector-contract.md B-table entry;
+- coverage moved → ratchet floors updated via the documented `--update`/`coverage:update` path with the reason in the same PR;
+- API surface changed → regenerated OpenAPI snapshot + generated client types.
+
+The campusquest-test-process skill (repo `.claude/skills/`) holds the full gate matrix and protocols; invoke it when writing tests or touching test infrastructure.
+
