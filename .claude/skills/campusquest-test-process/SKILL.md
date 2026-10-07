@@ -39,3 +39,5 @@ e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，300
 ## 覆盖率棘轮
 
 前后端各有地板文件（frontend/coverage-ratchet.json、backend/coverage-ratchet.json）。降覆盖→同 PR 走 `--update`/`coverage:update` 给理由；地板以 CI 实测为准（权威环境），跨环境噪声由 epsilon 吸收（实测漂移 0.1pp → epsilon 0.15）。
+
+覆盖漂移/flake 排查工具箱（PR #36 先例）：单模块漂移而其余分毫不差 = 单测分支覆盖 flake，非系统噪声。定位法——同一套件 N 轮独立 `COVERAGE_FILE` 运行 + coverage json 差分，找出偶走偶不走的分支；修法——确定性单测钉住该契约的全形态（不靠竞态运气拿覆盖），源码不动。
