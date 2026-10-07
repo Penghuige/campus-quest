@@ -79,7 +79,8 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
 
 .PHONY: backend-unit backend-integration backend-worker backend-e2e \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
-        frontend-unit frontend-build playwright-e2e release-test-db release-gate
+        frontend-unit frontend-build playwright-e2e release-test-db release-gate \
+        coverage-baseline coverage-ratchet pip-audit
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -104,6 +105,23 @@ backend-e2e:
 
 migration-verify:
 	bash scripts/verify-migrations.sh
+
+# Coverage ratchet (owner-approved 2026-10-07). baseline: the three
+# suites with --cov (branch, app/ only, appended into one .coverage) +
+# REWRITE the floors (--update is a deliberate, reviewable commit).
+# ratchet: compare the accumulated .coverage against the committed
+# floors (the CI gate; CI accumulates via --cov-append too).
+coverage-baseline:
+	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit --cov=app --cov-branch --cov-report= --cov-append -q
+	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q
+	cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers --cov=app --cov-branch --cov-report= --cov-append -q
+	cd backend && uv run python scripts/coverage_ratchet.py --update
+
+coverage-ratchet:
+	cd backend && uv run python scripts/coverage_ratchet.py
+
+pip-audit:
+	cd backend && uv run python scripts/pip_audit_gate.py
 
 frontend-typecheck:
 	cd frontend && npm run typecheck

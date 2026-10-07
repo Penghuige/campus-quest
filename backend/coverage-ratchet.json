@@ -1,0 +1,19 @@
+{
+  "app/__init__.py": 100.0,
+  "app/core": 95.7,
+  "app/db": 91.8,
+  "app/integrations": 89.2,
+  "app/main.py": 100.0,
+  "app/modules/__init__.py": 100.0,
+  "app/modules/audit": 97.0,
+  "app/modules/community": 95.1,
+  "app/modules/files": 90.8,
+  "app/modules/identity": 90.8,
+  "app/modules/notifications": 94.4,
+  "app/modules/points": 92.6,
+  "app/modules/rankings": 94.4,
+  "app/modules/submissions": 93.1,
+  "app/modules/system": 94.6,
+  "app/modules/tasks": 94.3,
+  "app/workers": 91.3
+}
