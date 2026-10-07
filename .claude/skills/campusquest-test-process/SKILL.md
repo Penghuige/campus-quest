@@ -25,9 +25,9 @@ description: CampusQuest 测试流程契约：改动类型→门禁矩阵、测�
 
 模板：`docs/quality/test-matrix/points-ledger.md`。纪律：**预期列先于测试检索从 spec 原文推导落笔**；找不到测试=缺口（列出，不补）；测试行为≠预期=不匹配（上报，不擅改——bug 或 spec 缺口由 review 裁定）；裁决类取舍在行内注记。每域一文件；checker：`backend/scripts/check_test_matrix.py`。
 
-## 本地栈借用协议（3000/8100）
+## 本地栈借用协议（3000/8100 + 测试库）
 
-e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，3002 已实证不通）。流程：向 campus reviewer 会话通告"借 3000"→ 其停常驻栈（owner 的 3000 环境）→ 跑电池 → 通告"还" → 其重启栈。占用测试库（campusquest_test@15432）前按协议 ps 取证；与他会被占时错峰。
+e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，3002 已实证不通）。流程：向 campus reviewer 会话通告"借 3000"→ 其停常驻栈（owner 的 3000 环境）→ 跑电池 → 通告"还" → 其重启栈。**占用 campusquest_test@15432 的任何测试跑——包括不经端口的后端直跑（pytest/覆盖率采集/flake 挖掘）——都视同借栈，同样通告-等待-使用**（2026-10-08 起生效：直跑测试与电池并发用库会互相污染证据）。
 
 ## 像素基线纪律
 
