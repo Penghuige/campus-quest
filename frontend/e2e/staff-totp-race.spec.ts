@@ -32,7 +32,7 @@ import { expect, request, test, type APIRequestContext } from "@playwright/test"
 import { mintToken } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 const RUN = process.env.CQ_E2E_RUN;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;

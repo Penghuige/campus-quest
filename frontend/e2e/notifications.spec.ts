@@ -13,7 +13,7 @@
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1           enable the suite (required);
- * - CQ_E2E_BASE_URL    frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL    frontend origin (default https://localhost:3000);
  * - CQ_E2E_LOGIN_URL   login page (default $CQ_E2E_BASE_URL/login);
  * - CQ_E2E_STUDENT     pre-seeded student credentials
  *                      "student-number:password" (required for the
@@ -36,7 +36,7 @@ import { expect, test } from "./fixtures";
 import { ensureStudentLogin } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240002:correct-horse"
 
 test.skip(

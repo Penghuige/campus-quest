@@ -14,7 +14,7 @@
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1                    enable the suite (required);
- * - CQ_E2E_BASE_URL             frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL             frontend origin (default https://localhost:3000);
  * - CQ_E2E_LOGIN_URL            login page (default $CQ_E2E_BASE_URL/login);
  * - CQ_E2E_TASK_URL             task DETAIL deep link to a published
  *                               task (required; Plan 10's fixture seeds it);
@@ -55,7 +55,7 @@ import { createHmac } from "node:crypto";
 import { ensureStudentLogin, expect, test } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const LOGIN_URL = process.env.CQ_E2E_LOGIN_URL ?? `${BASE_URL}/login`;
 const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
 const TASK_URL = process.env.CQ_E2E_TASK_URL;

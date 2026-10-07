@@ -11,7 +11,7 @@
  * Environment contract (matches the spec headers; defaults target the
  * local dev servers orchestrated by playwright.config.ts):
  * - CQ_E2E=1            enable the suite (required);
- * - CQ_E2E_BASE_URL     frontend origin   (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL     frontend origin   (default https://localhost:3000);
  * - CQ_E2E_API_URL      backend API root  (default http://localhost:8000/api/v1);
  * - CQ_E2E_STUDENT / CQ_E2E_TEACHER / CQ_E2E_ADMIN — seeded account
  *   credentials in "username:password" form, the backend e2e
@@ -40,7 +40,7 @@ import {
 import { runWorldAction } from "./global-setup";
 
 export const E2E_ENABLED = process.env.CQ_E2E === "1";
-export const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+export const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 export const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 
 /** /health/ready (not under /api/v1): readiness proves PG/Redis answer. */

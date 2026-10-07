@@ -10,7 +10,7 @@
  * Environment contract (the seeded world's; defaults target local dev
  * servers):
  * - CQ_E2E=1                 enable the suite (required);
- * - CQ_E2E_BASE_URL          frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL          frontend origin (default https://localhost:3000);
  * - CQ_E2E_STUDENT           pre-seeded student credentials
  *                            "student-number:password" with spendable
  *                            points and a stocked reward (the world's);
@@ -39,7 +39,7 @@ import { expect, test } from "./fixtures";
 import { ensureStudentLogin, mintToken } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
 const RUN = process.env.CQ_E2E_RUN;
