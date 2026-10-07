@@ -122,17 +122,12 @@ frontend-build:
 
 playwright-e2e:
 	cd frontend && CQ_E2E=1 npm run test:e2e
-	# unexpected-skip guard (PR #6 final review P1): the watched suites
-	# must RUN, not silently skip — a missing world export would
-	# otherwise read as a green gate with absent suites. The JSON
-	# report the run just wrote is the evidence; exit 1 on any skip.
-	# Watched: teacher/admin (the PR #6 contract) + task-claim/sidebar-
-	# collapse (PR #19); the conflict test's env-optional skip (no
-	# EMPTY_TASK_URL world export) is allow-listed — and logged.
-	cd frontend && node scripts/assert-e2e-no-skips.mjs \
-	  teacher.spec.ts admin.spec.ts task-claim.spec.ts sidebar-collapse.spec.ts \
-	  profile-tabs.spec.ts \
-	  --allow-skip "task-claim.spec.ts:conflict shows typed copy"
+	# unexpected-skip guard (PR #6 final review P1; P1-visibility v2):
+	# watches EVERY e2e spec by default — a spec absent from the report
+	# or any skip not covered by e2e/noskip-exemptions.mjs (gate+reason
+	# per entry, all matches logged) fails the gate. No hard-coded
+	# watch list left to drift.
+	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
 release-gate: release-test-db backend-unit backend-integration backend-worker \
               backend-e2e migration-verify frontend-typecheck frontend-lint \

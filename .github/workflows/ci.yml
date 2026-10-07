@@ -229,6 +229,16 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      # P1 visibility: coverage ratchet (unit-suite scope — the floors
+      # live in coverage-ratchet.json with the semantic boundary note)
+      # and the npm audit gate (high/critical fail; exemptions with
+      # reasons + re-review dates in scripts/npm-audit-exemptions.mjs).
+      - name: Coverage ratchet
+        run: npm run coverage:ratchet
+
+      - name: npm audit gate
+        run: npm run audit:gate
+
       - name: Production build
         run: npm run build
 

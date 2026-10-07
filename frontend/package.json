@@ -13,7 +13,11 @@
     "api:types": "openapi-typescript \"${OPENAPI_URL:-http://localhost:8000/openapi.json}\" -o src/lib/api/schema.d.ts",
     "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts",
     "test:e2e": "playwright test",
-    "test:e2e:visual": "playwright test visual-regression.spec.ts ${CQ_VISUAL_UPDATE:+--update-snapshots}"
+    "test:e2e:visual": "playwright test visual-regression.spec.ts ${CQ_VISUAL_UPDATE:+--update-snapshots}",
+    "test:coverage": "tsx --test --experimental-test-coverage src/__tests__/*.test.ts",
+    "coverage:ratchet": "node scripts/check-coverage-ratchet.mjs",
+    "coverage:update": "node scripts/check-coverage-ratchet.mjs --update",
+    "audit:gate": "node scripts/check-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.2.0",

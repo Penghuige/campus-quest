@@ -1,0 +1,8 @@
+{
+  "_comment": "Unit-suite coverage ratchet (P1). SEMANTIC BOUNDARY: this measures the tsx --test unit suite only — the lib/*, view-model, and pure-derivation layers plus module contracts. It does NOT include e2e/Playwright coverage of pages/components; a low component number here is expected and fine, the battery covers behavior. The ratchet fails when any metric drops below its floor; run `npm run coverage:update` after INTENTIONALLY accepted decreases (with the PR reason) or improvements.",
+  "_command": "npx tsx --test --experimental-test-coverage src/__tests__/*.test.ts",
+  "lines": 95.21,
+  "branches": 91.22,
+  "functions": 90.19,
+  "_recorded": "2026-10-07"
+}
