@@ -31,6 +31,15 @@ from pathlib import Path
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _RATCHET_PATH = _BACKEND_ROOT / "coverage-ratchet.json"
 
+#: Cross-environment measurement noise (reviewer ruling 2026-10-07): the
+#: same test set measured on the local stack vs the CI runner drifted
+#: 0.1pp on one module (identity 90.8 local vs 90.7 CI — a single
+#: environment-conditional branch). A zero-epsilon ratchet would flap on
+#: that noise forever; 0.15 covers the observed drift with margin while
+#: staying far below any real regression scale. Floors still mean what
+#: they say: the CI-observed value, not floor+epsilon.
+_EPSILON = 0.15
+
 
 def _coverage_json() -> dict:
     result = subprocess.run(
@@ -135,10 +144,12 @@ def main(argv: list[str]) -> int:
             floor_display = f"{floor:.1f}"
         now_display = f"{now:.1f}" if now is not None else "--"
         marker = ""
-        if floor is not None and now is not None and now < floor:
+        if floor is not None and now is not None and now < floor - _EPSILON:
             violations.append(
                 f"{module}: {now:.1f} < ratchet {floor:.1f} "
-                "(restore coverage or raise the floor via --update)"
+                f"(more than the {_EPSILON}pp cross-environment noise "
+                "allowance) — restore coverage or raise the floor via "
+                "--update"
             )
             marker = "  <- REGRESSION"
         print(f"{module:32} {floor_display:>8} {now_display:>8}{marker}")
