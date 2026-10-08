@@ -18,7 +18,8 @@
     "coverage:ratchet": "node scripts/check-coverage-ratchet.mjs",
     "coverage:update": "node scripts/check-coverage-ratchet.mjs --update",
     "audit:gate": "node scripts/check-audit.mjs",
-    "test:e2e:a11y": "playwright test accessibility.spec.ts"
+    "test:e2e:a11y": "playwright test accessibility.spec.ts",
+    "test:e2e:smoke": "playwright test --project=firefox --project=webkit"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.13.0",

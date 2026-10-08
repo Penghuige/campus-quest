@@ -41,3 +41,4 @@ blob-report/
 
 # agent stream scratch dirs (frontend S4 task workspaces)
 .t*scratch/
+frontend/e2e/.certs/

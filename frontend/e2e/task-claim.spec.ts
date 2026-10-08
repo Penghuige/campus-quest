@@ -16,7 +16,7 @@
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1               enable the suite (required);
- * - CQ_E2E_BASE_URL        frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL        frontend origin (default https://localhost:3000);
  * - CQ_E2E_LOGIN_URL       login page (default $CQ_E2E_BASE_URL/login);
  * - CQ_E2E_TASK_URL        task DETAIL deep link to a published task with
  *                          at least one AVAILABLE assignment (required for
@@ -36,7 +36,7 @@
 import { ensureStudentLogin, expect, test } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
 const EMPTY_TASK_URL = process.env.CQ_E2E_EMPTY_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"

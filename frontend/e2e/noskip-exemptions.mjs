@@ -56,6 +56,36 @@ export const NOSKIP_EXEMPTIONS = [
     reason:
       "Mock-mode test (inverse gate): runs only when real object storage is deliberately unavailable.",
   },
+  // P3-B https-stack known limitation: the https page origin blocks the
+  // backend-minted http://localhost:9000 presigned PUT (mixed content).
+  // Dedicated e2e MinIO https instance (self-signed :9002) is a filed
+  // infra task in the backend domain; landing it removes ALL FOUR
+  // entries in one sweep.
+  {
+    file: "submission.spec.ts",
+    title: "valid upload finalizes and reaches 待审核",
+    gate: "https-stack mixed content",
+    reason: "Needs the dedicated e2e MinIO https instance (filed); removed when it lands.",
+  },
+  {
+    file: "submission.spec.ts",
+    title: "failed validation shows the structured report",
+    gate: "https-stack mixed content",
+    reason: "Same presigned-PUT block as above (filed; one-sweep removal).",
+  },
+  {
+    file: "submission.spec.ts",
+    title: "browser upload evidence (PR #2 final acceptance)",
+    gate: "https-stack mixed content",
+    reason: "Same presigned-PUT block as above (filed; one-sweep removal).",
+  },
+  {
+    file: "task-claim.spec.ts",
+    title: "detail page hides assignment payloads before claim",
+    gate: "https-stack mixed content (downstream)",
+    reason:
+      "Consumes the same upload-flow world state left blocked by the PUT failures above; same one-sweep removal.",
+  },
   ...["auth screens", "student core routes", "teacher routes", "admin routes"].map(
     (title) => ({
       file: "visual-capture.spec.ts",

@@ -36,7 +36,7 @@ const CAPTURE_DIR = process.env.CQ_E2E_CAPTURE_DIR;
 const VIEWPORT =
   process.env.CQ_E2E_VIEWPORT === "mobile" ? "mobile" : "desktop";
 const REDUCED_MOTION = process.env.CQ_E2E_REDUCED_MOTION === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },

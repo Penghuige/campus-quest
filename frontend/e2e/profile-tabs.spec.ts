@@ -13,7 +13,7 @@
 import { ensureStudentLogin, expect, test } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 
 /** A valid 1x1 red PNG (magic bytes intact) — the upload payload. */
 const PNG_BYTES_BASE64 =
