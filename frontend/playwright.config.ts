@@ -19,6 +19,7 @@
  * so ordinary development never depends on a live backend.
  */
 import { defineConfig } from "@playwright/test";
+import { join } from "node:path";
 
 import { ensureDevCertificate } from "./e2e/global-setup";
 
@@ -47,7 +48,14 @@ const backendEnv: Record<string, string> = {
   ...process.env,
   DATABASE_URL: "postgresql+asyncpg://test:test@localhost:15432/campusquest_test",
   REDIS_URL: "redis://localhost:6379/0",
-  S3_ENDPOINT_URL: "http://localhost:9000",
+  // e2e-only https MinIO (compose profile "e2e", :9002): the pages are
+  // https (P3-B), so an http presigned URL would be mixed content the
+  // browser blocks. The shared :9000 instance stays http for everything
+  // else. AWS_CA_BUNDLE makes boto3 trust the self-signed cert — a
+  // deployment knob, zero product-code change — resolved absolutely so
+  // it holds regardless of the spawned backend's CWD.
+  S3_ENDPOINT_URL: "https://localhost:9002",
+  AWS_CA_BUNDLE: join(__dirname, "..", "infra", "e2e-certs", "minio", "public.crt"),
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
   S3_SECRET_KEY: "campusquest-dev",

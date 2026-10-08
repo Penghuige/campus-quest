@@ -107,6 +107,72 @@ services:
         # probed 2026-09 on this release). Browser CORS is configured
         # on the minio service via MINIO_API_CORS_ALLOW_ORIGIN above.
 
+  # --- e2e-only https MinIO (owner ruling 2026-10-08) -----------------------
+  #
+  # The P3-B e2e stack serves pages over https, so the presigned upload
+  # URLs must be https too (an http://localhost:9000 fetch from an https
+  # page is mixed content the browser blocks). The SHARED minio service
+  # above stays http — the owner's local stack and every non-e2e suite
+  # target it — and this dedicated instance serves TLS on localhost:9002
+  # for the e2e backend only (playwright.config.ts / global-setup.ts pin
+  # S3_ENDPOINT_URL here).
+  #
+  # Start (after generating the cert, see infra/scripts/):
+  #   infra/scripts/gen-e2e-minio-cert.sh
+  #   docker compose -f infra/docker-compose.yml --profile e2e up -d
+  # The profile keeps `docker compose up -d` (dev) from ever starting it.
+  minio-e2e:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    profiles: ["e2e"]
+    command:
+      [
+        "server",
+        "/data",
+        "--certs-dir",
+        "/etc/minio/certs",
+        "--address",
+        ":9000",
+        "--console-address",
+        ":9001",
+      ]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
+      # The e2e frontend origin is https (P3-B); CORS rides this
+      # server-wide env on the pinned release (same as the shared one).
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_E2E_CORS_ALLOW_ORIGIN:-https://localhost:3000,https://127.0.0.1:3000}
+    ports:
+      - "9002:9000"
+    volumes:
+      - ./e2e-certs/minio:/etc/minio/certs:ro
+      - e2e-minio-data:/data
+
+  minio-e2e-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    profiles: ["e2e"]
+    depends_on:
+      - minio-e2e
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusquest}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusquest-dev}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        # No container healthcheck on minio-e2e: the bundled `mc ready`
+        # probe would itself reject the self-signed cert. This init job
+        # is the readiness gate instead. MC_HOST is assembled at RUNTIME
+        # from the credential variables — `mc alias set` cannot be used
+        # here (its setup probe verifies TLS and rejects the self-signed
+        # cert), and a committed user:pass@host URL literal trips secret
+        # scanners; the variables ride separate env entries exactly like
+        # the shared minio-init service.
+        export MC_HOST_e2e="https://$$MINIO_ROOT_USER:$$MINIO_ROOT_PASSWORD@minio-e2e:9000"
+        until mc --insecure ready e2e; do sleep 1; done
+        mc --insecure mb --ignore-existing e2e/campusquest-test
+
 volumes:
   postgres-data:
   minio-data:
+  e2e-minio-data:
