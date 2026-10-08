@@ -21,7 +21,7 @@ import { authenticate, SHOTS } from "./shot-surfaces";
 import { A11Y_BASELINE } from "./a11y-baseline";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 
 test.skip(!E2E_ENABLED, "set CQ_E2E=1 (and the CQ_E2E_* env) to run this suite.");
 
