@@ -4,7 +4,7 @@
 // the already-installed postcss + @tailwindcss/postcss, used to harvest
 // the utilities the app's own compiled pipeline generates (Plan 14 T2).
 import { readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
 
@@ -47,13 +47,13 @@ for (const m of compiledCss.matchAll(
 }
 
 // --- used classes: static string literals inside className={...} ---
-// File list: pathspec form ('' pattern matches every line, so -l lists
-// all .tsx under src); the plan's `git grep -l -- '*.tsx' -- src` treated
-// the glob as the match pattern and listed nothing.
-const files = execSync(
-  "git grep -l '' -- 'src/*.tsx' | grep -v __tests__",
+// Enumerate matching tracked .tsx files in the working tree, skipping
+// deleted files, without shell quoting; NUL separators preserve paths.
+const files = execFileSync(
+  "git",
+  ["grep", "-l", "-z", "", "--", "src/*.tsx"],
   { encoding: "utf8" },
-).trim().split("\n").filter(Boolean);
+).split("\0").filter((file) => file && !file.includes("__tests__"));
 const used = new Map(); // class -> [file]
 for (const f of files) {
   const text = readFileSync(f, "utf8");

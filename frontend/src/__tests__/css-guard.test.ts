@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,9 +44,14 @@ function makeFixture(files: Record<string, string>): string {
   }
   // Tailwind resolves `@import "tailwindcss/…"` by walking node_modules
   // up from the CSS file — point the fixture at the real install.
-  symlinkSync(join(frontendRoot, "node_modules"), join(dir, "node_modules"));
+  // Windows junctions link directories without requiring symlink privileges.
+  symlinkSync(
+    join(frontendRoot, "node_modules"),
+    join(dir, "node_modules"),
+    process.platform === "win32" ? "junction" : undefined,
+  );
   execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["add", "--", "src"], { cwd: dir });
   return dir;
 }
 
@@ -106,5 +111,22 @@ test("theme-bridge colors compile to plain utilities and pass (no brackets)", ()
   });
   const result = runGuard(dir);
   assert.equal(result.status, 0, `bridge color must pass; stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /CSS integrity OK/);
+});
+
+test("deleted tracked tsx files are skipped", () => {
+  const dir = makeFixture({
+    "Widget.tsx": `export function Widget() {
+  return <div className="definitely-not-a-real-class">hi</div>;
+}
+`,
+    "Remaining.tsx": `export function Remaining() {
+  return <div className="fixture-card">hi</div>;
+}
+`,
+  });
+  unlinkSync(join(dir, "src", "Widget.tsx"));
+  const result = runGuard(dir);
+  assert.equal(result.status, 0, `deleted file must not fail the guard; stderr:\n${result.stderr}`);
   assert.match(result.stdout, /CSS integrity OK/);
 });
