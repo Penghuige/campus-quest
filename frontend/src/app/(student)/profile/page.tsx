@@ -38,6 +38,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       <div className="page-head">
         <h1 className="page-title">我的档案</h1>
         <p className="page-subtitle">成长数据、获得的荣誉与个人信息</p>
+        <Link className="section-link" href="/profile/project-drafts">我的项目草稿</Link>
       </div>
       <nav className="tab-bar" aria-label="个人主页分区">
         {PROFILE_TABS.map((item) => (

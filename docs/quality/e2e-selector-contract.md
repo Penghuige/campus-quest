@@ -38,6 +38,7 @@ teacher, admin, visual-capture).
 | 我的附近 | rankings around-me |
 | 操作原因 / 基础奖励积分 / 任务评分 | teacher task form, admin/moderation dialogs |
 | 选择星级 (radiogroup) / 发布身份 (radiogroup) | review dialog, comment compose |
+| 项目名称 / 项目简介 / 项目方向 / 项目阶段 / 团队现状 | private innovation draft editor |
 
 ### Roles + accessible names
 
@@ -115,6 +116,9 @@ owner-approved product decision — never "to fit the new DOM".
 | `#submission-file` · `#assignment-import-file` | file inputs | keep as file-upload ids or replace with `getByLabel` of equal strength |
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
+| `.ie-draft-list` · `.ie-draft-row` · `.ie-draft-form` | private innovation drafts | list/form boundaries; functional tests prefer named regions and labels |
+
+Private innovation draft behavior contracts: link `我的项目草稿`; regions `项目草稿列表` / `项目草稿编辑器` / `最新已保存版本`; buttons `新建项目草稿` / `保存草稿` / `返回草稿列表` / `编辑项目：{title}` / `读取最新版本（保留当前输入）` / `载入此版本（替换当前输入）`; saved status `草稿已保存，仅自己可见。`; stale-save copy `你的未保存内容已保留`.
 
 ## Rules for the visual workstream
 

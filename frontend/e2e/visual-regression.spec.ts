@@ -124,6 +124,7 @@ interface Shot {
    * shots are deliberately NOT in scripts/assert-e2e-no-skips.mjs's
    * watched list — the skip is legal. */
   envPath?: string;
+  prepare?: (page: Page) => Promise<void>;
 }
 
 const SHOTS: Shot[] = [
@@ -185,6 +186,16 @@ const SHOTS: Shot[] = [
   },
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
   { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
+  {
+    name: "student-project-draft-form",
+    path: "/profile/project-drafts",
+    auth: "student",
+    masks: [],
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();
+      await expect(page.getByRole("region", { name: "项目草稿编辑器" })).toBeVisible();
+    },
+  },
   {
     name: "student-notifications",
     path: "/notifications",
@@ -268,6 +279,7 @@ for (const shot of SHOTS) {
     );
     await authenticate(page, shot.auth);
     await page.goto(`${BASE_URL}${path}`);
+    await shot.prepare?.(page);
     // Font determinism (C3 ⑧, CI lessons 1+2): (a) the local dev box
     // resolves zh sans to Microsoft YaHei (msyh.ttf) while CI falls to
     // the pinned fonts-noto-cjk — different metrics, 1-2px page-height

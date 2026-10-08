@@ -74,6 +74,7 @@ export const NOSKIP_EXEMPTIONS = [
     "student-notifications",
     "student-rankings",
     "student-rewards",
+    "student-project-draft-form",
     "student-task-detail",
     "student-tasks",
     "teacher-reviews",

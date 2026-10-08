@@ -64,6 +64,8 @@ FROZEN_BUSINESS_CODES = (
     # Plan 08 T9 addition (registered in interfaces.md before this enum
     # grew): the generic 409 state/conflict business code.
     "CONFLICT",
+    "PROJECT_DRAFT_VERSION_CONFLICT",
+    "PROJECT_DRAFT_REQUEST_CONFLICT",
 )
 
 FROZEN_SYSTEM_CODES = (

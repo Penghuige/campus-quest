@@ -54,6 +54,8 @@ export const BUSINESS_ERROR_CODES = [
   // replay-integrity failures, illegal state transitions). The mirror
   // here syncs with the registered table; admin mutations branch on it.
   "CONFLICT",
+  "PROJECT_DRAFT_VERSION_CONFLICT",
+  "PROJECT_DRAFT_REQUEST_CONFLICT",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];

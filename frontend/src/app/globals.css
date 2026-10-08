@@ -391,6 +391,62 @@ body {
   color: var(--danger);
 }
 
+/* Private innovation drafts use the same restrained form and list hierarchy. */
+.ie-draft-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ie-draft-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ie-draft-copy {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ie-draft-excerpt {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.ie-draft-row > .btn { flex-shrink: 0; }
+.ie-draft-form, .ie-draft-remote { min-width: 0; }
+.ie-draft-textarea { resize: vertical; }
+
+.ie-draft-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ie-draft-remote dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ie-draft-remote dd {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .input {
   width: 100%;
   min-height: var(--control-height);

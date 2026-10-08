@@ -29,6 +29,7 @@ from app.modules.identity import (
     users_router as identity_users_router,
 )
 from app.modules.identity.dependencies import get_actor
+from app.modules.innovation import router as innovation_router
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
 from app.modules.points import router as points_router
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(identity_profile_router.router, prefix="/api/v1")
     app.include_router(identity_users_router.router, prefix="/api/v1")
     app.include_router(identity_staff_router.router, prefix="/api/v1")
+    app.include_router(innovation_router.router, prefix="/api/v1")
 
     # Tasks/claims API: its typed exceptions subclass BusinessError
     # (rendered by the core handler), so only the endpoint-limiter mapping

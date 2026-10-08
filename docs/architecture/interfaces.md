@@ -295,6 +295,8 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `OTP_RESEND_COOLDOWN` | §33.2 |
 | `RATE_LIMITED` | §33.1 |
 | `CONFLICT` | §29 envelope（HTTP 409） |
+| `PROJECT_DRAFT_VERSION_CONFLICT` | 私有项目草稿：预期版本已过期（HTTP 409） |
+| `PROJECT_DRAFT_REQUEST_CONFLICT` | 私有项目草稿：创建幂等键与首次规范化内容不一致（HTTP 409） |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
