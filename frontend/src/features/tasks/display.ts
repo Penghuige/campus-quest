@@ -63,6 +63,17 @@ export function availabilityText(count: number): string {
   return count > 0 ? `可领取 ${count} 个` : "已被领完";
 }
 
+/**
+ * The TASK CARD's meta-row text (defect #20, QA 2026-10-03): the
+ * square's informational column keeps the COUNT shape at zero too —
+ * the depleted MARK is the card-level badge (TaskCard), so the phrase
+ * 已被领完 renders exactly once per card. The DETAIL page's fact row
+ * keeps availabilityText's depleted phrasing.
+ */
+export function cardAvailabilityMeta(count: number): string {
+  return `可领取 ${count} 个`;
+}
+
 // --- deadline (spec §9.1/§9.2 modes; patterns §14 display format) -------------
 
 export type DeadlineUrgency = "none" | "near" | "closed";

@@ -39,6 +39,7 @@ import {
 } from "@/features/points/api";
 import { RedeemDialog } from "@/features/rewards/RedeemDialog";
 import {
+  balanceQuietView,
   nextRewardView,
   redemptionStatusView,
   rewardCtaView,
@@ -148,7 +149,11 @@ function WalletSection({
                 <span className="balance-hero-unit">积分</span>
               </p>
               <p className="balance-quiet">
-                可用积分 {data.available_points} · 累计获得 {data.earned_points}
+                {balanceQuietView({
+                  available: data.available_points,
+                  spendable: data.spendable_points,
+                  earned: data.earned_points,
+                })}
               </p>
             </div>
             {goal !== null ? (

@@ -109,7 +109,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `.board-rows` · `.board-row` · `.board-rank` · `.board-me-tag` · `.board-honor` | rankings | me-tag asserts around-me anchoring; board-honor is the honor chip (renamed from `.honor-chip` in plan-13 with no spec uses) |
 | `.reward-card` · `.balance-quiet` · `.reward-cta-note` | rewards list | balance-quiet is the wallet's 累计获得 value (re-anchored from a parent-hop locator in plan-13); reward-cta-note is the spend-state note under the CTA |
 | `.notif-item` · `.notif-item[data-read='false']` · `.notif-title` | notifications | data-read asserts unread state |
-| `.review-item` · `.review-pair` · `.review-tier` | teacher review queue | pair/tier assert VALIDATED tier pairing |
+| `.review-item` · `.review-pair` · `.review-tier` | teacher review queue; admin redemption queue | pair/tier assert VALIDATED tier pairing; the admin queue row is located by the run-derived item name (端到端奖励卡 + RUN[:6]) — NEVER by queue position (.first() would pick a residue world's oldest request) |
 | `.import-preview` · `.moderation-key` · `.mono` | teacher import / moderation | |
 | `dialog.dialog` | generic dialog scoping | equal-strength replacement: `getByRole("dialog")` |
 | `#submission-file` · `#assignment-import-file` | file inputs | keep as file-upload ids or replace with `getByLabel` of equal strength |

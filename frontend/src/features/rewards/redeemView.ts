@@ -256,3 +256,24 @@ export function newIdempotencyKey(): string {
   // the header stays advisory.
   return `cq-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }
+
+/**
+ * The balance hero's quiet line (defect #10, QA 2026-10-03): the two
+ * balance labels 可用积分 (available) and 可花费 (spendable = available
+ * − frozen) are DISTINCT quantities, but they read as a duplicated
+ * balance whenever nothing is frozen — the numbers are then literally
+ * equal. The metric keeps 可花费 (the redemption-actionable one); the
+ * quiet line carries 可用积分 only when the two actually diverge,
+ * where the difference (frozen redemption requests) gives it meaning.
+ */
+export function balanceQuietView(balance: {
+  available: number;
+  spendable: number;
+  earned: number;
+}): string {
+  const prefix =
+    balance.available === balance.spendable
+      ? ""
+      : `可用积分 ${balance.available} · `;
+  return `${prefix}累计获得 ${balance.earned}`;
+}

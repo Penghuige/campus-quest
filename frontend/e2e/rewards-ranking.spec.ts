@@ -89,13 +89,18 @@ test.describe("student rewards redemption", () => {
     await loginAs(page, STUDENT);
   });
 
-  test("wallet strip shows available / earned / spendable", async ({ page }) => {
+  test("wallet strip: spendable metric plus earned; available only when divergent (defect #10)", async ({ page }) => {
     await page.goto(`${BASE_URL}/rewards`);
 
     await expect(page.getByLabel("积分余额")).toBeVisible();
-    await expect(page.getByText("可用积分")).toBeVisible();
-    await expect(page.getByText("累计获得")).toBeVisible();
+    // The hero metric is the redemption-actionable balance.
     await expect(page.getByText("可花费")).toBeVisible();
+    await expect(page.getByText("累计获得")).toBeVisible();
+    // Defect #10 (QA 2026-10-03): 可用积分 equals 可花费 whenever
+    // nothing is frozen — the quiet line then omits it (the duplicate
+    // balance label the QA flagged). The seeded wallet has no frozen
+    // requests, so it must NOT render here.
+    await expect(page.getByText("可用积分")).toHaveCount(0);
   });
 
   test("redeem flow: confirm dialog -> pending state -> frozen spendability", async ({

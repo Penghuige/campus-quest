@@ -22,7 +22,7 @@ import {
 } from "@/components/shell/navIcons";
 
 import type { TaskCardDto } from "./api";
-import { availabilityText, deadlineView, ratingText, rarityView } from "./display";
+import { cardAvailabilityMeta, deadlineView, ratingText, rarityView } from "./display";
 
 /** One distinct shape per tier (defect #5) — shape separable without color. */
 const RARITY_GLYPHS = {
@@ -67,7 +67,7 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
         </span>
         <span className="task-card-meta-item meta-num">
           <SlotsIcon />
-          {availabilityText(card.assignments_available)}
+          {cardAvailabilityMeta(card.assignments_available)}
         </span>
         <span className="task-card-meta-item" suppressHydrationWarning>
           {ratingText(card.rating)}
@@ -79,6 +79,13 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
       ) : null}
       {deadline.urgency === "closed" ? (
         <span className="badge badge-danger">已截止</span>
+      ) : null}
+      {/* Defect #20 (QA 2026-10-03): a fully-claimed task stays
+          browsable on the square but carries an explicit depleted MARK
+          — a text badge (never a color-only cue), sibling of the
+          deadline badges. */}
+      {card.assignments_available === 0 ? (
+        <span className="badge badge-muted">已被领完</span>
       ) : null}
     </article>
   );
