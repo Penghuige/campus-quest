@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { BASE_URL, ensureStudentLogin, expect, loginThroughUi, parseSeededAccount, staffLogin, test } from "./fixtures";
 
 test.skip(process.env.CQ_E2E !== "1", "set CQ_E2E=1 with the disposable browser world");
@@ -14,11 +14,33 @@ async function saveProfile(page: Page, name: string, major: string) {
   await expect(editor.getByRole("status", { name: "负责人资料保存状态" })).toContainText("资料已保存");
 }
 
+// This file runs serially (the runner has one worker). Keep only the genuine
+// admin session's latest cookies in worker memory: every app navigation rotates
+// the single-use refresh cookie, so a snapshot taken at login becomes stale.
+// Each test still gets a fresh context and drives the real qualification UI.
+let adminCookies: Awaited<ReturnType<BrowserContext["cookies"]>> | undefined;
+const authenticatedAdminContexts = new WeakSet<BrowserContext>();
+
+async function rememberAdminSession(context: BrowserContext) {
+  if (authenticatedAdminContexts.has(context)) adminCookies = await context.cookies();
+}
+
 async function adminLogin(page: Page) {
   const account = process.env.CQ_E2E_ADMIN;
   const secret = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
   if (!account || !secret) throw new Error("world must export genuine admin TOTP credentials");
-  await staffLogin(page, account, secret);
+  if (adminCookies) {
+    await page.context().addCookies(adminCookies);
+    const meResponse = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/me") && response.status() === 200);
+    await page.goto(`${BASE_URL}/`);
+    const me = await (await meResponse).json();
+    expect(me.username).toBe(account.split(":")[0]);
+    expect(me.role).toBe("ADMIN");
+  } else {
+    await staffLogin(page, account, secret);
+  }
+  authenticatedAdminContexts.add(page.context());
   await page.goto(`${BASE_URL}/admin/owner-qualifications`);
 }
 
@@ -83,7 +105,7 @@ test("owner qualification: student applies, admin confirms, account switch clear
       await expect(qualification.getByRole("status", { name: "负责人资格状态" })).toContainText("已开通");
       await expect(page.getByLabel("姓名", { exact: true })).toHaveValue("开通演示甲");
     } finally { await sibling.close(); }
-  } finally { await context.close(); }
+  } finally { await rememberAdminSession(context); await context.close(); }
 });
 
 test("owner qualification: updated snapshot rejects old admin page and lost acknowledgement reconciles", async ({ browser }, testInfo) => {
@@ -132,7 +154,7 @@ test("owner qualification: updated snapshot rejects old admin page and lost ackn
     await qualification.getByRole("button", { name: "重新读取资格状态", exact: true }).click();
     await expect(qualification.getByRole("status", { name: "负责人资格状态" })).toContainText("已开通");
     await second.screenshot({ path: testInfo.outputPath("owner-qualification-admin-desktop.png"), fullPage: true });
-  } finally { await studentContext.close(); await adminContext.close(); }
+  } finally { await rememberAdminSession(adminContext); await studentContext.close(); await adminContext.close(); }
 });
 
 test("owner qualification: empty later queue page retains navigation after refresh", async ({ page }) => {
