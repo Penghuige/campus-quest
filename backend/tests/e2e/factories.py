@@ -521,6 +521,19 @@ async def clean_world(
                 "Qualification belongs outside this world; "
                 "include both worlds explicitly before cleanup"
             )
+        external_grant = await db.scalar(
+            select(OperationsGrant.user_id)
+            .where(
+                OperationsGrant.changed_by.in_(users),
+                OperationsGrant.user_id.not_in(users),
+            )
+            .limit(1)
+        )
+        if external_grant is not None:
+            raise RuntimeError(
+                "Operations grant belongs outside this world; "
+                "include both worlds explicitly before cleanup"
+            )
         projects = select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
         achievements = select(AchievementDraft.id).where(
             AchievementDraft.project_id.in_(projects)
@@ -694,10 +707,7 @@ async def clean_world(
             )
         )
         await db.execute(
-            delete(OperationsGrant).where(
-                OperationsGrant.user_id.in_(users)
-                | OperationsGrant.changed_by.in_(users)
-            )
+            delete(OperationsGrant).where(OperationsGrant.user_id.in_(users))
         )
         await db.execute(
             delete(OwnerQualification).where(OwnerQualification.user_id.in_(users))

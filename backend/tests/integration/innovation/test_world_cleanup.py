@@ -293,3 +293,65 @@ async def test_world_cleanup_handles_approved_qualification_scope(
                 assert await reader.get(User, ids[1]) is None
     finally:
         await clean_world(sessions, user_ids=ids)
+
+
+async def test_world_cleanup_rejects_cross_world_grant_before_any_mutation(db_engine):
+    sessions = async_sessionmaker(db_engine, expire_on_commit=False)
+    ids = []
+    try:
+        async with sessions() as seed:
+            admin = User(
+                username=f"cleanup-ga-{uuid4().hex}",
+                password_hash="unused",
+                nickname="管理员",
+                role="ADMIN",
+                status="ACTIVE",
+            )
+            student = User(
+                username=f"cleanup-gs-{uuid4().hex}",
+                password_hash="unused",
+                nickname="学生",
+                role="STUDENT",
+                status="ACTIVE",
+            )
+            seed.add_all([admin, student])
+            await seed.flush()
+            ids = [admin.id, student.id]
+            seed.add(
+                OperationsGrant(
+                    user_id=student.id,
+                    enabled=True,
+                    version=3,
+                    changed_by=admin.id,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            seed.add(
+                ProjectDraft(
+                    owner_user_id=student.id,
+                    creation_request_id=uuid4(),
+                    creation_payload_fingerprint="0" * 64,
+                    title="另一个world的项目",
+                )
+            )
+            await seed.commit()
+        with pytest.raises(RuntimeError, match="outside this world"):
+            await clean_world(sessions, user_ids=[ids[0]])
+        async with sessions() as reader:
+            assert await reader.get(User, ids[0]) is not None
+            assert await reader.get(User, ids[1]) is not None
+            grant = await reader.get(OperationsGrant, ids[1])
+            assert (
+                grant is not None
+                and grant.enabled
+                and grant.version == 3
+                and grant.changed_by == ids[0]
+            )
+            assert (
+                await reader.scalar(
+                    select(ProjectDraft.id).where(ProjectDraft.owner_user_id == ids[1])
+                )
+                is not None
+            )
+    finally:
+        await clean_world(sessions, user_ids=ids)

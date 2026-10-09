@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Exists
 
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
@@ -83,9 +84,16 @@ class ReviewOperationsService:
         )
 
     async def _authority(
-        self, db: AsyncSession, actor: Actor, owner_id: UUID | None = None
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        owner_id: UUID | None = None,
+        *,
+        assignee_id: UUID | None = None,
     ) -> None:
         ids = {actor.user_id} if owner_id is None else {actor.user_id, owner_id}
+        if assignee_id is not None:
+            ids.add(assignee_id)
         accounts = {
             row.id: row
             for row in (
@@ -133,6 +141,7 @@ class ReviewOperationsService:
         case_id: UUID,
         *,
         allow_conflict: bool = False,
+        lock_assignee: bool = False,
     ) -> tuple[AchievementReviewCase, AchievementWorkflow, ReviewProjectScope]:
         scope = (
             await db.execute(
@@ -140,6 +149,7 @@ class ReviewOperationsService:
                     ProjectDraft.id.label("project_id"),
                     ProjectDraft.owner_user_id,
                     AchievementDraft.id.label("achievement_id"),
+                    AchievementReviewCase.assigned_user_id,
                 )
                 .join(AchievementDraft, AchievementDraft.project_id == ProjectDraft.id)
                 .join(
@@ -153,7 +163,12 @@ class ReviewOperationsService:
             # Validate operator authority even when the target doesn't exist.
             await self._authority(db, actor)
             raise _missing()
-        await self._authority(db, actor, scope.owner_user_id)
+        await self._authority(
+            db,
+            actor,
+            scope.owner_user_id,
+            assignee_id=scope.assigned_user_id if lock_assignee else None,
+        )
         project = (
             await db.execute(
                 select(ProjectDraft.id, ProjectDraft.owner_user_id)
@@ -190,6 +205,8 @@ class ReviewOperationsService:
         )
         if workflow is None or case is None:
             raise _missing()
+        if lock_assignee and case.assigned_user_id != scope.assigned_user_id:
+            raise _conflict("领取关系已改变，请刷新队列")
         conflict = await db.scalar(
             select(ReviewConflict.user_id).where(
                 ReviewConflict.project_id == project.id,
@@ -199,6 +216,38 @@ class ReviewOperationsService:
         if conflict is not None and not allow_conflict:
             raise _forbidden()
         return case, workflow, ReviewProjectScope(project.id, project.owner_user_id)
+
+    @staticmethod
+    def _valid_assignee() -> Exists:
+        """One eligibility predicate for queue visibility and locked reclaim.
+
+        The enclosing SELECT supplies the case and project. Reclaim locks the
+        previous assignee's account before reading this predicate, serializing
+        it with account/grant changes; project locks serialize conflict changes.
+        """
+        assignee = _USERS.alias("assigned_review_operator")
+        conflict = (
+            select(ReviewConflict.user_id)
+            .where(
+                ReviewConflict.user_id == assignee.c.id,
+                ReviewConflict.project_id == ProjectDraft.id,
+            )
+            .correlate(assignee, ProjectDraft)
+            .exists()
+        )
+        return (
+            select(assignee.c.id)
+            .join(OperationsGrant, OperationsGrant.user_id == assignee.c.id)
+            .where(
+                assignee.c.id == AchievementReviewCase.assigned_user_id,
+                assignee.c.role == "STUDENT",
+                assignee.c.status == "ACTIVE",
+                OperationsGrant.enabled.is_(True),
+                ~conflict,
+            )
+            .correlate(AchievementReviewCase, ProjectDraft)
+            .exists()
+        )
 
     async def _record(
         self,
@@ -262,6 +311,7 @@ class ReviewOperationsService:
             or_(
                 AchievementReviewCase.assigned_user_id.is_(None),
                 AchievementReviewCase.assigned_user_id == actor.user_id,
+                ~self._valid_assignee(),
             ),
             ~select(ReviewConflict.user_id)
             .where(
@@ -319,7 +369,8 @@ class ReviewOperationsService:
         payload: ReviewVersionCommand,
         context: AuditContext | None = None,
     ) -> ReviewCaseSummary:
-        case, _, _ = await self._scope(db, actor, case_id)
+        case, _, _ = await self._scope(db, actor, case_id, lock_assignee=True)
+        action = "IE_REVIEW_CLAIM"
         if case.status != "SUBMITTED":
             raise _conflict("该核实条目已关闭")
         if case.assigned_user_id == actor.user_id and payload.version in (
@@ -327,13 +378,27 @@ class ReviewOperationsService:
             case.version - 1,
         ):
             pass
-        elif case.version != payload.version or case.assigned_user_id is not None:
+        elif case.version != payload.version:
             raise _conflict("该条目已被领取或更新，请刷新队列")
         else:
+            if case.assigned_user_id is not None:
+                eligible = await db.scalar(
+                    select(self._valid_assignee())
+                    .select_from(AchievementReviewCase)
+                    .join(
+                        AchievementDraft,
+                        AchievementDraft.id == AchievementReviewCase.achievement_id,
+                    )
+                    .join(ProjectDraft, ProjectDraft.id == AchievementDraft.project_id)
+                    .where(AchievementReviewCase.id == case.id)
+                )
+                if eligible:
+                    raise _conflict("该条目已被领取或更新，请刷新队列")
+                action = "IE_REVIEW_CLAIM_RECOVER"
             case.assigned_user_id = actor.user_id
             case.version += 1
         result = case_summary(case)
-        await self._record(db, actor, case.id, "IE_REVIEW_CLAIM", context, case.version)
+        await self._record(db, actor, case.id, action, context, case.version)
         await db.commit()
         return result
 
@@ -358,9 +423,37 @@ class ReviewOperationsService:
             )
             .on_conflict_do_nothing()
         )
-        if case.assigned_user_id == actor.user_id:
-            case.assigned_user_id = None
-            case.version += 1
+        # _scope already holds the project lock, shared by all case mutations.
+        # Project-level conflict must release every pending claim in that scope,
+        # while preserving decided history and assignments in other projects.
+        assigned = (
+            await db.scalars(
+                select(AchievementReviewCase)
+                .join(
+                    AchievementDraft,
+                    AchievementDraft.id == AchievementReviewCase.achievement_id,
+                )
+                .where(
+                    AchievementDraft.project_id == project.id,
+                    AchievementReviewCase.status == "SUBMITTED",
+                    AchievementReviewCase.assigned_user_id == actor.user_id,
+                )
+                .order_by(AchievementReviewCase.id)
+                .with_for_update(of=AchievementReviewCase)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        for assigned_case in assigned:
+            assigned_case.assigned_user_id = None
+            assigned_case.version += 1
+            await self._record(
+                db,
+                actor,
+                assigned_case.id,
+                "IE_REVIEW_CONFLICT_RELEASE",
+                context,
+                assigned_case.version,
+            )
         await self._record(
             db, actor, case.id, "IE_REVIEW_CONFLICT_DECLARE", context, case.version
         )
