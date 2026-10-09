@@ -38,9 +38,11 @@ import {
 import { useNow } from "@/features/tasks/useNow";
 
 import { describeSubmissionError } from "./submissionErrors";
+import { getValidation, type ValidationDto } from "./api";
 import { ClaimSteps } from "./ClaimSteps";
 import { RewardStatus } from "./RewardStatus";
 import { UploadPanel } from "./UploadPanel";
+import { ValidationReport } from "./ValidationReport";
 
 /** History page size and walk bound for resolving one claim by id. */
 const CLAIMS_PAGE_LIMIT = 50;
@@ -233,6 +235,49 @@ function ClaimDetailReady({
   const urgency = nowMs >= graceMs ? "closed" : parts.expired ? "closed" : parts.totalMs <= NEAR_CUTOFF_MS ? "near" : "none";
   const revision = isRevisionClaim(claim.status);
 
+  // Defect #15 (QA 2026-10-03): the LAST submission's validation is a
+  // cold-load concern too — the live upload flow used to be the only
+  // place the failure report existed. With latest_submission_id on
+  // the claim DTO the revisit (re-login, refresh, another device) can
+  // fetch it. The fetched row is KEYED by its submission id and the
+  // rendered value derives from a key match — no effect-body setState
+  // reset, and a fetch failure just leaves the report absent (the
+  // backend intent gate stays the verdict everywhere).
+  const [fetchedValidation, setFetchedValidation] = useState<{
+    submissionId: string;
+    validation: ValidationDto;
+  } | null>(null);
+  useEffect(() => {
+    const submissionId = claim.latest_submission_id;
+    if (submissionId === null) {
+      return;
+    }
+    let cancelled = false;
+    getValidation(submissionId).then(
+      (validation) => {
+        if (!cancelled) {
+          setFetchedValidation({ submissionId, validation });
+        }
+      },
+      () => {
+        /* absent report — the banner/report simply stay implicit */
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [claim.claim_id, claim.latest_submission_id]);
+  const lastValidation =
+    fetchedValidation !== null &&
+    fetchedValidation.submissionId === claim.latest_submission_id
+      ? fetchedValidation.validation
+      : null;
+
+  // The revision's SOURCE: a failed machine validation on the last
+  // submission means the machine (not a teacher) demanded the rework.
+  const machineFailed =
+    lastValidation?.validation_status === "VALIDATION_FAILED";
+
   return (
     <div className="claim-detail">
       <Link className="link back-link" href="/tasks">
@@ -255,7 +300,7 @@ function ClaimDetailReady({
       {/* Plan 11 mid-pass review P1: when a revision is required, the
           revision context comes FIRST and owns the visual priority —
           the neutral assignment facts follow, not the reverse. */}
-      {revision ? <RevisionBanner /> : null}
+      {revision ? <RevisionBanner machineFailed={machineFailed} /> : null}
 
       <section className="claim-panel" aria-label="分配给你的任务单元">
         <h2 className="claim-panel-title">分配给你的任务单元</h2>
@@ -286,7 +331,25 @@ function ClaimDetailReady({
       <RewardStatus claim={claim} nowMs={nowMs} />
 
       {isSubmittable(claim.status) ? (
-        <UploadPanel claimId={claim.claim_id} onClaimChanged={onClaimChanged} />
+        <>
+          <UploadPanel
+            claimId={claim.claim_id}
+            onClaimChanged={onClaimChanged}
+            allowedTypes={claim.allowed_file_types}
+          />
+          {/* The rework target: WHAT failed last time rides directly
+              under the re-upload panel (defect #15 — the report was
+              previously unreachable after the live flow ended). */}
+          {machineFailed && lastValidation?.report != null ? (
+            <section className="section" aria-label="上次提交的校验报告">
+              <h2 className="section-title">上次提交未通过机器校验</h2>
+              <p className="field-hint">
+                按报告修正后重新上传即可；审核以最新版本为准。
+              </p>
+              <ValidationReport report={lastValidation.report} />
+            </section>
+          ) : null}
+        </>
       ) : (
         <ClosedStateNote status={claim.status} />
       )}
@@ -304,16 +367,25 @@ function ClaimDetailReady({
  * version uploads through the normal panel. The revision deadline and
  * teacher note are not part of the /me/claims contract yet.
  */
-function RevisionBanner() {
+function RevisionBanner({ machineFailed }: { machineFailed: boolean }) {
+  // The revision's two sources read differently (defect #15): a
+  // machine validation failure names the machine (no teacher ever
+  // saw it); the teacher return keeps the original wording.
   return (
     <div className="alert alert-warning" role="status">
       <p>
         <span className="alert-marker" aria-hidden="true">
           !
         </span>
-        老师已退回修改，奖励档位已保留。
+        {machineFailed
+          ? "上次提交未通过机器校验，请按校验报告修正后重新上传。"
+          : "老师已退回修改，奖励档位已保留。"}
       </p>
-      <p className="field-hint">请在修改期限内上传修正后的新版本，审核以最新版本为准。</p>
+      <p className="field-hint">
+        {machineFailed
+          ? "上传修正后的新版本即可；审核以最新版本为准。"
+          : "请在修改期限内上传修正后的新版本，审核以最新版本为准。"}
+      </p>
     </div>
   );
 }
