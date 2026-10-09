@@ -217,4 +217,19 @@ test.describe("task card affordances (defect #5)", () => {
     expect(box.cy).toBeGreaterThan(8.5);
     expect(box.cy).toBeLessThan(11.5);
   });
+
+  test("a fully-claimed task stays browsable and carries the depleted badge (defect #20)", async ({ page }) => {
+    // The world seeds task_r with ONE assignment already claimed by
+    // the redeemer — the square's deterministic depleted card.
+    const depleted = page.locator(".task-card", { hasText: "已被领完" });
+    await expect(depleted).toHaveCount(1);
+    // The MARK is a real text badge (never a color-only cue), and the
+    // meta row keeps its numeric shape — the phrase rides the badge
+    // exactly once per card.
+    await expect(depleted.locator(".badge", { hasText: "已被领完" })).toBeVisible();
+    await expect(depleted.getByText("可领取 0 个")).toBeVisible();
+    // Browsable means the title link still navigates to the detail.
+    const href = await depleted.locator(".task-card-title a").getAttribute("href");
+    expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
+  });
 });

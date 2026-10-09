@@ -8,6 +8,23 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { rewardStatusView } from "../features/submissions/rewardView";
+import { balanceQuietView } from "../features/rewards/redeemView";
+
+describe("balance quiet line (defect #10, QA 2026-10-03)", () => {
+  test("no frozen points: 可用积分 is the SAME number as 可花费 — shown once", () => {
+    assert.equal(
+      balanceQuietView({ available: 120, spendable: 120, earned: 300 }),
+      "累计获得 300",
+    );
+  });
+
+  test("frozen points make the two balances DIVERGE — both numbers then carry meaning", () => {
+    assert.equal(
+      balanceQuietView({ available: 120, spendable: 95, earned: 300 }),
+      "可用积分 120 · 累计获得 300",
+    );
+  });
+});
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 

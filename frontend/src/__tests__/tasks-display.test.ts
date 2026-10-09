@@ -10,6 +10,7 @@ import { describe, test } from "node:test";
 
 import {
   availabilityText,
+  cardAvailabilityMeta,
   claimRewardLine,
   claimStepView,
   claimStatusView,
@@ -68,6 +69,14 @@ describe("rating and availability text", () => {
   test("availability is a COUNT, zero reads as depleted — never a list", () => {
     assert.equal(availabilityText(7), "可领取 7 个");
     assert.equal(availabilityText(0), "已被领完");
+  });
+
+  test("the CARD meta row stays numeric at zero — the depleted MARK is the badge (defect #20)", () => {
+    // The card's informational row keeps the count shape so the
+    // column reads uniformly; 已被领完 rides a card-level badge, not a
+    // second copy of the phrase in the meta row.
+    assert.equal(cardAvailabilityMeta(7), "可领取 7 个");
+    assert.equal(cardAvailabilityMeta(0), "可领取 0 个");
   });
 });
 

@@ -41,6 +41,10 @@ const TEACHER = process.env.CQ_E2E_TEACHER;
 const TEACHER_TOTP_SECRET = process.env.CQ_E2E_TEACHER_TOTP_SECRET;
 const ADMIN = process.env.CQ_E2E_ADMIN;
 const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
+// The seeded item name is run-derived (factories: 端到端奖励卡 +
+// run[:6]) — the redemption queue's business key (see the redemption
+// test).
+const RUN = process.env.CQ_E2E_RUN;
 
 test.skip(
   !E2E_ENABLED,
@@ -203,7 +207,14 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
   test("redemption decisions: reject demands a reason; approve then fulfill", async ({ page }) => {
     await page.goto(`${BASE_URL}/admin/redemptions`);
 
-    const firstRow = page.locator(".review-item").first();
+    // Business-key location (the cross-run pollution post-mortem,
+    // 2026-10-09): the queue's FIRST row is the OLDEST pending
+    // request — with a residue world's redemption parked there, a
+    // positional .first() pick would decide a STRANGER's request. The
+    // seeded item's name is run-derived (端到端奖励卡 + RUN[:6]), so
+    // the row is located by THAT key, never by queue position.
+    const itemName = `端到端奖励卡${RUN!.slice(0, 6)}`;
+    const firstRow = page.locator(".review-item", { hasText: itemName });
     await expect(firstRow).toBeVisible();
     await firstRow.click();
 

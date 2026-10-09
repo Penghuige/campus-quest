@@ -22,6 +22,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import {
@@ -161,6 +162,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 {state.me.nickname}
                 <span className="staff-role-tag">管理员</span>
               </span>
+              <StaffLogoutButton />
               <StaffMenuSheet label="管理后台菜单" items={NAV_ITEMS} />
             </div>
           </div>

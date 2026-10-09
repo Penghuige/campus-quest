@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { AvatarSection } from "@/features/auth/AvatarSection";
 import { AccountSettings } from "@/features/auth/AccountSettings";
+import { LogoutSection } from "@/features/auth/LogoutSection";
 import { GrowthView } from "@/features/rankings/GrowthView";
 import {
   DEFAULT_PROFILE_TAB,
@@ -57,6 +58,9 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         <>
           <AvatarSection />
           <AccountSettings />
+          {/* Defect #11 (QA 2026-10-03): the explicit logout entry,
+              below the account-editing forms it closes out. */}
+          <LogoutSection />
         </>
       )}
     </>

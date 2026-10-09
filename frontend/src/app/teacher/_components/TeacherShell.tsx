@@ -20,9 +20,10 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
-import { ReviewIcon, TasksIcon } from "@/components/shell/navIcons";
+import { ReviewIcon, TasksIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { teacherWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,9 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/teacher/reviews", label: "审核队列", icon: <ReviewIcon /> },
   { href: "/teacher/tasks", label: "任务管理", icon: <TasksIcon /> },
+  // Defect #17 (QA 2026-10-03): the workspace's own profile page — a
+  // first-class nav entry so the page is discoverable post-login.
+  { href: "/teacher/profile", label: "个人信息", icon: <UserIcon /> },
 ] as const;
 
 const SIDEBAR_GROUPS = [{ label: "教师工作台", items: NAV_ITEMS }] as const;
@@ -154,6 +158,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
                   {state.me.role === "ADMIN" ? "管理员" : "教师"}
                 </span>
               </span>
+              <StaffLogoutButton />
               <StaffMenuSheet label="教师工作台菜单" items={NAV_ITEMS} />
             </div>
           </div>

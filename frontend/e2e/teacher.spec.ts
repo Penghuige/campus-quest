@@ -238,6 +238,27 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await context.close();
   });
 
+  test("the workspace carries its own profile page (defect #17)", async ({
+    page,
+  }) => {
+    // 个人信息 is a first-class nav destination post-login.
+    await page.goto(`${BASE_URL}/teacher/reviews`);
+    const nav = page.getByRole("link", { name: "个人信息", exact: true });
+    await expect(nav).toBeVisible();
+    await nav.click();
+    await expect(page).toHaveURL(/\/teacher\/profile/);
+
+    // The /me facts render as definition rows (the owner's own account
+    // view, spec §40). 注册日期 joins when the DTO carries created_at.
+    const section = page.getByRole("region", { name: "个人信息" });
+    await expect(section).toBeVisible();
+    for (const label of ["昵称", "账号", "角色", "账号状态"]) {
+      await expect(section.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(section.getByText("教师", { exact: true })).toBeVisible();
+    await expect(section.getByText("正常", { exact: true })).toBeVisible();
+  });
+
   test("review decisions: mandatory note/reason and the invalidate warning", async ({
     page,
   }) => {
