@@ -45,7 +45,6 @@ from app.modules.community.models import (
     CommentVote,
     TaskRating,
 )
-from app.modules.identity.enums import Role
 from app.modules.identity.models import User
 from app.modules.notifications.enums import NotificationEventType
 from app.modules.notifications.models import Notification, NotificationDelivery
@@ -63,6 +62,7 @@ from app.modules.submissions.models import (
     SubmissionReview,
     SubmissionValidation,
 )
+from app.modules.system.models import SystemSetting
 from app.modules.tasks.claim_service import REWARD_POLICY_SNAPSHOT_V1
 from app.modules.tasks.deadlines import compute_claim_deadlines
 from app.modules.tasks.enums import (
@@ -75,7 +75,6 @@ from app.modules.tasks.enums import (
     TaskType,
 )
 from app.modules.tasks.models import Assignment, AssignmentClaim, Task
-from app.modules.system.models import SystemSetting
 
 MARKER = "【演示】"
 TERM_KEY = "2026-2027-1"
@@ -115,8 +114,13 @@ async def _student(session, username: str) -> User:
     return user
 
 
-def _report(row_count: int, *, duplicates: int = 0, errors: list | None = None,
-            preview: list | None = None) -> dict:
+def _report(
+    row_count: int,
+    *,
+    duplicates: int = 0,
+    errors: list | None = None,
+    preview: list | None = None,
+) -> dict:
     """A validation_report JSONB matching the persisted contract
     (schemas.ValidationReportPayload.from_persisted reads exactly these
     keys — the wire model 500s on any missing one)."""
@@ -150,8 +154,20 @@ class World:
         self.wallets[user_id] = self.wallets.get(user_id, 0) + points
 
 
-async def _task(session, world: World, teacher_id: UUID, *, title, description,
-                rarity, points, duration_minutes, slots, keyword) -> Task:
+async def _task(
+    session,
+    world: World,
+    teacher_id: UUID,
+    *,
+    title,
+    description,
+    rarity,
+    points,
+    duration_minutes,
+    slots,
+    keyword,
+    allowed=("CSV",),
+) -> Task:
     task = Task(
         owner_teacher_id=teacher_id,
         title=f"{MARKER}{title}",
@@ -164,7 +180,7 @@ async def _task(session, world: World, teacher_id: UUID, *, title, description,
         duration_minutes=duration_minutes,
         submission_schema=CSV_SCHEMA,
         submission_schema_version=1,
-        allowed_file_types=["CSV"],
+        allowed_file_types=list(allowed),
         max_file_size_bytes=10 * 1024 * 1024,
         notification_channels=["SMS"],
         published_at=datetime.now(UTC) - timedelta(days=2),
@@ -184,12 +200,16 @@ async def _task(session, world: World, teacher_id: UUID, *, title, description,
     return task
 
 
-async def _claim(session, task: Task, assignment_index: int, student: User, *,
-                 claimed_hours_ago: float = 6.0) -> AssignmentClaim:
+async def _claim(
+    session,
+    task: Task,
+    assignment_index: int,
+    student: User,
+    *,
+    claimed_hours_ago: float = 6.0,
+) -> AssignmentClaim:
     assignment = (
-        await session.scalars(
-            select(Assignment).where(Assignment.task_id == task.id)
-        )
+        await session.scalars(select(Assignment).where(Assignment.task_id == task.id))
     ).all()[assignment_index]
     claimed_at = datetime.now(UTC) - timedelta(hours=claimed_hours_ago)
     deadlines = compute_claim_deadlines(task, claimed_at)
@@ -212,9 +232,16 @@ async def _claim(session, task: Task, assignment_index: int, student: User, *,
     return claim
 
 
-async def _submit(session, settings, claim: AssignmentClaim, *, hours_ago: float,
-                  validation_status: str, review_status: str,
-                  report: dict) -> Submission:
+async def _submit(
+    session,
+    settings,
+    claim: AssignmentClaim,
+    *,
+    hours_ago: float,
+    validation_status: str,
+    review_status: str,
+    report: dict,
+) -> Submission:
     """One submitted version + its validation row + a real MinIO object.
 
     Mirrors the upload/validation/lock writes: submission snapshot fields,
@@ -288,8 +315,15 @@ async def _submit(session, settings, claim: AssignmentClaim, *, hours_ago: float
     return submission
 
 
-async def _complete(session, world: World, teacher_id: UUID, claim: AssignmentClaim,
-                    submission: Submission, *, hours_ago: float) -> None:
+async def _complete(
+    session,
+    world: World,
+    teacher_id: UUID,
+    claim: AssignmentClaim,
+    submission: Submission,
+    *,
+    hours_ago: float,
+) -> None:
     """The approve path's writes: review row, CONFIRMED lock, terminal
     claim/assignment, and the granted-points ledger entry."""
     now = datetime.now(UTC) - timedelta(hours=hours_ago)
@@ -338,8 +372,16 @@ async def _complete(session, world: World, teacher_id: UUID, claim: AssignmentCl
     world.earn(claim.user_id, points)
 
 
-async def _notify(session, student: User, event_type: str, title: str, body: str,
-                  *, hours_ago: float, read: bool = False) -> None:
+async def _notify(
+    session,
+    student: User,
+    event_type: str,
+    title: str,
+    body: str,
+    *,
+    hours_ago: float,
+    read: bool = False,
+) -> None:
     created_at = datetime.now(UTC) - timedelta(hours=hours_ago)
     notification = Notification(
         user_id=student.id,
@@ -378,8 +420,10 @@ async def main() -> None:
             select(Task.id).where(Task.title.like(f"{MARKER}%")).limit(1)
         )
         if existing is not None:
-            raise SystemExit("demo content already seeded (tasks with "
-                             f"{MARKER} prefix exist) — nothing to do")
+            raise SystemExit(
+                "demo content already seeded (tasks with "
+                f"{MARKER} prefix exist) — nothing to do"
+            )
 
         teacher = await session.scalar(
             select(User).where(User.email_normalized == "teacher@campus.example.edu")
@@ -388,13 +432,23 @@ async def main() -> None:
             select(User).where(User.email_normalized == "admin@campus.example.edu")
         )
         if teacher is None or admin is None:
-            raise SystemExit("staff demo accounts missing — run "
-                             "seed_demo_accounts.py first")
+            raise SystemExit(
+                "staff demo accounts missing — run seed_demo_accounts.py first"
+            )
         students = {
             username: await _student(session, username)
-            for username in ("20250001", "20250002", "20250003", "20250004",
-                             "20250005", "20250006", "20250007", "20250008",
-                             "20250009", "20250010")
+            for username in (
+                "20250001",
+                "20250002",
+                "20250003",
+                "20250004",
+                "20250005",
+                "20250006",
+                "20250007",
+                "20250008",
+                "20250009",
+                "20250010",
+            )
         }
 
         # Term setting (audit-lite: the admin sets the current term).
@@ -410,90 +464,158 @@ async def main() -> None:
 
         # ---- Task catalogue -------------------------------------------------
         t_observe = await _task(
-            session, world, teacher.id,
+            session,
+            world,
+            teacher.id,
             title="图书馆自习区学习行为观察记录",
             description="连续三天记录图书馆三楼自习区的座位使用与学习行为，"
-                        "按 CSV 模板提交观察数据。要求真实观察，禁止编造。",
-            rarity=TaskRarity.NORMAL, points=60, duration_minutes=5 * 24 * 60,
-            slots=6, keyword="自习观察",
+            "按 CSV 模板提交观察数据。要求真实观察，禁止编造。",
+            rarity=TaskRarity.NORMAL,
+            points=60,
+            duration_minutes=5 * 24 * 60,
+            slots=6,
+            keyword="自习观察",
+            allowed=("CSV", "XLSX"),
         )
         t_canteen = await _task(
-            session, world, teacher.id,
+            session,
+            world,
+            teacher.id,
             title="校园食堂人气菜品评选数据采集",
             description="收集同学对两个食堂各窗口菜品的评价与推荐数据，"
-                        "每条记录需附来源链接。任务周期较短，请尽早提交。",
-            rarity=TaskRarity.RARE, points=100, duration_minutes=3 * 24 * 60,
-            slots=4, keyword="食堂菜品",
+            "每条记录需附来源链接。任务周期较短，请尽早提交。",
+            rarity=TaskRarity.RARE,
+            points=100,
+            duration_minutes=3 * 24 * 60,
+            slots=4,
+            keyword="食堂菜品",
+            allowed=("CSV", "XLSX"),
         )
         await _task(
-            session, world, teacher.id,
+            session,
+            world,
+            teacher.id,
             title="期末复习资料整理与共享协作",
             description="整理一门课程的期末复习要点并制作共享文档，"
-                        "审核标准高、周期长、奖励丰厚。优秀作品将入选"
-                        "院系资料库。",
-            rarity=TaskRarity.EPIC, points=180, duration_minutes=14 * 24 * 60,
-            slots=2, keyword="复习资料",
+            "审核标准高、周期长、奖励丰厚。优秀作品将入选"
+            "院系资料库。",
+            rarity=TaskRarity.EPIC,
+            points=180,
+            duration_minutes=14 * 24 * 60,
+            slots=2,
+            keyword="复习资料",
+            allowed=("CSV", "XLSX"),
         )
         await _task(
-            session, world, teacher.id,
+            session,
+            world,
+            teacher.id,
             title="校园文创设计众筹数据采集",
             description="采集校园文创设计众筹活动的方案与预约数据，"
-                        "审核标准最高、周期充裕、名额唯一。数据将用于"
-                        "文创中心选品决策。",
-            rarity=TaskRarity.LEGENDARY, points=260, duration_minutes=10 * 24 * 60,
-            slots=1, keyword="文创众筹",
+            "审核标准最高、周期充裕、名额唯一。数据将用于"
+            "文创中心选品决策。",
+            rarity=TaskRarity.LEGENDARY,
+            points=260,
+            duration_minutes=10 * 24 * 60,
+            slots=1,
+            keyword="文创众筹",
+            allowed=("CSV", "XLSX"),
         )
         t_checkin = await _task(
-            session, world, teacher.id,
+            session,
+            world,
+            teacher.id,
             title="新生校园地标打卡数据采集",
             description="前往校园十个地标打卡拍照并记录位置信息，"
-                        "适合新生熟悉校园。名额充足，随时领取。",
-            rarity=TaskRarity.NORMAL, points=40, duration_minutes=7 * 24 * 60,
-            slots=8, keyword="地标打卡",
+            "适合新生熟悉校园。名额充足，随时领取。",
+            rarity=TaskRarity.NORMAL,
+            points=40,
+            duration_minutes=7 * 24 * 60,
+            slots=8,
+            keyword="地标打卡",
         )
 
         # ---- Lifecycle scenarios -------------------------------------------
         # Completed: 20250001 (60pt), 20250003 (60 + 100 = top rank).
-        c = await _claim(session, t_observe, 0, students["20250001"],
-                         claimed_hours_ago=30)
-        s = await _submit(session, settings, c, hours_ago=26,
-                          validation_status="VALIDATED",
-                          review_status="PENDING_REVIEW", report=_report(1))
+        c = await _claim(
+            session, t_observe, 0, students["20250001"], claimed_hours_ago=30
+        )
+        s = await _submit(
+            session,
+            settings,
+            c,
+            hours_ago=26,
+            validation_status="VALIDATED",
+            review_status="PENDING_REVIEW",
+            report=_report(1),
+        )
         await _complete(session, world, teacher.id, c, s, hours_ago=20)
 
-        c = await _claim(session, t_observe, 1, students["20250003"],
-                         claimed_hours_ago=50)
-        s = await _submit(session, settings, c, hours_ago=46,
-                          validation_status="VALIDATED",
-                          review_status="PENDING_REVIEW", report=_report(1))
+        c = await _claim(
+            session, t_observe, 1, students["20250003"], claimed_hours_ago=50
+        )
+        s = await _submit(
+            session,
+            settings,
+            c,
+            hours_ago=46,
+            validation_status="VALIDATED",
+            review_status="PENDING_REVIEW",
+            report=_report(1),
+        )
         await _complete(session, world, teacher.id, c, s, hours_ago=40)
-        c = await _claim(session, t_canteen, 0, students["20250003"],
-                         claimed_hours_ago=28)
-        s = await _submit(session, settings, c, hours_ago=24,
-                          validation_status="VALIDATED",
-                          review_status="PENDING_REVIEW", report=_report(1))
+        c = await _claim(
+            session, t_canteen, 0, students["20250003"], claimed_hours_ago=28
+        )
+        s = await _submit(
+            session,
+            settings,
+            c,
+            hours_ago=24,
+            validation_status="VALIDATED",
+            review_status="PENDING_REVIEW",
+            report=_report(1),
+        )
         await _complete(session, world, teacher.id, c, s, hours_ago=18)
 
         # Completed + pending redemption: 20250002 (earned 100, reserved 30).
-        c = await _claim(session, t_canteen, 1, students["20250002"],
-                         claimed_hours_ago=26)
-        s = await _submit(session, settings, c, hours_ago=22,
-                          validation_status="VALIDATED",
-                          review_status="PENDING_REVIEW", report=_report(1))
+        c = await _claim(
+            session, t_canteen, 1, students["20250002"], claimed_hours_ago=26
+        )
+        s = await _submit(
+            session,
+            settings,
+            c,
+            hours_ago=22,
+            validation_status="VALIDATED",
+            review_status="PENDING_REVIEW",
+            report=_report(1),
+        )
         await _complete(session, world, teacher.id, c, s, hours_ago=16)
 
         # Pending teacher review: 20250004 on the observation task.
-        c = await _claim(session, t_observe, 2, students["20250004"],
-                         claimed_hours_ago=8)
-        await _submit(session, settings, c, hours_ago=4,
-                      validation_status="VALIDATED",
-                      review_status="PENDING_REVIEW", report=_report(1))
+        c = await _claim(
+            session, t_observe, 2, students["20250004"], claimed_hours_ago=8
+        )
+        await _submit(
+            session,
+            settings,
+            c,
+            hours_ago=4,
+            validation_status="VALIDATED",
+            review_status="PENDING_REVIEW",
+            report=_report(1),
+        )
 
         # Validation failed (revision required): 20250005 on the canteen task.
-        c = await _claim(session, t_canteen, 2, students["20250005"],
-                         claimed_hours_ago=10)
+        c = await _claim(
+            session, t_canteen, 2, students["20250005"], claimed_hours_ago=10
+        )
         await _submit(
-            session, settings, c, hours_ago=6,
+            session,
+            settings,
+            c,
+            hours_ago=6,
             validation_status="VALIDATION_FAILED",
             review_status="PENDING_REVIEW",
             report=_report(
@@ -524,8 +646,7 @@ async def main() -> None:
         )
 
         # Fresh in-progress claim: 20250006 on the landmark task.
-        await _claim(session, t_checkin, 0, students["20250006"],
-                     claimed_hours_ago=1)
+        await _claim(session, t_checkin, 0, students["20250006"], claimed_hours_ago=1)
 
         # Ranking depth: small bare rewards for 20250007-20250010.
         for index, username in enumerate(
@@ -542,32 +663,45 @@ async def main() -> None:
                     source_id=uuid4(),
                     affects_balance=True,
                     affects_ranking=True,
-                    ranking_effective_at=datetime.now(UTC)
-                    - timedelta(hours=5 * index),
+                    ranking_effective_at=datetime.now(UTC) - timedelta(hours=5 * index),
                 )
             )
             world.earn(student.id, amount)
 
         # ---- Reward catalogue + pending redemption -------------------------
         milk_tea = RewardItem(
-            name=f"{MARKER}食堂奶茶券", description="校内合作饮品店任选一杯。",
-            point_cost=30, stock=20, per_user_term_limit=None,
-            available_from=None, available_until=None, enabled=True,
+            name=f"{MARKER}食堂奶茶券",
+            description="校内合作饮品店任选一杯。",
+            point_cost=30,
+            stock=20,
+            per_user_term_limit=None,
+            available_from=None,
+            available_until=None,
+            enabled=True,
             requires_manual_review=False,
             fulfillment_instructions="凭学号到店核销。",
         )
         blind_box = RewardItem(
-            name=f"{MARKER}校园文创盲盒", description="校徽系列文创随机一款。",
-            point_cost=120, stock=5, per_user_term_limit=None,
-            available_from=None, available_until=None, enabled=True,
+            name=f"{MARKER}校园文创盲盒",
+            description="校徽系列文创随机一款。",
+            point_cost=120,
+            stock=5,
+            per_user_term_limit=None,
+            available_from=None,
+            available_until=None,
+            enabled=True,
             requires_manual_review=True,
             fulfillment_instructions="审核通过后一周内发放至宿舍信箱。",
         )
         seat = RewardItem(
             name=f"{MARKER}自习室黄金座预约权",
             description="下月图书馆三楼靠窗座位优先预约权。",
-            point_cost=200, stock=3, per_user_term_limit=None,
-            available_from=None, available_until=None, enabled=True,
+            point_cost=200,
+            stock=3,
+            per_user_term_limit=None,
+            available_from=None,
+            available_until=None,
+            enabled=True,
             requires_manual_review=True,
             fulfillment_instructions="审核通过后由图书馆老师开通权限。",
         )
@@ -595,28 +729,37 @@ async def main() -> None:
         )
 
         # ---- Community on the observation task ------------------------------
-        s1, s2, s3, s4, s5 = (students[key] for key in
-                              ("20250001", "20250002", "20250003",
-                               "20250004", "20250005"))
+        s1, s2, s3, s4, s5 = (
+            students[key]
+            for key in ("20250001", "20250002", "20250003", "20250004", "20250005")
+        )
         root1 = Comment(
-            task_id=t_observe.id, user_id=s1.id, parent_id=None,
+            task_id=t_observe.id,
+            user_id=s1.id,
+            parent_id=None,
             content="任务描述很清晰，CSV 模板的列要求一目了然，照着填就行。",
             is_anonymous=False,
         )
         root2 = Comment(
-            task_id=t_observe.id, user_id=s3.id, parent_id=None,
+            task_id=t_observe.id,
+            user_id=s3.id,
+            parent_id=None,
             content="建议三天观察期排好时间表，最后一天赶工真的会来不及。",
             is_anonymous=False,
         )
         anon = Comment(
-            task_id=t_observe.id, user_id=s5.id, parent_id=None,
+            task_id=t_observe.id,
+            user_id=s5.id,
+            parent_id=None,
             content="第一次做这类采集任务，流程比想象中顺畅，校验反馈也很快。",
             is_anonymous=True,
         )
         session.add_all([root1, root2, anon])
         await session.flush()
         reply = Comment(
-            task_id=t_observe.id, user_id=s2.id, parent_id=root1.id,
+            task_id=t_observe.id,
+            user_id=s2.id,
+            parent_id=root1.id,
             content="同感！提交之后机器校验几乎是秒过的。",
             is_anonymous=False,
         )
@@ -637,37 +780,49 @@ async def main() -> None:
 
         # ---- Notifications --------------------------------------------------
         await _notify(
-            session, s1, NotificationEventType.SUBMISSION_APPROVED.value,
+            session,
+            s1,
+            NotificationEventType.SUBMISSION_APPROVED.value,
             "提交已通过审核",
-            "「图书馆自习区学习行为观察记录」的提交已由老师审核通过，"
-            "60 积分已到账。",
-            hours_ago=20, read=True,
+            "「图书馆自习区学习行为观察记录」的提交已由老师审核通过，60 积分已到账。",
+            hours_ago=20,
+            read=True,
         )
         await _notify(
-            session, s3, NotificationEventType.SUBMISSION_APPROVED.value,
+            session,
+            s3,
+            NotificationEventType.SUBMISSION_APPROVED.value,
             "提交已通过审核",
-            "「校园食堂人气菜品评选数据采集」的提交已通过审核，"
-            "100 积分已到账。",
-            hours_ago=18, read=False,
+            "「校园食堂人气菜品评选数据采集」的提交已通过审核，100 积分已到账。",
+            hours_ago=18,
+            read=False,
         )
         await _notify(
-            session, s4, NotificationEventType.ASSIGNMENT_DEADLINE_4H.value,
+            session,
+            s4,
+            NotificationEventType.ASSIGNMENT_DEADLINE_4H.value,
             "任务即将截止",
-            "「图书馆自习区学习行为观察记录」距截止不足 4 小时，"
-            "请尽快完成提交。",
-            hours_ago=2, read=False,
+            "「图书馆自习区学习行为观察记录」距截止不足 4 小时，请尽快完成提交。",
+            hours_ago=2,
+            read=False,
         )
         await _notify(
-            session, s5, NotificationEventType.SUBMISSION_VALIDATION_FAILED.value,
+            session,
+            s5,
+            NotificationEventType.SUBMISSION_VALIDATION_FAILED.value,
             "提交未通过机器校验",
             "检测到 2 条重复的 url 记录，请修正后重新提交。",
-            hours_ago=6, read=False,
+            hours_ago=6,
+            read=False,
         )
         await _notify(
-            session, s2, NotificationEventType.ACCOUNT_SECURITY.value,
+            session,
+            s2,
+            NotificationEventType.ACCOUNT_SECURITY.value,
             "兑换申请已提交",
             "「食堂奶茶券」兑换申请已提交，等待审核。30 积分已被冻结。",
-            hours_ago=3, read=False,
+            hours_ago=3,
+            read=False,
         )
 
         # ---- Wallets ---------------------------------------------------------
@@ -686,15 +841,18 @@ async def main() -> None:
 
     # Ranking projection: rebuild every board from the ledger (PG is the
     # source of truth; Redis holds exactly what the ledger derives).
-    async with maker() as session, aioredis.from_url(
-        settings.redis_url, decode_responses=True
-    ) as redis:
+    async with (
+        maker() as session,
+        aioredis.from_url(settings.redis_url, decode_responses=True) as redis,
+    ):
         result = await RankingRedisProjection().rebuild_all(session, redis)
     await engine.dispose()
 
-    print(f"seeded: {len(world.tasks)} tasks, wallets for "
-          f"{len(world.wallets)} students, rewards x3, 1 pending redemption, "
-          "1 pending review, 1 validation-failed, community + notifications")
+    print(
+        f"seeded: {len(world.tasks)} tasks, wallets for "
+        f"{len(world.wallets)} students, rewards x3, 1 pending redemption, "
+        "1 pending review, 1 validation-failed, community + notifications"
+    )
     print(f"ranking rebuild: {result}")
 
 
