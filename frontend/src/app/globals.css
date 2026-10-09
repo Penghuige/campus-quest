@@ -506,6 +506,19 @@ body {
   text-decoration-thickness: 2px;
 }
 
+/* Inline link inside a hint paragraph (the import help's template
+ * download, PR #53): the .link token colors on a body-text-weight
+ * anchor. */
+.text-link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link:hover {
+  color: var(--primary-strong);
+}
+
 /* --- alerts / result summaries -------------------------------------------- */
 
 .alert {

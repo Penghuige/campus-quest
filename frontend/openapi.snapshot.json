@@ -6727,10 +6727,12 @@
         "enum": [
           "CSV",
           "XLSX",
-          "SQLITE"
+          "SQLITE",
+          "DOCX",
+          "PDF"
         ],
         "title": "FileType",
-        "description": "The closed upload file-type universe (spec §10/§12).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it."
+        "description": "The closed upload file-type universe (spec §10/§12 + §10.1).\n\nMirrors the `tasks.allowed_file_types` CHECK member set; a Task may\nrestrict to a subset but never beyond it. §10.1's two families:\n{CSV, XLSX, SQLITE} are structured (schema-validated), {DOCX, PDF}\nare documents (integrity-only machine check; content judgment rides\nthe teacher review)."
       },
       "ForceFailDeliveryRequest": {
         "properties": {

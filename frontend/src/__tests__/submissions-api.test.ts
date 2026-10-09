@@ -268,7 +268,11 @@ describe("declared-type derivation + picker accept", () => {
   });
 
   test("the picker accept attribute covers the whole closed universe", () => {
-    assert.equal(FILE_PICKER_ACCEPT, ".csv,.xlsx,.sqlite,.db,.sqlite3");
+    // §10.1 grew the universe with the document family.
+    assert.equal(
+      FILE_PICKER_ACCEPT,
+      ".csv,.xlsx,.sqlite,.db,.sqlite3,.docx,.pdf",
+    );
   });
 });
 
