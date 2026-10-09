@@ -40,9 +40,7 @@ from tests.e2e.factories import clean_world
 _T0 = datetime(2026, 10, 9, 8, 0, 0, tzinfo=UTC)
 
 
-async def _seed_user(
-    factory: async_sessionmaker, nickname: str
-) -> User:
+async def _seed_user(factory: async_sessionmaker, nickname: str) -> User:
     async with factory() as db:
         user = User(
             username=str(uuid.uuid4().int)[:20],
