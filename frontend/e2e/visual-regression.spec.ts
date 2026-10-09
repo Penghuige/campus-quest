@@ -109,6 +109,12 @@ for (const shot of SHOTS) {
     await authenticate(page, shot.auth);
     await page.goto(`${BASE_URL}${path}`);
     await shot.prepare?.(page);
+    if (shot.name === "student-tasks") {
+      // 3a51680 split claim/submission pools: the seeded world now owns A/B/C/D/R.
+      // Pin that fixture contract before comparing its deliberately updated PNG.
+      await expect(page.locator(".task-card")).toHaveCount(5);
+      await expect(page.getByText("已显示 5 / 5 个任务", { exact: true })).toBeVisible();
+    }
     // Font determinism (C3 ⑧, CI lessons 1+2): (a) the local dev box
     // resolves zh sans to Microsoft YaHei (msyh.ttf) while CI falls to
     // the pinned fonts-noto-cjk — different metrics, 1-2px page-height
