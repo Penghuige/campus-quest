@@ -371,7 +371,7 @@ class AssignmentClaim(Base):
     base_reward_points_snapshot: Mapped[int] = mapped_column(Integer)
     # §6.2 MUST-snapshot; NOT NULL here because a claim can only be created
     # against a PUBLISHED Task, which always carries a schema version.
-    submission_schema_version: Mapped[int] = mapped_column(Integer)
+    submission_schema_version: Mapped[int | None] = mapped_column(Integer)
     reward_lock_status: Mapped[str] = mapped_column(String(16))
     # Locked percentage from the snapshotted ladder (spec §9.3).
     reward_tier_locked: Mapped[int | None] = mapped_column(Integer)
