@@ -54,6 +54,24 @@ export const FILE_PICKER_ACCEPT: string = FILE_TYPES.flatMap(
   (type) => FILE_TYPE_EXTENSIONS[type],
 ).join(",");
 
+/**
+ * The picker's `accept` narrowed to a task's own upload gate (defect
+ * #12): the task's allowed types (FileType keys from the claim DTO)
+ * map to their extensions; an absent/empty set keeps the universe —
+ * the backend intent gate stays the verdict either way.
+ */
+export function acceptAttributeFor(
+  allowedTypes?: readonly string[],
+): string {
+  const keys = (allowedTypes ?? []).filter((type): type is FileTypeKey =>
+    (FILE_TYPES as readonly string[]).includes(type),
+  );
+  if (keys.length === 0) {
+    return FILE_PICKER_ACCEPT;
+  }
+  return keys.flatMap((type) => FILE_TYPE_EXTENSIONS[type]).join(",");
+}
+
 /** Human label per type (design §14: concrete formats, not raw enum names). */
 export const FILE_TYPE_LABELS: Record<FileTypeKey, string> = {
   CSV: "CSV",

@@ -264,6 +264,53 @@ test.describe("student submission", () => {
     await expect(page.locator("#submission-file")).toBeEnabled();
   });
 
+  test("the task's type gate refuses an in-universe but not-on-task pick pre-upload (defect #12)", async ({ page }) => {
+    test.skip(
+      CLAIM_URL_2 === undefined,
+      "needs the world's second submittable claim; Plan 10's global setup provides it.",
+    );
+    await page.goto(CLAIM_URL_2!);
+
+    // The seeded tasks allow CSV only; an .xlsx pick is inside the
+    // platform universe but outside THIS task — the pre-check says so
+    // before any upload attempt (the server intent gate stays the
+    // verdict).
+    await page.locator("#submission-file").setInputFiles({
+      name: "sheet.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from("not really an xlsx — the pre-check never reads it"),
+    });
+    await expect(page.getByRole("alert").and(page.getByText(/本任务不接受/))).toBeVisible();
+    await expect(page.getByText(/本任务接受：CSV/)).toBeVisible();
+    // No upload started: the file line stays absent.
+    await expect(page.getByText("当前文件：")).toHaveCount(0);
+  });
+
+  test("a cold revisit of a failed claim shows the machine report (defect #15)", async ({ page }) => {
+    test.skip(
+      MOCK_STORAGE,
+      "validation runs server-side; the mocked PUT never delivers an object to validate.",
+    );
+    test.skip(
+      CLAIM_URL_2 === undefined,
+      "needs the world's second submittable claim (left at a failed validation by the sibling test); Plan 10's global setup provides it.",
+    );
+    // The sibling test above left claim B rolled back after its failed
+    // machine validation (back-edge: REVISION_REQUIRED only when a
+    // revision window is open, else CLAIMED 待提交 — either way the
+    // claim is student-actionable). THIS test is the revisit: a fresh
+    // load whose only route to the failure is the claim DTO's
+    // latest_submission_id. The section's own heading names the
+    // machine, whatever the claim badge says.
+    await page.goto(CLAIM_URL_2!);
+
+    const report = page.getByRole("region", { name: "上次提交的校验报告" });
+    await expect(report).toBeVisible();
+    await expect(report.getByText("上次提交未通过机器校验")).toBeVisible();
+    await expect(report.locator(".validation-report")).toBeVisible();
+    await expect(report.locator(".report-errors")).toBeVisible();
+  });
+
   test("mocked storage PUT: pinned wire shape + retry-finalize path", async ({ page }) => {
     test.skip(
       !MOCK_STORAGE,

@@ -268,6 +268,46 @@ describe("picker pre-checks (convenience only — server is the verdict)", () =>
   test("deriveDeclaredType integration: the pre-check uses the api mapping", () => {
     assert.equal(deriveDeclaredType("a.DB"), "SQLITE");
   });
+
+  test("a task-narrowed pick rejects an allowed-in-universe but not-on-task type (defect #12)", () => {
+    // The task's gate wins over the universe: a CSV-only task must
+    // refuse an .xlsx pick BEFORE any upload attempt, with copy that
+    // names both the refused format and the task's own set.
+    const check = preCheckFile(
+      { name: "sheet.xlsx", size: 10 },
+      undefined,
+      ["CSV"],
+    );
+    assert.equal(check.ok, false);
+    if (!check.ok) {
+      assert.equal(check.reason, "type-not-allowed-task");
+      assert.match(check.message, /本任务不接受/);
+      assert.match(check.message, /CSV/);
+    }
+  });
+
+  test("a task-narrowed pick accepts the task's own type", () => {
+    const check = preCheckFile(
+      { name: "data.csv", size: 10 },
+      undefined,
+      ["CSV"],
+    );
+    assert.deepEqual(check, { ok: true, declaredType: "CSV" });
+  });
+
+  test("the out-of-universe check still fires before the task gate", () => {
+    // Unknown extensions stay type-unknown even with a task set —
+    // the universe membership question comes first.
+    const check = preCheckFile(
+      { name: "photo.jpg", size: 10 },
+      undefined,
+      ["CSV", "XLSX"],
+    );
+    assert.equal(check.ok, false);
+    if (!check.ok) {
+      assert.equal(check.reason, "type-unknown");
+    }
+  });
 });
 
 describe("phase labels (design §9: product wording, no raw enums)", () => {

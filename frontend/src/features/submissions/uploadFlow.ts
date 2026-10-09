@@ -23,6 +23,7 @@ import {
   DEFAULT_MAX_UPLOAD_BYTES,
   deriveDeclaredType,
   type FileTypeKey,
+  FILE_TYPE_LABELS,
   formatFileSize,
   type SubmissionDto,
   type ValidationDto,
@@ -219,7 +220,11 @@ export function isTerminalValidationStatus(status: string): boolean {
 
 export type PreCheckResult =
   | { ok: true; declaredType: FileTypeKey }
-  | { ok: false; reason: "type-unknown" | "too-large"; message: string };
+  | {
+      ok: false;
+      reason: "type-unknown" | "type-not-allowed-task" | "too-large";
+      message: string;
+    };
 
 /**
  * Type + size pre-check for the picker. Convenience feedback only — the
@@ -229,6 +234,11 @@ export type PreCheckResult =
 export function preCheckFile(
   facts: { name: string; size: number },
   maxBytes: number = DEFAULT_MAX_UPLOAD_BYTES,
+  /** The TASK's upload gate (MyClaimResponse.allowed_file_types,
+   * defect #12): when present, a type inside the universe but outside
+   * the task's own set is refused pre-upload too — picker convenience;
+   * the backend intent gate stays the verdict. */
+  allowedTypes?: readonly string[],
 ): PreCheckResult {
   const declaredType = deriveDeclaredType(facts.name);
   if (declaredType === null) {
@@ -236,6 +246,16 @@ export function preCheckFile(
       ok: false,
       reason: "type-unknown",
       message: "不支持的文件格式，请选择 CSV、Excel（.xlsx）或 SQLite 文件",
+    };
+  }
+  if (allowedTypes !== undefined && !allowedTypes.includes(declaredType)) {
+    const accepted = allowedTypes
+      .map((type) => FILE_TYPE_LABELS[type as FileTypeKey] ?? type)
+      .join("、");
+    return {
+      ok: false,
+      reason: "type-not-allowed-task",
+      message: `本任务不接受 ${FILE_TYPE_LABELS[declaredType]} 格式（本任务接受：${accepted}）`,
     };
   }
   if (facts.size > maxBytes) {

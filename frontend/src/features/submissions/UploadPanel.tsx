@@ -18,10 +18,10 @@
 import { useReducer, useRef, useState, useCallback, useEffect } from "react";
 
 import {
+  acceptAttributeFor,
   completeUpload,
   createUploadIntent,
   DEFAULT_MAX_UPLOAD_BYTES,
-  FILE_PICKER_ACCEPT,
   FILE_TYPES,
   FILE_TYPE_LABELS,
   formatFileSize,
@@ -68,10 +68,15 @@ import { Button } from "@/components/ui/button";
 export function UploadPanel({
   claimId,
   onClaimChanged,
+  allowedTypes,
 }: {
   claimId: string;
   /** Boundary hook: the parent refetches claim state after transitions. */
   onClaimChanged: () => void;
+  /** The task's upload gate (MyClaimResponse.allowed_file_types,
+   * defect #12): narrows the picker's accept set and adds a
+   * task-refusal pre-check branch. Absent/empty = the universe. */
+  allowedTypes?: readonly string[];
 }) {
   const [state, dispatch] = useReducer(uploadFlowReducer, initialUploadFlowState);
   const [preCheckMessage, setPreCheckMessage] = useState<string | null>(null);
@@ -211,7 +216,7 @@ export function UploadPanel({
     if (file === null) {
       return;
     }
-    const check = preCheckFile({ name: file.name, size: file.size });
+    const check = preCheckFile({ name: file.name, size: file.size }, undefined, allowedTypes);
     if (!check.ok) {
       runControllerRef.current?.abort();
       dispatch({ type: "reset" });
@@ -228,7 +233,7 @@ export function UploadPanel({
       fileSize: file.size,
       declaredType: check.declaredType,
     });
-  }, []);
+  }, [allowedTypes]);
 
   const onStartUpload = useCallback(() => {
     const file = fileRef.current;
@@ -304,7 +309,7 @@ export function UploadPanel({
           id="submission-file"
           className="input"
           type="file"
-          accept={FILE_PICKER_ACCEPT}
+          accept={acceptAttributeFor(allowedTypes)}
           value={inputValue}
           onChange={onFileChange}
           disabled={busy}
