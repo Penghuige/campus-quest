@@ -229,6 +229,24 @@ def _csv(
     return buffer.getvalue().encode("utf-8")
 
 
+def _xlsx(
+    *rows: tuple[str, str], header: tuple[str, str] = ("platform", "keyword")
+) -> bytes:
+    """A real single-sheet workbook (openpyxl-written) — the exact bytes
+    a teacher's Excel saves, against the real reader path."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(list(header))
+    for row in rows:
+        sheet.append(list(row))
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 async def _preview(
     service: AssignmentImportService,
     db: FakeSession,
@@ -420,6 +438,106 @@ async def test_unterminated_quote_is_file_level_malformed() -> None:
 
     assert _error_codes(preview) == [(None, ImportErrorCode.MALFORMED_CSV)]
     assert preview.preview_token is None
+
+
+# --- preview: XLSX reader (QA #19) --------------------------------------------------
+
+
+async def test_xlsx_valid_rows_share_the_csv_pipeline() -> None:
+    """A real workbook flows the SAME canonicalization/dedup/preview
+    path: the reader is a sibling in front of the shared classifier,
+    not a parallel implementation."""
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    preview = await _preview(
+        service,
+        db,
+        task,
+        _xlsx(
+            ("XiaoHongShu", "  考研 经验帖  "),
+            ("DOUYIN", "Python 入门"),
+        ),
+    )
+
+    assert preview.total_rows == 2
+    assert [(row.platform, row.keyword) for row in preview.valid] == [
+        ("xiaohongshu", "考研 经验帖"),
+        ("douyin", "Python 入门"),
+    ]
+    assert preview.errors == ()
+    assert preview.preview_token is not None
+
+
+async def test_xlsx_row_errors_carry_row_numbers() -> None:
+    """Row-level failures inside xlsx keep the stable codes and the
+    1-based data-row numbers a teacher sees in the spreadsheet."""
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    preview = await _preview(
+        service,
+        db,
+        task,
+        _xlsx(("zhihu", "  "), ("", "考研")),
+    )
+
+    assert _error_codes(preview) == [
+        (1, ImportErrorCode.EMPTY_KEYWORD),
+        (2, ImportErrorCode.EMPTY_PLATFORM),
+    ]
+
+
+async def test_xlsx_wrong_header_is_file_level_rejection() -> None:
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    preview = await _preview(
+        service, db, task, _xlsx(("zhihu", "考研"), header=("平台", "关键词"))
+    )
+
+    assert _error_codes(preview) == [(None, ImportErrorCode.MALFORMED_XLSX)]
+    assert preview.preview_token is None
+
+
+async def test_xlsx_not_a_workbook_is_file_level_rejection() -> None:
+    """ZIP-magic bytes that are not a workbook land as one
+    MALFORMED_XLSX outcome — openpyxl exceptions never escape."""
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    # A minimal valid zip that is not an xlsx (no [Content_Types].xml).
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("hello.txt", "not a workbook")
+    preview = await _preview(service, db, task, buffer.getvalue())
+
+    assert _error_codes(preview) == [(None, ImportErrorCode.MALFORMED_XLSX)]
+    assert preview.preview_token is None
+
+
+async def test_xlsx_duplicate_within_file_marks_later_row() -> None:
+    """The shared seen-set dedups across the xlsx stream exactly as it
+    does for csv (the classifier is one code path)."""
+    service, _ = _service()
+    task = _task()
+    db = FakeSession(tasks=[task])
+
+    preview = await _preview(
+        service,
+        db,
+        task,
+        _xlsx(("zhihu", "考研"), ("ZHIHU", "考研")),
+    )
+
+    assert [(row.platform, row.keyword) for row in preview.valid] == [("zhihu", "考研")]
+    assert _error_codes(preview) == [(2, ImportErrorCode.DUPLICATE_IN_FILE)]
 
 
 async def test_oversize_platform_value_truncated_in_error() -> None:
