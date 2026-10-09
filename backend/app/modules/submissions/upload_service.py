@@ -257,14 +257,21 @@ RETENTION_POLICY_DAYS: dict[str, int] = {
 
 # MIME pinned on every presigned URL per declared type (spec §10: the
 # provider rejects a PUT carrying a different Content-Type). Keys are the
-# FileType members; keys and values must stay aligned with the CSV/XLSX/
-# SQLITE universe the tasks module guards.
+# FileType members; keys and values must stay aligned with the upload
+# universe the tasks module guards (spec §10.1 added the document
+# family — the fourth §10.1 miss, found by the frontend's document
+# e2e: a DOCX intent died at a KeyError here because the map lagged
+# behind the enum).
 DECLARED_TYPE_CONTENT_TYPES: dict[FileType, str] = {
     FileType.CSV: "text/csv",
     FileType.XLSX: (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ),
     FileType.SQLITE: "application/vnd.sqlite3",
+    FileType.DOCX: (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    FileType.PDF: "application/pdf",
 }
 
 # Short-lived grants (spec §10: 短时 presigned URL). The URL expires
