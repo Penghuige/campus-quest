@@ -58,7 +58,7 @@ from app.modules.rankings.honor_service import (
     HonorService,
     HonorTrigger,
 )
-from app.modules.rankings.periods import business_month, month_bounds
+from app.modules.rankings.periods import business_day, business_month, month_bounds
 from app.modules.rankings.redis_projection import RankingRedisProjection
 from app.modules.rankings.repository import RankingRepository
 from app.modules.rankings.router import get_rankings_redis
@@ -77,9 +77,9 @@ from app.modules.tasks.models import Assignment, AssignmentClaim, Task
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _PASSWORD = "correct-horse-battery"
 
-# Anchored to the real now: access tokens must decode against wall-clock
-# time (the submissions-API precedent), while every BUSINESS period in
-# this file derives from the frozen clock for determinism.
+# Business time is frozen separately from access-token issuance, which must
+# decode against the real wall clock. Calendar regressions can select a
+# business day within the current month without forging expired/future JWTs.
 # Real-PostgreSQL module (db_session fixtures); the marker keeps CI's
 # `-m integration` selection from silently deselecting these tests (G18).
 pytestmark = pytest.mark.integration
@@ -122,8 +122,12 @@ async def api_redis() -> AsyncIterator[aioredis.Redis]:
 
 
 @pytest.fixture
-def api_clock() -> FrozenClock:
-    return FrozenClock(_T0)
+def api_clock(request: pytest.FixtureRequest) -> FrozenClock:
+    day = getattr(request, "param", None)
+    if day is None:
+        return FrozenClock(_T0)
+    tz = ZoneInfo(get_settings().business_timezone)
+    return FrozenClock(_T0.astimezone(tz).replace(day=day, hour=12))
 
 
 @pytest.fixture
@@ -168,7 +172,7 @@ def _user(username: str, role: Role = Role.STUDENT) -> User:
 
 async def _token(db: AsyncSession, clock: FrozenClock, user: User) -> dict[str, str]:
     sessions = SessionService(clock=clock, access_codec=get_access_token_codec())
-    _, tokens = await sessions.issue_session(db, user=user, now=clock.now())
+    _, tokens = await sessions.issue_session(db, user=user, now=datetime.now(UTC))
     return {"Authorization": f"Bearer {tokens.access_token}"}
 
 
@@ -310,6 +314,14 @@ async def growth_world(
     this_month = business_month(api_clock.now(), tz)
     month_start, _ = month_bounds(this_month, tz)
     in_month = month_start + timedelta(days=9, hours=10)  # safely inside
+    # The scenario requires current-month points but no points on TODAY's
+    # natural day. The old fixed 10th/12th fixtures contradicted that condition
+    # twice a month. Both alternate dates still fit even February.
+    if business_day(api_clock.now(), tz) in {
+        business_day(in_month, tz),
+        business_day(in_month + timedelta(days=2), tz),
+    }:
+        in_month += timedelta(days=4)
     previous_month = month_start - timedelta(days=10)
 
     teacher = _user("growth-teacher-0001", role=Role.TEACHER)
@@ -472,6 +484,7 @@ async def test_monthly_board_top_n_with_my_rank(
     assert body["entries"][1]["rank"] == 2
 
 
+@pytest.mark.parametrize("api_clock", [10, 12], indirect=True, ids=["day-10", "day-12"])
 async def test_all_time_board_and_daily_empty_shape(
     client: httpx.AsyncClient, growth_world: dict[str, Any]
 ) -> None:
