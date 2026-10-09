@@ -15,7 +15,7 @@
 | OP9 | 前端表单 | 校验/错误结果映射/旧会话读写响应丢弃；5xx要求读取确认并保留追踪号 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` | 已覆盖（6项单测） |
 | OP10 | 浏览器 | 保存刷新修改、手机键盘、跨页冲突和显式载入 | `tests/../../frontend/e2e/innovation-owner-profile.spec.ts` | 已覆盖（真实浏览器2项通过） |
 | OP11 | 账号切换 | 已显示的A四项资料在切换B后清除；与迟到响应丢弃分开验证 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` + 本机 `.local-dev/verify-owner-profile.cjs` | 已覆盖（迟到响应单测；A→B真实跨标签走查通过，非标准自动电池） |
-| OP12 | 稳定界面 | 固定字体Linux像素基线 | `tests/../../frontend/e2e/visual-regression.spec.ts` student-owner-profile-form；G-3 | 缺口 G-3 |
+| OP12 | 稳定界面 | 固定字体Linux像素基线 | `tests/../../frontend/e2e/visual-regression.spec.ts` student-owner-profile-form | 已覆盖（Linux生成、走查及重复比较通过） |
 | OP13 | 四字段编辑边界 | 编辑状态不继承版本或资格元数据；修改输入不改写已保存资料 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` editing an owner profile includes only self-reported fields, never qualification or version | 已覆盖（单测通过） |
 
 ## 2026-10-09 覆盖率补验预期
@@ -24,4 +24,4 @@
 
 ## 缺口明细
 
-- G-3：Windows截图不可替代Linux权威PNG；本机WSL当前仅装Docker，尚无Linux Node/Chromium运行时。合并前需要生成、走查新基线。
+- G-3 已闭合：Linux 初始 PNG 已生成、走查及重复比较通过；详见 `docs/quality/innovation-linux-visual-walkthrough.md`，不等同完整像素门禁通过。

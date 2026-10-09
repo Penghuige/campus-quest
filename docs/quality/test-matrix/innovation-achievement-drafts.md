@@ -14,11 +14,11 @@
 | AD8 | 数据库 | FK、正version、长度和唯一约束；测试世界只清理自己的成果；迁移down/up | `tests/integration/innovation/test_achievement_drafts.py::test_database_constraints` + `tests/integration/innovation/test_world_cleanup.py`; 独立迁移库0028→0027→0028成功 | 已覆盖 |
 | AD9 | 前端 | 输入校验、请求键稳定、会话迟到响应丢弃、冲突保留并显式载入 | `tests/../../frontend/src/__tests__/innovation-achievements.test.ts` + `tests/../../frontend/e2e/innovation-achievements.spec.ts` | 已覆盖 |
 | AD10 | 浏览器 | 通过本人项目进入，手机键盘保存/刷新/编辑/纯文本私有预览，多页冲突，丢失创建回包与换账号 | `tests/../../frontend/e2e/innovation-achievements.spec.ts` | 已覆盖（真实浏览器3项） |
-| AD11 | 稳定界面 | 固定字体Linux像素基线及选择器契约 | `tests/../../frontend/e2e/visual-regression.spec.ts` student-achievement-draft-form；选择器已登记 | 缺口 G-2 |
+| AD11 | 稳定界面 | 固定字体Linux像素基线及选择器契约 | `tests/../../frontend/e2e/visual-regression.spec.ts` student-achievement-draft-form；选择器已登记 | 已覆盖（Linux生成、走查及重复比较通过） |
 
 ## 缺口明细
 
-- G-2：合并前须补Linux权威像素PNG，不以Windows截图替代。
+- G-2 已闭合：Linux 初始 PNG 已生成、走查及重复比较通过；环境、范围及完整门禁剩余限制见 `docs/quality/innovation-linux-visual-walkthrough.md`。
 
 ## 2026-10-09 本地验证
 

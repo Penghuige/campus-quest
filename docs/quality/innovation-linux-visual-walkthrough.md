@@ -1,0 +1,28 @@
+# 双创准备区 Linux 像素走查
+
+2026-10-09：只新增四个已实现界面的初始基线；所有既有 PNG 保持不变。
+
+## 环境与范围
+
+- Ubuntu 24.04；Node 22.23.3；Playwright 1.63.0 / Chromium 153.0.8010.12（v1243）；1440×900。
+- `fonts-noto-cjk=1:20230817+repack1-3`；截图用例固定 Noto Sans CJK SC 与 Liberation Mono；原有比较阈值、mask 和断言未改。
+- 测试生产代码来自 Git `82aaeab` 归档。后续 `18650e3` 仅改测试和采集配置，双创生产界面与服务实现相同。
+- 为避免共享测试库污染，归档副本中 `playwright.config.ts` 和 `e2e/global-setup.ts` 仅将 DSN 改成新建空库 `campusquest_test_ie_visual_82aaeab`。仓库配置没有该临时修改；未清空开发库或共享测试库。
+- 使用真实登录、HTTP API、PostgreSQL 与测试世界；前端 HTTPS localhost:3000，后端 IPv4:8100。测试后恢复本机原 HTTP 前端，开发资料保留。
+
+## 新基线走查
+
+| 界面 | 人工检查结果 |
+|---|---|
+| admin-innovation-operations | 管理侧导航、账号选择与页码正常；界面明确授权学生运营权限，不展示无授权的资料或内部 UUID |
+| student-owner-profile-form | 四字段可访问名称与保存按钮完整；空表单明确私有、保存不授予资格；无身份附件入口 |
+| student-project-draft-form | 五字段、长度提示、保存按钮与返回列表完整；空白内容状态明确；全页截图保留低于首屏的字段 |
+| student-achievement-draft-form | 所属项目为固定示例名称；四字段与私有预览入口完整；明确未核实、未公开、此处不收证明材料 |
+
+第一次正确运行因四个基线不存在而失败并写出实际 PNG，逐张走查后保留。第二轮四个场景均通过：4 passed，47.4 秒，零跳过、零重试。仅将这四张新 PNG 加入版本控制。
+
+## 既有场景限制
+
+同一环境的既有11个场景中10个通过，包括管理导航受影响的 admin-users。student-tasks 失败，15,142 像素不同（约2%）：旧基线显示4个任务，实际干净世界显示5个；当前世界包含 task_a/b/c/d 和用于教师审核的 task_r。另一个已提交的 chromium-linux 命名副本也显示4个任务。差异含任务数量和可领取数量，不能归类为字体漂移；没有重拍旧基线或放宽阈值。
+
+这份证据只关闭四个新页面的 Linux 初始基线缺口。完整像素门禁仍未通过；既有任务列表内容差、完整发布电池与最终 HEAD 的 CI 仍需处理。
