@@ -25,3 +25,5 @@
 先前 `innovation-linux-visual-walkthrough.md` 所述任务图缺口是历史状态，由本次明确断言与基线同步关闭；不把这次像素结果扩大为 GitHub CI 或学校统一认证完成。
 
 最终测试准备修复后再次比较：`review-existing-visual-post-preparation.log` 为16通过、1.3分钟；新spec在另一个world独立比较，`review-new-visual-post-preparation.log` 为1通过、37.1秒、三页axe零违规。两轮均没有更新开关，19张PNG未再修改。首页准备等待真实内容与有限入场动画完成；没有修改颜色、axe豁免或像素容差。
+
+2026-10-10独立评审的重要修复及资格会话准备提交后，再次新鲜比较：`review-existing-visual-recovery.log` 16通过、1.3分钟；`review-new-visual-recovery.log` 1通过、35.1秒，三页axe零违规。仍然分开创建world，无更新开关，19张PNG未变；完整功能电池另为105通过、8.5分钟、28明文豁免，no-skip自证出口0。此记录不表示远端冷启动CI或合并批准。

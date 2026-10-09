@@ -1,6 +1,6 @@
 # 华师令双创开发：新对话续接摘要
 
-整理日期：2026-10-09。此文件是续接索引与当时状态，不能覆盖人类当前指令、需求真源或新鲜仓库检查。新对话先核对 git status/log；不要把历史测试数字当成之后改动的验证。
+整理日期：2026-10-10。此文件是续接索引与当时状态，不能覆盖人类当前指令、需求真源或新鲜仓库检查。新对话先核对 git status/log；不要把历史测试数字当成之后改动的验证。
 
 ## 当前任务和人类确认
 
@@ -13,7 +13,7 @@
 ## 工作区、Git 和预览
 
 - 工作区：`C:/Users/111/Desktop/华师令`；仓库：该目录下的 `campus-quest`。新对话继续同一项目的本地 checkout。
-- 分支 `codex/innovation-platform`；成果源码与浏览器准备检查点 `f19d8f8b79443b80d2737d16deb93cd4488a5cb3`。前后端成果链路已实现，最终浏览器电池及独立评审正在收尾；此摘要还会有文档提交，以实时 Git 为准。
+- 分支 `codex/innovation-platform`；成果重要修复检查点 `a4ce7305994384264625ea2b4d00649c79544b96`，资格真实会话准备 `d0749fb`，排行榜日期夹具修复 `144a229`。前后端成果链路已实现，一次整分支独立评审已完成，三项Important修复已有失败回归及47项针对性通过；修复后完整双树门禁与42项后台端到端（139.76秒）全部通过。收尾文档是这些源码提交的后继，以实时Git为准。
 - `origin` 为 Penghuige/campus-quest；已授权推送的是 `fork`（tzshsta/campus-quest）。既有 Draft PR：<https://github.com/Penghuige/campus-quest/pull/43>。提交署名已在本项目配置，无需再次询问。保持 Draft，不合并 main；不自行给学姐或其他人发送消息。
 - 最后已确认本地 API `http://127.0.0.1:8000`、Web `http://127.0.0.1:3000`。负责人页 `/profile/owner-profile`，项目草稿页 `/profile/project-drafts`；资格管理页 `/admin/owner-qualifications`。
 - 启动脚本在工作区 `.local-dev/Start-Dev.ps1`，`-Component All`；运行前核对已有监听进程归属。成果材料需要本地 ClamAV；Linux 测试运行时使用独占数据库和 HTTPS MinIO，借用本会话拥有的 Web 3000 后恢复开发预览。续接仍须验证进程归属及服务状态。
@@ -22,9 +22,9 @@
 
 本人四项资料、私有项目草稿、每项目多份私有成果草稿，均有真实持久化、版本冲突处理与账号隔离。ADMIN 可授予/撤回双创运营身份；运营仍是 STUDENT，不获得 Task 发布或积分调整权限。
 
-负责人资格的未申请→等待开通→已开通已实现。提交四项快照；待开通可用新保存资料显式更新申请，旧管理员页 409。申请队列无四项 PII，ADMIN 显式查看后才读取快照并先提交访问审计。保留 ADMIN/TOTP/管理网络策略、锁后重验身份、真实 PG 并发及事务审计；保存资料不自动授权，开通不表示成果核实。迁移至 0029，开发数据保留。
+负责人资格的未申请→等待开通→已开通已实现。提交四项快照；待开通可用新保存资料显式更新申请，旧管理员页 409。申请队列无四项 PII，ADMIN 显式查看后才读取快照并先提交访问审计。保留 ADMIN/TOTP/管理网络策略、锁后重验身份、真实 PG 并发及事务审计；保存资料不自动授权，开通不表示成果核实。开发库已迁移至 0032，开发数据保留。
 
-提交节点：`1e440fa` 资格源码/测试；`3936d3c` 资格 Linux PNG；`7e1b44b` 成果核实设计；`6ff1511` 有界扫描器；`8c141d3` 写一次证明与私密代理；`0e49439` 不可变提交及显式更新；`491eaa0` 运营领取、审计、核实决定、通知与公开白名单；`2a0116c` 成果前端闭环；`95f1f85` 独立视觉基线；`f19d8f8` 真实扫描CI与浏览器准备。后端任务已提交并推送；后续提交待最终验证与评审后推送。实施计划见 `docs/superpowers/plans/2026-10-09-innovation-achievement-review.md`；执行中的 ledger 在 `.superpowers/sdd/2026-10-09-innovation-achievement-review/progress.md`，结束后以提交的验证记录为准。
+提交节点：`1e440fa` 资格源码/测试；`3936d3c` 资格 Linux PNG；`7e1b44b` 成果核实设计；`6ff1511` 有界扫描器；`8c141d3` 写一次证明与私密代理；`0e49439` 不可变提交及显式更新；`491eaa0` 运营领取、审计、核实决定、通知与公开白名单；`2a0116c` 成果前端闭环；`95f1f85` 独立视觉基线；`f19d8f8` 真实扫描CI与浏览器准备。本轮源码、测试和验证记录均保存到此功能分支并更新既有fork/Draft PR；不合并main。实施计划见 `docs/superpowers/plans/2026-10-09-innovation-achievement-review.md`；本计划执行ledger在收尾后按技能清理；完整裁决、修复与门禁保留在提交的验证记录中，续接无需重新执行已完成任务。
 
 ## 当前实施设计
 
@@ -38,17 +38,19 @@
 
 ## 验证来源与未关闭事项
 
-- 资格检查点的 Linux 后端全量为 1266 单元/worker + 1134 集成通过，两个 pytest 出口 0；之后另跑 10 项真实 Actor 权限变化/锁等待补验，9.57 秒通过。分开报告，不能伪称一次全量 2410 批次。
-- 正确 greenlet/thread collector 追加后 innovation 98.1 高于原地板 97.8，18 模块原地板不变、ratchet 0；第一次 96.9 棘轮失败的日志保留。Ruff 格式/检查、mypy 177 源文件、12 矩阵通过。
-- 前端 624 项纯测及 type/lint/CSS/build/覆盖率通过；双创功能浏览器 13 项通过，axe 16 页通过；相关四页 Linux 视觉通过，全 16 页 15 通过/1 既有任务列表失败（15142 像素），未重拍旧任务 PNG 或放宽阈值。
-- 独立静态复核覆盖资格提交 3936d3c，未发现阻断问题；不代表整个 PR 的 merge APPROVE。7e1b44b 的最新远端状态仅 GitGuardian SUCCESS，不能宣称完整 GitHub CI 已通过。
-- 上述数字属于资格检查点的历史证据。本轮成果门禁必须单列，不用旧日志补数。任务列表 PNG 差已追溯为上游3a51680新增第五张测试任务而漏更新旧图，新增任务卡数5及页脚5/5强断言后仅同步该图；成果草稿图仅更新本计划改变的公开说明。既有16场景比较通过，新的3张基线也比较通过；没有增加遮罩或放宽阈值。
-- 本轮后端新鲜全量1307单元/worker、1218真实集成（7非integration未选择）通过；greenlet/thread新采集双创98.6高于原97.8地板、全部18模块棘轮通过。后端e2e42通过、147.86秒；Ruff411、mypy192、13矩阵、依赖审计通过。29条集成警告保留，不声称零警告。425后端文件与测试archive一致。
-- 测试准备修改后前端633纯测、type/lint/CSS/覆盖/审计/构建均重新通过；95.44/91.61/90.51，地板95.21/91.22/90.19不变。289前端源文件与Linux验证树一致。三账号闭环覆盖真实响应丢失重放、账号隔离和上传失败恢复。
-- 两次完整浏览器失败的原始记录保留。首轮固定标签harness错误、第二轮首页动画采样与管理员重复登录限流均已按真因修复；限流与axe基线不变。第三轮完整电池105通过、零失败、28明文豁免，8.6分钟；99项Chromium与6项Firefox/WebKit基础烟测。全部spec的no-skip自证出口0，独立视觉另跑。资格/授权管理UI由独立spec覆盖，成果spec通过真实管理API准备状态。
-- CI及release显式启用真实ClamAV组合，现有与新的视觉spec分别创建world；本地同compose命令健康成功、6项真实组合烟测通过。冷启动取得官方病毒库的360秒预算仍须远端CI验证。
-- 视觉复验和独立评审仍须以新鲜日志关闭；最终HEAD GitHub CI及PR合并批准也待核验。不能宣称可合并、正式上线或完成三库demo。下一业务切片是独立免审招募与授权联系方式，然后人才库和导师库；统一认证、成员关系与运营治理按明确依赖推进。
-- 精确证据与日志索引：`docs/quality/test-matrix/innovation-owner-qualification.md`、`docs/quality/innovation-owner-qualification-visual-walkthrough.md`、`docs/quality/innovation-checkpoint-verification.md`。完整日志与 coverage 在工作区 `.local-dev/logs`，不在 Git；已完成结果不需机械重复，代码变化后按影响范围新鲜验证。
+- 一次最终独立评审：Astra High只读整个`b428d70..e4239b3`（21提交），With fixes；无Critical，3 Important，1 Minor。重要项均接受并用失败回归修复，不再做第二次评审，也没有修复后HEAD的新APPROVE。
+- 三项重要修复：无效运营分配可安全接手，等原运营锁后重新授权则拒绝抢占；项目回避释放本人该项目全部待审领取，保留其他项目及已完成历史，审计失败全部回滚；world清理先拒绝范围外授权，不能按changed_by删除其他world的授权。实际RED5失败/3通过，初步GREEN8通过，扩大真实PG锁等待/审计/历史回归47通过。
+- 修复后Linux后端最终完整验证：1307单元/worker（280.39秒）+1227真实集成（821.62秒）通过，两pytest及最终门禁出口0，7项非integration取消选择，29集成警告保留。新空覆盖文件、同一greenlet/thread collector双创98.6高于原97.8，18模块原地板全通过。412文件格式、Ruff、mypy192源文件、13矩阵、后端依赖审计通过。最终日志review-linux-backend-recovery-final.log与review-linux-recovery-final-coverage.json。
+- 修复后前端633纯测零失败/跳过，完整type/lint/CSS/覆盖/审计/构建出口0；95.45/91.61/90.51，原地板95.21/91.22/90.19不变。5项既有开发工具链依赖审计豁免仍遵守原合同。
+- 修复后完整浏览器电池105通过、零失败、28明文豁免，8.5分钟；99项Chromium、6项Firefox/WebKit基础烟测，全部spec的no-skip自证出口0。三账号成果闭环含真实上传、撤回、退回重交、批准、明确免复审更新、真实提交后503/网络ACK丢失重放、上传403恢复与跨标签账号隔离。
+- 最后一轮完整电池原103通过/2失败的日志和JSON保留。管理员重复登录触发真实10/300s限制，连带留下待开通申请；资格spec在单worker内复用真实最新cookie，每个context恢复后断言真实账号及ADMIN，首项仍用TOTP表单。针对性4项1.6分钟通过后重新跑完整电池，生产限流未变。
+- 修复后固定字体Linux视觉：既有16场景通过、1.3分钟；另一个world中新3张PNG/axe1测试通过、35.1秒。无更新开关、原19张PNG未变。此前两张有意更新均有走查：成果公开说明变动、上游3a51680第五任务漏同步；任务5卡/5总数强断言已补，未放宽像素或axe门槛。
+- 修复后验证树校对：426个后端文件与Git144a229测试archive SHA-256一致（Python源文件统一LF，其余原始字节，无内容差异）；289个前端文件与Linux验证树一致，仅排除独占测试库global-setup/config的两处本地harness适配。
+- CI/release已显式启用真实ClamAV组合并分开运行新旧视觉world；相同compose暖服务健康与6项真实Clamd/PG/MinIO/生产provider已通过。远端冷启动360秒病毒库取得预算仍须GitHub CI验证，不能把本地结果叫作最终HEAD远端CI通过。
+- Minor延期：异步确认成功移除/禁用原按钮时没有稳定焦点回退；取消/Escape恢复已通过，动作仍可键盘到达，但位置恢复不佳。下一轮UI改善时加稳定结果/重试/队列焦点回归；本次不加第二修复/评审批次。
+- 仍保持Draft；最终HEAD的GitHub CI、maintainer合并批准、SSO、完整成员自动回避、保留/配额政策未完成。当前不是完整三库或上线交付。下一业务切片为独立免审招募及授权联系方式，然后人才库、导师库；不得套用Task的随机Assignment、数据提交或积分规则。
+- 排行榜日历夹具另有确定回归：完整后端曾1225通过/1失败，固定月内10/12日奖励与“今天无奖励”冲突。两日期HTTP先RED，修正月内奖励避开当日后整个growth API8通过、10.54秒；真实JWT签发与冻结业务时间分开。排行榜应用代码未改，失败完整输出保留，随后从空覆盖文件重新跑以上全量。
+- 本轮验收：`docs/demo/innovation-achievement-review.md`。完整当前证据与23项实施裁决/代价：`docs/quality/innovation-achievement-review-verification.md`；规约映射：`docs/quality/test-matrix/innovation-achievement-review.md`；视觉走查：`docs/quality/innovation-achievement-review-visual-walkthrough.md`。历史资格证据在`innovation-checkpoint-verification.md`，原始日志与coverage留在工作区`.local-dev/logs`，不提交私密字节或运行日志。
 
 ## 新对话阅读与协作约定
 

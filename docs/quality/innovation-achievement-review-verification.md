@@ -1,6 +1,6 @@
 # 成果核实检查点：验证与决策记录
 
-日期：2026-10-09。对应 `2026-10-09-innovation-achievement-review.md` 计划，分支 `codex/innovation-platform`，Draft PR #43。此记录在最终门禁执行中维护；未完成项明确标出，不能将已有子集结果当作完整完成证据。
+实施始于2026-10-09，独立评审及修复延续至2026-10-10。对应 `2026-10-09-innovation-achievement-review.md` 计划，分支 `codex/innovation-platform`，Draft PR #43。本轮本地完整门禁已关闭；历史失败和诊断子集分开保留，远端CI、合并批准及其他业务范围单独标出。
 
 ## 业务范围与验收
 
@@ -18,26 +18,30 @@
 
 | 门禁 | 日志 | 本轮状态 |
 | --- | --- | --- |
-| 后端格式、Ruff、mypy、矩阵、单元/worker、真实集成、覆盖棘轮 | `review-linux-backend-final.log` / `review-linux-final-coverage.json` | 411文件格式、Ruff、mypy192、13矩阵通过；1307单元/worker及1218集成通过（7项非integration取消选择）；全部出口0，双创98.6高于原97.8地板，其余地板不变 |
-| 前端类型、lint、CSS、覆盖棘轮、依赖审计、生产构建 | `review-frontend-post-preparation.log` | 测试准备修复后重新执行出口0；95.44/91.61/90.51，原地板95.21/91.22/90.19不变 |
-| 前端纯测 | `review-frontend-unit-post-preparation.log` | 633通过、零失败/跳过，出口0 |
-| 完整浏览器及跨引擎烟测 | `review-browser-battery-final.log` / `review-browser-battery-final-report.json` | 105通过、零失败、28明文豁免，8.6分钟，出口0；99项Chromium与6项Firefox/WebKit基础烟测，不声称双引擎全部成果功能覆盖 |
+| 评审前完整后端验证 | `review-linux-backend-final.log` / `review-linux-final-coverage.json` | 411文件格式、Ruff、mypy192、13矩阵通过；1307单元/worker及1218集成通过（7项非integration取消选择）；出口0，双创98.6高于原97.8地板；属于评审前源码，不替代修复后的验证 |
+| 修复后完整后端的日历失败 | `review-linux-backend-recovery.log` | 1307单元/worker通过、279.12秒；集成1225通过/1失败、815.17秒（7项非integration取消选择、29警告），出口1。98.6及18模块棘轮虽通过，不把此批次称为完整门禁通过；失败为既有排行榜日期夹具 |
+| 日历夹具回归 | `review-ranking-calendar-red.log` / `review-ranking-calendar-green.log` | 10日、12日两项HTTP回归均RED；修正后整个growth API模块8通过、10.54秒；随后全后端从新的空覆盖文件重跑 |
+| 修复及日历回归后的最终完整后端验证 | `review-linux-backend-recovery-final.log` / `review-linux-recovery-final-coverage.json` | 412文件格式、Ruff、mypy192源文件、13矩阵通过；1307单元/worker（280.39秒）、1227真实集成（821.62秒）通过，两pytest出口0；7项非integration取消选择、29集成警告保留。全新greenlet/thread采集，双创98.6高于原97.8，18模块原地板均通过，最终出口0 |
+| 修复后前端类型、lint、CSS、覆盖棘轮、依赖审计、生产构建 | `review-frontend-recovery-final.log` | 修复后重新执行出口0；95.45/91.61/90.51，原地板95.21/91.22/90.19不变；5项既有开发工具依赖豁免仍在原审计合同内 |
+| 修复后前端纯测 | `review-frontend-unit-recovery.log` | 633通过、零失败/跳过，出口0；之后仅资格e2e准备改变，完整前端静态及覆盖重新通过 |
+| 修复后完整浏览器及跨引擎烟测 | `review-browser-battery-recovery-final.log` / `review-browser-battery-recovery-final-report.json` | 105通过、零失败、28明文豁免，8.5分钟，出口0；99项Chromium与6项Firefox/WebKit基础烟测，不声称双引擎全部成果功能覆盖 |
 | 浏览器准备回归 | `review-battery-preparation-green.log` | 2通过、1.0分钟；等待首页有限动画结束，并以真实管理员API准备成果测试状态，不改变登录限流 |
-| 不意外跳过自证 | `review-browser-noskip-final.log` | 出口0，遍历全部spec，仅28项明文豁免；独立视觉测试另跑 |
-| 新页面3张PNG及axe | `review-new-visual-post-preparation.log` | 最终测试准备修改后新鲜比较1通过、37.1秒；三页axe无违规，无更新开关 |
-| 既有16视觉场景 | `review-existing-visual-post-preparation.log` | 最终测试准备修改后新鲜比较16通过、1.3分钟，无更新开关 |
+| 修复后浏览器准备回归 | `review-browser-session-reuse-green.log` | 4通过、1.6分钟；资格spec复用真实管理员最新cookie，校验真实账号/角色；完整成果闭环通过，随后完整电池重新运行 |
+| 修复后不意外跳过自证 | `review-browser-noskip-recovery-final.log` | 出口0，遍历全部spec，仅28项明文豁免；独立视觉测试另跑 |
+| 修复后新页面3张PNG及axe | `review-new-visual-recovery.log` | 修复后新鲜比较1通过、35.1秒；三页axe无违规，无更新开关 |
+| 修复后既有16视觉场景 | `review-existing-visual-recovery.log` | 修复后新鲜比较16通过、1.3分钟，无更新开关 |
 | 真实三账号成果闭环 | `review-browser-503-green.log` | 1通过，含提交真实提交后503、决定真实提交后网络ACK丢失及同浏览器跨标签账号隔离 |
 | 上传恢复回归及成果闭环 | `review-upload-reset-red.log` / `review-upload-reset-green.log` | 真实PUT403→移除意向后RED缺少放弃入口；修复后1通过59.4秒，重新选择、再次上传及整条核实流程通过 |
-| 后端依赖审计 | `review-backend-audit.log` | 出口0，No known vulnerabilities found |
-| 后端e2e | `review-backend-e2e.log` | CQ_E2E=1，42通过、147.86秒，出口0；含完整期限、并发、隐私、排行恢复与worker重试 |
+| 修复后后端依赖审计 | `review-backend-audit-recovery.log` | 出口0，No known vulnerabilities found |
+| 修复后后端e2e | `review-backend-e2e-recovery.log` | CQ_E2E=1，42通过、139.76秒，出口0；含完整期限、并发、隐私、排行恢复与worker重试 |
 | CI真实扫描组合准备 | `review-ci-scanner-ready.log` / `review-ci-evidence-smoke.log` | 相同compose命令等待健康成功；6项真实Clamd/PG/MinIO/生产provider通过、5.65秒，出口0；仅本地暖服务，不声称远端冷启动已通过 |
-| 最终独立评审 | 完成后记录具体提交范围及结论 | 待结果 |
+| 最终独立评审 | `b428d70f75909d1748c5b05930dcad4b226758a4..e4239b3088de8be129ff069af0f3e32adc477446` | Astra High只读、整个21提交；With fixes，3 Important/1 Minor，无Critical。修复重要项后以新测试验证，不派生第二次评审；修复后HEAD没有新APPROVE，保留Draft |
 
 新增 OpenAPI 快照、生成类型、规约矩阵、选择器契约、no-skip 豁免和PNG随本PR提交。前后端均不降低覆盖地板或放宽视觉阈值。
 
-验证树与提交树校对：425个后端文件与最终后端测试archive的SHA-256一致；289个前端源文件、测试、PNG及生成契约与实际Linux验证树一致。仅排除明确改成独占库的Linux全局setup/config这两处本地harness适配。最终矩阵的新行按已有`tests/../../frontend`引用协议校正，checker未改变，13矩阵重新通过。
+修复后验证树与提交树校对：最终后端archive来自`144a229`的Git树，426个后端文件SHA-256一致（Python源文件统一LF后比较；54个Windows文件仅CRLF/LF不同，其他文件按原始字节比较，无内容差异）；289个前端源文件、测试、PNG及生成契约与实际Linux验证树一致（含`d0749fb`资格会话准备）。仅排除明确改成独占库的Linux全局setup/config这两处本地harness适配。最终矩阵的新行按已有`tests/../../frontend`引用协议校正，checker未改变，13矩阵重新通过。
 
-首次全量后端1307单元/worker+1185集成虽通过，双创覆盖95.1低于97.8，原始失败保留在 `review-linux-backend-full.log`。新增真实PG/HTTP拒绝与重放边界后，双创诊断子集188通过、98.6，仅用于定位。随后全量重新采集1307+1218，最终双创98.6且18个模块原地板均通过；不拼接不同collector配置或借旧数冒充最终结果。集成输出保留29条警告，主要为既有任务validation-worker测试的连接回收及上游弃用警告，不声称警告为零。
+评审前首次全量后端1307单元/worker+1185集成虽通过，双创覆盖95.1低于97.8，原始失败保留在 `review-linux-backend-full.log`。新增真实PG/HTTP拒绝与重放边界后，双创诊断子集188通过、98.6，仅用于定位。随后评审前全量重新采集1307+1218，双创98.6且18个模块原地板均通过；此批次不替代修复后最终1307+1227。不拼接不同collector配置或借旧数冒充最终结果。最终集成输出保留29条警告，主要为既有任务validation-worker测试的连接回收及上游弃用警告，不声称警告为零。
 
 ## 实施决策与代价
 
@@ -53,4 +57,31 @@
 10. 成果测试通过已确认管理员的真实API准备资格和运营授权，管理界面由既有专门spec覆盖；负责人、运营、浏览者仍走真实页面。代价是单个成果spec不再单独证明管理UI，须完整电池包含那两组spec；未绕过或放宽生产登录限流。
 11. CI与release命令显式启用真实扫描组合；新视觉spec在独立world执行，避免授权状态改变旧负责人截图。代价是冷启动需在360秒内取得官方病毒库，另一次视觉启动增加耗时；本地健康与真实组合已通过，远端CI结果另行核验。
 
-视觉细节、来源提交与基线分类见 `innovation-achievement-review-visual-walkthrough.md`。最后的代码评审发现、修复及延期项在完成后追加；当前未声称GitHub CI或合并批准。
+12. 失效分配通过既有领取动作安全接手，不新增管理员转交API。队列与领取共享当前资格谓词，按顺序锁原领取人、本人及负责人，锁后重验，递增版本并记录恢复审计。代价是错误谓词可能抢占有效领取，真实PG等锁后重新授权测试、有效领取拒绝及重放版本测试约束此风险。
+13. 学校SSO仍待接。合理用户得到明确标注的本地账号演示；代价是不能把该演示身份当作正式校内身份，开放真实人群前需验证学校认证。
+14. 招募、人才、导师、完整成员与Task奖励不属于此成果切片。合理用户得到明确范围的成果检查点；代价是它还不能满足完整三库demo，后续切片按交接继续。
+15. 完整成员自动回避及内容治理入口后续实施。本人/主动声明冲突及下架不可自动恢复的限制已执行，当前卡单属于bug而已修复；代价是成员关系建立前，系统不能自动识别所有实际参与人。
+16. 不声称完整格式解码或绝对无害。用户得到实际病毒检查与类型/结构边界，ZIP仅作限额烟测而不可上传；代价是扫描无威胁的损坏文件仍可能无法阅读。
+17. 不代替运营制定历史保留/配额/孤儿回收政策。保留核实历史而不擅自删除；代价是历史存储和敏感资料随版本增长，真实材料上线前需确定政策。
+18. 扫描保证限于固定镜像及本仓配置。外部更改配置的部署需要重新验证；代价是更弱限额可能跳过内容，部署应使用提供的隔离配置与真实组合门禁。
+19. 应用不承诺抵御数据库管理员直接破坏历史。应用权限与并发不变量有验证；代价是特权库操作仍需独立运维控制。
+20. Firefox/WebKit仅基础烟测，GitHub冷启动CI尚无本轮通过证据。代价是其他跨引擎交互或官方病毒库冷启动仍可能出现问题，不能扩大本地通过结论。
+21. 独立评审检查代码、裁决与日志，没有重演每次历史端口/数据库操作。作者另核对当前进程归属、完整出口及开发入口；代价是这些记录不等于第三方逐次环境取证。
+22. 资格浏览器spec在单worker内复用真实管理员最新会话cookie，每次仍创建新context，恢复后用真实`/me`核对账号及ADMIN角色；首次仍走TOTP表单，退出context前保存轮换后的cookie。代价是会话复用若跨账号或保存过早会污染测试，账号/角色断言及完整电池验证约束此风险；不改变生产登录限流，也不注入浏览器内存token。
+23. 既有growth API测试的“日榜为空”场景必须把月内奖励安排到所选自然日之外；在10日/12日撞上既有奖励时改用14日/16日，仍保留月榜分数和所有原断言。业务时间沿用注入FrozenClock，JWT用真实签发时刻，补两天真实HTTP回归。代价是夹具可能削弱时间语义，真实日榜空响应、月榜/总榜分数及整模块回归共同约束；不改变排行榜应用代码、不改系统时间。
+
+## 独立评审与一次修复
+
+接受三项Important：运营撤权/停用后分配无法接手；项目冲突只释放一个申请；清理函数按changed_by删除范围外授权。`review-recovery-red.log`实际5失败、3通过（3种失效、批量回避、跨world授权）；初步修复`review-recovery-green.log`8通过，9.55秒。补充恢复授权不可抢占、真实PG锁等待、其他项目及已完成历史保留、接手审计、批量审计中途失败全回滚后，`review-recovery-expanded.log`47通过、29.94秒。
+
+业务修复提交`a4ce7305994384264625ea2b4d00649c79544b96`；资格会话准备`d0749fb`、日期夹具`144a229`。修复后完整双树门禁已通过：最终后端1307+1227、前端633与完整静态/构建/覆盖、浏览器105及新旧视觉均通过。不把定向47项当作完整后端或新merge批准；唯一独立评审仍为原21提交范围，无修复后HEAD的新APPROVE。原审批历史和不可变版本未改，API响应形状未变，无新角色或转交特权。
+
+完整集成退出后，后台端到端42项新鲜通过、139.76秒。三项Important均已用RED→GREEN及完整回归关闭；源码、工件和裁决随功能分支保存并更新既有Draft PR，保持未合并状态。远端最终HEAD CI结果须另核验，不用此前远端提交的GitGuardian结果冒充本次通过。
+
+延期Minor：确认成功移除原按钮、或未知结果禁用原按钮时，`ReviewConfirm.tsx`没有稳定焦点回退目标；取消/Escape恢复已有验证，异步结果后键盘位置恢复需在下一轮改善并加回归。此项影响定位便利性，动作仍可键盘到达，保留Minor，不放进重要修复批次。
+
+开发预览准备：开发库已0032，upgrade为空操作；核对拥有的API进程后重启，OpenAPI新核实路径由0变11。修复后再次刷新本会话拥有的API；`review-demo-read-check-recovery.log`验证Windows真实扫描器与示例PDF、三个实际API入口、HTTP上传CORS，并保留演示成果DRAFT。初始helper路径/import和误要求preflight200的问题保留为harness失败，实际MinIO正确返回204。
+
+修复后第一次完整浏览器电池为103通过、2失败、28豁免；完整输出及JSON保留在`review-browser-recovery-preparation-red.log`/`review-browser-recovery-preparation-red-report.json`。资格spec反复登录触发管理员10次/300秒限流，未完成的待开通申请继而使成果准备失败；按裁决22复用同账号真实会话，针对性资格3项及成果闭环1项全通过，随后新鲜完整电池105通过、8.5分钟，全部spec的no-skip自证出口0。不提高限流、不禁用axe、不用单独重试绿结果冒充完整电池通过。
+
+视觉细节、来源提交与基线分类见 `innovation-achievement-review-visual-walkthrough.md`。当前未声称GitHub CI或合并批准。
