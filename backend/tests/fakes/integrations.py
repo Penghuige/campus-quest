@@ -22,6 +22,7 @@ from app.integrations.object_storage import (
     DownloadUrl,
     ObjectHead,
     StoredObject,
+    StoredObjectTooLargeError,
     UploadUrl,
 )
 from app.integrations.rate_limit import RateLimitExceededError
@@ -199,6 +200,33 @@ class FakeObjectStorage(_FailureProgrammable):
     ) -> UploadUrl:
         self._raise_if_programmed()
         object_key = f"submissions/{claim_id}/{uuid4()}"
+        return self._presign_upload(
+            object_key, content_type, expires_in, content_length
+        )
+
+    def create_evidence_upload_url(
+        self,
+        *,
+        achievement_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        self._raise_if_programmed()
+        return self._presign_upload(
+            f"innovation/evidence/{achievement_id}/{uuid4()}",
+            content_type,
+            expires_in,
+            content_length,
+        )
+
+    def _presign_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None,
+    ) -> UploadUrl:
         url = UploadUrl(
             object_key=object_key,
             url=f"{_FAKE_HOST}/upload/{object_key}",
@@ -296,6 +324,12 @@ class FakeObjectStorage(_FailureProgrammable):
             content=self._contents[object_key],
             content_type=self.objects[object_key].content_type,
         )
+
+    def read_bounded_object(self, *, object_key: str, max_bytes: int) -> StoredObject:
+        result = self.read_object(object_key=object_key)
+        if len(result.content) > max_bytes:
+            raise StoredObjectTooLargeError("stored object exceeds size limit")
+        return result
 
     def download_to_file(self, *, object_key: str, destination: Path) -> None:
         # Worker-side read path: replay the PUT content byte-identically.

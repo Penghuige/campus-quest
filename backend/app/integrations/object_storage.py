@@ -83,6 +83,10 @@ class StoredObject:
     content_type: str
 
 
+class StoredObjectTooLargeError(ValueError):
+    """A bounded read found bytes beyond the caller's limit."""
+
+
 #: The avatar format whitelist, ONE authority for every layer (spec
 #: amendment D2; review finding: the map must not live per-adapter).
 #: detected magic type -> the canonical content type the service pins.
@@ -103,6 +107,21 @@ AVATAR_EXTENSIONS: dict[str, str] = {
 class ObjectStorage(Protocol):
     """Port for presigned uploads, metadata checks, signed downloads,
     worker-side object reads, and retention deletes."""
+
+    def create_evidence_upload_url(
+        self,
+        *,
+        achievement_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        """Write-once size/type pinned PUT at an adapter-generated evidence key."""
+        ...
+
+    def read_bounded_object(self, *, object_key: str, max_bytes: int) -> StoredObject:
+        """Read at most max_bytes+1, close the stream and reject excess bytes."""
+        ...
 
     def create_upload_url(
         self,

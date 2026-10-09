@@ -49,6 +49,9 @@ class AppMetadata(Base):
 from app.modules.audit import models as audit_models  # noqa: E402, F401
 from app.modules.community import models as community_models  # noqa: E402, F401
 from app.modules.identity import models as identity_models  # noqa: E402, F401
+from app.modules.innovation import (  # noqa: E402, F401
+    evidence_models as innovation_evidence_models,
+)
 from app.modules.innovation import models as innovation_models  # noqa: E402, F401
 from app.modules.notifications import models as notification_models  # noqa: E402, F401
 from app.modules.points import models as point_models  # noqa: E402, F401

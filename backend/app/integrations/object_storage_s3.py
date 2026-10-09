@@ -108,6 +108,7 @@ from app.integrations.object_storage import (
     DownloadUrl,
     ObjectHead,
     StoredObject,
+    StoredObjectTooLargeError,
     UploadUrl,
 )
 
@@ -266,6 +267,32 @@ class S3ObjectStorage:
         client untouched; it never rebuilds them.
         """
         object_key = f"submissions/{claim_id}/{uuid4()}"
+        return self._presign_upload(
+            object_key, content_type, expires_in, content_length
+        )
+
+    def create_evidence_upload_url(
+        self,
+        *,
+        achievement_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        return self._presign_upload(
+            f"innovation/evidence/{achievement_id}/{uuid4()}",
+            content_type,
+            expires_in,
+            content_length,
+        )
+
+    def _presign_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        expires_in: timedelta,
+        content_length: int | None,
+    ) -> UploadUrl:
         params: dict[str, Any] = {
             "Bucket": self._bucket,
             "Key": object_key,
@@ -356,6 +383,30 @@ class S3ObjectStorage:
         except (ClientError, BotoCoreError) as exc:
             if isinstance(exc, ClientError) and _is_missing_object(exc):
                 raise FileNotFoundError(f"no object under key {object_key!r}") from exc
+            raise _translate(exc) from exc
+        return StoredObject(
+            object_key=object_key,
+            content=body,
+            content_type=str(response.get("ContentType", "application/octet-stream")),
+        )
+
+    def read_bounded_object(self, *, object_key: str, max_bytes: int) -> StoredObject:
+        if max_bytes < 1:
+            raise ValueError("max_bytes must be positive")
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+            stream = response["Body"]
+            try:
+                if int(response["ContentLength"]) > max_bytes:
+                    raise StoredObjectTooLargeError("stored object exceeds size limit")
+                body = stream.read(max_bytes + 1)
+                if len(body) > max_bytes:
+                    raise StoredObjectTooLargeError("stored object exceeds size limit")
+            finally:
+                stream.close()
+        except (ClientError, BotoCoreError) as exc:
+            if isinstance(exc, ClientError) and _is_missing_object(exc):
+                raise FileNotFoundError("stored object missing") from exc
             raise _translate(exc) from exc
         return StoredObject(
             object_key=object_key,
