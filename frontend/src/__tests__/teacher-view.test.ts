@@ -28,6 +28,7 @@ import type {
 import {
   capRowErrors,
   COLLABORATOR_PERMISSIONS,
+  defaultSchemaFor,
   describeEditError,
   envelopeFields,
   EMPTY_TASK_FORM,
@@ -38,6 +39,7 @@ import {
   lockedTierText,
   moderationRowView,
   parseSubmissionSchema,
+  shouldAutoFillSchema,
   permissionLabels,
   reportStatusView,
   reviewStatusView,
@@ -621,5 +623,43 @@ describe("collaborator permission labels (spec §4.2)", () => {
       "审核提交",
     ]);
     assert.deepEqual(permissionLabels(["FUTURE_CODE"]), ["FUTURE_CODE"]);
+  });
+});
+
+describe("default submission schema per structured type (defect #22)", () => {
+  test("each structured type has a default template that parses as a JSON object", () => {
+    for (const type of ["CSV", "XLSX", "SQLITE"] as const) {
+      const parsed = parseSubmissionSchema(defaultSchemaFor([type]));
+      assert.notEqual(parsed, null, `${type} template must parse`);
+    }
+  });
+
+  test("templates carry the canonical required_columns shape, not an ad-hoc one", () => {
+    const parsed = parseSubmissionSchema(defaultSchemaFor(["CSV"]));
+    assert.ok(Array.isArray((parsed as Record<string, unknown>)["required_columns"]));
+  });
+
+  test("XLSX defaults to a sheet selector; SQLITE to a table selector", () => {
+    assert.deepEqual(
+      (parseSubmissionSchema(defaultSchemaFor(["XLSX"])) as Record<string, unknown>)["source_selector"],
+      { sheet_name: "Sheet1" },
+    );
+    assert.deepEqual(
+      (parseSubmissionSchema(defaultSchemaFor(["SQLITE"])) as Record<string, unknown>)["source_selector"],
+      { table_name: "records" },
+    );
+  });
+
+  test("a multi-type selection resolves by selector specificity: SQLITE > XLSX > CSV; none -> empty", () => {
+    assert.match(defaultSchemaFor(["CSV", "SQLITE"]), /table_name/);
+    assert.match(defaultSchemaFor(["CSV", "XLSX"]), /sheet_name/);
+    assert.equal(defaultSchemaFor([]), "");
+  });
+
+  test("auto-fill only touches a pristine field: empty or a known template", () => {
+    assert.equal(shouldAutoFillSchema(""), true);
+    assert.equal(shouldAutoFillSchema(defaultSchemaFor(["CSV"])), true);
+    assert.equal(shouldAutoFillSchema(defaultSchemaFor(["SQLITE"])), true);
+    assert.equal(shouldAutoFillSchema('{"required_columns":[]}'), false);
   });
 });

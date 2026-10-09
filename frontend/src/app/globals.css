@@ -2629,6 +2629,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* --- task form: collapsed 高级 section (defect #22) -------------------------- */
+
+.form-advanced {
+  margin-top: var(--space-2);
+}
+
+.form-advanced > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.form-advanced[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
 .report-preview summary {
   cursor: pointer;
   font-size: var(--text-sm);

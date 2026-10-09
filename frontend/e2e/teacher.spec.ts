@@ -148,7 +148,13 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await dialog.getByLabel("任务描述").fill("e2e 创建的采集任务");
     await dialog.getByLabel("基础奖励积分").fill("120");
     await dialog.getByLabel("固定截止时间").fill("2030-09-30T18:00");
-    await dialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
+    // Defect #22: the schema rides collapsed in the 高级 section and
+    // arrives PRE-FILLED with the per-type default template (CSV is
+    // the default type selection).
+    await dialog.getByText("高级：提交校验 schema").click();
+    const schemaField = dialog.locator("#task-schema");
+    await expect(schemaField).toHaveValue(/"platform"/);
+    await schemaField.fill('{"columns":["platform","keyword"]}');
     await dialog.locator("#task-schema-version").fill("1");
     await dialog.getByRole("button", { name: "创建草稿" }).click();
 
@@ -189,6 +195,8 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await page.getByRole("button", { name: "编辑", exact: true }).click();
     const editDialog = page.getByRole("dialog", { name: "编辑任务" });
     await expect(editDialog).toBeVisible();
+    // The 高级 section is collapsed here too (defect #22).
+    await editDialog.getByText("高级：提交校验 schema").click();
     await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
     await editDialog.locator("#task-schema-version").fill("1");
     await editDialog.getByRole("button", { name: "保存修改" }).click();

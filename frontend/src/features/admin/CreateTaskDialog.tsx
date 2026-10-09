@@ -32,6 +32,7 @@ import { FormErrorSummary } from "@/features/auth/FormErrorSummary";
 
 import { createTeacherTask, type TeacherTaskDto } from "./teacherApi";
 import {
+  defaultSchemaFor,
   describeTaskMutationError,
   EMPTY_TASK_FORM,
   taskFormToBody,
@@ -61,7 +62,14 @@ function CreateTaskDialogInner({
   onClose,
   onCreated,
 }: Omit<CreateTaskDialogProps, "open">) {
-  const [values, setValues] = useState<TaskFormValues>(EMPTY_TASK_FORM);
+  const [values, setValues] = useState<TaskFormValues>(() => ({
+    ...EMPTY_TASK_FORM,
+    // Defect #22: the schema starts from the per-type default template
+    // (the field rides collapsed in the 高级 section) — the default
+    // teacher never authors JSON by hand.
+    submissionSchema: defaultSchemaFor(EMPTY_TASK_FORM.fileTypes),
+    submissionSchemaVersion: "1",
+  }));
   const [fieldErrors, setFieldErrors] = useState<TaskFormErrors>({});
   const [summary, setSummary] = useState<ReturnType<typeof describeTaskMutationError> | null>(null);
   const [submitting, setSubmitting] = useState(false);
