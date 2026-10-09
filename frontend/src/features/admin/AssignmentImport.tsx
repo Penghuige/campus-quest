@@ -131,7 +131,7 @@ export function AssignmentImport({ taskId, onImported }: AssignmentImportProps) 
         {formatFileSize(IMPORT_MAX_FILE_BYTES)}、{IMPORT_MAX_ROWS} 行。导入前会先给出
         校验预览，确认后才写入。也可
         <a
-          className="text-link"
+          className="link"
           href={IMPORT_TEMPLATE_URL}
           download="assignment-import-template.csv"
         >

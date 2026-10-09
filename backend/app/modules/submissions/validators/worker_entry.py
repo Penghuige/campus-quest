@@ -45,7 +45,7 @@ import json
 import sys
 from typing import Any
 
-from app.modules.submissions.enums import FileType
+from app.modules.submissions.enums import DOCUMENT_FILE_TYPES, FileType
 from app.modules.submissions.schema import SubmissionSchema
 from app.modules.submissions.validators.common import (
     PreviewSpec,
@@ -112,6 +112,31 @@ def main() -> int:
 
     preview = PreviewSpec(**request["preview"]) if "preview" in request else None
     limits = ValidationLimits(**request["limits"]) if "limits" in request else None
+
+    # §10.1 document family: the detection answer IS the check. A
+    # document file never reaches a tabular parser — the parent's
+    # ``_assemble_document`` builds the §12.4-shaped integrity report
+    # from this detected type; the child emits the type and an empty
+    # report (the builder's row_count=None shape).
+    if detected in DOCUMENT_FILE_TYPES:
+        builder = ValidationReportBuilder(
+            parser_version="sandbox-1", file_type=detected
+        )
+        _emit(
+            detected,
+            builder.build(
+                row_count=None,
+                detected_columns=[],
+                missing_required_columns=[],
+                extra_columns=[],
+                type_error_counts={},
+                null_ratios={},
+                duplicate_counts={},
+                duration_ms=0.0,
+            ),
+        )
+        return 0
+
     try:
         match detected:
             case FileType.CSV:
