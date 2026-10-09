@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import hash_password
@@ -598,7 +598,24 @@ async def clean_world(
             )
             .values(reversal_of_id=None)
         )
-        await db.execute(delete(PointsLedger).where(PointsLedger.user_id.in_(users)))
+        # The ledger delete scope must cover BOTH FK fan-ins on users:
+        # rows the set's users OWN (user_id) and rows they OPERATED
+        # (operator_id — redemption approvals, admin adjustments,
+        # reversals). A row owned by an OUTSIDE user but operated by a
+        # set member is invisible to the user_id-only scope, and the
+        # user delete then dies on fk_points_ledger_users_operator_id —
+        # the 2026-10-09 e2e teardown abort (r3 forensics: an admin
+        # suite approving ANOTHER world's residue redemption through
+        # the queue's first row created exactly that shape). The same
+        # scope-vs-fan-in class as the PR #15 PointReservation fix.
+        await db.execute(
+            delete(PointsLedger).where(
+                or_(
+                    PointsLedger.user_id.in_(users),
+                    PointsLedger.operator_id.in_(users),
+                )
+            )
+        )
         await db.execute(delete(PointWallet).where(PointWallet.user_id.in_(users)))
 
         # Notifications: deliveries before the notifications they serve.
