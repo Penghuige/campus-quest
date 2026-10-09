@@ -14,11 +14,13 @@
 | R8 | G1/G2：材料组合 | 真实生产 provider 通过 PG/MinIO/ClamAV 完成；写一次与类型/长度签名生效，读取上限生效 | `tests/integration/innovation/test_evidence_composition_smoke.py::test_real_provider_checks_uploaded_bytes_and_write_once` + `tests/integration/innovation/test_evidence_composition_smoke.py::test_evidence_signature_pins_type_and_size` | 已覆盖（双 smoke 标记，本地真实组合） |
 | R9 | 有界检查/锁后重验 | 扫描不持业务锁；移除、停用或新 attempt 完成后，旧扫描结果不得写入 READY | `tests/integration/innovation/test_evidence_races.py::test_late_scan_revalidates_committed_state` | 已覆盖（真实 PG 独立提交连接；可控外部扫描 fake） |
 | R10 | 本人材料生命周期/G12 | 资格、归属、大小数量、缺失、过期、扫描失败重试、已检内容变化和审计失败均执行拒绝规则 | `tests/integration/innovation/test_achievement_evidence.py::test_real_http_upload_check_and_private_proxy` + `tests/integration/innovation/test_achievement_evidence.py::test_owner_qualification_scope_and_authentication` + `tests/integration/innovation/test_achievement_evidence.py::test_finish_audit_failure_never_commits_ready` | 已覆盖（负责人接口；运营权限仍见 G-1） |
+| R11 | PR-08/11：本人提交版本 | 已保存概况/身份/说明/READY 材料才可提交；冻结版本，待审先撤回再改；旧撤回不关闭新单；历史不可写 | `tests/integration/innovation/test_achievement_workflow.py::test_submit_freezes_saved_content_and_withdraw_allows_edit` + `tests/integration/innovation/test_achievement_workflow.py::test_new_submission_uses_new_revision_and_old_withdrawal_cannot_close_it` + `tests/integration/innovation/test_achievement_workflow.py::test_database_rejects_revision_and_checked_content_mutation` | 已覆盖（运营批准竞争仍见 G-2） |
+| R12 | PR-12：显式更新 | 保存草稿不改公开指针，发布更新不创建二次审单、不改首次核实日期、不恢复下架 | `tests/integration/innovation/test_achievement_workflow.py::test_publish_update_is_explicit_immutable_and_never_restores_takedown` | 已覆盖（批准边界由测试设置；真实运营批准及公开响应待 Task 4） |
 
 ## 缺口明细
 
 - G-1：负责人材料生命周期、存储组合和受控读取已实现（R8–R10）；运营领取后的材料读取待 Task 4。
-- G-2：workflow/revision/review_case 与竞争测试待 Task 3/4。
+- G-2：workflow/revision/review_case 与两连接撤回竞争已实现；运营批准/撤回竞争待 Task 4。
 - G-3：公开白名单及更新/下架隔离待 Task 3/4。
 - G-4：页面及跨树完整门禁待 Task 5；现阶段不能声称完成成果核实或三库 demo。
 
@@ -27,3 +29,5 @@
 2026-10-09 Task 1：针对性 27 TCP/类型单测 + 3 真实扫描烟测共 30 通过。首次 10 MiB 测试失败原因是把 EICAR 当作可任意拼接的标记；独立测试显示 68 字节文件被识别、加 100 字节前缀不被识别、含独立 EICAR 的 stored ZIP 被识别。改用确切 10 MiB stored ZIP 验证完整文件/嵌套检查，不改变 API 类型白名单或扫描通过规则。全部原始输出在工作区 `.local-dev/logs/review-scanner-*.log`。
 
 2026-10-09 Task 2：新负责人生命周期、独立连接并发、真实组合与既有存储回归共 56 项通过（78.00 秒、出口 0）。先记录缺失模块 RED，再实现；测试 harness 的 FrozenClock 不可变、显式 fixture 导入问题已修正。Ruff 格式/检查出口 0，mypy 六个源文件出口 0；独占库 0030 升级及退回 0029 后再次升级出口 0。完整输出 `.local-dev/logs/review-evidence-regression.log`，不表示 Task 3–5 或全项目门禁完成。
+
+2026-10-09 Task3：35 项工作流/材料/草稿/独立连接回归通过（21.13 秒、出口0）；源码26文件 mypy、30文件Ruff、0031往返迁移与 Alembic 模型对账出口0。日志 `.local-dev/logs/review-workflow-regression.log`；原始缺失行为 RED 和测试夹具错误日志保留，不降低数据库约束适应错误夹具。运营审核与前端闭环尚未实现。

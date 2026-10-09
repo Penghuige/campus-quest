@@ -22,6 +22,7 @@ from app.modules.innovation.achievement_schemas import (
 )
 from app.modules.innovation.models import AchievementDraft, ProjectDraft
 from app.modules.innovation.owner_service import _require_student
+from app.modules.innovation.workflow_guards import require_editable
 
 _FIELDS = ("title", "description", "work_url", "award_text")
 
@@ -220,6 +221,7 @@ class AchievementDraftService:
         existing = await db.scalar(select(AchievementDraft.id).where(*owned))
         if existing is None:
             raise _not_found()
+        await require_editable(db, achievement_id)
         row = await db.scalar(
             update(AchievementDraft)
             .where(*owned, AchievementDraft.version == payload.version)

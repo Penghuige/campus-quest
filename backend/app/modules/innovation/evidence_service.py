@@ -46,6 +46,7 @@ from app.modules.innovation.models import (
     ProjectDraft,
 )
 from app.modules.innovation.owner_service import _require_student
+from app.modules.innovation.workflow_guards import require_editable
 
 
 def _conflict(message: str) -> BusinessError:
@@ -169,6 +170,7 @@ class EvidenceService:
         await self._owned(
             db, actor=actor, project_id=project_id, achievement_id=achievement_id
         )
+        await require_editable(db, achievement_id)
         fingerprint = hashlib.sha256(
             f"{payload.content_type}:{payload.size}".encode()
         ).hexdigest()
@@ -302,6 +304,7 @@ class EvidenceService:
             await self._record(db, actor, row.id, "IE_EVIDENCE_READ", context)
             await db.commit()
             return result
+        await require_editable(db, achievement_id)
         if row.expires_at <= now:
             raise _conflict("上传意向已过期，请移除后重新上传")
         if (
@@ -344,6 +347,7 @@ class EvidenceService:
         row = await self._row(db, achievement_id, evidence_id)
         if row.state != "CHECKING" or row.check_token != token:
             raise _conflict("检查请求已被更新，请刷新材料状态")
+        await require_editable(db, achievement_id)
         row.state, row.sha256, row.failure_code = state, digest, failure
         row.check_token, row.checking_until = None, None
         row.version += 1
@@ -368,6 +372,7 @@ class EvidenceService:
         await self._owned(
             db, actor=actor, project_id=project_id, achievement_id=achievement_id
         )
+        await require_editable(db, achievement_id)
         row = await self._row(db, achievement_id, evidence_id)
         if row.referenced:
             raise _conflict("材料已用于审核记录，不能移除")

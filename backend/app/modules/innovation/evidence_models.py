@@ -24,6 +24,7 @@ from app.db.base import Base
 class AchievementEvidence(Base):
     __tablename__ = "ie_achievement_evidence"
     __table_args__ = (
+        UniqueConstraint("id", "achievement_id", name="uq_ie_evidence_identity"),
         UniqueConstraint(
             "achievement_id",
             "creation_request_id",

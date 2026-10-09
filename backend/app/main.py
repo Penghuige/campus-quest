@@ -36,6 +36,7 @@ from app.modules.innovation import owner_router as innovation_owner_router
 from app.modules.innovation import (
     qualification_router as innovation_qualification_router,
 )
+from app.modules.innovation import review_router as innovation_review_router
 from app.modules.innovation import router as innovation_router
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(innovation_operations_router.student_router, prefix="/api/v1")
     app.include_router(innovation_achievement_router.router, prefix="/api/v1")
     app.include_router(innovation_evidence_router.router, prefix="/api/v1")
+    app.include_router(innovation_review_router.router, prefix="/api/v1")
 
     # Tasks/claims API: its typed exceptions subclass BusinessError
     # (rendered by the core handler), so only the endpoint-limiter mapping
