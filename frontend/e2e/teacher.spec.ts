@@ -249,14 +249,19 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await expect(page).toHaveURL(/\/teacher\/profile/);
 
     // The /me facts render as definition rows (the owner's own account
-    // view, spec §40). 注册日期 joins when the DTO carries created_at.
+    // view, spec §40). 注册日期 joined with PR #46's created_at —
+    // date-only, year-inclusive, so the row must read 年.
     const section = page.getByRole("region", { name: "个人信息" });
     await expect(section).toBeVisible();
-    for (const label of ["昵称", "账号", "角色", "账号状态"]) {
+    for (const label of ["昵称", "账号", "角色", "账号状态", "注册日期"]) {
       await expect(section.getByText(label, { exact: true })).toBeVisible();
     }
     await expect(section.getByText("教师", { exact: true })).toBeVisible();
     await expect(section.getByText("正常", { exact: true })).toBeVisible();
+    const registration = section
+      .locator(".fact-row", { hasText: "注册日期" })
+      .locator(".fact-value");
+    await expect(registration).toContainText(/年/);
   });
 
   test("review decisions: mandatory note/reason and the invalidate warning", async ({
