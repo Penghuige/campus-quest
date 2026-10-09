@@ -46,15 +46,15 @@ const backendPort = new URL(API_URL).port || "8000";
  */
 const backendEnv: Record<string, string> = {
   ...process.env,
-  DATABASE_URL: "postgresql+asyncpg://test:test@localhost:15432/campusquest_test",
-  REDIS_URL: "redis://localhost:6379/0",
+  DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
+  REDIS_URL: "redis://127.0.0.1:6379/0",
   // e2e-only https MinIO (compose profile "e2e", :9002): the pages are
   // https (P3-B), so an http presigned URL would be mixed content the
   // browser blocks. The shared :9000 instance stays http for everything
   // else. AWS_CA_BUNDLE makes boto3 trust the self-signed cert — a
   // deployment knob, zero product-code change — resolved absolutely so
   // it holds regardless of the spawned backend's CWD.
-  S3_ENDPOINT_URL: "https://localhost:9002",
+  S3_ENDPOINT_URL: "https://127.0.0.1:9002",
   AWS_CA_BUNDLE: join(__dirname, "..", "infra", "e2e-certs", "minio", "public.crt"),
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
@@ -161,7 +161,7 @@ export default defineConfig({
       env: {
         ...process.env,
         // http target for the undici proxy (see the backend command note).
-        CQ_DEV_API_PROXY: `http://localhost:${backendPort}`,
+        CQ_DEV_API_PROXY: backendOrigin,
       },
       // Same fail-closed rule as the backend server above.
       reuseExistingServer:

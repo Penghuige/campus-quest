@@ -54,6 +54,7 @@ for (const shot of SHOTS) {
     await page.goto(`${BASE_URL}${shot.envPath !== undefined ? process.env[shot.envPath] : shot.path}`, {
       waitUntil: "domcontentloaded",
     });
+    await shot.prepare?.(page);
     await expect(page.locator(".page-head, main").first()).toBeVisible({
       timeout: 15_000,
     });

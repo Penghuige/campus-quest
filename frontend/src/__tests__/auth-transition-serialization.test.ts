@@ -68,8 +68,9 @@ describe("auth-transition serialization (final re-review P0)", () => {
   test("A: logout drains the in-flight refresh before its request — and the drained rotation cannot restore the token", async () => {
     recordLogin("token-A");
     const refreshA = Promise.withResolvers<Response>();
+    const refreshStarted = Promise.withResolvers<void>();
     route({
-      [REFRESH]: [() => refreshA.promise],
+      [REFRESH]: [() => { refreshStarted.resolve(); return refreshA.promise; }],
       [LOGOUT]: [json(undefined, 204)],
       [PROTECTED]: [json({ ok: true })],
     });
@@ -77,6 +78,9 @@ describe("auth-transition serialization (final re-review P0)", () => {
     // refresh-A is in flight (a 401 recovery started it) and stays
     // pending.
     const refreshOutcome = refreshAccessToken();
+    // Web Locks may schedule its callback later. Prove this request is
+    // actually in flight before testing the transition's drain.
+    await refreshStarted.promise;
     const loggingOut = logout();
 
     // The logout request must NOT race ahead of refresh-A: while the
@@ -103,12 +107,14 @@ describe("auth-transition serialization (final re-review P0)", () => {
   test("B: login-B does not complete before refresh-A is drained; afterwards no old refresh can overwrite token-B", async () => {
     recordLogin("token-A");
     const refreshA = Promise.withResolvers<Response>();
+    const refreshStarted = Promise.withResolvers<void>();
     route({
-      [REFRESH]: [() => refreshA.promise],
+      [REFRESH]: [() => { refreshStarted.resolve(); return refreshA.promise; }],
       [LOGIN]: [json(tokenPair("token-B"))],
     });
 
     const refreshOutcome = refreshAccessToken();
+    await refreshStarted.promise;
     const login = loginStudent("student-b", "correct-horse");
     await Promise.resolve();
     assert.ok(!urls().includes(LOGIN), "login must wait for the refresh drain");
@@ -117,6 +123,7 @@ describe("auth-transition serialization (final re-review P0)", () => {
     assert.equal(await refreshOutcome, false); // A2 write fenced
 
     const tokens = await login;
+    assert.equal(urls().filter((url) => url === REFRESH).length, 1);
     assert.ok(urls().indexOf(LOGIN) > urls().indexOf(REFRESH));
     assert.equal(tokens.access_token, "token-B");
     assert.equal(getAccessToken(), "token-B"); // old A2 never overwrote B

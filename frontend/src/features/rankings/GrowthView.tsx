@@ -7,7 +7,7 @@
  *
  * Display-honor selector: NOT implementable against this snapshot — no
  * endpoint selects the display honor and /growth/me carries no selected
- * field (see growthView.ts's documented gap). The honors list is
+ * field (see growthPresentation.ts's documented gap). The honors list is
  * read-only until that API lands.
  */
 import {
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sectionStates";
 import { useSection } from "@/components/ui/useSection";
 import { myGrowth } from "@/features/rankings/api";
-import { growthView } from "@/features/rankings/growthView";
+import { growthView } from "@/features/rankings/growthPresentation";
 
 export function GrowthView() {
   const { state, retry } = useSection(() => myGrowth(), "GET /api/v1/points/me/growth");

@@ -76,6 +76,10 @@ class ErrorCode(StrEnum):
     # illegal state transitions (account status, spec §5.7). Never a
     # substitute for a more specific code the registry already has.
     CONFLICT = "CONFLICT"
+    # Private innovation drafts (2026-10-08 plan), registered in interfaces.md.
+    PROJECT_DRAFT_VERSION_CONFLICT = "PROJECT_DRAFT_VERSION_CONFLICT"
+    PROJECT_DRAFT_REQUEST_CONFLICT = "PROJECT_DRAFT_REQUEST_CONFLICT"
+    OWNER_PROFILE_VERSION_CONFLICT = "OWNER_PROFILE_VERSION_CONFLICT"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

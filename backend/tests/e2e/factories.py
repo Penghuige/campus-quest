@@ -54,6 +54,12 @@ from app.modules.identity.models import (
     User,
     UserSession,
 )
+from app.modules.innovation.models import (
+    AchievementDraft,
+    OperationsGrant,
+    OwnerProfile,
+    ProjectDraft,
+)
 from app.modules.notifications.models import Notification, NotificationDelivery
 from app.modules.points.models import (
     PointReservation,
@@ -606,6 +612,26 @@ async def clean_world(
             delete(NotificationDelivery).where(NotificationDelivery.user_id.in_(users))
         )
         await db.execute(delete(Notification).where(Notification.user_id.in_(users)))
+
+        # Private project preparation belongs to this world's users. Its
+        # non-cascading owner FK must be released before deleting accounts.
+        await db.execute(
+            delete(AchievementDraft).where(
+                AchievementDraft.project_id.in_(
+                    select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+                )
+            )
+        )
+        await db.execute(
+            delete(OperationsGrant).where(
+                OperationsGrant.user_id.in_(users)
+                | OperationsGrant.changed_by.in_(users)
+            )
+        )
+        await db.execute(delete(OwnerProfile).where(OwnerProfile.user_id.in_(users)))
+        await db.execute(
+            delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
+        )
 
         # Identity: honors grants, staff artifacts, sessions, 2FA, then
         # the users themselves.

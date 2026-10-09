@@ -295,6 +295,9 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `OTP_RESEND_COOLDOWN` | §33.2 |
 | `RATE_LIMITED` | §33.1 |
 | `CONFLICT` | §29 envelope（HTTP 409） |
+| `PROJECT_DRAFT_VERSION_CONFLICT` | 私有项目草稿：预期版本已过期（HTTP 409） |
+| `PROJECT_DRAFT_REQUEST_CONFLICT` | 私有项目草稿：创建幂等键与首次规范化内容不一致（HTTP 409） |
+| `OWNER_PROFILE_VERSION_CONFLICT` | 本人负责人资料：首次保存已有行或预期版本过期（HTTP 409）；不代表资格状态 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
@@ -493,3 +496,19 @@ table — the three `_USERS_LOCK` twins in the claim, abandon, and upload
 (`id` + `status` + `role`, through the frozen `UserStatus`/`Role`
 vocabularies) — are the sanctioned interim, and all three queries move
 behind the port unchanged when it registers one.
+
+### Innovation operations grants (2026-10-09)
+
+`GET /api/v1/admin/ie/operations-grants/{user_id}` reads `{user_id, enabled, version}` (missing row = false/0). `PUT` accepts exactly `{enabled: boolean, version: nonnegative integer, reason: trimmed 1..500 chars}`. Administrator ACTIVE + confirmed TOTP + stored management-network policy are mandatory. Service rechecks locked fresh account/TOTP state. Grant target must be ACTIVE STUDENT; revocation can clean up disabled/demoted targets. Version conflict or same-state mutation is `409 CONFLICT`; reason/schema violations are `422 VALIDATION_ERROR`.
+
+`ie_operations_grants` retains revoked records; versions increment across regrant, so stale revocations cannot remove later grants. Writes and `IE_OPERATIONS_GRANT_CHANGED` audits share one transaction; before/after contain only enabled/version. Administrator reads audit `IE_OPERATIONS_GRANT_READ`. Account references stay internal; no owner-profile PII is copied or returned. The minimal typed Core verification seams read users id/role/status and lock the administrator's TOTP confirmed_at without importing identity ORM models.
+
+`GET /api/v1/ie/me/capabilities` is bearer-only, ACTIVE STUDENT and private/no-store; returns exactly `{operations_enabled: boolean}` from current database state. No global role mutation, teacher/admin privilege, points adjustment, blanket proof access or project qualification is granted. This slice implements authority lifecycle; actual review/content/report actions must enforce the grant, project-specific access, and owner/co-manager/member conflict exclusion in their own transactions when implemented.
+
+### Private project achievement drafts (2026-10-09)
+
+`/api/v1/ie/me/project-drafts/{project_id}/achievements`: POST `{request_id: UUID, title, description?, work_url?, award_text?}` returns 201 for new, 200 for an identical initial-payload retry; GET returns `{items,total,limit,offset}` (limit 1..50, default 20). `/{achievement_id}` GET/PATCH; PATCH carries the four content fields and positive strict `version`. Current ACTIVE STUDENT, fresh locked identity, owned parent and matching child are mandatory. Non-owned/missing resources return 404; wrong role/status 403; cookie-only 401. Every response is private/no-store. DTO contains only id, four fields, version and timestamps.
+
+Content trims whitespace; title 1..120 required, description <=4000, work_url <=2000, award_text <=1000 Unicode characters. Empty optional fields are valid private preparation. Links require full http(s) authority, no credentials/controls/whitespace/backslashes; validation never fetches the address. Extra ownership/review/publication fields are rejected. The parent project fields remain separate from achievement content; no public read, qualification, proof upload, review or publication transition is exposed in this slice.
+
+`ie_achievement_drafts`: parent FK, unique `(project_id, creation_request_id)`, immutable SHA256 of normalized initial content, positive version and DB content limits. Retry returns the current row without overwriting later edits; reused key with changed initial content or stale update returns 409 CONFLICT with kind `achievement_request` / `achievement_version`. Lock order: user then parent, with version CAS on the child. Read/create/update audits (`IE_ACHIEVEMENT_DRAFT_READ/CREATE/UPDATE`) and changes share a transaction; audits store actor/target/request context/version, never achievement text or links. Operations grants confer no blanket access to another owner's drafts.

@@ -76,7 +76,7 @@
 
 
 import { BASE_URL, expect, test } from "./fixtures";
-import { authenticate, SHOTS } from "./shot-surfaces";
+import { authenticate, SHOTS, type Locator } from "./shot-surfaces";
 
 const ENABLED =
   process.env.CQ_E2E === "1" &&
@@ -93,8 +93,6 @@ test.skip(
 // 1440x900); mobile evidence stays with the capture harness.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-export type ShotAuth = "anon" | "student" | "teacher" | "admin";
-
 /** One masked volatile region. Every declared mask MUST engage on its
  * shot — the test asserts count > 0 before capturing, so a mask that a
  * UI change silently detaches (rename, removal) fails loudly instead of
@@ -110,6 +108,7 @@ for (const shot of SHOTS) {
     );
     await authenticate(page, shot.auth);
     await page.goto(`${BASE_URL}${path}`);
+    await shot.prepare?.(page);
     // Font determinism (C3 ⑧, CI lessons 1+2): (a) the local dev box
     // resolves zh sans to Microsoft YaHei (msyh.ttf) while CI falls to
     // the pinned fonts-noto-cjk — different metrics, 1-2px page-height

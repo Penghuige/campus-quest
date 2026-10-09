@@ -9,8 +9,10 @@
 import { type Locator, type Page } from "@playwright/test";
 
 import { ensureStudentLogin, staffLogin, test } from "./fixtures";
+import { expect } from "@playwright/test";
 
 export type { Locator, Page };
+export type ShotAuth = "anon" | "student" | "teacher" | "admin";
 
 interface ShotMask {
   /** Stable id used in assertion messages. */
@@ -32,9 +34,36 @@ export interface Shot {
    * shots are deliberately NOT in scripts/assert-e2e-no-skips.mjs's
    * watched list — the skip is legal. */
   envPath?: string;
+  prepare?: (page: Page) => Promise<void>;
 }
 
 export const SHOTS: Shot[] = [
+  { name: "admin-innovation-operations", path: "/admin/innovation-operations", auth: "admin", masks: [] },
+  {
+    name: "student-owner-profile-form", path: "/profile/owner-profile", auth: "student", masks: [],
+    prepare: async (page) => {
+      await expect(page.getByRole("region", { name: "负责人资料编辑器" })).toBeVisible();
+    },
+  },
+  {
+    name: "student-project-draft-form", path: "/profile/project-drafts", auth: "student", masks: [],
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();
+      await expect(page.getByRole("region", { name: "项目草稿编辑器" })).toBeVisible();
+    },
+  },
+  {
+    name: "student-achievement-draft-form", path: "/profile/project-drafts", auth: "student", masks: [],
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();
+      await page.getByLabel("项目名称", { exact: true }).fill("成果草稿示例项目");
+      await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+      await expect(page.getByRole("status")).toHaveText("草稿已保存，仅自己可见。");
+      await page.getByRole("link", { name: "管理成果草稿", exact: true }).click();
+      await page.getByRole("button", { name: "新建成果草稿", exact: true }).click();
+      await expect(page.getByRole("region", { name: "成果草稿编辑器" })).toBeVisible();
+    },
+  },
   { name: "auth-login", path: "/login", auth: "anon", masks: [] },
   { name: "dev-gallery", path: "/dev/gallery", auth: "anon", masks: [] },
   {
@@ -165,4 +194,3 @@ export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
     }
   }
 }
-
