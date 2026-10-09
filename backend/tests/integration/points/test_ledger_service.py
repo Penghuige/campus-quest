@@ -462,7 +462,22 @@ async def test_concurrent_duplicate_grant_posts_reward_once(
     the loser's INSERT loses to the UNIQUE triple and recovers by
     returning the winner's row. Exactly one entry, one increment."""
     factory = _factory(db_engine)
-    service = LedgerService()
+    post_attempts = 0
+    ready_to_post = asyncio.Barrier(2)
+    connection_ids: list[int] = []
+
+    class RacingLedger(LedgerService):
+        async def post_entry(
+            self, db: AsyncSession, command: PostLedgerEntry
+        ) -> PointsLedger:
+            nonlocal post_attempts
+            post_attempts += 1
+            # Both initial reward reads must be empty BEFORE either wallet
+            # lock/INSERT. An entry barrier alone can degrade into replay.
+            await asyncio.wait_for(ready_to_post.wait(), timeout=10)
+            return await super().post_entry(db, command)
+
+    service = RacingLedger()
     run = uuid4().hex[:8]
     claim_id = uuid4()
     user_ids: list[UUID] = []
@@ -476,7 +491,9 @@ async def test_concurrent_duplicate_grant_posts_reward_once(
 
         async def grant_once(start: asyncio.Event) -> PointsLedger:
             async with factory() as session:
-                await session.execute(text("SELECT 1"))
+                connection_id = await session.scalar(text("SELECT pg_backend_pid()"))
+                assert isinstance(connection_id, int)
+                connection_ids.append(connection_id)
                 await start.wait()
                 entry = await service.grant_assignment_reward(
                     session,
@@ -485,12 +502,17 @@ async def test_concurrent_duplicate_grant_posts_reward_once(
                     amount=100,
                     ranking_effective_at=_LOCK_TIME,
                 )
+                # The UNIQUE loser must recover only its savepoint, leaving
+                # the caller's transaction usable before the real commit.
+                assert await session.scalar(text("SELECT 1")) == 1
                 await session.commit()
                 return entry
 
         first, second = await _run_behind_barrier(
             [lambda start: grant_once(start) for _ in range(2)]
         )
+        assert post_attempts == 2, "Both callers must pass the initial reward lookup"
+        assert len(set(connection_ids)) == 2
         assert first.id == second.id  # both callers hold the SAME row
 
         async with factory() as check:

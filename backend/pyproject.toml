@@ -101,6 +101,9 @@ ignore_missing_imports = true
 # definition — the ratchet measures shipped code.
 branch = true
 source = ["app"]
+# SQLAlchemy async resumes through greenlet_spawn. Without greenlet-aware
+# collection, a resumed frame can inherit another file's lines/arcs.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 # Module-level percentages feed coverage-ratchet.json; one decimal is

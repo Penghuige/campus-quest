@@ -9,7 +9,9 @@ import {
 } from "../features/innovation/api";
 import {
   describeDraftSaveError,
+  draftFields,
   normalizeDraftFields,
+  sameDraftFields,
   validateDraftFields,
 } from "../features/innovation/draftForm";
 import { ApiError } from "../lib/errors";
@@ -49,6 +51,19 @@ test("field limits count Unicode code points, including astral characters", () =
   assert.deepEqual(validateDraftFields({ ...fields, title: `  ${"🌱".repeat(120)}  ` }), {});
 });
 
+test("editing a saved project excludes resource metadata and detects every unsaved field", () => {
+  const populated = { title: fields.title, summary: "调研校园垃圾分类现状", direction: "环保", stage: "调研中", team_status: "两人负责问卷，一人整理数据" };
+  const saved = { ...populated, id, version: 3, created_at: "2026-10-08T01:00:00Z", updated_at: "2026-10-08T01:00:00Z" };
+  const editable = draftFields(saved);
+  assert.deepEqual(editable, populated);
+  assert.equal(sameDraftFields(editable, { ...populated }), true);
+  for (const key of Object.keys(fields) as (keyof typeof fields)[]) {
+    assert.equal(sameDraftFields(editable, { ...populated, [key]: populated[key] + "修改" }), false, key);
+  }
+  editable.summary = "尚未保存的简介";
+  assert.equal(saved.summary, populated.summary);
+});
+
 test("IE requests use private paths, explicit idempotency and expected version", async () => {
   const requests: { url: string; method: string; body: unknown }[] = [];
   const dto = { ...fields, id, version: 3, created_at: "2026-10-08T01:00:00Z", updated_at: "2026-10-08T01:00:00Z" };
@@ -79,6 +94,23 @@ test("save errors distinguish stale versions, unknown create outcome and permiss
   const forbidden = describeDraftSaveError(new ApiError({ code: "PERMISSION_DENIED", status: 403, message: "raw" }));
   assert.equal(forbidden.reload, false);
   assert.match(forbidden.message, /学生/);
+});
+
+test("refused draft saves retain actionable messages and system failure tracing", () => {
+  for (const [code, status, expected] of [
+    ["PROJECT_DRAFT_REQUEST_CONFLICT", 409, /新建请求.*不同内容.*保留/],
+    ["ACCOUNT_NOT_ACTIVE", 403, /正常状态.*学生/],
+    ["NOT_FOUND", 404, /不存在.*无权访问.*保留/],
+    ["VALIDATION_ERROR", 422, /校验.*长度/],
+  ] as const) {
+    const view = describeDraftSaveError(new ApiError({ code, status, message: "raw server detail" }));
+    assert.equal(view.reload, false);
+    assert.match(view.message, expected);
+    assert.doesNotMatch(view.message, /raw server detail/);
+  }
+  const system = describeDraftSaveError(new ApiError({ code: "INTERNAL_ERROR", status: 500, message: "raw server detail", requestId: "trace-draft" }));
+  assert.equal(system.requestId, "trace-draft");
+  assert.doesNotMatch(system.message, /raw server detail|保存成功/);
 });
 
 test("a successful private response from an old auth context is discarded", async () => {

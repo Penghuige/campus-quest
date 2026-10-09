@@ -264,3 +264,4 @@ Keep the bar for further custom skills: conditional/non-obvious workflows with r
 2. Every number reported (passed/failed/coverage) comes from the current head's own log line; a missing check is stated as missing, never backfilled from an earlier round.
 3. An API-surface change carries its generated contract artifacts (OpenAPI snapshot, generated client types) in the same PR.
 4. Files from a tree carry that tree's gates: a backend PR that ships frontend artifacts runs the frontend gates on the same head (and vice versa).
+5. Coverage must declare the actual concurrency model: SQLAlchemy async uses greenlet, so backend collection names both `greenlet` and `thread`. After changing collector configuration, discard earlier data and freshly collect every suite; never combine differently configured collectors. `tests/unit/core/test_coverage_greenlet.py` proves cross-file async bridge resumptions are attributed correctly.

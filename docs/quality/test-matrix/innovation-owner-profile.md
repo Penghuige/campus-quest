@@ -12,10 +12,15 @@
 | OP6 | PG并发 | 独立连接首次及更新同版本仅一胜；独立读取提交结果 | `tests/integration/innovation/test_owner_profiles.py::test_independent_connections_create_and_update_conflict` | 已覆盖 |
 | OP7 | DB约束 | 每人一行、四项非空及长度、正version | `tests/integration/innovation/test_owner_profiles.py::test_database_constraints` + `tests/integration/innovation/test_owner_profiles.py::test_independent_connections_create_and_update_conflict` | 已覆盖 |
 | OP8 | 清理接线 | 仅清理指定世界资料，保留另一世界 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_removes_owned_drafts_and_preserves_other_world` | 已覆盖 |
-| OP9 | 前端表单 | 校验/错误结果映射/旧会话读写响应丢弃 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` | 已覆盖（4项单测） |
+| OP9 | 前端表单 | 校验/错误结果映射/旧会话读写响应丢弃；5xx要求读取确认并保留追踪号 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` | 已覆盖（6项单测） |
 | OP10 | 浏览器 | 保存刷新修改、手机键盘、跨页冲突和显式载入 | `tests/../../frontend/e2e/innovation-owner-profile.spec.ts` | 已覆盖（真实浏览器2项通过） |
 | OP11 | 账号切换 | 已显示的A四项资料在切换B后清除；与迟到响应丢弃分开验证 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` + 本机 `.local-dev/verify-owner-profile.cjs` | 已覆盖（迟到响应单测；A→B真实跨标签走查通过，非标准自动电池） |
 | OP12 | 稳定界面 | 固定字体Linux像素基线 | `tests/../../frontend/e2e/visual-regression.spec.ts` student-owner-profile-form；G-3 | 缺口 G-3 |
+| OP13 | 四字段编辑边界 | 编辑状态不继承版本或资格元数据；修改输入不改写已保存资料 | `tests/../../frontend/src/__tests__/innovation-owner-profile.test.ts` editing an owner profile includes only self-reported fields, never qualification or version | 已覆盖（单测通过） |
+
+## 2026-10-09 覆盖率补验预期
+
+依据身份基础计划的四字段资料与保存结果不明处理约定：编辑状态仅包含四项资料，不继承版本或资格等元数据；停用/无权限不给保存成功提示；服务端 5xx 可能在提交后发生，须读取确认并保留请求追踪号，明确的 4xx 拒绝不要求按未知提交结果处理。先记录预期再补单测；资料保存仍不授予负责人资格。
 
 ## 缺口明细
 

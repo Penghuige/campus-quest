@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { getOwnerProfile, saveOwnerProfile } from "../features/innovation/ownerApi";
-import { normalizeOwnerFields, validateOwnerFields, describeOwnerSaveError } from "../features/innovation/ownerForm";
+import { normalizeOwnerFields, ownerFields, validateOwnerFields, describeOwnerSaveError } from "../features/innovation/ownerForm";
 import { recordLogout } from "../lib/accessToken";
 import { ApiError } from "../lib/errors";
 
@@ -18,6 +18,14 @@ test("owner form requires exactly four trimmed self-reported fields and preserve
     assert.deepEqual(validateOwnerFields({ ...fields, [key]: "🌱".repeat(limit) }), {});
     assert.ok(validateOwnerFields({ ...fields, [key]: "🌱".repeat(limit + 1) })[key as keyof typeof fields]);
   }
+});
+
+test("editing an owner profile includes only self-reported fields, never qualification or version", () => {
+  const profile = { ...fields, version: 4, owner_qualified: true };
+  const editable = ownerFields(profile);
+  assert.deepEqual(editable, fields);
+  editable.student_no = "000999";
+  assert.equal(profile.student_no, fields.student_no);
 });
 
 test("owner API has no target account or qualification parameter and uses expected version", async () => {
@@ -44,6 +52,22 @@ test("stale and unknown saves require reconciliation, without claiming success",
   assert.equal(unknown.reload, true);
   assert.match(unknown.message, /尚未确认/);
   assert.equal(describeOwnerSaveError(new ApiError({ code: "VALIDATION_ERROR", status: 422, message: "raw" })).reload, false);
+});
+
+test("owner save refusals and possible post-commit server failures have distinct recovery", () => {
+  for (const code of ["PERMISSION_DENIED", "ACCOUNT_NOT_ACTIVE"]) {
+    const denied = describeOwnerSaveError(new ApiError({ code, status: 403, message: "raw" }));
+    assert.equal(denied.reload, false);
+    assert.match(denied.message, /正常状态.*学生/);
+  }
+  for (const status of [429, 500, 503]) {
+    const message = status === 429 ? "请求过于频繁，请稍后再试" : "raw server detail";
+    const view = describeOwnerSaveError(new ApiError({ code: status === 429 ? "RATE_LIMITED" : "INTERNAL_ERROR", status, message, requestId: "trace-owner" }));
+    assert.equal(view.reload, status >= 500);
+    assert.equal(view.requestId, status >= 500 ? "trace-owner" : null);
+    assert.doesNotMatch(view.message, /raw server detail|保存成功/);
+    if (status === 429) assert.equal(view.message, message);
+  }
 });
 
 test("profile reads and saves discard private responses after an auth transition", async () => {
