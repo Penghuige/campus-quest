@@ -227,6 +227,14 @@ async def _seed() -> dict[str, Any]:
         # (the deep-link specs consume them), C stays fully open for the
         # UI-claim flow. Separate tasks because the same-task rule
         # refuses a second non-terminal claim for one student.
+        # Flake root-cause B (2026-10-09, frontend r2 forensics): D is
+        # a SECOND fully-open task, isomorphic to C, owned by the
+        # task-claim suite via CQ_E2E_TASK_URL. The failure mode is a
+        # CASCADE, not an ordering race: when submission's mobile test
+        # dies mid-claim it leaves an ACTIVE claim on the shared pool,
+        # and the same-task rule then reds task-claim's claims (a
+        # fully-COMPLETED run does not block re-claiming). Disjoint
+        # pools make task-claim immune to submission's fate either way.
         task_a = await seed_task_with_assignments(
             factory, teacher_id=teacher.user_id, run=f"{label_run}a", assignment_count=2
         )
@@ -235,6 +243,9 @@ async def _seed() -> dict[str, Any]:
         )
         task_c = await seed_task_with_assignments(
             factory, teacher_id=teacher.user_id, run=f"{label_run}c", assignment_count=2
+        )
+        task_d = await seed_task_with_assignments(
+            factory, teacher_id=teacher.user_id, run=f"{label_run}d", assignment_count=2
         )
         claim_a = await seed_claim(factory, task=task_a, student_id=student.user_id)
         claim_b = await seed_claim(factory, task=task_b, student_id=student.user_id)
@@ -495,7 +506,9 @@ async def _seed() -> dict[str, Any]:
             "review_task_id": str(task_r.task_id),
             "pending_redemption_id": str(redemption.id),
             "term_before": term_before,
-            "task_ids": [str(t.task_id) for t in (task_a, task_b, task_c, task_r)],
+            "task_ids": [
+                str(t.task_id) for t in (task_a, task_b, task_c, task_d, task_r)
+            ],
             "task_open": {
                 "task_id": str(task_c.task_id),
                 "title": task_c_title,
@@ -534,7 +547,14 @@ async def _seed() -> dict[str, Any]:
             # secrets, the non-completer (the author never claimed the
             # open task), and the reveal flow's admin staff-login
             # contract (identifier + the genuine TOTP secret).
-            "CQ_E2E_TASK_URL": f"/tasks/{task_c.task_id}",
+            # Flake B (2026-10-09): the URL now points at the SECOND
+            # open task (D) — task-claim's exclusive claim pool — so a
+            # mid-flight death in submission's UI claim on C can never
+            # cascade into task-claim reds (failure isolation; see the
+            # seed comment). The read-only consumers of this link
+            # (community, cross-browser smoke) are unaffected by which
+            # open task they render.
+            "CQ_E2E_TASK_URL": f"/tasks/{task_d.task_id}",
             "CQ_E2E_AUTHOR_STUDENT": f"{author.username}:{author.password}",
             "CQ_E2E_AUTHOR_SECRETS": ",".join(
                 (
