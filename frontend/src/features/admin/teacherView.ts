@@ -196,6 +196,48 @@ export const EMPTY_TASK_FORM: TaskFormValues = {
   submissionSchemaVersion: "",
 };
 
+// --- default submission schemas (defect #22, QA 2026-10-03) -------------------
+//
+// The schema field rides in a collapsed 高级 section and starts from a
+// per-type template so the default teacher never has to author JSON:
+// pick the file types, get a legal starting point, adjust the column
+// names. The templates use the CANONICAL grammar (validation schema.py:
+// required_columns/source_selector) — never an ad-hoc shape.
+
+const DEFAULT_SCHEMA_TEMPLATES: Record<string, string> = {
+  CSV:
+    '{"required_columns":[{"name":"platform","type":"string"},{"name":"keyword","type":"string"}]}',
+  XLSX:
+    '{"source_selector":{"sheet_name":"Sheet1"},"required_columns":[{"name":"platform","type":"string"},{"name":"keyword","type":"string"}]}',
+  SQLITE:
+    '{"source_selector":{"table_name":"records"},"required_columns":[{"name":"url","type":"string","unique":true},{"name":"title","type":"string"}]}',
+};
+
+/** Selector-specificity order when several types are selected. */
+const TEMPLATE_PREFERENCE = ["SQLITE", "XLSX", "CSV"] as const;
+
+/** The default template for a type selection ("" when none applies). */
+export function defaultSchemaFor(types: readonly string[]): string {
+  for (const type of TEMPLATE_PREFERENCE) {
+    if (types.includes(type)) {
+      return DEFAULT_SCHEMA_TEMPLATES[type];
+    }
+  }
+  return "";
+}
+
+/**
+ * Auto-fill only touches a PRISTINE field: empty, or still holding one
+ * of the known templates (switching types swaps templates freely). A
+ * teacher's manual edit — any other content — is respected as-is.
+ */
+export function shouldAutoFillSchema(current: string): boolean {
+  return (
+    current.trim().length === 0 ||
+    Object.values(DEFAULT_SCHEMA_TEMPLATES).includes(current)
+  );
+}
+
 export type TaskFormField =
   | "title"
   | "description"

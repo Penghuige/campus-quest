@@ -19,6 +19,8 @@ import {
 } from "./teacherApi";
 import {
   DEADLINE_MODE_OPTIONS,
+  defaultSchemaFor,
+  shouldAutoFillSchema,
   TASK_RARITY_OPTIONS,
   type TaskFormErrors,
   type TaskFormValues,
@@ -51,12 +53,15 @@ export function TaskFormFields({
 
   function toggleFileType(type: string) {
     const cast = type as TaskFormValues["fileTypes"][number];
-    setField(
-      "fileTypes",
-      values.fileTypes.includes(cast)
-        ? values.fileTypes.filter((item) => item !== cast)
-        : [...values.fileTypes, cast],
-    );
+    const next = values.fileTypes.includes(cast)
+      ? values.fileTypes.filter((item) => item !== cast)
+      : [...values.fileTypes, cast];
+    setField("fileTypes", next);
+    // Defect #22: a pristine schema follows the type selection —
+    // switching types swaps the default template; a manual edit stays.
+    if (shouldAutoFillSchema(values.submissionSchema)) {
+      setField("submissionSchema", defaultSchemaFor(next));
+    }
   }
 
   return (
@@ -283,49 +288,60 @@ export function TaskFormFields({
         </p>
       </fieldset>
 
-      <div className="form-grid">
-        <div className="field">
-          <label className="field-label" htmlFor="task-schema">
-            提交校验 schema（JSON，发布前必填）
-          </label>
-          <textarea
-            id="task-schema"
-            className="input mono"
-            rows={3}
-            placeholder='{"columns": ["platform", "keyword"]}'
-            value={values.submissionSchema}
-            onChange={(event) => setField("submissionSchema", event.target.value)}
-            aria-invalid={fieldErrors.submissionSchema !== undefined}
-            disabled={lock("submissionSchema")}
-          />
-          {isFrozen("submissionSchema") ? (
-            <p className="field-hint">{FROZEN_HINT}</p>
-          ) : null}
-          {fieldErrors.submissionSchema !== undefined ? (
-            <p className="field-error">{fieldErrors.submissionSchema}</p>
-          ) : null}
-        </div>
+      {/* Defect #22 (QA 2026-10-03): the schema rides collapsed in a
+          高级 section — the per-type default template already makes the
+          common path publishable, so most teachers never open this;
+          those who do get the grammar hints inline. */}
+      <details className="form-advanced">
+        <summary>高级：提交校验 schema（已按所选类型自动填入默认模板）</summary>
+        <p className="field-hint">
+          校验规则决定学生提交的文件怎样才算通过：列名/类型/唯一性等。
+          默认模板可直接发布——请先把列名改成任务实际需要的列。
+        </p>
+        <div className="form-grid">
+          <div className="field">
+            <label className="field-label" htmlFor="task-schema">
+              提交校验 schema（JSON，发布前必填）
+            </label>
+            <textarea
+              id="task-schema"
+              className="input mono"
+              rows={3}
+              placeholder='{"required_columns": [{"name": "platform", "type": "string"}]}'
+              value={values.submissionSchema}
+              onChange={(event) => setField("submissionSchema", event.target.value)}
+              aria-invalid={fieldErrors.submissionSchema !== undefined}
+              disabled={lock("submissionSchema")}
+            />
+            {isFrozen("submissionSchema") ? (
+              <p className="field-hint">{FROZEN_HINT}</p>
+            ) : null}
+            {fieldErrors.submissionSchema !== undefined ? (
+              <p className="field-error">{fieldErrors.submissionSchema}</p>
+            ) : null}
+          </div>
 
-        <div className="field">
-          <label className="field-label" htmlFor="task-schema-version">
-            schema 版本
-          </label>
-          <input
-            id="task-schema-version"
-            className="input"
-            inputMode="numeric"
-            placeholder="1"
-            value={values.submissionSchemaVersion}
-            onChange={(event) =>
-              setField("submissionSchemaVersion", event.target.value)
-            }
-            disabled={lock("submissionSchemaVersion")}
-          />
-          {isFrozen("submissionSchemaVersion") ? (
-            <p className="field-hint">{FROZEN_HINT}</p>
-          ) : null}
+          <div className="field">
+            <label className="field-label" htmlFor="task-schema-version">
+              schema 版本
+            </label>
+            <input
+              id="task-schema-version"
+              className="input"
+              inputMode="numeric"
+              placeholder="1"
+              value={values.submissionSchemaVersion}
+              onChange={(event) =>
+                setField("submissionSchemaVersion", event.target.value)
+              }
+              disabled={lock("submissionSchemaVersion")}
+            />
+            {isFrozen("submissionSchemaVersion") ? (
+              <p className="field-hint">{FROZEN_HINT}</p>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </details>
     </>
   );
 }
