@@ -13,8 +13,18 @@ from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.innovation.evidence_router import get_evidence_service
 from app.modules.innovation.evidence_schemas import EvidenceIntentCreate
+from app.modules.innovation.models import OwnerProfile
+from app.modules.innovation.review_operations_router import (
+    get_review_operations_service,
+)
+from app.modules.innovation.review_schemas import (
+    ReviewVersionCommand,
+    SavedRevisionCommand,
+)
+from app.modules.innovation.review_service import AchievementReviewService
 from tests.integration.innovation.test_achievement_evidence import PDF, world
 from tests.integration.innovation.test_achievement_evidence import clock as clock
+from tests.integration.innovation.test_achievement_review_operations import account
 
 pytestmark = pytest.mark.integration
 
@@ -30,6 +40,23 @@ if (
 
 async def test_real_provider_checks_uploaded_bytes_and_write_once(db_session, clock):
     owner, parent, achievement, _ = await world(db_session, clock)
+    parent.summary, parent.direction, parent.stage, parent.team_status = (
+        "真实存储组合烟测",
+        "教育",
+        "原型",
+        "两人团队",
+    )
+    achievement.description = "可运行原型及真实证明"
+    db_session.add(
+        OwnerProfile(
+            user_id=owner.id,
+            name="烟测本人",
+            student_no="000005",
+            major="专业",
+            grade="2026",
+        )
+    )
+    await db_session.flush()
     actor = Actor(user_id=owner.id, role=Role.STUDENT)
     service = get_evidence_service(clock)
     args = {"actor": actor, "project_id": parent.id, "achievement_id": achievement.id}
@@ -61,6 +88,40 @@ async def test_real_provider_checks_uploaded_bytes_and_write_once(db_session, cl
         assert checked.state == "READY", checked.failure_code
         content = await service.read_content(db_session, **args, evidence_id=checked.id)
         assert content.content == PDF
+        workflow_service = AchievementReviewService(clock=clock)
+        workflow = await workflow_service.workflow(db_session, **args)
+        submitted = await workflow_service.submit(
+            db_session,
+            **args,
+            payload=SavedRevisionCommand(
+                request_id=uuid4(),
+                workflow_version=workflow.version,
+                project_version=parent.version,
+                achievement_version=achievement.version,
+                evidence_ids=[checked.id],
+            ),
+        )
+        assert submitted.review_case is not None
+        operator, _ = await account(db_session, clock, operator=True)
+        review_service = get_review_operations_service(clock)
+        review_args = {
+            "actor": Actor(user_id=operator.id, role=Role.STUDENT),
+            "case_id": submitted.review_case.id,
+        }
+        claimed = await review_service.claim(
+            db_session,
+            **review_args,
+            payload=ReviewVersionCommand(version=submitted.review_case.version),
+        )
+        detail = await review_service.detail(db_session, **review_args)
+        assert (
+            detail.case.id == claimed.id
+            and detail.owner_profile["student_no"] == "000005"
+        )
+        operator_content = await review_service.read_content(
+            db_session, **review_args, evidence_id=checked.id
+        )
+        assert operator_content.content == PDF
         with pytest.raises(ValueError, match="size limit"):
             await asyncio.to_thread(
                 real_storage.read_bounded_object, object_key=key, max_bytes=len(PDF) - 1

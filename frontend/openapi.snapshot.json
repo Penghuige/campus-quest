@@ -1772,6 +1772,1018 @@
         }
       }
     },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence": {
+      "post": {
+        "tags": [
+          "innovation evidence"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceIntentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceIntentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "innovation evidence"
+        ],
+        "summary": "List Owned",
+        "operationId": "list_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}/complete": {
+      "post": {
+        "tags": [
+          "innovation evidence"
+        ],
+        "summary": "Complete",
+        "operationId": "complete_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__complete_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          },
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}": {
+      "delete": {
+        "tags": [
+          "innovation evidence"
+        ],
+        "summary": "Remove",
+        "operationId": "remove_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          },
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}/content": {
+      "get": {
+        "tags": [
+          "innovation evidence"
+        ],
+        "summary": "Content",
+        "operationId": "content_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          },
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/workflow": {
+      "get": {
+        "tags": [
+          "innovation review workflow"
+        ],
+        "summary": "Workflow",
+        "operationId": "workflow_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__workflow_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementWorkflowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/submit": {
+      "post": {
+        "tags": [
+          "innovation review workflow"
+        ],
+        "summary": "Submit",
+        "operationId": "submit_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedRevisionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementWorkflowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/withdraw": {
+      "post": {
+        "tags": [
+          "innovation review workflow"
+        ],
+        "summary": "Withdraw",
+        "operationId": "withdraw_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__withdraw_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementWorkflowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/publish-update": {
+      "post": {
+        "tags": [
+          "innovation review workflow"
+        ],
+        "summary": "Publish Update",
+        "operationId": "publish_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__publish_update_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedRevisionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementWorkflowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews": {
+      "get": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Queue",
+        "operationId": "queue_api_v1_ie_ops_achievement_reviews_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__modules__innovation__review_schemas__ReviewQueueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/claim": {
+      "post": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Claim",
+        "operationId": "claim_api_v1_ie_ops_achievement_reviews__case_id__claim_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/conflict": {
+      "post": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Conflict",
+        "operationId": "conflict_api_v1_ie_ops_achievement_reviews__case_id__conflict_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews/{case_id}": {
+      "get": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_api_v1_ie_ops_achievement_reviews__case_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPrivateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/decision": {
+      "post": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Decision",
+        "operationId": "decision_api_v1_ie_ops_achievement_reviews__case_id__decision_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecisionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/evidence/{evidence_id}/content": {
+      "get": {
+        "tags": [
+          "innovation reviews"
+        ],
+        "summary": "Content",
+        "operationId": "content_api_v1_ie_ops_achievement_reviews__case_id__evidence__evidence_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "evidence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Evidence Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/achievements": {
+      "get": {
+        "tags": [
+          "innovation achievements"
+        ],
+        "summary": "List Visible",
+        "operationId": "list_visible_api_v1_ie_achievements_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAchievementListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/achievements/{achievement_id}": {
+      "get": {
+        "tags": [
+          "innovation achievements"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_api_v1_ie_achievements__achievement_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "achievement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Achievement Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAchievementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "summary": "List Tasks",
@@ -6672,6 +7684,100 @@
         ],
         "title": "AchievementDraftUpdate"
       },
+      "AchievementWorkflowResponse": {
+        "properties": {
+          "achievement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Achievement Id"
+          },
+          "first_review_state": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "RETURNED",
+              "APPROVED"
+            ],
+            "title": "First Review State"
+          },
+          "moderation_state": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "TAKEN_DOWN"
+            ],
+            "title": "Moderation State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "review_case": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewCaseSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "public_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Revision Id"
+          },
+          "first_approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Approved At"
+          },
+          "latest_update_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Update At"
+          },
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "title": "Has Unpublished Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "achievement_id",
+          "first_review_state",
+          "moderation_state",
+          "version",
+          "review_case",
+          "public_revision_id",
+          "first_approved_at",
+          "latest_update_at",
+          "has_unpublished_changes"
+        ],
+        "title": "AchievementWorkflowResponse"
+      },
       "AdminNotificationTemplateListResponse": {
         "properties": {
           "items": {
@@ -7783,6 +8889,160 @@
         "title": "EmojiWhitelistSettingRequest",
         "description": "The emoji allowlist (spec §22): each entry 1-8 code points; the\nEMPTY list is legal at the key level (= all emoji banned) — the\nregistry's own contract decides, this DTO only types the payload."
       },
+      "EvidenceIntentCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ],
+            "title": "Content Type"
+          },
+          "size": {
+            "type": "integer",
+            "maximum": 10485760.0,
+            "minimum": 1.0,
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "content_type",
+          "size"
+        ],
+        "title": "EvidenceIntentCreate"
+      },
+      "EvidenceIntentResponse": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceResponse"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "client_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Client Headers"
+          },
+          "pinned_content_length": {
+            "type": "integer",
+            "title": "Pinned Content Length"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evidence",
+          "upload_url",
+          "expires_at",
+          "client_headers",
+          "pinned_content_length"
+        ],
+        "title": "EvidenceIntentResponse"
+      },
+      "EvidenceListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "EvidenceListResponse"
+      },
+      "EvidenceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CHECKING",
+              "READY",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content_type",
+          "size",
+          "state",
+          "sha256",
+          "failure_code",
+          "version",
+          "created_at"
+        ],
+        "title": "EvidenceResponse"
+      },
       "FileType": {
         "type": "string",
         "enum": [
@@ -8565,7 +9825,9 @@
           "SUBMISSION_VALIDATION_FAILED",
           "REWARD_REDEMPTION_APPROVED",
           "REWARD_REDEMPTION_REJECTED",
-          "ACCOUNT_SECURITY"
+          "ACCOUNT_SECURITY",
+          "IE_ACHIEVEMENT_APPROVED",
+          "IE_ACHIEVEMENT_RETURNED"
         ],
         "title": "NotificationEventType",
         "description": "Canonical domain event names (spec §25 list plus the\nSUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md)."
@@ -9387,6 +10649,137 @@
         ],
         "title": "ProjectDraftUpdate",
         "description": "PATCH submits the complete five-field editor plus the observed version."
+      },
+      "PublicAchievementContent": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "work_url": {
+            "type": "string",
+            "title": "Work Url"
+          },
+          "award_text": {
+            "type": "string",
+            "title": "Award Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "work_url",
+          "award_text"
+        ],
+        "title": "PublicAchievementContent"
+      },
+      "PublicAchievementListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicAchievementResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PublicAchievementListResponse"
+      },
+      "PublicAchievementResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project": {
+            "$ref": "#/components/schemas/PublicProjectContent"
+          },
+          "achievement": {
+            "$ref": "#/components/schemas/PublicAchievementContent"
+          },
+          "first_approved_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Approved At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_after_first_review": {
+            "type": "boolean",
+            "title": "Updated After First Review"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project",
+          "achievement",
+          "first_approved_at",
+          "updated_at",
+          "updated_after_first_review"
+        ],
+        "title": "PublicAchievementResponse"
+      },
+      "PublicProjectContent": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "team_status": {
+            "type": "string",
+            "title": "Team Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "summary",
+          "direction",
+          "stage",
+          "team_status"
+        ],
+        "title": "PublicProjectContent"
       },
       "QualificationApply": {
         "properties": {
@@ -10254,6 +11647,210 @@
         "title": "RevealRequest",
         "description": "The reveal reason (spec §21.4 每次追溯): mandatory (blank-after-trim\nis the service's typed rejection) and capped at 1000 characters on the\nraw body — the audit payload is bounded material, not a moderation\nessay."
       },
+      "ReviewCaseSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED",
+              "WITHDRAWN",
+              "APPROVED",
+              "RETURNED"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revision_id",
+          "status",
+          "version",
+          "reason"
+        ],
+        "title": "ReviewCaseSummary"
+      },
+      "ReviewDecisionCommand": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "RETURNED"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "request_id",
+          "revision_id",
+          "decision"
+        ],
+        "title": "ReviewDecisionCommand"
+      },
+      "ReviewPrivateDetail": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/ReviewCaseSummary"
+          },
+          "project_content": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Project Content"
+          },
+          "achievement_content": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Achievement Content"
+          },
+          "owner_profile": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Owner Profile"
+          },
+          "evidence": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "project_content",
+          "achievement_content",
+          "owner_profile",
+          "evidence"
+        ],
+        "title": "ReviewPrivateDetail"
+      },
+      "ReviewQueueItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED",
+              "WITHDRAWN",
+              "APPROVED",
+              "RETURNED"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "project_title": {
+            "type": "string",
+            "title": "Project Title"
+          },
+          "achievement_title": {
+            "type": "string",
+            "title": "Achievement Title"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "claimed_by_me": {
+            "type": "boolean",
+            "title": "Claimed By Me"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revision_id",
+          "status",
+          "version",
+          "reason",
+          "project_title",
+          "achievement_title",
+          "submitted_at",
+          "claimed_by_me"
+        ],
+        "title": "ReviewQueueItem"
+      },
       "ReviewQueueItemResponse": {
         "properties": {
           "submission_id": {
@@ -10383,6 +11980,21 @@
         ],
         "title": "ReviewQueueItemResponse",
         "description": "One review-queue row (spec §41/§28): the VALIDATED submission\nwith the claim/task context the reviewer needs to judge it. The\n``download_url`` is the API path that mints the short-lived\npresigned link on demand (authorized per request), not a presigned\nURL that would expire inside a listed page."
+      },
+      "ReviewVersionCommand": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "ReviewVersionCommand"
       },
       "RevisionRequiredRequest": {
         "properties": {
@@ -10883,6 +12495,50 @@
           "ADMIN"
         ],
         "title": "Role"
+      },
+      "SavedRevisionCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "workflow_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Workflow Version"
+          },
+          "project_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Project Version"
+          },
+          "achievement_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Achievement Version"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Evidence Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "workflow_version",
+          "project_version",
+          "achievement_version",
+          "evidence_ids"
+        ],
+        "title": "SavedRevisionCommand"
       },
       "StaffInvitationAcceptRequest": {
         "properties": {
@@ -12916,6 +14572,64 @@
           "toggled"
         ],
         "title": "WhitelistToggleResponse"
+      },
+      "WithdrawCommand": {
+        "properties": {
+          "workflow_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Workflow Version"
+          },
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "case_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Case Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workflow_version",
+          "case_id",
+          "case_version"
+        ],
+        "title": "WithdrawCommand"
+      },
+      "app__modules__innovation__review_schemas__ReviewQueueResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ReviewQueueResponse"
       },
       "app__modules__points__router__ReviewQueueResponse": {
         "properties": {

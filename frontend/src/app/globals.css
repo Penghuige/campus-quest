@@ -4256,3 +4256,6 @@ body {
     animation-name: cq-fade-in;
   }
 }
+
+/* Innovation review reading content keeps literal line breaks and long links. */
+.ie-review-prose { white-space: pre-wrap; overflow-wrap: anywhere; }

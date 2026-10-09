@@ -20,6 +20,42 @@ from tests.integration.innovation.test_achievement_evidence import storage as st
 pytestmark = pytest.mark.integration
 
 
+async def test_historical_proofs_do_not_exhaust_new_revision_upload_slots(
+    client, db_session, clock, storage
+):
+    _, parent, achievement, headers, base, payload = await prepared(
+        db_session, clock, client, storage
+    )
+    for _ in range(4):
+        signed = (
+            await client.post(path(parent, achievement), headers=headers, json=intent())
+        ).json()
+        storage.put_object(object_key=storage.upload_urls[-1].object_key, content=PDF)
+        checked = await client.post(
+            f"{path(parent, achievement)}/{signed['evidence']['id']}/complete",
+            headers=headers,
+        )
+        assert checked.json()["state"] == "READY"
+        payload["evidence_ids"].append(signed["evidence"]["id"])
+    submitted = (
+        await client.post(f"{base}/submit", headers=headers, json=payload)
+    ).json()
+    case = submitted["review_case"]
+    response = await client.post(
+        f"{base}/withdraw",
+        headers=headers,
+        json={
+            "workflow_version": submitted["version"],
+            "case_id": case["id"],
+            "case_version": case["version"],
+        },
+    )
+    assert response.status_code == 200
+    # The limit is per revision/upload workspace, not five lifetime proofs.
+    fresh = await client.post(path(parent, achievement), headers=headers, json=intent())
+    assert fresh.status_code == 201, fresh.text
+
+
 async def prepared(db, clock, client, storage):
     owner, parent, achievement, headers = await world(db, clock)
     db.add(

@@ -1,6 +1,6 @@
 # 成果核实与校内展示 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 用户已明确要求回顾两份材料后继续；采用本会话逐项执行，最终独立复核，不重复请求执行批准。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. 用户已明确要求回顾两份材料后继续；采用本会话逐项执行，最终独立复核，不重复请求执行批准。
 
 **Goal:** 负责人上传安全证明并提交不可变成果，运营核实后校内可见，已公开成果更新免复审。
 
@@ -34,10 +34,10 @@
 
 **Interfaces:** Produces `EvidenceScanner.scan(content: bytes) -> None`（威胁/无效内容/检查不可用分别异常）及 `ClamdEvidenceScanner.check() -> bool`；不接受客户端路径。
 
-- [ ] 写真实 TCP 协议测试：完整 INSTREAM 分块及结束标记；明确 OK 才通过；FOUND、ERROR、无终止响应、超长响应、断连、超时、缺少病毒库/命令均拒绝；类型伪装和截断拒绝。生产改动误将任一错误当 OK 必须使测试失败。
-- [ ] 运行新测试，确认新端口缺失/行为缺失失败；再实现有总截止时间和字节/响应上限的端口与 adapter。
-- [ ] 固定扫描配置、内部/回环 TCP，官方病毒库更新；真实烟测健康文件与 EICAR、10 MiB 及检查器停用场景，不拿测试自定义病毒库替代官方库。
-- [ ] 运行 `python -m pytest tests/unit/integrations/test_evidence_scanner.py -q`（预期全 PASS）、Ruff/mypy；真实烟测按 opt-in 与完整输出记录；提交。
+- [x] 写真实 TCP 协议测试：完整 INSTREAM 分块及结束标记；明确 OK 才通过；FOUND、ERROR、无终止响应、超长响应、断连、超时、缺少病毒库/命令均拒绝；类型伪装和截断拒绝。生产改动误将任一错误当 OK 必须使测试失败。
+- [x] 运行新测试，确认新端口缺失/行为缺失失败；再实现有总截止时间和字节/响应上限的端口与 adapter。
+- [x] 固定扫描配置、内部/回环 TCP，官方病毒库更新；真实烟测健康文件与 EICAR、10 MiB 及检查器停用场景，不拿测试自定义病毒库替代官方库。
+- [x] 运行 `python -m pytest tests/unit/integrations/test_evidence_scanner.py -q`（预期全 PASS）、Ruff/mypy；真实烟测按 opt-in 与完整输出记录；提交。
 
 ### Task 2: 成果证明意向、完成检查与受控读取
 
@@ -45,10 +45,10 @@
 
 **Interfaces:** Consumes Task 1 scanner。Storage produces `create_evidence_upload_url(achievement_id, content_type, content_length, expires_in) -> UploadUrl` and `read_bounded_object(object_key, max_bytes) -> StoredObject`。`EvidenceService` exposes owner `create_intent`, `list_owned`, `complete`, `remove`, `read_content`，均接收 db、actor、project/achievement/evidence IDs 和 AuditContext。
 
-- [ ] 先写意向与完成失败用例：未开通资格、跨账号/项目、类型/数量/大小、过期、实际大小/类型不符、文件缺失、扫描失败/重试、审计失败均不能 READY/返回文件。
-- [ ] 运行真实 PG 测试观察缺失行为失败，再实现 PENDING/CHECKING/READY/REJECTED、检查 attempt CAS、SHA-256、脱敏审计与受控读取；网络前提交短事务，返回前重锁验证资格/归属/状态。
-- [ ] 路由挂载既有成果子路径 `/evidence`，签名字段仅意向接口回传；下载强制 attachment/nosniff/private-no-store，不回传 key/下载签名 URL。
-- [ ] 从空独占库迁移到 head；真实 MinIO 写一次/大小 pin/类型 pin/受限读取；运行新增集成测试（预期全 PASS）及静态检查；提交。
+- [x] 先写意向与完成失败用例：未开通资格、跨账号/项目、类型/数量/大小、过期、实际大小/类型不符、文件缺失、扫描失败/重试、审计失败均不能 READY/返回文件。
+- [x] 运行真实 PG 测试观察缺失行为失败，再实现 PENDING/CHECKING/READY/REJECTED、检查 attempt CAS、SHA-256、脱敏审计与受控读取；网络前提交短事务，返回前重锁验证资格/归属/状态。
+- [x] 路由挂载既有成果子路径 `/evidence`，签名字段仅意向接口回传；下载强制 attachment/nosniff/private-no-store，不回传 key/下载签名 URL。
+- [x] 从空独占库迁移到 head；真实 MinIO 写一次/大小 pin/类型 pin/受限读取；运行新增集成测试（预期全 PASS）及静态检查；提交。
 
 ### Task 3: 不可变版本、提交/撤回/公开更新
 
@@ -56,10 +56,10 @@
 
 **Interfaces:** Produces `AchievementReviewService.workflow`, `submit`, `withdraw`, `publish_update`，输入 Actor、父子 IDs、已保存版本、request_id、材料 IDs；响应 workflow 版本和审单 ID，不公开敏感快照。Task 2 的材料增加审核引用冻结检查。
 
-- [ ] 测试先行：四项负责人/五项项目概况/成果描述/至少一份 READY 材料；提交幂等及同键不同内容 409；每份成果首次核实；待审禁止修改/删除材料；撤回重交旧单无效。
-- [ ] 实现 workflow/revision/review_case/材料引用外键及唯一、状态组合约束，提交保存项目/成果/身份的不可变快照。PG 两连接验证撤回竞争和旧版本不替换。
-- [ ] 已通过“保存草稿”不公开；显式 publish-update 原子切换版本而不建审核单、不改 first_approved_at；下架后更新不恢复。
-- [ ] 运行 `python -m pytest tests/integration/innovation/test_achievement_workflow.py -m integration -q`（预期全 PASS），既有成果草稿回归、静态与迁移验证；提交。
+- [x] 测试先行：四项负责人/五项项目概况/成果描述/至少一份 READY 材料；提交幂等及同键不同内容 409；每份成果首次核实；待审禁止修改/删除材料；撤回重交旧单无效。
+- [x] 实现 workflow/revision/review_case/材料引用外键及唯一、状态组合约束，提交保存项目/成果/身份的不可变快照。PG 两连接验证撤回竞争和旧版本不替换。
+- [x] 已通过“保存草稿”不公开；显式 publish-update 原子切换版本而不建审核单、不改 first_approved_at；下架后更新不恢复。
+- [x] 运行 `python -m pytest tests/integration/innovation/test_achievement_workflow.py -m integration -q`（预期全 PASS），既有成果草稿回归、静态与迁移验证；提交。
 
 ### Task 4: 运营领取/审核、公开投影及 durable 通知
 
@@ -67,10 +67,10 @@
 
 **Interfaces:** Ops `/ie/ops/achievement-reviews` list/claim/detail/decision；public `/ie/achievements` list/detail。领取与决定携带 expected_version，决定还携带 revision_id/request_id/reason；返回显式响应 schema。
 
-- [ ] 先测试无授权/本人项目回避、领取冲突、领取后才能查看快照、撤权/停用阻断、未领取 ADMIN 无材料读取；审计失败不暴露内容。
-- [ ] 实现用户顺序锁和锁后身份重验，返回理由必填，旧版本/撤回竞争 409；通过设置公开版本、首次核实时间，状态与审计/通知意图同事务。
-- [ ] 公开分页仅 APPROVED/NORMAL/public_revision 白名单，匿名/停用/未审/下架直链拒绝；后续更新明确标记未逐项复审。
-- [ ] 测试通知唯一、重复决定无二次通知/公开，真实 PG 两连接批准与撤回竞争；运行新增及通知回归（预期全 PASS）/静态；提交。
+- [x] 先测试无授权/本人项目回避、领取冲突、领取后才能查看快照、撤权/停用阻断、未领取 ADMIN 无材料读取；审计失败不暴露内容。
+- [x] 实现用户顺序锁和锁后身份重验，返回理由必填，旧版本/撤回竞争 409；通过设置公开版本、首次核实时间，状态与审计/通知意图同事务。
+- [x] 公开分页仅 APPROVED/NORMAL/public_revision 白名单，匿名/停用/未审/下架直链拒绝；后续更新明确标记未逐项复审。
+- [x] 测试通知唯一、重复决定无二次通知/公开，真实 PG 两连接批准与撤回竞争；运行新增及通知回归（预期全 PASS）/静态；提交。
 
 ### Task 5: 本人、运营与校内浏览界面及最终门禁
 

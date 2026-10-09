@@ -728,6 +728,9 @@ async def _clean(world_path: str) -> dict[str, Any]:
                 await db.commit()
 
         # S3 objects this run PUT (guarded: absent objects raise, §27).
+        from app.modules.innovation.evidence_models import AchievementEvidence
+        from app.modules.innovation.models import AchievementDraft, ProjectDraft
+
         storage = S3ObjectStorage(get_settings())
         async with factory() as db:
             keys = (
@@ -744,6 +747,23 @@ async def _clean(world_path: str) -> dict[str, Any]:
                 )
                 .scalars()
                 .all()
+            )
+            keys.extend(
+                (
+                    await db.scalars(
+                        select(AchievementEvidence.object_key).where(
+                            AchievementEvidence.achievement_id.in_(
+                                select(AchievementDraft.id).where(
+                                    AchievementDraft.project_id.in_(
+                                        select(ProjectDraft.id).where(
+                                            ProjectDraft.owner_user_id.in_(user_ids)
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                ).all()
             )
         for key in keys:
             with contextlib.suppress(FileNotFoundError):

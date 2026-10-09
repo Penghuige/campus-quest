@@ -196,6 +196,7 @@ class EvidenceService:
                 .where(
                     AchievementEvidence.achievement_id == achievement_id,
                     AchievementEvidence.removed_at.is_(None),
+                    AchievementEvidence.referenced.is_(False),
                     or_(
                         AchievementEvidence.state != "PENDING",
                         AchievementEvidence.expires_at > now,
@@ -203,7 +204,9 @@ class EvidenceService:
                 )
             )
             if count is not None and count >= 5:
-                raise _conflict("每项成果最多保留五份证明，请先移除多余材料")
+                raise _conflict(
+                    "每项成果最多保留五份未引用的上传材料，请先移除多余材料"
+                )
             signed = self._storage.create_evidence_upload_url(
                 achievement_id=achievement_id,
                 content_type=payload.content_type,

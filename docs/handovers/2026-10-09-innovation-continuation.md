@@ -13,10 +13,10 @@
 ## 工作区、Git 和预览
 
 - 工作区：`C:/Users/111/Desktop/华师令`；仓库：该目录下的 `campus-quest`。新对话继续同一项目的本地 checkout。
-- 分支 `codex/innovation-platform`；整理前 HEAD `7e1b44b9d4c2aec74e23f167e729cb5e47df647d`、工作树干净。此摘要提交后 HEAD 会变化，以实时 Git 为准。
+- 分支 `codex/innovation-platform`；成果后端检查点 HEAD `491eaa0d572c4ed9b85fe71b1a0ad4e7aacfaa01`。成果前端及最终验证正在推进，工作树有本轮改动；不得将此检查点当作最终完成提交。以实时 Git 为准。
 - `origin` 为 Penghuige/campus-quest；已授权推送的是 `fork`（tzshsta/campus-quest）。既有 Draft PR：<https://github.com/Penghuige/campus-quest/pull/43>。提交署名已在本项目配置，无需再次询问。保持 Draft，不合并 main；不自行给学姐或其他人发送消息。
 - 最后已确认本地 API `http://127.0.0.1:8000`、Web `http://127.0.0.1:3000`。负责人页 `/profile/owner-profile`，项目草稿页 `/profile/project-drafts`；资格管理页 `/admin/owner-qualifications`。
-- 启动脚本在工作区 `.local-dev/Start-Dev.ps1`，`-Component All`；运行前核对已有监听进程归属。临时 Linux 测试容器和 TLS MinIO 已停止，开发预览服务保留；续接时仍须验证运行状态。
+- 启动脚本在工作区 `.local-dev/Start-Dev.ps1`，`-Component All`；运行前核对已有监听进程归属。成果材料需要本地 ClamAV；Linux 测试运行时使用独占数据库和 HTTPS MinIO，借用本会话拥有的 Web 3000 后恢复开发预览。续接仍须验证进程归属及服务状态。
 
 ## 已实现与保存的业务
 
@@ -24,13 +24,15 @@
 
 负责人资格的未申请→等待开通→已开通已实现。提交四项快照；待开通可用新保存资料显式更新申请，旧管理员页 409。申请队列无四项 PII，ADMIN 显式查看后才读取快照并先提交访问审计。保留 ADMIN/TOTP/管理网络策略、锁后重验身份、真实 PG 并发及事务审计；保存资料不自动授权，开通不表示成果核实。迁移至 0029，开发数据保留。
 
-提交节点：`1e440fa` 资格源码/测试；`3936d3c` 仅两张 Linux PNG 与走查记录；`7e1b44b` 仅成果核实设计评审稿。随后已提交并推送 `6ff1511`：有界失效拒绝扫描器与真实 ClamAV。上传接口正在实现；成果提交、运营审核、公开成果读取和前端闭环尚待完成。实施计划见 `docs/superpowers/plans/2026-10-09-innovation-achievement-review.md`，实时 ledger 在 `.superpowers/sdd/2026-10-09-innovation-achievement-review/progress.md`。
+提交节点：`1e440fa` 资格源码/测试；`3936d3c` 资格 Linux PNG；`7e1b44b` 成果核实设计；`6ff1511` 有界扫描器；`8c141d3` 写一次证明与私密代理；`0e49439` 不可变提交及显式更新；`491eaa0` 运营领取、审计、核实决定、通知与公开白名单。后端任务已提交并推送；前端闭环已实现且针对性浏览器通过，最终双树门禁及独立评审尚在推进。实施计划见 `docs/superpowers/plans/2026-10-09-innovation-achievement-review.md`；执行中的 ledger 在 `.superpowers/sdd/2026-10-09-innovation-achievement-review/progress.md`，结束后以提交的验证记录为准。
 
 ## 当前实施设计
 
 `docs/superpowers/specs/2026-10-09-innovation-achievement-review-design.md`。
 
-拟实现：负责人提交不可变快照与证明→运营领取审核单→通过或有理由退回→通过后校内展示；待审修改须撤回重交，同一成果通过后的更新免复审，新成果仍需首次核实。拟新增的具体约定是“运营领取后才看该审核单材料”和“PDF/PNG/JPEG，每份最多 10 MiB、最多 5 份”，按最新继续指令实施。
+已实现的成果链路：负责人提交不可变快照与证明→运营领取审核单→通过或有理由退回→通过后校内展示；待审修改须撤回重交，同一成果通过后的更新免复审，新成果仍需首次核实。具体约定为“运营领取后才看该审核单材料”和“PDF/PNG/JPEG，每份最多 10 MiB、每次选 1～5 份”。历史版本引用的证明保留，不占五份未引用上传槽位；发布更新不恢复下架状态。API 的 140 秒等待上限不意味着可以取消底层 provider 线程；迟到结果以 attempt token 与锁后重验禁止回写。
+
+前端提供负责人私密证明区、`/innovation/reviews` 运营待办、`/innovation/achievements` 校内公开列表及详情。提交与决定的网络/5xx不确定结果保留原请求键与载荷，需显式重试原操作；换账号清除旧私密状态。三个新本地演示账号20269001/2/3及示例项目已经通过真实资格/授权/草稿接口准备，既有开发数据未重置。具体验收见 `docs/demo/innovation-achievement-review.md`。
 
 设计采用本地隔离 ClamAV 与受控代理下载；扫描服务已运行并以官方病毒库通过真实烟测；检查不可用不得假装通过。仓库目前没有共同管理员/已确认成员关系，负责人回避可实施，完整参与人回避必须随成员功能补齐。SSO 尚未对接，演示账号不能被称为已完成学校统一认证。
 
@@ -40,7 +42,9 @@
 - 正确 greenlet/thread collector 追加后 innovation 98.1 高于原地板 97.8，18 模块原地板不变、ratchet 0；第一次 96.9 棘轮失败的日志保留。Ruff 格式/检查、mypy 177 源文件、12 矩阵通过。
 - 前端 624 项纯测及 type/lint/CSS/build/覆盖率通过；双创功能浏览器 13 项通过，axe 16 页通过；相关四页 Linux 视觉通过，全 16 页 15 通过/1 既有任务列表失败（15142 像素），未重拍旧任务 PNG 或放宽阈值。
 - 独立静态复核覆盖资格提交 3936d3c，未发现阻断问题；不代表整个 PR 的 merge APPROVE。7e1b44b 的最新远端状态仅 GitGuardian SUCCESS，不能宣称完整 GitHub CI 已通过。
-- 完整发布电池、既有任务列表 PNG 差、最终 HEAD 完整 CI、整个 PR 合并评审仍未关闭。不能宣称可合并、正式上线或完成三库 demo。
+- 上述数字属于资格检查点的历史证据。本轮成果门禁必须单列，不用旧日志补数。任务列表 PNG 差已追溯为上游3a51680新增第五张测试任务而漏更新旧图，新增任务卡数5及页脚5/5强断言后仅同步该图；成果草稿图仅更新本计划改变的公开说明。既有16场景比较通过，新的3张基线也比较通过；没有增加遮罩或放宽阈值。
+- 本轮首次全浏览器104通过/1失败/28有明文豁免的跳过。唯一失败为本地 runner 错给功能电池设置截图固定名称开关，导致旧奖励卡测试以真实run前缀查找固定标题；已修正本地 runner，仅视觉运行开启固定标签，完整电池重跑待结果。不是兑换产品缺陷，不修改其断言适应错误环境。
+- 成果最终后端覆盖率、前端最终完整电池和独立评审仍须以新鲜日志关闭；最终 HEAD 完整 GitHub CI 和 PR 合并批准也仍待核验。不能宣称可合并、正式上线或完成三库 demo。
 - 精确证据与日志索引：`docs/quality/test-matrix/innovation-owner-qualification.md`、`docs/quality/innovation-owner-qualification-visual-walkthrough.md`、`docs/quality/innovation-checkpoint-verification.md`。完整日志与 coverage 在工作区 `.local-dev/logs`，不在 Git；已完成结果不需机械重复，代码变化后按影响范围新鲜验证。
 
 ## 新对话阅读与协作约定

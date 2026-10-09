@@ -137,6 +137,8 @@ Innovation operations contracts: regions `双创运营授权管理` / `当前账
 
 ## Rules for the visual workstream
 
+Achievement-review additions (2026-10-09): A-contract regions `成果核实与证明`, `成果核实待办`, `成果核实快照`, article `校内成果详情`, and `校内已核实成果`; labels `上传证明材料`, `核实备注／退回原因`, checkbox `选择证明 {n}`. Preserve confirmation dialogs `提交首次核实`, `撤回首次核实`, `退回成果修改`, `通过首次核实`, `发布更新`, with exact `确认`/`取消`, Escape and opener focus restoration. Preserve actions `确认上次提交结果（沿用原请求）` and `确认上次决定结果（沿用原请求）`; the functional spec compares actual replay bodies after a real server commit with a lost response. Upload recovery preserves `重试原文件上传与检查` and `放弃本次上传重试`; explicit abandonment clears only the local file/key and never deletes server evidence. B-contract: reuse `.ie-draft-list`, `.ie-draft-row`, `.ie-draft-actions` for owner and queue structure; `.ie-review-prose` preserves literal multiline public content. These classes are presentation hooks, while role/label assertions remain authoritative. The separate campus shell intentionally accepts all active roles and its pixel test anchors the named public region rather than the student sidebar.
+
 Private achievement contracts: project editor link `管理成果草稿`; buttons `新建成果草稿` / `保存成果草稿` / `返回成果列表` / `编辑成果：{title}` / `读取最新版本（保留当前输入）` / `载入此版本（替换当前输入）` / `重试这次新建（不会重复创建）` / `查看私有预览`; status `成果草稿已保存，仅自己可见。`. Unknown create outcomes freeze the original payload and retry key. Unknown edits and conflicts require explicit reconciliation. Preview renders literal text and never fetches work URLs.
 
 1. Class-A entries are frozen. A visual PR that changes one is out of

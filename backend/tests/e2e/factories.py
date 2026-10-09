@@ -54,12 +54,20 @@ from app.modules.identity.models import (
     User,
     UserSession,
 )
+from app.modules.innovation.evidence_models import AchievementEvidence
 from app.modules.innovation.models import (
     AchievementDraft,
     OperationsGrant,
     OwnerProfile,
     OwnerQualification,
     ProjectDraft,
+)
+from app.modules.innovation.review_models import (
+    AchievementReviewCase,
+    AchievementRevision,
+    AchievementWorkflow,
+    ReviewConflict,
+    RevisionEvidence,
 )
 from app.modules.notifications.models import Notification, NotificationDelivery
 from app.modules.points.models import (
@@ -513,6 +521,23 @@ async def clean_world(
                 "Qualification belongs outside this world; "
                 "include both worlds explicitly before cleanup"
             )
+        projects = select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+        achievements = select(AchievementDraft.id).where(
+            AchievementDraft.project_id.in_(projects)
+        )
+        external_case = await db.scalar(
+            select(AchievementReviewCase.id)
+            .where(
+                AchievementReviewCase.assigned_user_id.in_(users),
+                AchievementReviewCase.achievement_id.not_in(achievements),
+            )
+            .limit(1)
+        )
+        if external_case is not None:
+            raise RuntimeError(
+                "Review belongs outside this world; "
+                "include both worlds explicitly before cleanup"
+            )
         if whitelist_numbers:
             await db.execute(
                 delete(StudentWhitelist).where(
@@ -630,6 +655,37 @@ async def clean_world(
 
         # Private project preparation belongs to this world's users. Its
         # non-cascading owner FK must be released before deleting accounts.
+        await db.execute(
+            delete(ReviewConflict).where(
+                ReviewConflict.project_id.in_(projects)
+                | ReviewConflict.user_id.in_(users)
+            )
+        )
+        await db.execute(
+            delete(AchievementReviewCase).where(
+                AchievementReviewCase.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementWorkflow).where(
+                AchievementWorkflow.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(RevisionEvidence).where(
+                RevisionEvidence.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementRevision).where(
+                AchievementRevision.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementEvidence).where(
+                AchievementEvidence.achievement_id.in_(achievements)
+            )
+        )
         await db.execute(
             delete(AchievementDraft).where(
                 AchievementDraft.project_id.in_(
