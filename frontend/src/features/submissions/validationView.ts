@@ -207,8 +207,15 @@ export function validationReportView(
   report: ValidationReportDto,
 ): ValidationReportView {
   const fileLabel = FILE_TYPE_LABELS[report.file_type] ?? report.file_type;
+  // §10.1: document-family reports carry row_count=null (no tabular
+  // content) — the headline names the file alone; the structured
+  // family keeps the exact row count (§12.4).
+  const countLabel =
+    report.row_count === null
+      ? fileLabel
+      : `共 ${report.row_count.toLocaleString("zh-CN")} 行 · ${fileLabel}`;
   return {
-    headline: `共 ${report.row_count.toLocaleString("zh-CN")} 行 · ${fileLabel}`,
+    headline: countLabel,
     passed: report.errors.length === 0,
     errors: report.errors.map(findingItemView),
     warnings: report.warnings.map(findingItemView),

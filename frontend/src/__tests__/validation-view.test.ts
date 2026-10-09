@@ -145,6 +145,14 @@ describe("whole-report view", () => {
     assert.equal(view.passed, true);
   });
 
+  test("document-family report (row_count=null) heads with the file alone (§10.1)", () => {
+    const view = validationReportView(
+      report({ file_type: "DOCX", row_count: null }),
+    );
+    assert.equal(view.headline, "DOCX");
+    assert.equal(view.passed, true);
+  });
+
   test("errors present -> not passed; errors and warnings map in order", () => {
     const view = validationReportView(
       report({
