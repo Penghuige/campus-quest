@@ -63,6 +63,10 @@ Test ids are `file::test` relative to the repository root; browser tests are
 # once: bring the dependency stack up (PostgreSQL 15432, Redis 6379, MinIO 9000)
 docker compose -f infra/docker-compose.yml up -d
 
+# Achievement proof checks require the isolated scanner; wait for health.
+# make release-gate also runs this as release-evidence-scanner.
+docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
+
 make release-gate
 ```
 

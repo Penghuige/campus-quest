@@ -53,6 +53,8 @@ jobs:
       # provider overridden; locally the same module skips without this
       # flag.
       CQ_COMPOSITION_SMOKE: "1"
+      # Achievement evidence also exercises its real S3/ClamAV factories.
+      CQ_EVIDENCE_SCAN_SMOKE: "1"
 
     services:
       postgres:
@@ -170,6 +172,9 @@ jobs:
             'mc alias set campusquest http://127.0.0.1:9000 campusquest campusquest-dev &&
              mc mb --ignore-existing campusquest/campusquest &&
              mc mb --ignore-existing campusquest/campusquest-test'
+
+      - name: Start isolated evidence scanner and wait for readiness
+        run: docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
 
       # Runs against the still-empty service database: proves a clean
       # database migrates from zero to head and that the committed
@@ -399,9 +404,15 @@ jobs:
         working-directory: backend
         run: uv run alembic upgrade head
 
-      - name: Pixel visual regression (11 baselines, no regen)
+      - name: Pixel visual regression (16 baselines, no regen)
         working-directory: frontend
         run: npm run test:e2e:visual
+
+      # Use a separate world: granting an operator in the new visual spec
+      # would otherwise change the old owner-profile baseline's identity.
+      - name: Achievement review visual regression (3 baselines, no regen)
+        working-directory: frontend
+        run: npx playwright test innovation-review-visual.spec.ts --project=chromium
 
       # P3-A: the axe accessibility gate rides the same stack — the
       # 11-shot ratchet (new violations fail; baselined entries live in

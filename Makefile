@@ -77,7 +77,7 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
                  S3_SECRET_KEY=$${S3_SECRET_KEY:-campusquest-dev} \
                  BUSINESS_TIMEZONE=$${BUSINESS_TIMEZONE:-Asia/Shanghai}
 
-.PHONY: backend-unit backend-integration backend-worker backend-e2e \
+.PHONY: backend-unit backend-integration backend-worker backend-e2e release-evidence-scanner \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         coverage-baseline coverage-ratchet pip-audit
@@ -91,11 +91,14 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
 release-test-db:
 	cd backend && $(TEST_STACK_ENV) uv run alembic upgrade head
 
+release-evidence-scanner:
+	docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
+
 backend-unit:
 	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit -v
 
 backend-integration:
-	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -v -m integration
+	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 CQ_EVIDENCE_SCAN_SMOKE=1 uv run pytest tests/integration -v -m integration
 
 backend-worker:
 	cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers -v
@@ -113,7 +116,7 @@ migration-verify:
 # floors (the CI gate; CI accumulates via --cov-append too).
 coverage-baseline:
 	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit --cov=app --cov-branch --cov-report= --cov-append -q
-	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q
+	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 CQ_EVIDENCE_SCAN_SMOKE=1 uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q
 	cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers --cov=app --cov-branch --cov-report= --cov-append -q
 	cd backend && uv run python scripts/coverage_ratchet.py --update
 
@@ -147,7 +150,7 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: release-test-db backend-unit backend-integration backend-worker \
+release-gate: release-test-db release-evidence-scanner backend-unit backend-integration backend-worker \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e \
               visual-regression
@@ -165,3 +168,4 @@ release-gate: release-test-db backend-unit backend-integration backend-worker \
 .PHONY: visual-regression
 visual-regression:
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npm run test:e2e:visual
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npx playwright test innovation-review-visual.spec.ts --project=chromium

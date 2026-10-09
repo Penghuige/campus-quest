@@ -78,6 +78,18 @@ export const SHOTS: Shot[] = [
     name: "student-dashboard",
     path: "/",
     auth: "student",
+    prepare: async (page) => {
+      // Every lazy section must finish loading before measuring contrast.
+      // cq-rise opacity during an entrance is not the stable text color.
+      await expect(page.locator(".hero-eyebrow")).toBeVisible();
+      await expect(page.locator(".skeleton, [aria-busy='true']")).toHaveCount(0);
+      await page.evaluate(async () => {
+        const animations = document.getAnimations().filter((animation) =>
+          Number.isFinite(animation.effect?.getComputedTiming().iterations),
+        );
+        await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
+      });
+    },
     masks: [
       {
         id: ".claim-deadline",

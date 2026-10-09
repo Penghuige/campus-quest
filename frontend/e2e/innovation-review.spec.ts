@@ -16,42 +16,40 @@ test("achievement review: real private upload, withdrawal, return, approval and 
   test.setTimeout(180_000);
   await ensureStudentLogin(page);
   const ownerContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 } });
-  const adminContext = await browser.newContext({ ignoreHTTPSErrors: true });
   const viewerContext = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const owner = await ownerContext.newPage();
+    const ownerIdentity = owner.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/me" && response.status() === 200);
     await loginThroughUi(owner, parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT, "CQ_E2E_AUTHOR_STUDENT"));
+    const ownerId = (await (await ownerIdentity).json() as { id: string }).id;
     await owner.goto(`${BASE_URL}/profile/owner-profile`);
     const profile = owner.getByRole("region", { name: "负责人资料编辑器" });
     for (const [label, value] of Object.entries({ 姓名: "核实演示负责人", 学号: "00998877", 专业: "示例专业", 年级: "2026级" })) await profile.getByLabel(label, { exact: true }).fill(value);
     await profile.getByRole("button", { name: "保存负责人资料", exact: true }).click();
     await expect(owner.getByRole("status", { name: "负责人资料保存状态" })).toContainText("资料已保存");
-    const admin = await adminContext.newPage();
-    await staffLogin(admin, process.env.CQ_E2E_ADMIN!, process.env.CQ_E2E_ADMIN_TOTP_SECRET!);
+    // Qualification/admin-grant UI is covered in its own specs. Use the
+    // real APIs with the world's confirmed admin for setup here, rather
+    // than cumulatively exhausting the real 10-logins/5-minute limiter.
+    const adminHeaders = { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_ADMIN_ID!)}` };
     const qualification = owner.getByRole("status", { name: "负责人资格状态" });
     await expect(qualification).toBeVisible();
     if (!(await qualification.innerText()).includes("已开通")) {
+      const applied = owner.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/ie/me/owner-qualification" && response.status() === 200);
       await owner.getByRole("button", { name: "申请负责人资格", exact: true }).click();
       await expect(qualification).toContainText("等待管理员");
-      await admin.goto(`${BASE_URL}/admin/owner-qualifications`);
-      await admin.getByRole("button", { name: "查看申请", exact: true }).click();
-      await admin.getByRole("button", { name: "开通负责人资格", exact: true }).click();
-      await admin.getByRole("button", { name: "确认开通", exact: true }).click();
-      await expect(admin.getByRole("status", { name: "管理员资格操作结果" })).toContainText("已开通");
+      const application = await (await applied).json() as { version: number };
+      const approved = await owner.request.post(`${API_URL}/admin/ie/owner-qualifications/${ownerId}/approve`, { headers: adminHeaders, data: { version: application.version } });
+      expect(approved.status()).toBe(200);
     }
-    await admin.goto(`${BASE_URL}/admin/innovation-operations`);
-    const username = parseSeededAccount(process.env.CQ_E2E_STUDENT, "CQ_E2E_STUDENT").username;
-    const select = admin.getByLabel("授权对象", { exact: true });
-    await expect(select).toBeVisible();
-    const option = select.getByRole("option").filter({ hasText: `${username} ·` });
-    await expect(option).toHaveCount(1);
-    await select.selectOption(await option.getAttribute("value") as string);
-    await expect(admin.getByRole("region", { name: "当前账号运营授权" })).toBeVisible();
-    if (await admin.getByRole("button", { name: "授予运营身份", exact: true }).count()) {
-      await admin.getByLabel("操作原因", { exact: true }).fill("成果闭环核实演示");
-      await admin.getByRole("button", { name: "授予运营身份", exact: true }).click();
-      await expect(admin.getByText("已授予双创运营身份。", { exact: true })).toBeVisible();
+    async function setOperator(enabled: boolean) {
+      const path = `${API_URL}/admin/ie/operations-grants/${process.env.CQ_E2E_STUDENT_ID!}`;
+      const current = await owner.request.get(path, { headers: adminHeaders }); expect(current.status()).toBe(200);
+      const grant = await current.json() as { version: number; enabled: boolean };
+      if (grant.enabled === enabled) return;
+      const saved = await owner.request.put(path, { headers: adminHeaders, data: { version: grant.version, enabled, reason: "成果闭环测试准备与恢复" } });
+      expect(saved.status()).toBe(200);
     }
+    await setOperator(true);
     await owner.goto(`${BASE_URL}/profile/project-drafts`);
     await owner.getByRole("button", { name: "新建项目草稿", exact: true }).click();
     for (const [label, value] of Object.entries({ 项目名称: "真实核实闭环项目", 项目简介: "校园回收调研和可操作原型。", 项目方向: "环境保护", 项目阶段: "原型验证", 团队现状: "两名同学负责设计和调研。" })) await owner.getByLabel(label, { exact: true }).fill(value);
@@ -185,8 +183,6 @@ test("achievement review: real private upload, withdrawal, return, approval and 
     await owner.screenshot({ path: testInfo.outputPath("achievement-review-owner-mobile.png"), fullPage: true });
     await viewer.screenshot({ path: testInfo.outputPath("achievement-public-desktop.png"), fullPage: true });
     // Restore the shared student grant so the existing operations suite retains its own starting contract.
-    await admin.getByLabel("操作原因", { exact: true }).fill("闭环演示结束撤回授权");
-    await admin.getByRole("button", { name: "撤回运营身份", exact: true }).click();
-    await admin.getByRole("button", { name: "确认撤回", exact: true }).click();
-  } finally { await ownerContext.close(); await adminContext.close(); await viewerContext.close(); }
+    await setOperator(false);
+  } finally { await ownerContext.close(); await viewerContext.close(); }
 });
