@@ -234,6 +234,10 @@ class MePublic(UserPublic):
     phone_e164: str | None
     email_normalized: str | None
     email_verified_at: datetime | None
+    #: When the account was created (spec §40 owner's own data; the
+    #: teacher info page renders it as the registration date, #17).
+    #: ISO-8601 UTC via the JSON encoder — read-only, owner-only.
+    created_at: datetime
 
     @classmethod
     def from_user(cls, user: User) -> MePublic:
@@ -247,6 +251,7 @@ class MePublic(UserPublic):
             phone_e164=user.phone_e164,
             email_normalized=user.email_normalized,
             email_verified_at=user.email_verified_at,
+            created_at=user.created_at,
         )
 
 

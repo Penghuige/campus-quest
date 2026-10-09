@@ -58,6 +58,7 @@ const ME: MeDto = {
   phone_e164: "+8613800138000",
   email_normalized: null,
   email_verified_at: null,
+  created_at: "2026-09-24T02:00:00Z",
 };
 
 beforeEach(() => {
