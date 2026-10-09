@@ -203,9 +203,13 @@ class ClaimResponse(BaseModel):
 
 class MyClaimResponse(ClaimResponse):
     """A /me/claims item: the claim view plus the task's title (the list is
-    cross-task, so the card context travels with the claim)."""
+    cross-task, so the card context travels with the claim), the claim's
+    CURRENT latest submission (QA #15: the cold-load report handle), and
+    the task's upload gate (QA #12: the picker's task-scoped accept)."""
 
     task_title: str
+    latest_submission_id: UUID | None
+    allowed_file_types: list[str]
 
     @classmethod
     def from_view(cls, view: ClaimView) -> MyClaimResponse:
@@ -220,6 +224,8 @@ class MyClaimResponse(ClaimResponse):
             deadline_at=view.deadline_at,
             grace_deadline_at=view.grace_deadline_at,
             base_reward_points_snapshot=view.base_reward_points_snapshot,
+            latest_submission_id=view.latest_submission_id,
+            allowed_file_types=list(view.allowed_file_types),
         )
 
 

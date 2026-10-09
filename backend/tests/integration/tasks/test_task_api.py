@@ -803,12 +803,22 @@ async def test_teacher_creates_publishes_imports_student_claims_and_abandons(
     assert my_claims["total"] == 1
     assert len(my_claims["items"]) == 1
     item = my_claims["items"][0]
-    assert set(item) == _CLAIM_FIELDS | {"task_title"}
+    # QA #15/#12 amendments: the claim item carries the latest
+    # submission handle and the task's upload gate beside the title.
+    assert set(item) == _CLAIM_FIELDS | {
+        "task_title",
+        "latest_submission_id",
+        "allowed_file_types",
+    }
     assert item["claim_id"] == claim["claim_id"]
     assert item["task_id"] == task_id
     assert item["task_title"] == "抖音学习打卡视频数据采集"
     assert item["platform"] == "xiaohongshu"
     assert item["keyword"] == claim["keyword"]
+    # Fresh claim, no finalize yet: the handle is null; the gate is the
+    # task's own list verbatim.
+    assert item["latest_submission_id"] is None
+    assert item["allowed_file_types"] == ["CSV"]
 
     # -- student: abandon releases the unit back to AVAILABLE -------------------
     abandoned = await client.post(

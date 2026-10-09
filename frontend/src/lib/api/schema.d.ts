@@ -3152,7 +3152,9 @@ export interface components {
         /**
          * MyClaimResponse
          * @description A /me/claims item: the claim view plus the task's title (the list is
-         *     cross-task, so the card context travels with the claim).
+         *     cross-task, so the card context travels with the claim), the claim's
+         *     CURRENT latest submission (QA #15: the cold-load report handle), and
+         *     the task's upload gate (QA #12: the picker's task-scoped accept).
          */
         MyClaimResponse: {
             /**
@@ -3190,6 +3192,10 @@ export interface components {
             base_reward_points_snapshot: number;
             /** Task Title */
             task_title: string;
+            /** Latest Submission Id */
+            latest_submission_id: string | null;
+            /** Allowed File Types */
+            allowed_file_types: string[];
         };
         /**
          * MyClaimsResponse

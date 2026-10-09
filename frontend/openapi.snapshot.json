@@ -7412,6 +7412,25 @@
           "task_title": {
             "type": "string",
             "title": "Task Title"
+          },
+          "latest_submission_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Submission Id"
+          },
+          "allowed_file_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed File Types"
           }
         },
         "type": "object",
@@ -7425,10 +7444,12 @@
           "deadline_at",
           "grace_deadline_at",
           "base_reward_points_snapshot",
-          "task_title"
+          "task_title",
+          "latest_submission_id",
+          "allowed_file_types"
         ],
         "title": "MyClaimResponse",
-        "description": "A /me/claims item: the claim view plus the task's title (the list is\ncross-task, so the card context travels with the claim)."
+        "description": "A /me/claims item: the claim view plus the task's title (the list is\ncross-task, so the card context travels with the claim), the claim's\nCURRENT latest submission (QA #15: the cold-load report handle), and\nthe task's upload gate (QA #12: the picker's task-scoped accept)."
       },
       "MyClaimsResponse": {
         "properties": {
