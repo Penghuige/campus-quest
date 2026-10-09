@@ -76,7 +76,14 @@ from app.modules.tasks.schemas import PublishResult
 
 # Canonical file types (spec §10/§12). Parity with the database CHECK in
 # models.py (`_ALLOWED_FILE_TYPES`) is pinned by the unit tests.
-SUPPORTED_FILE_TYPES: frozenset[str] = frozenset({"CSV", "XLSX", "SQLITE"})
+SUPPORTED_FILE_TYPES: frozenset[str] = frozenset(
+    {"CSV", "XLSX", "SQLITE", "DOCX", "PDF"}
+)
+#: The §10.1 families: a Task's allowed set lies entirely in exactly
+#: one; DOCUMENT tasks carry no submission_schema (the schema leg of
+#: the publish gate is conditional on the family).
+STRUCTURED_FILE_TYPE_CODES = frozenset({"CSV", "XLSX", "SQLITE"})
+DOCUMENT_FILE_TYPE_CODES = frozenset({"DOCX", "PDF"})
 # Notification channels (interfaces.md §25); parity pinned the same way.
 SUPPORTED_NOTIFICATION_CHANNELS: frozenset[str] = frozenset({"SMS", "EMAIL", "IN_APP"})
 # spec §6: V1 fixes the grace period at 24h with no product entry point.
@@ -120,6 +127,14 @@ _MISSING_FIXED_DEADLINE_MESSAGE = "FIXED 模式必须设置固定截止时间"
 _INVALID_DURATION_MESSAGE = "RELATIVE 模式必须设置正的时长（分钟）"
 _INVALID_SCHEMA_MESSAGE = "发布前必须配置提交校验 schema 及其版本"
 _INVALID_FILE_POLICY_MESSAGE = "发布前必须至少配置一种允许的文件类型"
+# §10.1: document-family tasks declare no schema; structured tasks must.
+_DOCUMENT_SCHEMA_FORBIDDEN_MESSAGE = (
+    "文档型任务（DOCX/PDF）不能配置提交校验 schema——机器校验只做完整性检查"
+)
+_MIXED_FILE_FAMILY_MESSAGE = (
+    "单任务的允许文件类型不能同时包含结构化格式（CSV/XLSX/SQLite）"
+    "与文档格式（DOCX/PDF）"
+)
 _INVALID_SIZE_CAP_MESSAGE = "单文件大小上限必须大于 0 且不超过平台上限"
 _ILLEGAL_TRANSITION_MESSAGE = "当前任务状态不允许该操作"
 _IMMUTABLE_FIELDS_MESSAGE = "该状态下任务字段不可修改"
@@ -598,13 +613,34 @@ class TaskService:
                     status_code=400,
                 )
 
-        if not task.submission_schema:
+        # §10.1 two-family split: the schema leg applies only to
+        # structured tasks; document tasks carry an EMPTY schema by
+        # contract (nothing to declare — content judgment rides the
+        # teacher review).
+        allowed = set(task.allowed_file_types)
+        is_document_task = bool(allowed & DOCUMENT_FILE_TYPE_CODES)
+
+        if not is_document_task:
+            if not task.submission_schema:
+                raise BusinessError(
+                    ErrorCode.VALIDATION_ERROR,
+                    _INVALID_SCHEMA_MESSAGE,
+                    status_code=400,
+                )
+            if (
+                task.submission_schema_version is None
+                or task.submission_schema_version < 1
+            ):
+                raise BusinessError(
+                    ErrorCode.VALIDATION_ERROR,
+                    _INVALID_SCHEMA_MESSAGE,
+                    status_code=400,
+                )
+        elif task.submission_schema:
             raise BusinessError(
-                ErrorCode.VALIDATION_ERROR, _INVALID_SCHEMA_MESSAGE, status_code=400
-            )
-        if task.submission_schema_version is None or task.submission_schema_version < 1:
-            raise BusinessError(
-                ErrorCode.VALIDATION_ERROR, _INVALID_SCHEMA_MESSAGE, status_code=400
+                ErrorCode.VALIDATION_ERROR,
+                _DOCUMENT_SCHEMA_FORBIDDEN_MESSAGE,
+                status_code=400,
             )
 
         if not task.allowed_file_types:
@@ -620,6 +656,27 @@ class TaskService:
                 _UNSUPPORTED_VALUE_MESSAGE,
                 status_code=400,
                 details={"unsupported": unsupported},
+            )
+        # §10.1 exclusivity: mixing the two families in one task is a
+        # product shape we refuse (the picker, the report UX, and the
+        # review posture would each fork).
+        structured = allowed & STRUCTURED_FILE_TYPE_CODES
+        documents = allowed & DOCUMENT_FILE_TYPE_CODES
+        if structured and documents:
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _MIXED_FILE_FAMILY_MESSAGE,
+                status_code=400,
+                details={
+                    "structured": sorted(structured),
+                    "documents": sorted(documents),
+                },
+            )
+        if is_document_task and not documents:
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _INVALID_FILE_POLICY_MESSAGE,
+                status_code=400,
             )
 
         self._validate_size_cap(task.max_file_size_bytes)

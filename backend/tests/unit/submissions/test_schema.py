@@ -44,7 +44,7 @@ from typing import Any
 
 import pytest
 
-from app.modules.submissions.enums import FileType
+from app.modules.submissions.enums import STRUCTURED_FILE_TYPES, FileType
 from app.modules.submissions.schema import (
     COLUMN_TYPES,
     MAX_ROWS_CEILING,
@@ -204,7 +204,10 @@ def test_parsed_objects_are_frozen() -> None:
         (["csv"], {FileType.CSV}),
         (["csv", "xlsx"], {FileType.CSV, FileType.XLSX}),
         (["sqlite"], {FileType.SQLITE}),
-        (["xlsx", "csv", "sqlite"], set(FileType)),
+        # The DSL's format universe is the STRUCTURED family only
+        # (§10.1): a document task carries no schema at all, so
+        # naming every structured literal IS the full set here.
+        (["xlsx", "csv", "sqlite"], set(STRUCTURED_FILE_TYPES)),
     ],
 )
 def test_allowed_formats_valid_subsets(
@@ -228,6 +231,13 @@ def test_allowed_formats_valid_subsets(
         None,
         [None],
         [True],
+        # §10.1: the document literals are outside the DSL's universe —
+        # a document task carries no schema, so a schema naming DOCX
+        # or PDF is a product contradiction, rejected like any unknown
+        # format.
+        ["docx"],
+        ["pdf"],
+        ["csv", "docx"],
     ],
 )
 def test_allowed_formats_invalid(bad_formats: Any) -> None:

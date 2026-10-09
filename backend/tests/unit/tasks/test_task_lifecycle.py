@@ -502,11 +502,73 @@ async def test_publish_requires_submission_schema_and_version(
     )
 
 
-@pytest.mark.parametrize("file_types", [[], ["PDF"], ["CSV", "DOCX"]])
+@pytest.mark.parametrize("file_types", [[], ["PARQUET"], ["CSV", "DOCX"]])
 async def test_publish_rejects_empty_or_unsupported_file_types(
     service: TaskService, file_types: list[str]
 ) -> None:
     task = planted_task(allowed_file_types=file_types)
+    with pytest.raises(BusinessError) as excinfo:
+        await service.publish_task(FakeSession(task), OWNER, task.id)
+    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
+
+
+# --- §10.1: the two-family split ---------------------------------------------------
+
+
+async def test_publish_accepts_document_task_without_schema(
+    service: TaskService,
+) -> None:
+    """A DOCX/PDF task publishes with an EMPTY schema — the §10.1
+    contract (integrity-only machine check; the schema leg of the
+    publish gate is family-conditional)."""
+    task = planted_task(
+        allowed_file_types=["DOCX", "PDF"],
+        submission_schema=None,
+        submission_schema_version=None,
+    )
+    await service.publish_task(FakeSession(task), OWNER, task.id)
+    assert task.status == TaskStatus.PUBLISHED
+
+
+async def test_publish_rejects_document_task_with_schema(service: TaskService) -> None:
+    task = planted_task(
+        allowed_file_types=["DOCX", "PDF"],
+        submission_schema={"min_rows": 1},
+        submission_schema_version=1,
+    )
+    with pytest.raises(BusinessError) as excinfo:
+        await service.publish_task(FakeSession(task), OWNER, task.id)
+    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
+    assert "文档型" in excinfo.value.message
+
+
+async def test_publish_rejects_mixed_family_file_types(service: TaskService) -> None:
+    """CSV + DOCX in one task: the picker/report/review posture would
+    each fork — §10.1 refuses the mix outright."""
+    task = planted_task(
+        allowed_file_types=["CSV", "DOCX"],
+        submission_schema=None,
+        submission_schema_version=None,
+    )
+    with pytest.raises(BusinessError) as excinfo:
+        await service.publish_task(FakeSession(task), OWNER, task.id)
+    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
+    assert excinfo.value.details == {
+        "structured": ["CSV"],
+        "documents": ["DOCX"],
+    }
+
+
+async def test_publish_still_requires_schema_for_structured(
+    service: TaskService,
+) -> None:
+    """The schema leg stays for the structured family — a CSV task
+    without a schema is as unpublishable as ever."""
+    task = planted_task(
+        allowed_file_types=["CSV"],
+        submission_schema=None,
+        submission_schema_version=None,
+    )
     with pytest.raises(BusinessError) as excinfo:
         await service.publish_task(FakeSession(task), OWNER, task.id)
     assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
@@ -590,7 +652,7 @@ async def test_create_task_admin_allowed(service: TaskService) -> None:
         {"title": "   "},
         {"title": "x" * 256},
         {"description": ""},
-        {"allowed_file_types": ("pdf",)},
+        {"allowed_file_types": ("parquet",)},  # lowercase/unknown: rejected
         {"max_file_size_bytes": 0},
         {"max_file_size_bytes": MAX_UPLOAD_BYTES + 1},
         {"duration_minutes": 0},

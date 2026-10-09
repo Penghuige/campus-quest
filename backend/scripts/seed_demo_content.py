@@ -167,6 +167,7 @@ async def _task(
     slots,
     keyword,
     allowed=("CSV",),
+    schema=CSV_SCHEMA,
 ) -> Task:
     task = Task(
         owner_teacher_id=teacher_id,
@@ -178,8 +179,8 @@ async def _task(
         status=TaskStatus.PUBLISHED,
         deadline_mode=DeadlineMode.RELATIVE,
         duration_minutes=duration_minutes,
-        submission_schema=CSV_SCHEMA,
-        submission_schema_version=1,
+        submission_schema=schema,
+        submission_schema_version=1 if schema is not None else None,
         allowed_file_types=list(allowed),
         max_file_size_bytes=10 * 1024 * 1024,
         notification_channels=["SMS"],
@@ -491,6 +492,7 @@ async def main() -> None:
             keyword="食堂菜品",
             allowed=("CSV", "XLSX"),
         )
+        # The §10.1 document-family showcase: DOCX/PDF only, no schema.
         await _task(
             session,
             world,
@@ -498,13 +500,14 @@ async def main() -> None:
             title="期末复习资料整理与共享协作",
             description="整理一门课程的期末复习要点并制作共享文档，"
             "审核标准高、周期长、奖励丰厚。优秀作品将入选"
-            "院系资料库。",
+            "院系资料库。提交 DOCX 或 PDF 文档。",
             rarity=TaskRarity.EPIC,
             points=180,
             duration_minutes=14 * 24 * 60,
             slots=2,
             keyword="复习资料",
-            allowed=("CSV", "XLSX"),
+            allowed=("DOCX", "PDF"),
+            schema=None,
         )
         await _task(
             session,
