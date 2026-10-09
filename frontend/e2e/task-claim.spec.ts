@@ -220,9 +220,12 @@ test.describe("task card affordances (defect #5)", () => {
 
   test("a fully-claimed task stays browsable and carries the depleted badge (defect #20)", async ({ page }) => {
     // The world seeds task_r with ONE assignment already claimed by
-    // the redeemer — the square's deterministic depleted card.
-    const depleted = page.locator(".task-card", { hasText: "已被领完" });
-    await expect(depleted).toHaveCount(1);
+    // the redeemer — the square's deterministic depleted card. The
+    // document-family task F joins it once the §10.1 e2e (earlier in
+    // the battery) claims both its slots — so assert on the FIRST
+    // depleted card's shape, never an exact square-wide count.
+    const depleted = page.locator(".task-card", { hasText: "已被领完" }).first();
+    await expect(depleted).toBeVisible();
     // The MARK is a real text badge (never a color-only cue), and the
     // meta row keeps its numeric shape — the phrase rides the badge
     // exactly once per card.
