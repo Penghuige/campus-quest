@@ -21,13 +21,18 @@
 import { defineConfig } from "@playwright/test";
 import { join } from "node:path";
 
-import { ensureDevCertificate } from "./e2e/global-setup";
+import { ensureDevCertificate, ensureMinioCertificate } from "./e2e/global-setup";
 
 // P3-B: the https cert must exist BEFORE the webServers start — the
 // config module body runs ahead of them, globalSetup does NOT (the
 // first battery died exactly there: uvicorn booted against a cert
 // path that globalSetup had not written yet).
 ensureDevCertificate();
+// Same class, the 2026-09 teardown forensics: AWS_CA_BUNDLE must
+// resolve at webServer boot, and a fresh worktree has no gitignored
+// MinIO cert until something generates one (teardowns died on
+// `Errno 2` SSL-validation mid-clean, leaving whole worlds behind).
+ensureMinioCertificate();
 
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
