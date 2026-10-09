@@ -72,6 +72,7 @@ export const NOSKIP_EXEMPTIONS = [
   ),
   ...[
     "admin-users",
+    "admin-owner-qualifications",
     "admin-innovation-operations",
     "auth-login",
     "dev-gallery",

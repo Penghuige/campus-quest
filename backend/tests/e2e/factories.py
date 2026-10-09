@@ -58,6 +58,7 @@ from app.modules.innovation.models import (
     AchievementDraft,
     OperationsGrant,
     OwnerProfile,
+    OwnerQualification,
     ProjectDraft,
 )
 from app.modules.notifications.models import Notification, NotificationDelivery
@@ -498,6 +499,20 @@ async def clean_world(
     if not users and not tasks and not items and not whitelist_numbers:
         return
     async with factory() as db:
+        # Refuse cross-world approval references before any mutation.
+        external_approval = await db.scalar(
+            select(OwnerQualification.user_id)
+            .where(
+                OwnerQualification.approved_by.in_(users),
+                OwnerQualification.user_id.not_in(users),
+            )
+            .limit(1)
+        )
+        if external_approval is not None:
+            raise RuntimeError(
+                "Qualification belongs outside this world; "
+                "include both worlds explicitly before cleanup"
+            )
         if whitelist_numbers:
             await db.execute(
                 delete(StudentWhitelist).where(
@@ -627,6 +642,9 @@ async def clean_world(
                 OperationsGrant.user_id.in_(users)
                 | OperationsGrant.changed_by.in_(users)
             )
+        )
+        await db.execute(
+            delete(OwnerQualification).where(OwnerQualification.user_id.in_(users))
         )
         await db.execute(delete(OwnerProfile).where(OwnerProfile.user_id.in_(users)))
         await db.execute(

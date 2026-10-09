@@ -27,13 +27,13 @@ test("private owner profile: validate, save, reload and edit on mobile", async (
   await page.getByLabel("年级", { exact: true }).fill("2026级");
   await page.getByRole("button", { name: "保存负责人资料", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status")).toHaveText("资料已保存；负责人资格尚未由此开通。");
+  await expect(page.getByRole("status", { name: "负责人资料保存状态" })).toHaveText("资料已保存；保存资料不会自动开通负责人资格。");
   await page.reload();
   await expect(page.getByLabel("学号", { exact: true })).toHaveValue("001234");
   await expect(page.getByLabel("专业", { exact: true })).toHaveValue("计算机");
   await page.getByLabel("年级", { exact: true }).fill("大一");
   await page.getByRole("button", { name: "保存负责人资料", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("资料已保存");
+  await expect(page.getByRole("status", { name: "负责人资料保存状态" })).toContainText("资料已保存");
   await page.reload();
   await expect(page.getByLabel("年级", { exact: true })).toHaveValue("大一");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -46,13 +46,13 @@ test("private owner profile: stale save preserves inputs until explicit reconcil
     await page.getByLabel(label, { exact: true }).fill(value);
   }
   await page.getByRole("button", { name: "保存负责人资料", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("资料已保存");
+  await expect(page.getByRole("status", { name: "负责人资料保存状态" })).toContainText("资料已保存");
   const other = await page.context().newPage();
   try {
     await openProfile(other);
     await page.getByLabel("专业", { exact: true }).fill("第一处已保存专业");
     await page.getByRole("button", { name: "保存负责人资料", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("资料已保存");
+    await expect(page.getByRole("status", { name: "负责人资料保存状态" })).toContainText("资料已保存");
     await other.getByLabel("专业", { exact: true }).fill("第二处未保存专业");
     await other.getByRole("button", { name: "保存负责人资料", exact: true }).click();
     await expect(other.getByRole("region", { name: "负责人资料编辑器" }).getByRole("alert")).toContainText("你的未保存内容已保留");

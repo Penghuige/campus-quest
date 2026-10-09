@@ -38,11 +38,19 @@ export interface Shot {
 }
 
 export const SHOTS: Shot[] = [
+  {
+    name: "admin-owner-qualifications", path: "/admin/owner-qualifications", auth: "admin", masks: [],
+    prepare: async (page) => {
+      await expect(page.getByRole("region", { name: "负责人资格申请队列" })).toBeVisible();
+      await expect(page.getByText("暂无等待开通的资格申请", { exact: true })).toBeVisible();
+    },
+  },
   { name: "admin-innovation-operations", path: "/admin/innovation-operations", auth: "admin", masks: [] },
   {
     name: "student-owner-profile-form", path: "/profile/owner-profile", auth: "student", masks: [],
     prepare: async (page) => {
       await expect(page.getByRole("region", { name: "负责人资料编辑器" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "负责人资格状态" })).toHaveText("未申请负责人资格");
     },
   },
   {
@@ -85,7 +93,21 @@ export const SHOTS: Shot[] = [
       // ("（50 积分）现在就可以兑换") is deterministic under fixed labels.
     ],
   },
-  { name: "student-tasks", path: "/tasks", auth: "student", masks: [] },
+  {
+    name: "student-tasks", path: "/tasks", auth: "student", masks: [],
+    prepare: async (page) => {
+      // The seeded task list loads after the page shell. Sampling a cq-rise
+      // entrance while its ancestor is translucent creates contrast findings
+      // for unchanged text colors. Wait for content and finite animations.
+      await expect(page.locator(".task-card").first()).toBeVisible();
+      await page.evaluate(async () => {
+        const animations = document.getAnimations().filter((animation) =>
+          Number.isFinite(animation.effect?.getComputedTiming().iterations),
+        );
+        await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
+      });
+    },
+  },
   {
     name: "student-task-detail",
     envPath: "CQ_E2E_TASK_OPEN_PATH",
@@ -99,6 +121,9 @@ export const SHOTS: Shot[] = [
     name: "student-claim",
     envPath: "CQ_E2E_CLAIM_PATH",
     auth: "student",
+    prepare: async (page) => {
+      await expect(page.getByRole("region", { name: "分配给你的任务单元", exact: true })).toBeVisible();
+    },
     masks: [
       {
         id: ".assignment-item~领取时间 .assignment-value",

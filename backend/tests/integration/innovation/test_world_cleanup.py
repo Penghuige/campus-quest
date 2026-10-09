@@ -12,6 +12,7 @@ from app.modules.innovation.models import (
     AchievementDraft,
     OperationsGrant,
     OwnerProfile,
+    OwnerQualification,
     ProjectDraft,
 )
 from tests.e2e.factories import clean_world
@@ -73,6 +74,22 @@ async def test_world_cleanup_removes_owned_drafts_and_preserves_other_world(
                     for user_id in user_ids
                 ]
             )
+            seed.add_all(
+                [
+                    OwnerQualification(
+                        user_id=user_id,
+                        status="PENDING",
+                        version=1,
+                        profile_version=1,
+                        name="测试同学",
+                        student_no="00123",
+                        major="测试",
+                        grade="大一",
+                        requested_at=datetime.now(UTC),
+                    )
+                    for user_id in user_ids
+                ]
+            )
             await seed.flush()
             draft_ids = [draft.id for draft in drafts]
             achievements = [
@@ -95,17 +112,24 @@ async def test_world_cleanup_removes_owned_drafts_and_preserves_other_world(
             assert await reader.get(ProjectDraft, draft_ids[0]) is None
             assert await reader.get(AchievementDraft, achievement_ids[0]) is None
             assert await reader.get(OwnerProfile, user_ids[0]) is None
+            assert await reader.get(OwnerQualification, user_ids[0]) is None
             assert await reader.get(OperationsGrant, user_ids[0]) is None
             assert await reader.get(User, user_ids[0]) is None
             assert await reader.get(ProjectDraft, draft_ids[1]) is not None
             assert await reader.get(AchievementDraft, achievement_ids[1]) is not None
             assert await reader.get(OwnerProfile, user_ids[1]) is not None
+            assert await reader.get(OwnerQualification, user_ids[1]) is not None
             assert await reader.get(OperationsGrant, user_ids[1]) is not None
             assert await reader.get(User, user_ids[1]) is not None
     finally:
         # This independent test fixture removes only its own random seeds,
         # even while the teardown under test is still broken (the red run).
         async with sessions() as cleanup:
+            await cleanup.execute(
+                delete(OwnerQualification).where(
+                    OwnerQualification.user_id.in_(user_ids)
+                )
+            )
             await cleanup.execute(
                 delete(AchievementDraft).where(
                     AchievementDraft.project_id.in_(
@@ -126,3 +150,61 @@ async def test_world_cleanup_removes_owned_drafts_and_preserves_other_world(
             )
             await cleanup.execute(delete(User).where(User.id.in_(user_ids)))
             await cleanup.commit()
+
+
+@pytest.mark.parametrize("cross_world", [False, True])
+async def test_world_cleanup_handles_approved_qualification_scope(
+    db_engine, cross_world
+):
+    sessions = async_sessionmaker(db_engine, expire_on_commit=False)
+    ids = []
+    try:
+        async with sessions() as seed:
+            admin = User(
+                username=f"cleanup-qa-{uuid4().hex}",
+                password_hash="unused",
+                nickname="管理员",
+                role="ADMIN",
+                status="ACTIVE",
+            )
+            student = User(
+                username=f"cleanup-qs-{uuid4().hex}",
+                password_hash="unused",
+                nickname="学生",
+                role="STUDENT",
+                status="ACTIVE",
+            )
+            seed.add_all([admin, student])
+            await seed.flush()
+            ids = [admin.id, student.id]
+            seed.add(
+                OwnerQualification(
+                    user_id=ids[1],
+                    status="APPROVED",
+                    version=2,
+                    profile_version=1,
+                    name="测试",
+                    student_no="001",
+                    major="测试",
+                    grade="大一",
+                    requested_at=datetime.now(UTC),
+                    approved_at=datetime.now(UTC),
+                    approved_by=ids[0],
+                )
+            )
+            await seed.commit()
+        if cross_world:
+            with pytest.raises(RuntimeError, match="outside this world"):
+                await clean_world(sessions, user_ids=[ids[0]])
+            async with sessions() as reader:
+                assert await reader.get(User, ids[0]) is not None
+                assert await reader.get(User, ids[1]) is not None
+                assert await reader.get(OwnerQualification, ids[1]) is not None
+        else:
+            await clean_world(sessions, user_ids=ids)
+            async with sessions() as reader:
+                assert await reader.get(OwnerQualification, ids[1]) is None
+                assert await reader.get(User, ids[0]) is None
+                assert await reader.get(User, ids[1]) is None
+    finally:
+        await clean_world(sessions, user_ids=ids)

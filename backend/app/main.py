@@ -32,6 +32,9 @@ from app.modules.identity.dependencies import get_actor
 from app.modules.innovation import achievement_router as innovation_achievement_router
 from app.modules.innovation import operations_router as innovation_operations_router
 from app.modules.innovation import owner_router as innovation_owner_router
+from app.modules.innovation import (
+    qualification_router as innovation_qualification_router,
+)
 from app.modules.innovation import router as innovation_router
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
@@ -71,6 +74,8 @@ def create_app() -> FastAPI:
     app.include_router(identity_staff_router.router, prefix="/api/v1")
     app.include_router(innovation_router.router, prefix="/api/v1")
     app.include_router(innovation_owner_router.router, prefix="/api/v1")
+    app.include_router(innovation_qualification_router.self_router, prefix="/api/v1")
+    app.include_router(innovation_qualification_router.admin_router, prefix="/api/v1")
     app.include_router(innovation_operations_router.admin_router, prefix="/api/v1")
     app.include_router(innovation_operations_router.student_router, prefix="/api/v1")
     app.include_router(innovation_achievement_router.router, prefix="/api/v1")

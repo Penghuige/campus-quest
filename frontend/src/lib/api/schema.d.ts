@@ -512,6 +512,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ie/me/owner-qualification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Owned */
+        get: operations["read_owned_api_v1_ie_me_owner_qualification_get"];
+        put?: never;
+        /** Apply */
+        post: operations["apply_api_v1_ie_me_owner_qualification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ie/owner-qualifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queue */
+        get: operations["queue_api_v1_admin_ie_owner_qualifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ie/owner-qualifications/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reveal */
+        get: operations["reveal_api_v1_admin_ie_owner_qualifications__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ie/owner-qualifications/{user_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_v1_admin_ie_owner_qualifications__user_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/ie/operations-grants/{user_id}": {
         parameters: {
             query?: never;
@@ -3831,6 +3900,89 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** QualificationApply */
+        QualificationApply: {
+            /** Version */
+            version: number;
+            /** Profile Version */
+            profile_version: number;
+        };
+        /** QualificationApprove */
+        QualificationApprove: {
+            /** Version */
+            version: number;
+        };
+        /** QualificationDetail */
+        QualificationDetail: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "NOT_APPLIED" | "PENDING" | "APPROVED";
+            /** Version */
+            version: number;
+            /** Profile Version */
+            profile_version: number | null;
+            /** Requested At */
+            requested_at: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            profile: components["schemas"]["QualificationProfile"];
+        };
+        /** QualificationProfile */
+        QualificationProfile: {
+            /** Name */
+            name: string;
+            /** Student No */
+            student_no: string;
+            /** Major */
+            major: string;
+            /** Grade */
+            grade: string;
+        };
+        /** QualificationQueue */
+        QualificationQueue: {
+            /** Items */
+            items: components["schemas"]["QualificationQueueItem"][];
+            /** Total */
+            total: number;
+        };
+        /** QualificationQueueItem */
+        QualificationQueueItem: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+        };
+        /** QualificationState */
+        QualificationState: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "NOT_APPLIED" | "PENDING" | "APPROVED";
+            /** Version */
+            version: number;
+            /** Profile Version */
+            profile_version: number | null;
+            /** Requested At */
+            requested_at: string | null;
+            /** Approved At */
+            approved_at: string | null;
+        };
         /**
          * RankingEntryResponse
          * @description One public leaderboard row — EXACTLY the spec §17/§40 shape; any
@@ -6204,6 +6356,157 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OwnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_owned_api_v1_ie_me_owner_qualification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualificationState"];
+                };
+            };
+        };
+    };
+    apply_api_v1_ie_me_owner_qualification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QualificationApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualificationState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    queue_api_v1_admin_ie_owner_qualifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualificationQueue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_api_v1_admin_ie_owner_qualifications__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualificationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_v1_admin_ie_owner_qualifications__user_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QualificationApprove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualificationState"];
                 };
             };
             /** @description Validation Error */

@@ -102,9 +102,9 @@ owner-approved product decision — never "to fit the new DOM".
 | Locator | Surface | Notes |
 |---|---|---|
 | `.page-head` | page header anchor (specs + visual-capture) | capture spec already falls back to `main`; if renamed, update all spec uses to the equivalent header locator |
-| `.task-card` | tasks list | review-comment seed hook |
+| `.task-card` | tasks list | review-comment seed hook; SHOTS `student-tasks` preparation waits for the first card to be visible, then awaits `finished` for finite animations before sampling |
 | `.claim-panel` · `.upload-panel` | task detail claim/upload | submission flow anchors |
-| `.deadline-line` | task/claim deadline row | |
+| `.deadline-line` | task/claim deadline row | SHOTS `student-claim` preparation first waits for the exact named region `分配给你的任务单元` to be visible, so capture/axe observes loaded claim content |
 | `.validation-report` · `.report-errors` | submission validation report | |
 | `.comment` · `.comment-list` · `.comment-author` · `.comment-depth-3` · `.reaction-count` | community thread | depth-3 asserts nesting |
 | `.board-rows` · `.board-row` · `.board-rank` · `.board-me-tag` · `.board-honor` | rankings | me-tag asserts around-me anchoring; board-honor is the honor chip (renamed from `.honor-chip` in plan-13 with no spec uses) |
@@ -117,12 +117,21 @@ owner-approved product decision — never "to fit the new DOM".
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
 | `.ie-draft-list` · `.ie-draft-row` · `.ie-draft-form` | private innovation drafts | list/form boundaries; functional tests prefer named regions and labels |
-| region `负责人资料编辑器` · region `最新负责人资料` | private owner profile | fields use exact labels 姓名/学号/专业/年级; current account only |
+| region `负责人资料编辑器` · region `最新负责人资料` | private owner profile | fields use exact labels 姓名/学号/专业/年级; current account only; owner-profile API is not opened to ADMIN |
+| status `负责人资料保存状态` | private owner profile save announcement | exact role/name scopes save assertions now that the page also contains qualification status; preserve the save success/error behavior |
+| region `负责人资格` · status `负责人资格状态` · status `资格操作结果` | student owner qualification | qualification state and mutation result are independently named; no user ID, approver identity or another student's PII in the student DOM |
+| region `负责人资格申请队列` · table `负责人资格申请列表` · nav `资格申请分页` | ADMIN owner qualification queue | paginated pending queue contains account references/state/time only; snapshot PII is not fetched or rendered before explicit 查看申请 |
+| region `负责人资格申请详情` · status `申请开通状态` · status `管理员资格操作结果` | ADMIN application snapshot | four submitted snapshot fields are available only through an ADMIN-authorized, audited detail read; never infer this access from operations_enabled |
+| dialog `开通负责人资格` · title id `owner-qualification-confirm-title` | ADMIN qualification confirmation | use getByRole("dialog", { name: "开通负责人资格" }); keep title wiring, focus trap, Escape and explicit 确认开通/取消 actions |
 | region `成果草稿列表` · region `成果草稿编辑器` · region `最新已保存成果` · region `私有成果预览` | private project achievements | exact labels 成果名称/作品与阶段成果说明/作品链接/立项或获奖说明; no internal IDs in visible copy |
 
 Private innovation draft behavior contracts: link `我的项目草稿`; regions `项目草稿列表` / `项目草稿编辑器` / `最新已保存版本`; buttons `新建项目草稿` / `保存草稿` / `返回草稿列表` / `编辑项目：{title}` / `读取最新版本（保留当前输入）` / `载入此版本（替换当前输入）`; saved status `草稿已保存，仅自己可见。`; stale-save copy `你的未保存内容已保留`.
 
-Private owner profile contracts: link `负责人资料`; buttons `保存负责人资料` / `读取最新资料（保留当前输入）` / `载入此资料（替换当前输入）`; saved status `资料已保存；负责人资格尚未由此开通。`; conflicts preserve inputs until explicit reconciliation. The student number is allowed only in this owner's private form by the 2026-10-09 human-supplied innovation requirements.
+Private owner profile contracts: link `负责人资料`; buttons `保存负责人资料` / `读取最新资料（保留当前输入）` / `载入此资料（替换当前输入）`; status name `负责人资料保存状态`, saved copy `资料已保存；保存资料不会自动开通负责人资格。`; conflicts preserve inputs until explicit reconciliation. The student number is allowed in this owner's private form by the 2026-10-09 human-supplied innovation requirements. Scheme A adds the narrow exception that ADMIN may explicitly read a submitted qualification snapshot through its separate audited detail endpoint; the original owner-profile endpoint remains owner-only.
+
+Owner qualification contracts (2026-10-09 confirmed scheme A): student region `负责人资格`; named statuses `负责人资格状态` / `资格操作结果`; buttons `申请负责人资格` / `更新资格申请` / `重新读取资格状态`. Unsaved profile changes are not submitted with an application. PENDING uses the submitted saved-profile snapshot; a newer saved profile can explicitly update it. APPROVED cannot be overwritten by another application and does not approve achievements. Conflict or unknown write outcomes block another mutation until a successful reread; rereading a newer owner profile preserves inputs until explicit loading in `最新负责人资料`.
+
+ADMIN qualification contracts: route `/admin/owner-qualifications`, navigation link `负责人资格`; regions `负责人资格申请队列` / `负责人资格申请详情`; table `负责人资格申请列表`; buttons `刷新申请队列` / `上一页申请` / `下一页申请` / `查看申请` / `开通负责人资格` / `重新读取申请详情`. Dialog `开通负责人资格` carries `确认开通` and `取消`. Cancelling or pressing Escape restores focus to `开通负责人资格`; after success or an unknown outcome disables that action, closing restores focus to `重新读取申请详情`. Busy submission guards closing through onOpenChange. Role/name locators must retain these behavior/accessibility assertions; this document does not claim they have passed a browser run.
 
 Innovation operations contracts: regions `双创运营授权管理` / `当前账号运营授权` / `我的双创身份`; labels `授权对象` / `操作原因`; buttons `授予运营身份` / `撤回运营身份` / `重新读取授权状态` / `重新读取身份`; dialog `撤回双创运营身份` with `确认撤回` and `取消`. These are role/label selectors; no UUID text, CSS ancestry or fixed account nickname is required. Unknown write outcomes and 409 block further mutation until a successful reread.
 

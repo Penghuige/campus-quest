@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
   { href: "/admin/innovation-operations", label: "双创运营授权", icon: <UserIcon /> },
+  { href: "/admin/owner-qualifications", label: "负责人资格", icon: <UserIcon /> },
   { href: "/admin/whitelist", label: "注册白名单", icon: <TasksIcon /> },
   { href: "/admin/rewards", label: "奖励目录", icon: <GiftIcon /> },
   { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },
