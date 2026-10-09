@@ -180,7 +180,11 @@ class ValidationReportPayload(BaseModel):
 
     parser_version: str
     file_type: str
-    row_count: int
+    #: §10.1: document-family reports carry None (no tabular content);
+    #: structured reports always have an integer count. The persisted
+    #: JSONB already holds this shape (ValidationReport.row_count is
+    #: int | None) — this field mirrors it honestly.
+    row_count: int | None
     detected_columns: list[str]
     missing_required_columns: list[str]
     extra_columns: list[str]

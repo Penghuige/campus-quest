@@ -2865,13 +2865,16 @@ export interface components {
         };
         /**
          * FileType
-         * @description The closed upload file-type universe (spec §10/§12).
+         * @description The closed upload file-type universe (spec §10/§12 + §10.1).
          *
          *     Mirrors the `tasks.allowed_file_types` CHECK member set; a Task may
-         *     restrict to a subset but never beyond it.
+         *     restrict to a subset but never beyond it. §10.1's two families:
+         *     {CSV, XLSX, SQLITE} are structured (schema-validated), {DOCX, PDF}
+         *     are documents (integrity-only machine check; content judgment rides
+         *     the teacher review).
          * @enum {string}
          */
-        FileType: "CSV" | "XLSX" | "SQLITE";
+        FileType: "CSV" | "XLSX" | "SQLITE" | "DOCX" | "PDF";
         /** ForceFailDeliveryRequest */
         ForceFailDeliveryRequest: {
             /**
@@ -4763,7 +4766,7 @@ export interface components {
             /** File Type */
             file_type: string;
             /** Row Count */
-            row_count: number;
+            row_count: number | null;
             /** Detected Columns */
             detected_columns: string[];
             /** Missing Required Columns */
