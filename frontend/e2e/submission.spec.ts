@@ -529,3 +529,129 @@ test.describe("browser upload evidence (PR #2 final acceptance)", () => {
     },
   );
 });
+
+/* --- document family (§10.1): the world's DOCX/PDF task F ------------- */
+
+/** A minimal LEGAL OOXML archive: [Content_Types].xml + word/document.xml
+ * — enough for the integrity detector (an OOXML archive with word/
+ * members), generated inline so the spec carries no binary fixture. */
+const MINIMAL_DOCX_BASE64 =
+  "UEsDBBQAAAAIAKm9SV0CxKfs2AAAAEsBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH2QzU4DMQyEXyXKFe1m4YAQ2mwP/ByBQ3kAK/FuoyZOlLilfXu8FPXAgaP9zYxHHjenFNURawuZrL7tB62QXPaBFqs/t6/dg1aNgTzETGj1GZveTOP2XLAp8VKzesdcHo1pbocJWp8LkpA51wQsY11MAbeHBc3dMNwbl4mRuOM1Q0/jM85wiKxeTrK+9BC7Vk8X3XrKaiglBgcs2KzUTOO71K7Bo/qAym+QRGW+cvXGZ3dI4uz/jzmS/9O1y/McHF79a1qp2WFr8o8U+ytJEOjmt4f5ecb0DVBLAwQUAAAACACpvUldl54nHZ8AAADcAAAAEQAAAHdvcmQvZG9jdW1lbnQueG1sRY5BDoIwEEWv0nQvRRbGEIo7T6AHqO0IJHSm6RSR29tiops3mfzMm99d3n4WL4g8EWp5rGopAC25CQct77fr4SwFJ4POzISg5QYsL323to7s4gGTyALkdtVyTCm0SrEdwRuuKADm7EnRm5TXOKiVoguRLDBnv59VU9cn5c2Esigf5LYyQ0EsSD00IH6vljCTcZ0qQWHcGXZ+j9W/WP8BUEsBAhQDFAAAAAgAqb1JXQLEp+zYAAAASwEAABMAAAAAAAAAAAAAAIABAAAAAFtDb250ZW50X1R5cGVzXS54bWxQSwECFAMUAAAACACpvUldl54nHZ8AAADcAAAAEQAAAAAAAAAAAAAAgAEJAQAAd29yZC9kb2N1bWVudC54bWxQSwUGAAAAAAIAAgCAAAAA1wEAAAAA";
+
+test.describe("document-family upload (§10.1, the world's task F)", () => {
+  const DOC_TASK_URL = process.env.CQ_E2E_DOC_TASK_URL;
+  const AUTHOR = process.env.CQ_E2E_AUTHOR_STUDENT;
+  test.skip(
+    DOC_TASK_URL === undefined,
+    "needs CQ_E2E_DOC_TASK_URL (the seeded document task: DOCX/PDF gate, no schema); the world seed provides it.",
+  );
+
+  test("a real DOCX passes the integrity check and the claim moves to review", async ({ page }) => {
+    await loginAsStudent(page);
+
+    // Claim through the real task page (task F carries the doc gate).
+    const claimResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/tasks/") &&
+        response.url().includes("/claim") &&
+        response.status() === 201,
+    );
+    await page.goto(`${BASE_URL}${DOC_TASK_URL!}`);
+    await page.getByRole("button", { name: "领取任务" }).click();
+    const claim = (await (await claimResponse).json()) as { claim_id: string };
+    await page.goto(`${BASE_URL}/claims/${claim.claim_id}`);
+
+    // The panel's format line names the documents — no tabular wording.
+    await expect(
+      page.getByText("支持格式：Word 文档（.docx）/ PDF 文档"),
+    ).toBeVisible();
+
+    const submissionReady = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/submissions/upload-complete") &&
+        response.status() === 200,
+    );
+    await page.locator("#submission-file").setInputFiles({
+      name: "调研报告.docx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      buffer: Buffer.from(MINIMAL_DOCX_BASE64, "base64"),
+    });
+    await page.getByRole("button", { name: "开始上传" }).click();
+    const submission = (await (await submissionReady).json()) as { id: string };
+    runValidationJob(submission.id);
+
+    // Integrity validated -> the claim moves to review (the panel's
+    // terminal hand-off; the passed report itself is the panel's
+    // transient under-review phase — its shape is unit-pinned).
+    await expect(
+      page.getByText("已提交，等待老师审核。审核结果会更新任务状态。"),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText("待审核").first()).toBeVisible();
+  });
+
+  test("a corrupt .docx fails with the FILE_CORRUPT report, stably rendered on the revisit", async ({ browser }) => {
+    test.skip(
+      AUTHOR === undefined,
+      "needs CQ_E2E_AUTHOR_STUDENT (a second seeded student — the shared student's claim on task F is under review from the sibling test); the world provides it.",
+    );
+    // The shared student's claim is UNDER_REVIEW on task F (same-task
+    // rule) — the AUTHOR student takes the second slot through a
+    // private context, exactly like the privacy spec's two-context shape.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const [username, password] = AUTHOR!.split(":");
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByLabel("学号").fill(username);
+    await page.getByLabel("密码").fill(password);
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).not.toHaveURL(/\/login/);
+
+    const claimResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/tasks/") &&
+        response.url().includes("/claim") &&
+        response.status() === 201,
+    );
+    await page.goto(`${BASE_URL}${DOC_TASK_URL!}`);
+    await page.getByRole("button", { name: "领取任务" }).click();
+    const claim = (await (await claimResponse).json()) as { claim_id: string };
+    const claimUrl = `${BASE_URL}/claims/${claim.claim_id}`;
+    await page.goto(claimUrl);
+
+    const submissionReady = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/submissions/upload-complete") &&
+        response.status() === 200,
+    );
+    await page.locator("#submission-file").setInputFiles({
+      name: "损坏文档.docx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      buffer: Buffer.from("definitely not a zip archive", "utf-8"),
+    });
+    await page.getByRole("button", { name: "开始上传" }).click();
+    const submission = (await (await submissionReady).json()) as { id: string };
+    runValidationJob(submission.id);
+
+    // The failed integrity check rolls the claim back — the failure
+    // report is then the STABLE cold-load surface (defect #15's
+    // section): the §10.1 single-item shape renders end to end.
+    await expect(
+      page.getByText("上次提交未通过机器校验"),
+    ).toBeVisible({ timeout: 120_000 });
+    const report = page.getByRole("region", { name: "上次提交的校验报告" });
+    await expect(report).toBeVisible();
+    // row_count=null reads as the integrity headline; the single
+    // finding carries the product label.
+    await expect(report.getByText("Word 文档（.docx） · 完整性检查")).toBeVisible();
+    await expect(report.getByText("文件完整性未通过")).toBeVisible();
+    await expect(report.getByText("列检查")).toHaveCount(0);
+
+    // And the REVISIT keeps it (the whole point of the cold-load fix).
+    await page.goto(`${BASE_URL}/tasks`);
+    await page.goto(claimUrl);
+    await expect(report.getByText("文件完整性未通过")).toBeVisible();
+    await context.close();
+  });
+});
