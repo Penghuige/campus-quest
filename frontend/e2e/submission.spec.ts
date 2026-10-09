@@ -10,7 +10,7 @@
  * Environment contract (the seeded world's; defaults target the local
  * dev servers orchestrated by playwright.config.ts):
  * - CQ_E2E=1                 enable the suite (required);
- * - CQ_E2E_BASE_URL          frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL          frontend origin (default https://localhost:3000);
  * - CQ_E2E_STUDENT           seeded student credentials "number:password";
  * - CQ_E2E_CLAIM_PATH        deep link to the student's own submittable
  *                            claim A (consumed by the green-path test);
@@ -45,7 +45,7 @@ import { expect, test } from "./fixtures";
 import { mintToken, ensureStudentLogin, runRankingJob, runValidationJob } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 const CLAIM_URL = process.env.CQ_E2E_CLAIM_PATH
   ? `${BASE_URL}${process.env.CQ_E2E_CLAIM_PATH}`

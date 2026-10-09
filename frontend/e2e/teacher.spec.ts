@@ -12,7 +12,7 @@
  * Environment contract (the seeded world's; defaults work against the
  * orchestrated local servers):
  * - CQ_E2E=1                enable the suite (required);
- * - CQ_E2E_BASE_URL         frontend origin (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL         frontend origin (default https://localhost:3000);
  * - CQ_E2E_STAFF_LOGIN_URL  staff login page (default $CQ_E2E_BASE_URL/staff/login);
  * - CQ_E2E_STAFF            pre-seeded TEACHER credentials
  *                           "email:password" + CQ_E2E_STAFF_TOTP_SECRET
@@ -34,7 +34,7 @@ import { createHmac } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
 const STAFF = process.env.CQ_E2E_STAFF; // "teacher@school.edu:correct-horse"
 const STAFF_TOTP_SECRET = process.env.CQ_E2E_STAFF_TOTP_SECRET;

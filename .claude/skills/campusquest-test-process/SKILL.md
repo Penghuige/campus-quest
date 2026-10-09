@@ -25,9 +25,9 @@ description: CampusQuest 测试流程契约：改动类型→门禁矩阵、测�
 
 模板：`docs/quality/test-matrix/points-ledger.md`。纪律：**预期列先于测试检索从 spec 原文推导落笔**；找不到测试=缺口（列出，不补）；测试行为≠预期=不匹配（上报，不擅改——bug 或 spec 缺口由 review 裁定）；裁决类取舍在行内注记。每域一文件；checker：`backend/scripts/check_test_matrix.py`。
 
-## 本地栈借用协议（3000/8100）
+## 本地栈借用协议（3000/8100 + 测试库）
 
-e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，3002 已实证不通）。流程：向 campus reviewer 会话通告"借 3000"→ 其停常驻栈（owner 的 3000 环境）→ 跑电池 → 通告"还" → 其重启栈。占用测试库（campusquest_test@15432）前按协议 ps 取证；与他会被占时错峰。
+e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，3002 已实证不通）。流程：向 campus reviewer 会话通告"借 3000"→ 其停常驻栈（owner 的 3000 环境）→ 跑电池 → 通告"还" → 其重启栈。**占用 campusquest_test@15432 的任何测试跑——包括不经端口的后端直跑（pytest/覆盖率采集/flake 挖掘）——都视同借栈，同样通告-等待-使用**（2026-10-08 起生效：直跑测试与电池并发用库会互相污染证据）。
 
 ## 像素基线纪律
 
@@ -39,3 +39,5 @@ e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，300
 ## 覆盖率棘轮
 
 前后端各有地板文件（frontend/coverage-ratchet.json、backend/coverage-ratchet.json）。降覆盖→同 PR 走 `--update`/`coverage:update` 给理由；地板以 CI 实测为准（权威环境），跨环境噪声由 epsilon 吸收（实测漂移 0.1pp → epsilon 0.15）。
+
+覆盖漂移/flake 排查工具箱（PR #36 先例）：单模块漂移而其余分毫不差 = 单测分支覆盖 flake，非系统噪声。定位法——同一套件 N 轮独立 `COVERAGE_FILE` 运行 + coverage json 差分，找出偶走偶不走的分支；修法——确定性单测钉住该契约的全形态（不靠竞态运气拿覆盖），源码不动。

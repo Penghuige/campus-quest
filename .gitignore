@@ -41,3 +41,7 @@ blob-report/
 
 # agent stream scratch dirs (frontend S4 task workspaces)
 .t*scratch/
+frontend/e2e/.certs/
+
+# e2e-only MinIO TLS cert (infra/scripts/gen-e2e-minio-cert.sh output)
+infra/e2e-certs/

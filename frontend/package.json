@@ -17,9 +17,12 @@
     "test:coverage": "tsx --test --experimental-test-coverage src/__tests__/*.test.ts",
     "coverage:ratchet": "node scripts/check-coverage-ratchet.mjs",
     "coverage:update": "node scripts/check-coverage-ratchet.mjs --update",
-    "audit:gate": "node scripts/check-audit.mjs"
+    "audit:gate": "node scripts/check-audit.mjs",
+    "test:e2e:a11y": "playwright test accessibility.spec.ts",
+    "test:e2e:smoke": "playwright test --project=firefox --project=webkit"
   },
   "dependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@radix-ui/react-dialog": "^1.2.0",
     "@radix-ui/react-slot": "^1.4.0",
     "@tailwindcss/postcss": "^4.3.3",

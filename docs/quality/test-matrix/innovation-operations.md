@@ -14,6 +14,7 @@
 | OG10 | 数据库 | 0026→0027→0026→0027；外键/约束；测试世界保留其他世界授权 | `tests/integration/innovation/test_operations_grants.py::test_grant_database_constraints` + `tests/integration/innovation/test_world_cleanup.py` | 已覆盖（迁移手动实跑） |
 | OG11 | 稳定界面 | 固定字体Linux像素基线 | `tests/../../frontend/e2e/visual-regression.spec.ts` admin-innovation-operations | 缺口 G-2 |
 | OG12 | 会话切换 | 已显示授权页面在换账号后清除旧状态 | `tests/../../frontend/e2e/innovation-operations.spec.ts` genuine admin grant；同源另一标签 A→B→A，无刷新更新身份 | 已覆盖 |
+| OG13 | 键盘焦点（frontend-design-system §19） | 撤回弹窗取消/Escape/成功关闭后恢复操作按钮焦点；结果不明时聚焦重读按钮 | `tests/../../frontend/e2e/innovation-operations.spec.ts` 两项流程中的关闭后焦点断言 | 已覆盖（取消断言先失败；修复后两项通过） |
 
 实施前建立以上预期。当前真实 PG 和核心/双创单元回归 112 项通过，前端完整单元 608 项通过。执行证据只代表本轮本地验证，未执行项目不标为通过。
 

@@ -11,7 +11,7 @@
  * Environment contract (matches the spec headers; defaults target the
  * local dev servers orchestrated by playwright.config.ts):
  * - CQ_E2E=1            enable the suite (required);
- * - CQ_E2E_BASE_URL     frontend origin   (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL     frontend origin   (default https://localhost:3000);
  * - CQ_E2E_API_URL      backend API root  (default http://localhost:8000/api/v1);
  * - CQ_E2E_STUDENT / CQ_E2E_TEACHER / CQ_E2E_ADMIN — seeded account
  *   credentials in "username:password" form, the backend e2e
@@ -34,13 +34,14 @@ import {
   expect,
   test as base,
   type APIRequestContext,
+  type BrowserContext,
   type Page,
 } from "@playwright/test";
 
 import { runWorldAction } from "./global-setup";
 
 export const E2E_ENABLED = process.env.CQ_E2E === "1";
-export const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+export const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 export const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 
 /** /health/ready (not under /api/v1): readiness proves PG/Redis answer. */
@@ -123,6 +124,16 @@ export async function loginThroughUi(
  * /auth/refresh rotation the memory-token manager drives on load),
  * then re-persists the rotated cookie for the next test. A stale or
  * missing state simply falls back to the form.
+ *
+ * Resume is only a resume when the identity is THE seeded student: a
+ * parked staff session (the a11y admin shots, the community reveal)
+ * also answers /me with 200 — /me accepts any live session — and the
+ * student surfaces would then render the staff-guidance page instead
+ * of the page under test (the battery-level flake this guard closes:
+ * every ./fixtures spec runs after accessibility's admin-users shot,
+ * whose end-of-test cookie persist used to park the admin session
+ * here). The username equality is deliberately stricter than a role
+ * check: a state file holding ANOTHER student must not resume either.
  */
 export async function ensureStudentLogin(page: Page): Promise<void> {
   const account = parseSeededAccount(
@@ -148,16 +159,39 @@ export async function ensureStudentLogin(page: Page): Promise<void> {
         { timeout: 15_000 },
       );
       await page.goto(`${BASE_URL}/`);
-      await meOk;
+      const me = (await (await meOk).json().catch(() => null)) as {
+        username?: unknown;
+      } | null;
+      if (me?.username !== account.username) {
+        console.warn(
+          `[ensureStudentLogin] state file holds ${String(me?.username)} — not ${account.username}; falling back to form login`,
+        );
+        throw new Error("state file is not the seeded student's session");
+      }
       await page.context().storageState({ path: statePath });
+      studentSessionContext = page.context();
       return;
     } catch {
-      // Stale or corrupt state: fall through to the form login below.
+      // Stale, corrupt, or wrong-identity state: fall through to the
+      // form login below (whose Set-Cookie replaces whatever the
+      // loaded cookies left in the jar).
     }
   }
   await loginThroughUi(page, account);
   await page.context().storageState({ path: statePath });
+  studentSessionContext = page.context();
 }
+
+/**
+ * The context the shared student's resumable session last landed in
+ * (set by ensureStudentLogin, cleared by staffLogin). Playwright gives
+ * every test a FRESH default context, so the marker only ever matches
+ * the context of the test that itself logged the student in — exactly
+ * the end state `persistSession` may hand to the next test. Staff
+ * logins and never-logged-in default contexts never match, so their
+ * cookies can no longer overwrite the student's state file.
+ */
+let studentSessionContext: BrowserContext | null = null;
 
 /** The cookie slice of Playwright's storageState (addCookies' input). */
 type StorageCookie = {
@@ -221,13 +255,17 @@ function totpCode(secret: string, atMs: number = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** Staff login through the REAL form (the teacher.spec.ts retry loop). */
+/** Staff login through the REAL form (the teacher.spec.ts retry loop).
+ * A staff session on a context disqualifies that context from the
+ * student resume chain — the marker clear keeps a later persist from
+ * handing the NEXT test a staff session as "the student". */
 export async function staffLogin(
   page: Page,
   credentials: string,
   totpSecret: string,
 ): Promise<void> {
   const [email, password] = credentials.split(":");
+  studentSessionContext = null;
   await page.goto(STAFF_LOGIN_URL);
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
@@ -291,7 +329,11 @@ export const test = base.extend<CqFixtures>({
     async ({ page }, run) => {
       await run();
       const statePath = sessionStatePath();
-      if (process.env.CQ_E2E_RUN !== undefined && page.context().pages().length > 0) {
+      if (
+        process.env.CQ_E2E_RUN !== undefined &&
+        studentSessionContext === page.context() &&
+        page.context().pages().length > 0
+      ) {
         await page.context()
           .storageState({ path: statePath })
           .catch(() => {});

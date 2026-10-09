@@ -56,6 +56,11 @@ export const NOSKIP_EXEMPTIONS = [
     reason:
       "Mock-mode test (inverse gate): runs only when real object storage is deliberately unavailable.",
   },
+  // The four former "https-stack mixed content" exemptions are REMOVED:
+  // the dedicated e2e MinIO https instance (compose profile "e2e",
+  // :9002, presigned flow proven live during the run — objects observed
+  // on the instance mid-battery, then wiped by the world clean) makes
+  // the real-upload chain green on the https stack.
   ...["auth screens", "student core routes", "teacher routes", "admin routes"].map(
     (title) => ({
       file: "visual-capture.spec.ts",

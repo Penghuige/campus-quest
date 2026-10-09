@@ -43,7 +43,7 @@ test("operations identity: genuine admin grant, student visibility and confirmed
   await page.goto(`${BASE_URL}/profile`);
   const identity = page.getByRole("region", { name: "我的双创身份" });
   await expect(identity).toContainText("尚未获双创运营授权");
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, ignoreHTTPSErrors: true });
   try {
     const admin = await context.newPage();
     await openAdmin(admin);
@@ -70,10 +70,17 @@ test("operations identity: genuine admin grant, student visibility and confirmed
     const dialog = admin.getByRole("dialog", { name: "撤回双创运营身份" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(admin.getByRole("button", { name: "撤回运营身份", exact: true })).toBeFocused();
     await expect(admin.getByText("当前已授权", { exact: true })).toBeVisible();
+    await admin.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+    await admin.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(admin.getByRole("button", { name: "撤回运营身份", exact: true })).toBeFocused();
     await admin.getByRole("button", { name: "撤回运营身份", exact: true }).click();
     await dialog.getByRole("button", { name: "确认撤回", exact: true }).click();
     await expect(admin.getByText("已撤回双创运营身份。", { exact: true })).toBeVisible();
+    await expect(admin.getByRole("button", { name: "授予运营身份", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "重新读取身份", exact: true }).click();
     await expect(identity).toContainText("尚未获双创运营授权");
   } finally { await context.close(); }
@@ -82,7 +89,7 @@ test("operations identity: genuine admin grant, student visibility and confirmed
 test("operations identity: stale page and lost acknowledgement force reconciliation", async ({ page, browser }, testInfo) => {
   // Keep the fixture's persistent page a student session.
   await ensureStudentLogin(page);
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const first = await context.newPage();
     await openAdmin(first);
@@ -107,6 +114,7 @@ test("operations identity: stale page and lost acknowledgement force reconciliat
     await second.getByRole("button", { name: "确认撤回", exact: true }).click();
     await expect(second.getByRole("region", { name: "当前账号运营授权" }).getByRole("alert")).toContainText("尚未确认操作结果");
     await expect(second.getByRole("button", { name: "撤回运营身份", exact: true })).toBeDisabled();
+    await expect(second.getByRole("button", { name: "重新读取授权状态", exact: true })).toBeFocused();
     await second.getByRole("button", { name: "重新读取授权状态", exact: true }).click();
     await expect(second.getByText("当前未授权", { exact: true })).toBeVisible();
     await second.screenshot({ path: testInfo.outputPath("operations-desktop.png"), fullPage: true });

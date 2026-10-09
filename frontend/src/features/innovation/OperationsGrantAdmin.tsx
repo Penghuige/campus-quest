@@ -38,7 +38,7 @@ function DirectoryPage({ offset, onPage }: { offset: number; onPage: (offset: nu
         {state.data.items.map((item) => <option key={item.id} value={item.id}>{item.username} · {item.nickname} · {roleLabel(item.role)} / {userStatusView(item.status).label}</option>)}
       </select>
       <p className="field-hint">仅正常状态的学生可被授予。所有账号均可查询已有授权，以便撤回已停用或身份改变的账号。</p>
-      <nav className="form-actions" aria-label="授权账号分页">
+      <nav className="ie-draft-actions" aria-label="授权账号分页">
         <Button variant="secondary" disabled={offset === 0} onClick={() => onPage(Math.max(0, offset - 50))}>上一页账号</Button>
         <span>第 {offset / 50 + 1} 页，共 {state.data.total} 个账号</span>
         <Button variant="secondary" disabled={offset + 50 >= state.data.total} onClick={() => onPage(offset + 50)}>下一页账号</Button>
@@ -66,6 +66,8 @@ function GrantEditor({ user, initial }: { user: AdminUserDto; initial: Operation
   const active = useRef(false);
   const epoch = useRef(getAuthEpoch());
   const reasonInput = useRef<HTMLInputElement>(null);
+  const mutationButton = useRef<HTMLButtonElement>(null);
+  const reloadButton = useRef<HTMLButtonElement>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   function current() { return active.current && epoch.current === getAuthEpoch(); }
 
@@ -105,13 +107,19 @@ function GrantEditor({ user, initial }: { user: AdminUserDto; initial: Operation
       {error ? <div className="alert alert-error" role="alert"><p>{error.message}</p>{error.requestId ? <p className="req-id">请求 ID：{error.requestId}</p> : null}</div> : null}
       {!eligible && !record.enabled ? <p className="field-hint">该账号当前不符合授予条件。</p> : null}
       {message ? <p role="status" className="alert alert-success">{message}</p> : null}
-      <div className="form-actions">
-        <Button type="submit" variant={record.enabled ? "danger" : "primary"} disabled={busy || error?.reload === true || (!eligible && !record.enabled)} aria-busy={busy}>{record.enabled ? "撤回运营身份" : "授予运营身份"}</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => void reload()}>重新读取授权状态</Button>
+      <div className="ie-draft-actions">
+        <Button ref={mutationButton} type="submit" variant={record.enabled ? "danger" : "primary"} disabled={busy || error?.reload === true || (!eligible && !record.enabled)} aria-busy={busy}>{record.enabled ? "撤回运营身份" : "授予运营身份"}</Button>
+        <Button ref={reloadButton} variant="secondary" disabled={busy} onClick={() => void reload()}>重新读取授权状态</Button>
       </div>
     </form>
     <Dialog open={confirm} onOpenChange={(next) => { if (!busy) setConfirm(next); }}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        if (!current()) return;
+        const action = mutationButton.current;
+        if (action && !action.disabled) action.focus();
+        else reloadButton.current?.focus();
+      }}>
         <DialogTitle>撤回双创运营身份</DialogTitle>
         <DialogDescription>确认撤回{user.nickname}的双创运营身份？此操作会记录原因。</DialogDescription>
         <DialogFooter>

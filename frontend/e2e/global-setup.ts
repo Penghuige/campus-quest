@@ -13,7 +13,7 @@
  * playwright webServer pins for the backend.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // Playwright loads global-setup files through its TypeScript shim in
@@ -25,10 +25,14 @@ export const BACKEND_DIR = join(here, "..", "..", "backend");
 /** The pinned test-stack env (the webServer's backendEnv contract). */
 export const backendEnv: NodeJS.ProcessEnv = {
   ...process.env,
-  // Match the webServer's IPv4 dependency endpoints (Windows/WSL readiness).
   DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
   REDIS_URL: "redis://127.0.0.1:6379/0",
-  S3_ENDPOINT_URL: "http://127.0.0.1:9000",
+  // Mirror playwright.config.ts's backendEnv: the e2e-only https MinIO
+  // on :9002 (mixed content is blocked from https pages) + the CA
+  // bundle that lets boto3 trust its self-signed certificate (resolved
+  // from this module's location — CWD-independent).
+  S3_ENDPOINT_URL: "https://127.0.0.1:9002",
+  AWS_CA_BUNDLE: join(here, "..", "..", "infra", "e2e-certs", "minio", "public.crt"),
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
   S3_SECRET_KEY: "campusquest-dev",
@@ -54,6 +58,43 @@ export function runWorldAction<T = unknown>(
   return JSON.parse(result.stdout) as T;
 }
 
+/**
+ * P3-B: the https dev certificate. WebKit refuses to STORE Secure
+ * cookies served over plain http (Chromium/Firefox carry a localhost
+ * exemption), so the orchestrated stack speaks https and the Secure
+ * refresh/CSRF cookies behave exactly like production in every engine.
+ * Generated here (openssl subprocess, only when missing) so local runs
+ * and CI share one path with zero manual steps; the throwaway
+ * self-signed pair lives in e2e/.certs/ (gitignored — dev certs never
+ * enter the repo) and Playwright launches with ignoreHTTPSErrors.
+ */
+export function ensureDevCertificate(): { key: string; crt: string } {
+  const dir = join(__dirname, ".certs");
+  const key = join(dir, "server.key");
+  const crt = join(dir, "server.crt");
+  if (existsSync(key) && existsSync(crt)) {
+    return { key, crt };
+  }
+  mkdirSync(dir, { recursive: true });
+  const result = spawnSync(
+    "openssl",
+    [
+      "req", "-x509", "-newkey", "rsa:2048",
+      "-keyout", key, "-out", crt,
+      "-days", "365", "-nodes",
+      "-subj", "/CN=localhost",
+      "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `openssl dev-cert generation failed (${result.status}): ${result.stderr}`,
+    );
+  }
+  return { key, crt };
+}
+
 export default function globalSetup(): void {
   // The suite's own guard (the spec-file convention): a bare
   // `npx playwright test` collects every spec as skipped and must not
@@ -61,6 +102,11 @@ export default function globalSetup(): void {
   if (process.env.CQ_E2E !== "1") {
     return;
   }
+  // The cert normally exists already — playwright.config.ts's module
+  // body generates it BEFORE the webServers boot (they need it at
+  // startup; this hook runs too late for that). Kept here as the
+  // idempotent backstop for direct globalSetup consumers.
+  ensureDevCertificate();
   const world = runWorldAction<{
     run: string;
     world_file: string;

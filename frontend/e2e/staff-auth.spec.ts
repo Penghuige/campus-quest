@@ -7,7 +7,7 @@
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1                 enable the suite (required);
- * - CQ_E2E_BASE_URL          frontend origin   (default http://localhost:3000);
+ * - CQ_E2E_BASE_URL          frontend origin   (default https://localhost:3000);
  * - CQ_E2E_API_URL           backend API root  (default http://localhost:8000/api/v1);
  * - CQ_E2E_RUN / CQ_E2E_ADMIN_ID — the seeded world's contract
  *                            (e2e/global-setup.ts): the invitation is
@@ -33,7 +33,7 @@ import { expect, request, test, type APIRequestContext } from "@playwright/test"
 import { mintToken } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
-const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
 const RUN = process.env.CQ_E2E_RUN;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
