@@ -15,6 +15,7 @@ export default function ProjectDraftsPage() {
         <Link className="section-link" href="/profile">返回我的档案</Link>
         <h1 className="page-title">我的项目草稿</h1>
         <p className="page-subtitle">仅自己可见。先记录项目概况，未完成的内容可以稍后补充。</p>
+        <Link className="section-link" href="/profile/owner-profile">准备负责人资料</Link>
       </div>
       <ProjectDraftsView />
     </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState, SectionError, SectionHeading, SectionSkeleton } from "@/components/ui/sectionStates";
@@ -174,7 +175,10 @@ function ProjectDraftEditor({ initialDraft, onBack }: { initialDraft?: ProjectDr
         <h2 className="section-title" tabIndex={-1} ref={headingRef}>{record ? "编辑项目草稿" : "新建项目草稿"}</h2>
         <Button variant="ghost" onClick={back} disabled={busy}>返回草稿列表</Button>
       </div>
-      <form className="panel form ie-draft-form" onSubmit={onSubmit} noValidate ref={formRef}>
+      {record ? <Link href={`/profile/project-drafts/${record.id}/achievements`} onClick={(event) => {
+        if (busy || (dirty && !window.confirm("项目有未保存的修改，确定进入成果草稿吗？"))) event.preventDefault();
+      }}>管理成果草稿</Link> : null}
+      <form className="panel form ie-draft-form" method="post" onSubmit={onSubmit} noValidate ref={formRef}>
         <p className="field-hint">保存后仍然仅自己可见。</p>
         {DRAFT_FIELDS.map((field) => {
           const count = codePointCount(fields[field.key].trim());

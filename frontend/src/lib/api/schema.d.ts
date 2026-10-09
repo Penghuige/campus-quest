@@ -494,6 +494,95 @@ export interface paths {
         patch: operations["update_draft_api_v1_ie_me_project_drafts__draft_id__patch"];
         trace?: never;
     };
+    "/api/v1/ie/me/owner-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Owner Profile */
+        get: operations["read_owner_profile_api_v1_ie_me_owner_profile_get"];
+        /** Save Owner Profile */
+        put: operations["save_owner_profile_api_v1_ie_me_owner_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ie/operations-grants/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Grant */
+        get: operations["read_grant_api_v1_admin_ie_operations_grants__user_id__get"];
+        /** Save Grant */
+        put: operations["save_grant_api_v1_admin_ie_operations_grants__user_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Capabilities */
+        get: operations["capabilities_api_v1_ie_me_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Owned */
+        get: operations["list_owned_api_v1_ie_me_project_drafts__project_id__achievements_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_ie_me_project_drafts__project_id__achievements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owned */
+        get: operations["get_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update */
+        patch: operations["update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__patch"];
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -2392,6 +2481,83 @@ export interface components {
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
         };
+        /** AchievementDraftCreate */
+        AchievementDraftCreate: {
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Work Url
+             * @default
+             */
+            work_url: string;
+            /**
+             * Award Text
+             * @default
+             */
+            award_text: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** AchievementDraftListResponse */
+        AchievementDraftListResponse: {
+            /** Items */
+            items: components["schemas"]["AchievementDraftResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** AchievementDraftResponse */
+        AchievementDraftResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Work Url */
+            work_url: string;
+            /** Award Text */
+            award_text: string;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AchievementDraftUpdate */
+        AchievementDraftUpdate: {
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Work Url */
+            work_url: string;
+            /** Award Text */
+            award_text: string;
+            /** Version */
+            version: number;
+        };
         /**
          * AdminNotificationTemplateListResponse
          * @description Offset-paginated template page, (event_type, channel)-ordered,
@@ -3029,6 +3195,11 @@ export interface components {
             /** Expires At */
             expires_at: string | null;
         };
+        /** InnovationCapabilitiesResponse */
+        InnovationCapabilitiesResponse: {
+            /** Operations Enabled */
+            operations_enabled: boolean;
+        };
         /**
          * InvalidateRewardLockRequest
          * @description Cancel the provisional reward lock (spec §11.3). The reviewer
@@ -3367,6 +3538,27 @@ export interface components {
             /** Template Body */
             template_body: string;
         };
+        /** OperationsGrantResponse */
+        OperationsGrantResponse: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Version */
+            version: number;
+        };
+        /** OperationsGrantSave */
+        OperationsGrantSave: {
+            /** Enabled */
+            enabled: boolean;
+            /** Version */
+            version: number;
+            /** Reason */
+            reason: string;
+        };
         /**
          * OwnedHonorResponse
          * @description One honor the caller owns (the §19 已获得荣誉 row).
@@ -3388,6 +3580,46 @@ export interface components {
              * Format: date-time
              */
             granted_at: string;
+        };
+        /** OwnerProfileReadResponse */
+        OwnerProfileReadResponse: {
+            profile: components["schemas"]["OwnerProfileResponse"] | null;
+        };
+        /** OwnerProfileResponse */
+        OwnerProfileResponse: {
+            /** Name */
+            name: string;
+            /** Student No */
+            student_no: string;
+            /** Major */
+            major: string;
+            /** Grade */
+            grade: string;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OwnerProfileSave */
+        OwnerProfileSave: {
+            /** Name */
+            name: string;
+            /** Student No */
+            student_no: string;
+            /** Major */
+            major: string;
+            /** Grade */
+            grade: string;
+            /** Version */
+            version: number;
         };
         /**
          * PasswordChangeRequest
@@ -5919,6 +6151,282 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_owner_profile_api_v1_ie_me_owner_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerProfileReadResponse"];
+                };
+            };
+        };
+    };
+    save_owner_profile_api_v1_ie_me_owner_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerProfileSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_grant_api_v1_admin_ie_operations_grants__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationsGrantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_grant_api_v1_admin_ie_operations_grants__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationsGrantSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationsGrantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capabilities_api_v1_ie_me_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InnovationCapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    list_owned_api_v1_ie_me_project_drafts__project_id__achievements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_v1_ie_me_project_drafts__project_id__achievements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AchievementDraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AchievementDraftUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
                 };
             };
             /** @description Validation Error */

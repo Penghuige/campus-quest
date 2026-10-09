@@ -128,6 +128,7 @@ interface Shot {
 }
 
 const SHOTS: Shot[] = [
+  { name: "admin-innovation-operations", path: "/admin/innovation-operations", auth: "admin", masks: [] },
   { name: "auth-login", path: "/login", auth: "anon", masks: [] },
   { name: "dev-gallery", path: "/dev/gallery", auth: "anon", masks: [] },
   {
@@ -187,6 +188,15 @@ const SHOTS: Shot[] = [
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
   { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
   {
+    name: "student-owner-profile-form",
+    path: "/profile/owner-profile",
+    auth: "student",
+    masks: [],
+    prepare: async (page) => {
+      await expect(page.getByRole("region", { name: "负责人资料编辑器" })).toBeVisible();
+    },
+  },
+  {
     name: "student-project-draft-form",
     path: "/profile/project-drafts",
     auth: "student",
@@ -194,6 +204,21 @@ const SHOTS: Shot[] = [
     prepare: async (page) => {
       await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();
       await expect(page.getByRole("region", { name: "项目草稿编辑器" })).toBeVisible();
+    },
+  },
+  {
+    name: "student-achievement-draft-form",
+    path: "/profile/project-drafts",
+    auth: "student",
+    masks: [],
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();
+      await page.getByLabel("项目名称", { exact: true }).fill("成果草稿示例项目");
+      await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+      await expect(page.getByRole("status")).toHaveText("草稿已保存，仅自己可见。");
+      await page.getByRole("link", { name: "管理成果草稿", exact: true }).click();
+      await page.getByRole("button", { name: "新建成果草稿", exact: true }).click();
+      await expect(page.getByRole("region", { name: "成果草稿编辑器" })).toBeVisible();
     },
   },
   {

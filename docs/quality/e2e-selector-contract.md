@@ -117,10 +117,18 @@ owner-approved product decision — never "to fit the new DOM".
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
 | `.ie-draft-list` · `.ie-draft-row` · `.ie-draft-form` | private innovation drafts | list/form boundaries; functional tests prefer named regions and labels |
+| region `负责人资料编辑器` · region `最新负责人资料` | private owner profile | fields use exact labels 姓名/学号/专业/年级; current account only |
+| region `成果草稿列表` · region `成果草稿编辑器` · region `最新已保存成果` · region `私有成果预览` | private project achievements | exact labels 成果名称/作品与阶段成果说明/作品链接/立项或获奖说明; no internal IDs in visible copy |
 
 Private innovation draft behavior contracts: link `我的项目草稿`; regions `项目草稿列表` / `项目草稿编辑器` / `最新已保存版本`; buttons `新建项目草稿` / `保存草稿` / `返回草稿列表` / `编辑项目：{title}` / `读取最新版本（保留当前输入）` / `载入此版本（替换当前输入）`; saved status `草稿已保存，仅自己可见。`; stale-save copy `你的未保存内容已保留`.
 
+Private owner profile contracts: link `负责人资料`; buttons `保存负责人资料` / `读取最新资料（保留当前输入）` / `载入此资料（替换当前输入）`; saved status `资料已保存；负责人资格尚未由此开通。`; conflicts preserve inputs until explicit reconciliation. The student number is allowed only in this owner's private form by the 2026-10-09 human-supplied innovation requirements.
+
+Innovation operations contracts: regions `双创运营授权管理` / `当前账号运营授权` / `我的双创身份`; labels `授权对象` / `操作原因`; buttons `授予运营身份` / `撤回运营身份` / `重新读取授权状态` / `重新读取身份`; dialog `撤回双创运营身份` with `确认撤回` and `取消`. These are role/label selectors; no UUID text, CSS ancestry or fixed account nickname is required. Unknown write outcomes and 409 block further mutation until a successful reread.
+
 ## Rules for the visual workstream
+
+Private achievement contracts: project editor link `管理成果草稿`; buttons `新建成果草稿` / `保存成果草稿` / `返回成果列表` / `编辑成果：{title}` / `读取最新版本（保留当前输入）` / `载入此版本（替换当前输入）` / `重试这次新建（不会重复创建）` / `查看私有预览`; status `成果草稿已保存，仅自己可见。`. Unknown create outcomes freeze the original payload and retry key. Unknown edits and conflicts require explicit reconciliation. Preview renders literal text and never fetches work URLs.
 
 1. Class-A entries are frozen. A visual PR that changes one is out of
    scope until the owner rules it a product change.

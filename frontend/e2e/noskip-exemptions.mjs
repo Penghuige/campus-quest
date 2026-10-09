@@ -67,6 +67,7 @@ export const NOSKIP_EXEMPTIONS = [
   ),
   ...[
     "admin-users",
+    "admin-innovation-operations",
     "auth-login",
     "dev-gallery",
     "student-claim",
@@ -75,6 +76,8 @@ export const NOSKIP_EXEMPTIONS = [
     "student-rankings",
     "student-rewards",
     "student-project-draft-form",
+    "student-achievement-draft-form",
+    "student-owner-profile-form",
     "student-task-detail",
     "student-tasks",
     "teacher-reviews",

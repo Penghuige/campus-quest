@@ -56,6 +56,7 @@ export const BUSINESS_ERROR_CODES = [
   "CONFLICT",
   "PROJECT_DRAFT_VERSION_CONFLICT",
   "PROJECT_DRAFT_REQUEST_CONFLICT",
+  "OWNER_PROFILE_VERSION_CONFLICT",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];

@@ -25,9 +25,10 @@ export const BACKEND_DIR = join(here, "..", "..", "backend");
 /** The pinned test-stack env (the webServer's backendEnv contract). */
 export const backendEnv: NodeJS.ProcessEnv = {
   ...process.env,
-  DATABASE_URL: "postgresql+asyncpg://test:test@localhost:15432/campusquest_test",
-  REDIS_URL: "redis://localhost:6379/0",
-  S3_ENDPOINT_URL: "http://localhost:9000",
+  // Match the webServer's IPv4 dependency endpoints (Windows/WSL readiness).
+  DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
+  REDIS_URL: "redis://127.0.0.1:6379/0",
+  S3_ENDPOINT_URL: "http://127.0.0.1:9000",
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
   S3_SECRET_KEY: "campusquest-dev",

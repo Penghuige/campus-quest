@@ -37,9 +37,11 @@ const backendPort = new URL(API_URL).port || "8000";
  */
 const backendEnv: Record<string, string> = {
   ...process.env,
-  DATABASE_URL: "postgresql+asyncpg://test:test@localhost:15432/campusquest_test",
-  REDIS_URL: "redis://localhost:6379/0",
-  S3_ENDPOINT_URL: "http://localhost:9000",
+  // The dependency stack publishes IPv4 loopback. On Windows/WSL,
+  // localhost's IPv6 attempt can consume the entire readiness budget.
+  DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
+  REDIS_URL: "redis://127.0.0.1:6379/0",
+  S3_ENDPOINT_URL: "http://127.0.0.1:9000",
   S3_BUCKET: "campusquest-test",
   S3_ACCESS_KEY: "campusquest",
   S3_SECRET_KEY: "campusquest-dev",
