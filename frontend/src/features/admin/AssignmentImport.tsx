@@ -35,6 +35,13 @@ import { capRowErrors, importPreviewView } from "./teacherView";
 /** Mirrors of the backend importer caps (Settings defaults). */
 export const IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const IMPORT_MAX_ROWS = 5000;
+/**
+ * The static CSV template (QA #19): two header cells + one example row,
+ * served as a build asset — the import contract's source of truth is
+ * the server's header check; this file only bootstraps the teacher's
+ * spreadsheet.
+ */
+export const IMPORT_TEMPLATE_URL = "/import-template.csv";
 
 export interface AssignmentImportProps {
   taskId: string;
@@ -120,9 +127,17 @@ export function AssignmentImport({ taskId, onImported }: AssignmentImportProps) 
       </div>
 
       <p className="field-hint">
-        CSV 文件（UTF-8，表头为 platform,keyword 两列），不超过{" "}
+        CSV 或 XLSX 文件（UTF-8；表头为 platform,keyword 两列），不超过{" "}
         {formatFileSize(IMPORT_MAX_FILE_BYTES)}、{IMPORT_MAX_ROWS} 行。导入前会先给出
-        校验预览，确认后才写入。
+        校验预览，确认后才写入。也可
+        <a
+          className="text-link"
+          href={IMPORT_TEMPLATE_URL}
+          download="assignment-import-template.csv"
+        >
+          下载 CSV 模板
+        </a>
+        后填写。
       </p>
 
       {phase.kind === "idle" || phase.kind === "uploading" ? (
@@ -132,7 +147,7 @@ export function AssignmentImport({ taskId, onImported }: AssignmentImportProps) 
             id="assignment-import-file"
             className="input"
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(event) => void onFileChosen(event)}
             disabled={phase.kind === "uploading"}
           />

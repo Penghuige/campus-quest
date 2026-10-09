@@ -62,6 +62,10 @@ _SNIFF_SAMPLE_BYTES = 8192
 _HEADER = ("platform", "keyword")
 # Cap on raw values echoed into preview error DTOs (§14 safe truncation).
 _ECHO_MAX_LENGTH = 64
+# The ZIP local-header magic routes xlsx bytes to the openpyxl reader
+# (the submission validator's same convention; the byte cap already
+# bounds the archive before openpyxl sees it).
+_XLSX_LOCAL_MAGIC = b"PK\x03\x04"
 
 
 # --- stable row/file error codes (spec §7.1 detection list) -----------------------
@@ -84,6 +88,7 @@ class ImportErrorCode(StrEnum):
     LIMIT_EXCEEDED = "LIMIT_EXCEEDED"
     INVALID_ENCODING = "INVALID_ENCODING"
     MALFORMED_CSV = "MALFORMED_CSV"
+    MALFORMED_XLSX = "MALFORMED_XLSX"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
 
 
@@ -94,7 +99,9 @@ _INVALID_ENCODING_MESSAGE = "文件编码必须是 UTF-8"
 _BAD_DIALECT_MESSAGE = "无法识别 CSV 分隔符格式"
 _BAD_STRUCTURE_MESSAGE = "CSV 结构无法解析（例如未闭合的引号）"
 _BAD_HEADER_MESSAGE = "CSV 表头必须是 platform,keyword"
-_EMPTY_FILE_MESSAGE = "CSV 文件没有数据行"
+_EMPTY_FILE_MESSAGE = "文件没有数据行"
+_MALFORMED_XLSX_MESSAGE = "XLSX 工作簿无法解析（或不是有效的 xlsx 文件）"
+_XLSX_HEADER_MESSAGE = "XLSX 表头必须恰好是 platform 和 keyword 两列"
 _ROW_COLUMNS_MESSAGE = "每行必须恰好是 platform,keyword 两列"
 _EMPTY_PLATFORM_MESSAGE = "platform 不能为空"
 _EMPTY_KEYWORD_MESSAGE = "keyword 不能为空"
@@ -135,6 +142,61 @@ def _header_match_dialect(text: str) -> csv.Dialect | None:
             )()
             return dialect
     return None
+
+
+def _parse_xlsx(
+    data: bytes,
+) -> tuple[list[list[str]] | None, AssignmentImportError | None]:
+    """Read the first visible worksheet's cells as plain text (QA #19).
+
+    The sibling of ``_parse_csv`` returning the same shape: rows minus
+    the header, or one file-level rejection. openpyxl runs read-only +
+    data-only + no links (the submission validator's same posture —
+    formulas never execute, cached values ride as text); every openpyxl
+    failure surface (not a zip, a corrupt sheet, a weird sharedStrings
+    table) lands as one MALFORMED_XLSX rejection — parser exceptions
+    never escape this module.
+
+    Resource bounds ride the SAME caps as CSV: the byte cap bounded the
+    archive before this call, the per-import row cap stops enumeration
+    one row past the limit, and TEXT_TOO_LONG reports oversized cells
+    (keyword_max_length) instead of crashing. A giant sheet of empty
+    rows terminates fast (read-only mode yields EmptyCell without
+    materializing the dimension).
+    """
+    from typing import Any, BinaryIO
+
+    from openpyxl import load_workbook
+
+    workbook: Any = None
+    try:
+        reader: BinaryIO = io.BytesIO(data)
+        workbook = load_workbook(
+            reader, read_only=True, data_only=True, keep_links=False
+        )
+        sheet = workbook.worksheets[0]
+        rows: list[list[str]] = []
+        for row in sheet.iter_rows(values_only=True):
+            cells = ["" if value is None else str(value) for value in row]
+            rows.append(cells)
+    except Exception:
+        return None, AssignmentImportError(
+            ImportErrorCode.MALFORMED_XLSX, _MALFORMED_XLSX_MESSAGE
+        )
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+    if not rows or not any(any(cell.strip() for cell in row) for row in rows):
+        return None, AssignmentImportError(
+            ImportErrorCode.MALFORMED_XLSX, _EMPTY_FILE_MESSAGE
+        )
+    header = tuple(cell.strip().lower() for cell in rows[0])
+    if header[:2] != _HEADER or len(header) != 2:
+        return None, AssignmentImportError(
+            ImportErrorCode.MALFORMED_XLSX, _XLSX_HEADER_MESSAGE
+        )
+    return rows[1:], None
 
 
 def _parse_csv(
@@ -255,6 +317,12 @@ def parse_upload(
     steps 2-3). File-level failures are validation outcomes — a
     ``ParsedImport`` carrying the single file-level error — never
     exceptions (backend-engineering §14).
+
+    CSV and XLSX are both accepted (spec §7.1 Teacher 可 CSV/XLSX 导入):
+    the ZIP local-header magic routes xlsx bytes to the openpyxl reader,
+    everything else to the strict CSV reader. Both produce the same
+    canonicalized ``(platform, keyword)`` stream, so every downstream
+    validation, dedup, preview, and confirm path is shared.
     """
     if len(data) > max_file_bytes:
         return ParsedImport.file_rejection(
@@ -266,6 +334,17 @@ def parse_upload(
                     "limit": max_file_bytes,
                 },
             )
+        )
+
+    if data[:4] == _XLSX_LOCAL_MAGIC:
+        rows, file_error = _parse_xlsx(data)
+        if file_error is not None:
+            return ParsedImport.file_rejection(file_error)
+        assert rows is not None
+        return _classify_rows(
+            rows,
+            max_rows=max_rows,
+            keyword_max_length=keyword_max_length,
         )
 
     try:
@@ -282,6 +361,20 @@ def parse_upload(
         return ParsedImport.file_rejection(file_error)
     assert rows is not None  # _parse_csv returns (rows, None) or (None, error)
 
+    return _classify_rows(
+        rows,
+        max_rows=max_rows,
+        keyword_max_length=keyword_max_length,
+    )
+
+
+def _classify_rows(
+    rows: list[list[str]],
+    *,
+    max_rows: int,
+    keyword_max_length: int,
+) -> ParsedImport:
+    """Shared row validation over canonicalized cells (both readers)."""
     valid: list[AssignmentPreviewRow] = []
     errors: list[AssignmentImportError] = []
     seen: set[tuple[str, str]] = set()

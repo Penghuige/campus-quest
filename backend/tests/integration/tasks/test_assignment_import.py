@@ -147,6 +147,21 @@ def _csv(*rows: tuple[str, str]) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
+def _xlsx(*rows: tuple[str, str]) -> bytes:
+    """A real workbook — the teacher's actual upload shape (QA #19)."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(["platform", "keyword"])
+    for row in rows:
+        sheet.append(list(row))
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 async def _seed_task(db_session: AsyncSession, owner: User) -> Task:
     # Flush the owner first: User.id is a server default, so Task needs it
     # populated before construction (same order as the collaborator suite).
@@ -195,6 +210,43 @@ async def test_preview_then_confirm_lands_rows(
         ("zhihu", "留学"),
     ]
     assert all(row.availability_status == "AVAILABLE" for row in rows)
+
+
+@pytest.mark.integration
+async def test_xlsx_preview_confirm_lands_rows(
+    db_session: AsyncSession, import_redis: aioredis.Redis, clock: FrozenClock
+) -> None:
+    """QA #19 end to end: a real workbook previews and lands through the
+    SAME pipeline — canonicalization, the database UNIQUE dedup, and
+    the confirm transaction are reader-agnostic."""
+    owner = _user(username=f"teacher{uuid4().hex[:8]}", role=Role.TEACHER)
+    task = await _seed_task(db_session, owner)
+    service = _service(import_redis, clock)
+    owner_actor = Actor(user_id=owner.id, role=Role.TEACHER)
+
+    preview = await service.preview_assignments(
+        db_session,
+        owner_actor,
+        task.id,
+        _xlsx(("XiaoHongShu", "  考研 经验  "), ("zhihu", "留学")),
+    )
+    assert preview.valid_count == 2
+    assert preview.errors == ()
+
+    result = await service.confirm_assignments(
+        db_session, owner_actor, task.id, preview.preview_token
+    )
+    assert result.inserted == 2
+
+    rows = (
+        await db_session.scalars(
+            select(Assignment).where(Assignment.task_id == task.id)
+        )
+    ).all()
+    assert sorted((row.platform, row.keyword) for row in rows) == [
+        ("xiaohongshu", "考研 经验"),
+        ("zhihu", "留学"),
+    ]
 
 
 @pytest.mark.integration
