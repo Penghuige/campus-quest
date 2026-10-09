@@ -263,6 +263,8 @@ async def test_student_flow_whitelist_otp_register_login_me(
         },
     )
     assert registered.status_code == 201, registered.text
+    # The register surface stays UserPublic (no created_at — the
+    # owner-only figure rides /me); the #17 amendment is MePublic's.
     assert registered.json() == {
         "id": registered.json()["id"],
         "username": _STUDENT,
@@ -304,6 +306,9 @@ async def test_student_flow_whitelist_otp_register_login_me(
     assert me.json()["username"] == _STUDENT
     assert me.json()["phone_e164"] == _PHONE_E164
     assert me.json()["nickname"] == _NICKNAME
+    # #17: the registration date rides /me as ISO-8601 UTC (parseable;
+    # the exact instant is the database's).
+    datetime.fromisoformat(me.json()["created_at"])
 
     # No response anywhere in the flow carries secret material: the Argon2id
     # verifier, the OTP code, the refresh-token digest, or a TOTP secret —
@@ -764,6 +769,7 @@ async def test_nickname_patch_updates_and_returns_the_owner_view(
         "phone_e164",
         "email_normalized",
         "email_verified_at",
+        "created_at",
     }
 
 

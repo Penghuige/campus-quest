@@ -3074,6 +3074,11 @@ export interface components {
             email_normalized: string | null;
             /** Email Verified At */
             email_verified_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ModerationCommentListResponse */
         ModerationCommentListResponse: {

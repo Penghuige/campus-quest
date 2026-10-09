@@ -7203,6 +7203,11 @@
               }
             ],
             "title": "Email Verified At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
         "type": "object",
@@ -7215,7 +7220,8 @@
           "has_avatar",
           "phone_e164",
           "email_normalized",
-          "email_verified_at"
+          "email_verified_at",
+          "created_at"
         ],
         "title": "MePublic",
         "description": "The owner's own account page (spec §40): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
