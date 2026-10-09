@@ -107,11 +107,12 @@ class Submission(Base):
             name="review_status",
         ),
         CheckConstraint(
-            "declared_type IN ('CSV', 'XLSX', 'SQLITE')",
+            "declared_type IN ('CSV', 'XLSX', 'SQLITE', 'DOCX', 'PDF')",
             name="declared_type",
         ),
         CheckConstraint(
-            "detected_type IS NULL OR detected_type IN ('CSV', 'XLSX', 'SQLITE')",
+            "detected_type IS NULL"
+            " OR detected_type IN ('CSV', 'XLSX', 'SQLITE', 'DOCX', 'PDF')",
             name="detected_type",
         ),
         CheckConstraint("file_size >= 0", name="file_size"),
@@ -268,7 +269,7 @@ class UploadIntent(Base):
     __tablename__ = "upload_intents"
     __table_args__ = (
         CheckConstraint(
-            "declared_type IN ('CSV', 'XLSX', 'SQLITE')",
+            "declared_type IN ('CSV', 'XLSX', 'SQLITE', 'DOCX', 'PDF')",
             name="declared_type",
         ),
         CheckConstraint("declared_size >= 0", name="declared_size"),
