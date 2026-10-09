@@ -5,11 +5,13 @@
  * own account view), rendered as definition rows under the teacher
  * shell.
  *
- * Field scope ruling (reviewer, 2026-10-09): ONLY fields the DTO
- * already exports — 昵称/账号/角色/账号状态. 注册日期 waits on the
- * backend contract (MePublic carries no created_at; the gap is filed
- * and lands as a DTO addition), and no field is invented client-side.
+ * Field scope: 昵称/账号/角色/账号状态 from the original DTO;
+ * 注册日期 joined when the backend contract landed it (PR #46:
+ * MePublic.created_at) — formatted date-only in the business
+ * timezone, the growth view's honor-date shape.
  */
+import { BUSINESS_TIME_CONFIG } from "@/lib/time";
+
 import { useSession } from "./session";
 
 /** Account status text — the admin surfaces' established mapping. */
@@ -17,6 +19,16 @@ const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "正常",
   SUSPENDED: "已停用",
 };
+
+/** Date-only, year-inclusive, business timezone (formatHonorDate's shape). */
+function formatRegistrationDate(iso: string): string {
+  return new Intl.DateTimeFormat(BUSINESS_TIME_CONFIG.locale, {
+    timeZone: BUSINESS_TIME_CONFIG.timeZone,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(Date.parse(iso)));
+}
 
 export function StaffProfileView() {
   const { state } = useSession();
@@ -48,6 +60,14 @@ export function StaffProfileView() {
           <dt className="fact-label">账号状态</dt>
           <dd className="fact-value">
             {STATUS_LABELS[me.status] ?? me.status}
+          </dd>
+        </div>
+        {/* PR #46's contract addition: the registration instant,
+            display-only. */}
+        <div className="fact-row">
+          <dt className="fact-label">注册日期</dt>
+          <dd className="fact-value" suppressHydrationWarning>
+            {formatRegistrationDate(me.created_at)}
           </dd>
         </div>
       </dl>
