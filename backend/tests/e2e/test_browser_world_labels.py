@@ -124,10 +124,11 @@ async def test_fixed_labels_byte_identical_across_runs(
     # The frozen strings are the documented fixed-marker ones. All five
     # seeded task titles are equal (the factories slice the run marker's
     # first 6 chars, so the a/b/c/d/r suffixes never reach the title) —
-    # the fixed mode inherits that shape unchanged. Five = A/B (claimed
+    # the fixed mode inherits that shape unchanged. Six = A/B (claimed
     # deep links), C (submission's UI-claim pool), D (task-claim's
-    # exclusive pool, flake B), R (review).
-    assert labels[0]["task_titles"] == [f"端到端数据采集任务{FIXED[:6]}"] * 5
+    # exclusive pool, flake B), DOC (the §10.1 document showcase),
+    # R (review).
+    assert labels[0]["task_titles"] == [f"端到端数据采集任务{FIXED[:6]}"] * 6
     assert labels[0]["reward_name"] == f"端到端奖励卡{FIXED[:6]}"
     assert f"端到端同学{FIXED[:4]}" in labels[0]["nicknames"]
     assert f"停用目标同学{FIXED[:4]}" in labels[0]["nicknames"]
@@ -145,7 +146,7 @@ async def test_default_mode_still_embeds_run_id(
         labels = await _world_labels(db_factory, world)
         # Default behavior is byte-identical to the pre-flag world: every
         # label family carries THIS run's marker…
-        assert labels["task_titles"] == [f"端到端数据采集任务{run[:6]}"] * 5
+        assert labels["task_titles"] == [f"端到端数据采集任务{run[:6]}"] * 6
         assert labels["reward_name"] == f"端到端奖励卡{run[:6]}"
         assert f"端到端同学{run[:4]}" in labels["nicknames"]
         assert f"e2e-teacher-{run}@school.edu" in labels["usernames"]

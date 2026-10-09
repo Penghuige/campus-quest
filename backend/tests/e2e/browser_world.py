@@ -247,6 +247,17 @@ async def _seed() -> dict[str, Any]:
         task_d = await seed_task_with_assignments(
             factory, teacher_id=teacher.user_id, run=f"{label_run}d", assignment_count=2
         )
+        # §10.1: the document-family showcase task (spec PR #50/#54) —
+        # DOCX/PDF gate, no schema. Exported for the frontend's
+        # document-upload e2e (the last docx/pdf coverage piece).
+        task_doc = await seed_task_with_assignments(
+            factory,
+            teacher_id=teacher.user_id,
+            run=f"{label_run}f",
+            assignment_count=2,
+            allowed=("DOCX", "PDF"),
+            schema=None,
+        )
         claim_a = await seed_claim(factory, task=task_a, student_id=student.user_id)
         claim_b = await seed_claim(factory, task=task_b, student_id=student.user_id)
         item = await seed_reward_item(factory, run=label_run, point_cost=50)
@@ -507,7 +518,8 @@ async def _seed() -> dict[str, Any]:
             "pending_redemption_id": str(redemption.id),
             "term_before": term_before,
             "task_ids": [
-                str(t.task_id) for t in (task_a, task_b, task_c, task_d, task_r)
+                str(t.task_id)
+                for t in (task_a, task_b, task_c, task_d, task_doc, task_r)
             ],
             "task_open": {
                 "task_id": str(task_c.task_id),
@@ -555,6 +567,10 @@ async def _seed() -> dict[str, Any]:
             # (community, cross-browser smoke) are unaffected by which
             # open task they render.
             "CQ_E2E_TASK_URL": f"/tasks/{task_d.task_id}",
+            # §10.1 document-family showcase: the frontend's
+            # document-upload e2e claims THIS task and uploads a real
+            # DOCX/PDF through the integrity pipeline.
+            "CQ_E2E_DOC_TASK_URL": f"/tasks/{task_doc.task_id}",
             "CQ_E2E_AUTHOR_STUDENT": f"{author.username}:{author.password}",
             "CQ_E2E_AUTHOR_SECRETS": ",".join(
                 (

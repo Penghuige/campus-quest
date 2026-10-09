@@ -232,8 +232,10 @@ async def seed_task_with_assignments(
     run: str,
     assignment_count: int = 3,
     duration_minutes: int = 4320,
+    allowed: tuple[str, ...] = ("CSV",),
+    schema: Any | None = CSV_SUBMISSION_SCHEMA,
 ) -> TaskFixture:
-    """One PUBLISHED RELATIVE CSV Task owned by ``teacher_id`` with
+    """One PUBLISHED RELATIVE Task owned by ``teacher_id`` with
     ``assignment_count`` AVAILABLE Assignments, committed.
 
     The contract matches the composition smoke: ``duration_minutes`` (3
@@ -243,7 +245,12 @@ async def seed_task_with_assignments(
     flows (task 3) pass a shorter duration so a +2h/+7h late submit is a
     small clock step, not a multi-day one. Claim-time snapshots (deadline,
     reward policy) stay the claim service's job; nothing is pre-claimed
-    here."""
+    here.
+
+    §10.1 callers (the document-family world task) pass
+    ``allowed=("DOCX", "PDF")`` with ``schema=None`` — a document task
+    carries no schema by contract.
+    """
     if assignment_count < 1:
         raise ValueError("assignment_count must be >= 1")
     if duration_minutes <= 0:
@@ -260,9 +267,9 @@ async def seed_task_with_assignments(
             status=TaskStatus.PUBLISHED,
             deadline_mode=DeadlineMode.RELATIVE,
             duration_minutes=duration_minutes,
-            submission_schema=CSV_SUBMISSION_SCHEMA,
-            submission_schema_version=1,
-            allowed_file_types=["CSV"],
+            submission_schema=schema,
+            submission_schema_version=1 if schema is not None else None,
+            allowed_file_types=list(allowed),
             max_file_size_bytes=10 * 1024 * 1024,
             notification_channels=["SMS"],
             published_at=now - timedelta(days=1),
