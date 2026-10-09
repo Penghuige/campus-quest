@@ -109,7 +109,11 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.integrations.object_storage import ObjectStorage
 from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
-from app.modules.submissions.enums import FileType, ValidationStatus
+from app.modules.submissions.enums import (
+    DOCUMENT_FILE_TYPES,
+    FileType,
+    ValidationStatus,
+)
 from app.modules.submissions.models import Submission, SubmissionValidation
 from app.modules.submissions.schema import SchemaParseError, SubmissionSchema
 from app.modules.submissions.validation_runner import (
@@ -550,7 +554,55 @@ class ValidationService:
                 path=local, request=request, declared_type=declared
             )
 
+        # §10.1 document family: integrity-only assembly (the sandbox
+        # already answered completeness; the report is §12.4-shaped
+        # with row_count=None — uniform UX, teacher review beyond).
+        if declared in DOCUMENT_FILE_TYPES:
+            return self._assemble_document(outcome, declared=declared)
         return self._assemble(outcome, declared=declared, schema=schema)
+
+    def _assemble_document(
+        self, outcome: SandboxedValidation, *, declared: FileType
+    ) -> tuple[ValidationReport, FileType | None]:
+        """The §10.1 document-family verdict: integrity only.
+
+        The sandbox's magic-byte detection already answered
+        completeness — a DOCX that opens as an OOXML archive with
+        ``word/`` members, a PDF with both ``%PDF-`` and ``%%EOF`` in
+        the bounded prefix. The report is the same §12.4 shape with
+        row_count=None (no tabular content): the one finding on the
+        failure paths is FILE_CORRUPT; a clean pass carries an empty
+        error list, and the teacher review owns everything beyond
+        integrity.
+        """
+        detected = outcome.detected_type
+        if outcome.failure_code is not None:
+            # Sandbox timeout/crash: the synthetic terminal report
+            # already says what happened — nothing document-specific
+            # to add.
+            assert outcome.report is not None
+            return outcome.report, None
+        if detected is None or detected is not declared:
+            builder = ValidationReportBuilder(
+                parser_version=DETECTION_PARSER_VERSION, file_type=declared
+            )
+            builder.add_error(
+                ValidationCode.FILE_CORRUPT,
+                "文件内容无法通过完整性检查（格式与声明不符或文件损坏）",
+            )
+            report = builder.build(
+                row_count=None,
+                detected_columns=[],
+                missing_required_columns=[],
+                extra_columns=[],
+                type_error_counts={},
+                null_ratios={},
+                duplicate_counts={},
+                duration_ms=0.0,
+            )
+            return report, None
+        assert outcome.report is not None
+        return outcome.report, detected
 
     def _assemble(
         self,

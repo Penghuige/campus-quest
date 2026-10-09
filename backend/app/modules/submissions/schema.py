@@ -75,6 +75,10 @@ MAX_ROWS_CEILING = 10_000_000
 
 # DSL literals -> the module's canonical FileType members, so parsed
 # schemas compare directly against the upload-side file-type universe.
+# docx/pdf literals exist for schema-side rejection messages only: a
+# DOCUMENT task carries no schema at all (§10.1), so accepting the
+# literals here would only let a structured task name a family it can
+# never allow — reject at parse with the same unknown-format message.
 _FORMAT_LITERALS: Mapping[str, FileType] = MappingProxyType(
     {"csv": FileType.CSV, "xlsx": FileType.XLSX, "sqlite": FileType.SQLITE}
 )

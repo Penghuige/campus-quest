@@ -107,6 +107,10 @@ class ValidationCode(StrEnum):
     MALFORMED_CSV = "MALFORMED_CSV"
     MALFORMED_XLSX = "MALFORMED_XLSX"
     MALFORMED_SQLITE = "MALFORMED_SQLITE"
+    #: §10.1: a document-family file failed the integrity check
+    #: (magic bytes / parseability) — content quality itself rides the
+    #: teacher review, never this code.
+    FILE_CORRUPT = "FILE_CORRUPT"
     ARCHIVE_TOO_LARGE = "ARCHIVE_TOO_LARGE"
     PART_TOO_LARGE = "PART_TOO_LARGE"
     SUSPICIOUS_COMPRESSION_RATIO = "SUSPICIOUS_COMPRESSION_RATIO"
@@ -240,7 +244,9 @@ class ValidationReport:
 
     parser_version: str
     file_type: FileType
-    row_count: int
+    #: §10.1: document-family reports carry None (no tabular content);
+    #: structured reports always have an integer count.
+    row_count: int | None
     detected_columns: tuple[str, ...]
     missing_required_columns: tuple[str, ...]
     extra_columns: tuple[str, ...]
@@ -350,7 +356,7 @@ class ValidationReportBuilder:
     def build(
         self,
         *,
-        row_count: int,
+        row_count: int | None,
         detected_columns: Sequence[str],
         missing_required_columns: Sequence[str],
         extra_columns: Sequence[str],

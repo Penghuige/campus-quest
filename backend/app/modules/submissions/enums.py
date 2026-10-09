@@ -38,15 +38,26 @@ __all__ = [
 
 
 class FileType(StrEnum):
-    """The closed upload file-type universe (spec §10/§12).
+    """The closed upload file-type universe (spec §10/§12 + §10.1).
 
     Mirrors the `tasks.allowed_file_types` CHECK member set; a Task may
-    restrict to a subset but never beyond it.
+    restrict to a subset but never beyond it. §10.1's two families:
+    {CSV, XLSX, SQLITE} are structured (schema-validated), {DOCX, PDF}
+    are documents (integrity-only machine check; content judgment rides
+    the teacher review).
     """
 
     CSV = "CSV"
     XLSX = "XLSX"
     SQLITE = "SQLITE"
+    DOCX = "DOCX"
+    PDF = "PDF"
+
+
+#: The §10.1 family split — a Task's allowed set must lie entirely in
+#: exactly one family (mixed is a creation/update 422).
+STRUCTURED_FILE_TYPES = frozenset({FileType.CSV, FileType.XLSX, FileType.SQLITE})
+DOCUMENT_FILE_TYPES = frozenset({FileType.DOCX, FileType.PDF})
 
 
 class RetentionPolicy(StrEnum):
