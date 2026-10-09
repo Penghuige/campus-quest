@@ -563,7 +563,7 @@ test.describe("document-family upload (§10.1, the world's task F)", () => {
 
     // The panel's format line names the documents — no tabular wording.
     await expect(
-      page.getByText("支持格式：Word 文档（.docx）/ PDF 文档"),
+      page.getByText("支持格式：Word 文档（.docx） / PDF 文档"),
     ).toBeVisible();
 
     const submissionReady = page.waitForResponse(
@@ -634,24 +634,25 @@ test.describe("document-family upload (§10.1, the world's task F)", () => {
     const submission = (await (await submissionReady).json()) as { id: string };
     runValidationJob(submission.id);
 
-    // The failed integrity check rolls the claim back — the failure
-    // report is then the STABLE cold-load surface (defect #15's
-    // section): the §10.1 single-item shape renders end to end.
+    // The failed integrity check renders the §10.1 single-item report
+    // (the live panel's failure phase carries it immediately)...
     await expect(
-      page.getByText("上次提交未通过机器校验"),
+      page.getByText("提交未通过校验，请修正"),
     ).toBeVisible({ timeout: 120_000 });
-    const report = page.getByRole("region", { name: "上次提交的校验报告" });
-    await expect(report).toBeVisible();
-    // row_count=null reads as the integrity headline; the single
-    // finding carries the product label.
-    await expect(report.getByText("Word 文档（.docx） · 完整性检查")).toBeVisible();
-    await expect(report.getByText("文件完整性未通过")).toBeVisible();
-    await expect(report.getByText("列检查")).toHaveCount(0);
+    const liveReport = page.getByRole("region", { name: "校验报告" });
+    await expect(liveReport).toBeVisible();
+    await expect(liveReport.getByText("Word 文档（.docx） · 完整性检查")).toBeVisible();
+    await expect(liveReport.getByText("文件完整性未通过")).toBeVisible();
+    await expect(liveReport.getByText("列检查")).toHaveCount(0);
 
-    // And the REVISIT keeps it (the whole point of the cold-load fix).
+    // ...and the REVISIT keeps the failure reachable cold (defect
+    // #15's section — the whole point of the cold-load fix).
     await page.goto(`${BASE_URL}/tasks`);
     await page.goto(claimUrl);
-    await expect(report.getByText("文件完整性未通过")).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "上次提交的校验报告" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("文件完整性未通过").first()).toBeVisible();
     await context.close();
   });
 });
