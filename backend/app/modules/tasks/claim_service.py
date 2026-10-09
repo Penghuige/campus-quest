@@ -112,6 +112,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import DomainEvent, DomainEventPublisher
+from app.modules.submissions.enums import DOCUMENT_FILE_TYPES
 from app.modules.tasks.deadlines import compute_claim_deadlines
 from app.modules.tasks.enums import (
     AssignmentAvailability,
@@ -468,10 +469,18 @@ class ClaimEligibilityService:
         status = TaskStatus(task.status)
         if status is not TaskStatus.PUBLISHED:
             raise TaskNotClaimableError(status, reason="task_not_published")
-        if task.submission_schema_version is None:
-            # A PUBLISHED task always carries a schema version; reaching
-            # here means publish validation was bypassed. The claim-side
-            # column is NOT NULL, so refuse instead of failing the insert.
+        # §10.1: a pure document-family task (DOCX/PDF only) publishes
+        # with an EMPTY schema by contract — the schema-version gate is
+        # family-conditional. Any structured format in the gate keeps
+        # the check (the schema still governs that task's validation).
+        allowed = set(task.allowed_file_types or [])
+        pure_document = bool(allowed) and allowed <= {
+            member.value for member in DOCUMENT_FILE_TYPES
+        }
+        if task.submission_schema_version is None and not pure_document:
+            # A PUBLISHED structured task always carries a schema
+            # version; reaching here means publish validation was
+            # bypassed. Refuse instead of failing the insert.
             raise TaskNotClaimableError(
                 status, reason="missing_submission_schema_version"
             )

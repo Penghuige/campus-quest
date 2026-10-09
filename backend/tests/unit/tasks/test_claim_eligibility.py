@@ -330,12 +330,39 @@ def test_non_published_task_is_not_claimable(status: TaskStatus) -> None:
 
 
 def test_published_task_without_schema_version_is_not_claimable() -> None:
-    """A PUBLISHED task always carries a schema version; reaching the claim
-    without one means publish validation was bypassed (T6 rule, kept)."""
+    """A PUBLISHED STRUCTURED task always carries a schema version;
+    reaching the claim without one means publish validation was
+    bypassed (T6 rule, kept — §10.1 made it family-conditional)."""
     error = _assert_blocked(
         ClaimEligibilityService(),
         _claimer(),
         _task(submission_schema_version=None),
+        NOW,
+        (),
+        ErrorCode.TASK_NOT_CLAIMABLE,
+        409,
+    )
+    assert error.details["reason"] == "missing_submission_schema_version"
+
+
+def test_document_family_task_without_schema_is_claimable() -> None:
+    """§10.1: a pure document task (DOCX/PDF only) publishes with an
+    EMPTY schema by contract — the schema-version gate exempts it (the
+    frontend's document e2e hit this as a 409 before the exemption)."""
+    task = _task(submission_schema_version=None, allowed_file_types=["DOCX", "PDF"])
+    _assert_allowed(ClaimEligibilityService(), _claimer(), task, NOW, ())
+
+
+def test_mixed_family_task_without_schema_is_not_claimable() -> None:
+    """A gate holding ANY structured format keeps the schema check —
+    the exemption is purity-scoped, not a blanket skip."""
+    error = _assert_blocked(
+        ClaimEligibilityService(),
+        _claimer(),
+        _task(
+            submission_schema_version=None,
+            allowed_file_types=["CSV", "DOCX"],
+        ),
         NOW,
         (),
         ErrorCode.TASK_NOT_CLAIMABLE,
