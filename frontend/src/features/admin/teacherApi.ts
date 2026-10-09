@@ -81,7 +81,13 @@ export const TASK_TYPES = ["DATA_CRAWL"] as const;
 export type TaskTypeKey = (typeof TASK_TYPES)[number];
 
 /** File types a task may allow (backend `SUPPORTED_FILE_TYPES`). */
-export const ALLOWED_TASK_FILE_TYPES = ["CSV", "XLSX", "SQLITE"] as const;
+export const ALLOWED_TASK_FILE_TYPES = [
+  "CSV",
+  "XLSX",
+  "SQLITE",
+  "DOCX",
+  "PDF",
+] as const;
 export type TaskFileTypeKey = (typeof ALLOWED_TASK_FILE_TYPES)[number];
 
 /** Platform upload cap mirror (backend `max_upload_bytes_default`, 200 MB). */

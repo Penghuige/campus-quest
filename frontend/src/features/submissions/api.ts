@@ -39,7 +39,7 @@ export type ValidationFindingDto = Schemas["ValidationFindingPayload"];
 // --- file-type universe (backend submissions `FileType`; spec §10/§12) ------------
 
 /** The closed upload file-type universe (never a task-specific subset list). */
-export const FILE_TYPES = ["CSV", "XLSX", "SQLITE"] as const;
+export const FILE_TYPES = ["CSV", "XLSX", "SQLITE", "DOCX", "PDF"] as const;
 export type FileTypeKey = (typeof FILE_TYPES)[number];
 
 /** Extensions accepted by the picker, per declared type. */
@@ -47,6 +47,9 @@ const FILE_TYPE_EXTENSIONS: Record<FileTypeKey, readonly string[]> = {
   CSV: [".csv"],
   XLSX: [".xlsx"],
   SQLITE: [".sqlite", ".db", ".sqlite3"],
+  // §10.1 document family: integrity-only validation.
+  DOCX: [".docx"],
+  PDF: [".pdf"],
 };
 
 /** `accept` attribute for the file picker over the whole universe. */
@@ -77,6 +80,8 @@ export const FILE_TYPE_LABELS: Record<FileTypeKey, string> = {
   CSV: "CSV",
   XLSX: "Excel（.xlsx）",
   SQLITE: "SQLite",
+  DOCX: "Word 文档（.docx）",
+  PDF: "PDF 文档",
 };
 
 /**

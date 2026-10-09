@@ -145,12 +145,38 @@ describe("whole-report view", () => {
     assert.equal(view.passed, true);
   });
 
-  test("document-family report (row_count=null) heads with the file alone (§10.1)", () => {
+  test("document-family reports (§10.1): row_count null reads as an integrity check, never a crash", () => {
+    // The document family persists row_count=None (no tabular
+    // content). The headline must not call toLocaleString on null.
     const view = validationReportView(
-      report({ file_type: "DOCX", row_count: null }),
+      report({
+        file_type: "DOCX",
+        row_count: null as unknown as number,
+        detected_columns: [],
+      }),
     );
-    assert.equal(view.headline, "DOCX");
+    assert.equal(view.headline, "Word 文档（.docx） · 完整性检查");
     assert.equal(view.passed, true);
+  });
+
+  test("FILE_CORRUPT carries a product label (integrity failure), not the raw code", () => {
+    const view = validationReportView(
+      report({
+        file_type: "PDF",
+        row_count: null as unknown as number,
+        errors: [
+          {
+            code: "FILE_CORRUPT",
+            message: "文件内容无法通过完整性检查（格式与声明不符或文件损坏）",
+            row: null,
+            column: null,
+            value: null,
+          },
+        ],
+      }),
+    );
+    assert.equal(view.passed, false);
+    assert.equal(view.errors[0]!.label, "文件完整性未通过");
   });
 
   test("errors present -> not passed; errors and warnings map in order", () => {

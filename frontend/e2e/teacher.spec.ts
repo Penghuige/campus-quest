@@ -154,6 +154,19 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await dialog.getByText("高级：提交校验 schema").click();
     const schemaField = dialog.locator("#task-schema");
     await expect(schemaField).toHaveValue(/"platform"/);
+    // §10.1 document family: a DOCX-only selection carries NO schema —
+    // the pristine template blanks; back on CSV it returns. The type
+    // checkboxes reuse the identity-option pattern (hidden native
+    // inputs): act on the visible label text, exactly like the
+    // community identity radios.
+    await dialog.getByText("DOCX", { exact: true }).click();
+    await dialog.getByText("CSV", { exact: true }).click();
+    await expect(schemaField).toHaveValue("");
+    await dialog.getByText("CSV", { exact: true }).click();
+    await expect(schemaField).toHaveValue(/"platform"/);
+    // Return DOCX to off: the flow's task below stays CSV-only (the
+    // toggle dance above is the assertion itself, not the task shape).
+    await dialog.getByText("DOCX", { exact: true }).click();
     await schemaField.fill('{"columns":["platform","keyword"]}');
     await dialog.locator("#task-schema-version").fill("1");
     await dialog.getByRole("button", { name: "创建草稿" }).click();

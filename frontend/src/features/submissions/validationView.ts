@@ -11,7 +11,12 @@
  * server guarantees no formula payloads, and nothing here re-parses cell
  * content (spec §12.4 preview contract).
  */
-import type { ValidationFindingDto, ValidationReportDto } from "./api";
+import {
+  FILE_TYPE_LABELS,
+  type FileTypeKey,
+  type ValidationFindingDto,
+  type ValidationReportDto,
+} from "./api";
 
 // --- findings ----------------------------------------------------------------------
 
@@ -54,6 +59,8 @@ const FINDING_LABELS: Record<string, string> = {
   MALFORMED_CSV: "CSV 格式错误",
   MALFORMED_XLSX: "Excel 文件无法解析",
   MALFORMED_SQLITE: "SQLite 文件无法解析",
+  // §10.1 document family: the integrity-only verdict's single finding.
+  FILE_CORRUPT: "文件完整性未通过",
   SHEET_NOT_FOUND: "找不到要求的工作表",
   TABLE_NOT_FOUND: "找不到要求的数据表",
   AMBIGUOUS_TABLE: "无法确定目标数据表",
@@ -192,12 +199,6 @@ export interface ValidationReportView {
   preview: PreviewTableView;
 }
 
-const FILE_TYPE_LABELS: Record<string, string> = {
-  CSV: "CSV",
-  XLSX: "Excel",
-  SQLITE: "SQLite",
-};
-
 /**
  * Whole-report view. Errors and warnings keep the server's ordering
  * (already bounded + severity-ordered by the report builder); rendering
@@ -206,16 +207,21 @@ const FILE_TYPE_LABELS: Record<string, string> = {
 export function validationReportView(
   report: ValidationReportDto,
 ): ValidationReportView {
-  const fileLabel = FILE_TYPE_LABELS[report.file_type] ?? report.file_type;
-  // §10.1: document-family reports carry row_count=null (no tabular
-  // content) — the headline names the file alone; the structured
-  // family keeps the exact row count (§12.4).
-  const countLabel =
-    report.row_count === null
-      ? fileLabel
-      : `共 ${report.row_count.toLocaleString("zh-CN")} 行 · ${fileLabel}`;
+  // The wire file_type is a plain string (drift tolerance): unknown
+  // values fall back to the raw code.
+  const fileLabel =
+    FILE_TYPE_LABELS[report.file_type as FileTypeKey] ?? report.file_type;
+  // §10.1: the document family has no tabular content — the persisted
+  // report carries row_count=None and the headline reads as an
+  // integrity check instead of a row count (the wire DTO types the
+  // field as int, so the null arrives despite the type; tolerate it).
+  const rowCount: number | null = report.row_count;
+  const headline =
+    rowCount === null || rowCount === undefined
+      ? `${fileLabel} · 完整性检查`
+      : `共 ${rowCount.toLocaleString("zh-CN")} 行 · ${fileLabel}`;
   return {
-    headline: countLabel,
+    headline,
     passed: report.errors.length === 0,
     errors: report.errors.map(findingItemView),
     warnings: report.warnings.map(findingItemView),

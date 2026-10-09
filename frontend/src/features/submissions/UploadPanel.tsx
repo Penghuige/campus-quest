@@ -291,7 +291,19 @@ export function UploadPanel({
   }, []);
 
   const busy = BUSY_PHASES.has(state.phase);
-  const allowedFormats = FILE_TYPES.map((type) => FILE_TYPE_LABELS[type]).join(" / ");
+  // The task's own gate names the formats when it carries one (defect
+  // #12's contract; §10.1: a document task then reads 支持格式：Word/PDF
+  // 文档 with no tabular wording); absent/empty keeps the universe.
+  const formatKeys =
+    allowedTypes !== undefined &&
+    allowedTypes.some((type) => (FILE_TYPES as readonly string[]).includes(type))
+      ? allowedTypes.filter((type) =>
+          (FILE_TYPES as readonly string[]).includes(type),
+        )
+      : FILE_TYPES;
+  const allowedFormats = formatKeys
+    .map((type) => FILE_TYPE_LABELS[type as FileTypeKey])
+    .join(" / ");
 
   return (
     <section className="section upload-panel" aria-label="提交数据文件">
