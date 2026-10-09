@@ -77,9 +77,9 @@ stack with empty volumes goes straight into `make release-gate` — fresh
 volumes → `up -d` → gate exit 0 is the Task-1 release proof. A
 pre-migrated database makes the step a no-op version check.
 
-The gate is thirteen ordered steps (Makefile `release-gate`); the
-playwright step additionally asserts zero skipped tests in the
-teacher/admin suites (`frontend/scripts/assert-e2e-no-skips.mjs` — a
+The gate is fourteen ordered steps (Makefile `release-gate`); the
+playwright step additionally rejects any skip not explicitly exempted
+across all specs (`frontend/scripts/assert-e2e-no-skips.mjs` — a
 missing world export reads as skips, never as a silent green). Steps
 12–13 (ranking rebuild, concurrency gate) run inside the backend e2e
 suite (`tests/e2e/test_ranking_recovery.py`,

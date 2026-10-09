@@ -23,3 +23,5 @@
 更新仅限定这两张已走查的图，其他既有 PNG 保持不变。两张最终PNG与上传恢复修复之后，既有16场景新鲜比较通过（16 passed，1.3m，`review-existing-visual-final.log`）；新增三张PNG另开独立干净测试世界比较通过（1 passed，39.6s，`review-new-visual-final.log`），没有更新开关。原始失败及采集日志均保留在工作区 `.local-dev/logs/review-*-visual-*.log`、`review-target-baselines-*.log`。
 
 先前 `innovation-linux-visual-walkthrough.md` 所述任务图缺口是历史状态，由本次明确断言与基线同步关闭；不把这次像素结果扩大为 GitHub CI 或学校统一认证完成。
+
+最终测试准备修复后再次比较：`review-existing-visual-post-preparation.log` 为16通过、1.3分钟；新spec在另一个world独立比较，`review-new-visual-post-preparation.log` 为1通过、37.1秒、三页axe零违规。两轮均没有更新开关，19张PNG未再修改。首页准备等待真实内容与有限入场动画完成；没有修改颜色、axe豁免或像素容差。

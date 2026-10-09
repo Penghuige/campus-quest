@@ -19,16 +19,18 @@
 | 门禁 | 日志 | 本轮状态 |
 | --- | --- | --- |
 | 后端格式、Ruff、mypy、矩阵、单元/worker、真实集成、覆盖棘轮 | `review-linux-backend-final.log` / `review-linux-final-coverage.json` | 411文件格式、Ruff、mypy192、13矩阵通过；1307单元/worker及1218集成通过（7项非integration取消选择）；全部出口0，双创98.6高于原97.8地板，其余地板不变 |
-| 前端类型、lint、CSS、覆盖棘轮、依赖审计、生产构建 | `review-frontend-final.log` | 上传恢复修复后重新执行出口0；95.44/91.61/90.51，原地板95.21/91.22/90.19不变 |
-| 前端纯测 | `review-frontend-unit-final.log` | 633通过、零失败/跳过，出口0 |
-| 完整浏览器及跨引擎烟测 | `review-browser-battery.log` / `review-browser-battery-report.json` | 首轮104通过/1失败/28有明文豁免跳过；本地固定标签开关错误已查明，重跑待结果 |
-| 不意外跳过自证 | `review-browser-noskip.log` | 出口0；仅证明豁免一致，不能替代上一行失败的测试 |
-| 新页面3张PNG及axe | `review-new-visual-final.log` | 修复后新鲜比较1通过、39.6秒；三页axe无违规 |
-| 既有16视觉场景 | `review-existing-visual-final.log` | 最终成果草稿说明PNG更新后新鲜比较16通过、1.3分钟 |
+| 前端类型、lint、CSS、覆盖棘轮、依赖审计、生产构建 | `review-frontend-post-preparation.log` | 测试准备修复后重新执行出口0；95.44/91.61/90.51，原地板95.21/91.22/90.19不变 |
+| 前端纯测 | `review-frontend-unit-post-preparation.log` | 633通过、零失败/跳过，出口0 |
+| 完整浏览器及跨引擎烟测 | `review-browser-battery-final.log` / `review-browser-battery-final-report.json` | 105通过、零失败、28明文豁免，8.6分钟，出口0；99项Chromium与6项Firefox/WebKit基础烟测，不声称双引擎全部成果功能覆盖 |
+| 浏览器准备回归 | `review-battery-preparation-green.log` | 2通过、1.0分钟；等待首页有限动画结束，并以真实管理员API准备成果测试状态，不改变登录限流 |
+| 不意外跳过自证 | `review-browser-noskip-final.log` | 出口0，遍历全部spec，仅28项明文豁免；独立视觉测试另跑 |
+| 新页面3张PNG及axe | `review-new-visual-post-preparation.log` | 最终测试准备修改后新鲜比较1通过、37.1秒；三页axe无违规，无更新开关 |
+| 既有16视觉场景 | `review-existing-visual-post-preparation.log` | 最终测试准备修改后新鲜比较16通过、1.3分钟，无更新开关 |
 | 真实三账号成果闭环 | `review-browser-503-green.log` | 1通过，含提交真实提交后503、决定真实提交后网络ACK丢失及同浏览器跨标签账号隔离 |
 | 上传恢复回归及成果闭环 | `review-upload-reset-red.log` / `review-upload-reset-green.log` | 真实PUT403→移除意向后RED缺少放弃入口；修复后1通过59.4秒，重新选择、再次上传及整条核实流程通过 |
 | 后端依赖审计 | `review-backend-audit.log` | 出口0，No known vulnerabilities found |
 | 后端e2e | `review-backend-e2e.log` | CQ_E2E=1，42通过、147.86秒，出口0；含完整期限、并发、隐私、排行恢复与worker重试 |
+| CI真实扫描组合准备 | `review-ci-scanner-ready.log` / `review-ci-evidence-smoke.log` | 相同compose命令等待健康成功；6项真实Clamd/PG/MinIO/生产provider通过、5.65秒，出口0；仅本地暖服务，不声称远端冷启动已通过 |
 | 最终独立评审 | 完成后记录具体提交范围及结论 | 待结果 |
 
 新增 OpenAPI 快照、生成类型、规约矩阵、选择器契约、no-skip 豁免和PNG随本PR提交。前后端均不降低覆盖地板或放宽视觉阈值。
@@ -48,5 +50,7 @@
 7. 网络错误及5xx均保留提交/决定的原请求键和冻结载荷。真实服务可能已提交但ACK丢失；代价是用户需明确重试原操作，避免产生重复版本/决定。
 8. 历史引用证明不占五份未引用上传槽位；每版选择仍限1～5份，历史材料不能移除。代价是随真实版本增加历史存储，不把首次五份限制变为终身五份。
 9. 仅同步上游新增第五任务造成的旧任务PNG，并用卡数5/页脚5/5强断言约束，再更新本计划改变的成果草稿公开说明PNG。新旧图均走查；代价是错误夹具可能被认可，强内容断言与完整电池提供检查；不增遮罩、不放宽1%像素比例。
+10. 成果测试通过已确认管理员的真实API准备资格和运营授权，管理界面由既有专门spec覆盖；负责人、运营、浏览者仍走真实页面。代价是单个成果spec不再单独证明管理UI，须完整电池包含那两组spec；未绕过或放宽生产登录限流。
+11. CI与release命令显式启用真实扫描组合；新视觉spec在独立world执行，避免授权状态改变旧负责人截图。代价是冷启动需在360秒内取得官方病毒库，另一次视觉启动增加耗时；本地健康与真实组合已通过，远端CI结果另行核验。
 
 视觉细节、来源提交与基线分类见 `innovation-achievement-review-visual-walkthrough.md`。最后的代码评审发现、修复及延期项在完成后追加；当前未声称GitHub CI或合并批准。
