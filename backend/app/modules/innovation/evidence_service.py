@@ -315,8 +315,9 @@ class EvidenceService:
             raise _conflict("材料正在检查，请稍后刷新")
         token = uuid4()
         row.state, row.check_token = "CHECKING", token
-        # Storage HEAD/GET have the adapter's bounded retry/timeout policy;
-        # 150s lease also covers them plus the scanner's absolute 30s deadline.
+        # API awaits external work for at most140s; the lease outlives that
+        # await. Cancelling to_thread does not stop a provider thread: it has
+        # read-only work and can never apply a late result without this token.
         row.checking_until = now + timedelta(seconds=150)
         row.failure_code = None
         row.version += 1

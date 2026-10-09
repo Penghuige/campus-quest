@@ -235,6 +235,13 @@ Business logic emits events; the Notification module owns delivery (spec §25). 
 - `REWARD_REDEMPTION_APPROVED`
 - `REWARD_REDEMPTION_REJECTED`
 - `ACCOUNT_SECURITY`
+- `IE_ACHIEVEMENT_APPROVED`
+- `IE_ACHIEVEMENT_RETURNED`
+
+Innovation achievement decisions use `ie_review:<case_id>:decision`, recorded with
+the decision transaction. Variables are `achievement_title` (both events) and
+`review_reason` (returned only). They never imply a Task reward or validation
+result, and carry no owner identity fields or evidence/storage addresses.
 
 The spec §25 list is "at least"; `SUBMISSION_VALIDATION_FAILED` is the Plan 07 addition and is part of the frozen set. New events require updating this document first.
 

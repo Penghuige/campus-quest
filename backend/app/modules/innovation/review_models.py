@@ -54,6 +54,17 @@ class AchievementRevision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class ReviewConflict(Base):
+    """Explicit operator project conflict; not inferred from team free text."""
+
+    __tablename__ = "ie_review_conflicts"
+    project_id: Mapped[UUID] = mapped_column(
+        ForeignKey("ie_project_drafts.id"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class RevisionEvidence(Base):
     __tablename__ = "ie_revision_evidence"
     __table_args__ = (
