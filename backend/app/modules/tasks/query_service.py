@@ -343,9 +343,14 @@ class TaskQueryService:
         row for the requesting user, or the query filtered on it); the
         join reads exactly one assignment row by primary key.
         """
-        platform, keyword, task_title = (
+        platform, keyword, task_title, allowed_file_types = (
             await db.execute(
-                select(Assignment.platform, Assignment.keyword, Task.title)
+                select(
+                    Assignment.platform,
+                    Assignment.keyword,
+                    Task.title,
+                    Task.allowed_file_types,
+                )
                 .select_from(AssignmentClaim)
                 .join(Assignment, Assignment.id == AssignmentClaim.assignment_id)
                 .join(Task, Task.id == AssignmentClaim.task_id)
@@ -363,6 +368,8 @@ class TaskQueryService:
             deadline_at=claim.deadline_at,
             grace_deadline_at=claim.grace_deadline_at,
             base_reward_points_snapshot=claim.base_reward_points_snapshot,
+            latest_submission_id=claim.latest_submission_id,
+            allowed_file_types=tuple(allowed_file_types),
         )
 
     @staticmethod

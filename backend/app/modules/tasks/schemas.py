@@ -119,6 +119,16 @@ class ClaimView:
     deadline_at: datetime
     grace_deadline_at: datetime
     base_reward_points_snapshot: int
+    #: The claim's CURRENT latest submission (QA #15 backend half):
+    #: the cold-load report fetch needs a stable handle to the
+    #: validation report when no upload flow is live. None until the
+    #: first finalize lands. It is the submission ID the owner already
+    #: owns (their own upload) — not new surface, a reachable handle.
+    latest_submission_id: UUID | None
+    #: The TASK's upload gate (QA #12): the picker's accept list is
+    #: task-scoped, not the global universe — the claim row already
+    #: joined the task, so the column rides the same view.
+    allowed_file_types: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

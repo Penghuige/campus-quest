@@ -187,6 +187,9 @@ describe("claims summary grouping", () => {
     deadline_at: "2026-09-20T20:00:00Z",
     grace_deadline_at: "2026-09-21T20:00:00Z",
     base_reward_points_snapshot: 200,
+    // QA #15/#12 amendments on MyClaimDto.
+    latest_submission_id: null,
+    allowed_file_types: ["CSV"],
   });
 
   test("active and revision claims split; terminal history drops out", () => {
