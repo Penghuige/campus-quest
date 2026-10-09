@@ -340,7 +340,7 @@ Task 表示“一个可由多人参与的任务”。
 - grace_period_minutes，V1 固定为 1440（24 小时）；V1 不提供按 Task 修改宽限期的产品入口
 - claim_cutoff_minutes，FIXED 模式默认 240
 - submission_schema JSONB
-- allowed_file_types
+- allowed_file_types（§10.1 两族互斥：结构化 {CSV,XLSX,SQLITE} 或文档 {DOCX,PDF}）
 - max_file_size_bytes
 - notify_24h
 - notify_4h
@@ -637,6 +637,7 @@ V1 奖励分段定义为：
 - CSV
 - XLSX
 - SQLite / DB，仅当确认为 SQLite
+- DOCX / PDF（文档型任务，见 §10.1）
 
 Task 可限制允许格式。
 
@@ -659,6 +660,32 @@ Task 可限制允许格式。
 - 不允许用户构造任意 object_key 读取他人文件。
 - 文件上限默认 200 MB，可按 Task 调整。
 - 解析器还需要独立的行数、列数、解压大小、CPU、内存和超时限制；不能认为 200 MB 原文件就是唯一资源上限。
+
+### 10.1 文档型任务（owner 批准 2026-10-09，QA #12 批次）
+
+`allowed_file_types` 的宇宙扩展为 `{CSV, XLSX, SQLITE, DOCX, PDF}`，并按
+任务模态分两族：
+
+- **结构化格式族**：CSV / XLSX / SQLite——机器校验走 §12 的 JSON
+  Schema DSL（列/类型/唯一性/行数）。
+- **文档格式族**：DOCX / PDF——机器校验只做**完整性检查**：魔数与格式
+  一致（DOCX 为 ZIP 本地头 + OOXML manifest 且与 XLSX 可区分——DOCX 的
+  manifest 含 `word/` 前缀成员；PDF 为 `%PDF-` 头与 `%%EOF` 尾）、可
+  解析（DOCX 能打开 zip 目录；PDF 能定位 trailer）、大小上限。**不跑
+  schema**：内容判断由教师人工审核承载（§14 流程不变）。
+
+约束：
+
+- **单任务内两族互斥**：`allowed_file_types` 只能属于一族——结构化任务
+  可同时开 CSV+XLSX+SQLite；文档任务可同时开 DOCX+PDF；混合（如
+  CSV+DOCX）在任务创建/更新时被 422 拒绝。`submission_schema` 对文档
+  型任务必须为空（无列约束可声明）。
+- 文档型 Submission 的机器校验报告为**单项完整性检查**（§12.4 同构 UX：
+  parser_version / file_type / row_count=null / errors 列表——通过则
+  空，失败则一项 FILE_CORRUPT 类错误）；VALIDATED 后照常进 UNDER_REVIEW
+  等人工审核。
+- 前端 picker 的 accept 按任务的 `allowed_file_types` 收窄（随
+  MyClaimResponse / TaskDetail 输出），预检类型化拒绝。
 
 ## 11. Submission
 
