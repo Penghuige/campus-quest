@@ -120,8 +120,19 @@ test.describe("student task claim", () => {
   });
 
   test("a depleted task's detail says so up front — the CTA is disabled, not pressable-then-rejected (owner defect 2026-10-10)", async ({ page }) => {
-    test.skip(EMPTY_TASK_URL === undefined, "needs CQ_E2E_EMPTY_TASK_URL (all assignments taken)");
-    await page.goto(EMPTY_TASK_URL!);
+    // The standard world's deterministic depleted card (task_r, its
+    // one assignment claimed by the redeemer — the square badge test
+    // above pins the same task) doubles as the depleted DETAIL deep
+    // link, so this pin runs in every battery — no EMPTY_TASK_URL
+    // stage needed (that env no longer ships; its old exemption dies
+    // with the press-then-reject test it gated).
+    const depletedCard = page
+      .locator(".task-card", { hasText: "已被领完" })
+      .first();
+    await page.goto(`${BASE_URL}/tasks`);
+    await expect(depletedCard).toBeVisible();
+    await depletedCard.locator(".task-card-title a").click();
+    await page.waitForURL(/\/tasks\/[0-9a-f-]{36}$/);
 
     // The page must never offer a pressable 领取任务 that the next
     // press would reject: the server's availability number drives the
