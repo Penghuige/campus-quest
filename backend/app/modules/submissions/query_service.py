@@ -321,7 +321,13 @@ class SubmissionQueryService:
         owner_id = await db.scalar(
             select(Task.owner_teacher_id).where(Task.id == claim.task_id)
         )
-        if owner_id is None or owner_id == actor.user_id or is_admin(actor.role):
+        # Deny on a missing owner row (hardening B-F2): the claim ->
+        # task -> owner FK chain makes None unreachable in a consistent
+        # database, but the defensive default is fail closed — an absent
+        # owner must never widen download standing to "everyone".
+        if owner_id is None:
+            raise SubmissionNotOwnedError(submission_id, actor.user_id)
+        if owner_id == actor.user_id or is_admin(actor.role):
             return
         permissions = await db.scalar(
             select(TaskCollaborator.permissions).where(
