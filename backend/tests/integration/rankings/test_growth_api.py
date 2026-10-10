@@ -309,7 +309,18 @@ async def growth_world(
     tz = ZoneInfo(get_settings().business_timezone)
     this_month = business_month(api_clock.now(), tz)
     month_start, _ = month_bounds(this_month, tz)
-    in_month = month_start + timedelta(days=9, hours=10)  # safely inside
+    # Calendar-collision guard: the seeded rewards sit at fixed month
+    # days (offset+1 for alice, offset+3 for bob). The clock is
+    # real-anchored (the pyjwt iat rule), so when the run date IS one
+    # of those days the "no traffic today" daily-board premise breaks
+    # -- seen live on 2026-10-10, and reproducible every 10th/12th
+    # after 10:00 business time. Shift the pair a day earlier while
+    # either seeded day collides with today.
+    today_day = api_clock.now().astimezone(tz).day
+    offset = 9
+    while offset in (today_day - 1, today_day - 3):
+        offset -= 1
+    in_month = month_start + timedelta(days=offset, hours=10)
     previous_month = month_start - timedelta(days=10)
 
     teacher = _user("growth-teacher-0001", role=Role.TEACHER)
