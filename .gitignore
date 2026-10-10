@@ -30,8 +30,7 @@ playwright-report/
 blob-report/
 
 # Environment / secrets (one block: rules were duplicated verbatim at
-# the file tail; the template lives at backend/env.example, pending the
-# owner's rename to .env.example)
+# the file tail; the template lives at backend/.env.example)
 .env
 .env.*
 !.env.example
