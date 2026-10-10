@@ -52,11 +52,27 @@ export const SHOTS: Shot[] = [
         why: "hero deadline — the same relative-clock copy; .hero-line is shared with the deterministic step rail, so the mask keys on the frozen 截止 copy (DashboardView.tsx)",
         locate: (page) => page.locator(".hero-line", { hasText: "截止" }),
       },
+      {
+        id: ".task-grid .meta-deadline",
+        why: "discovery-card deadline line — the square's cards carry the mint-relative countdown (TaskCard.tsx); same clock family the claim/hero masks cover (2026-10-10 baseline time-drift ruling)",
+        locate: (page) => page.locator(".task-grid .meta-deadline"),
+      },
       // Deliberately NOT masked: the reward-progress .progress-note
       // ("（50 积分）现在就可以兑换") is deterministic under fixed labels.
     ],
   },
-  { name: "student-tasks", path: "/tasks", auth: "student", masks: [] },
+  {
+    name: "student-tasks",
+    path: "/tasks",
+    auth: "student",
+    masks: [
+      {
+        id: ".task-grid .meta-deadline",
+        why: "card deadline line — mint-relative countdown (TaskCard.tsx); the same mechanism the dashboard mask covers (2026-10-10 baseline time-drift ruling)",
+        locate: (page) => page.locator(".task-grid .meta-deadline"),
+      },
+    ],
+  },
   {
     name: "student-task-detail",
     envPath: "CQ_E2E_TASK_OPEN_PATH",
@@ -92,7 +108,18 @@ export const SHOTS: Shot[] = [
     ],
   },
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
-  { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
+  {
+    name: "student-rewards",
+    path: "/rewards",
+    auth: "student",
+    masks: [
+      {
+        id: ".reward-window",
+        why: "redemption-window line — formatted absolute bounds, the shelf's one clock-derived string (RewardsView.tsx); the whole-row drift this mask kills was the student-rewards baseline archaeology's mechanism (2026-10-10 ruling)",
+        locate: (page) => page.locator(".reward-window"),
+      },
+    ],
+  },
   {
     name: "student-notifications",
     path: "/notifications",

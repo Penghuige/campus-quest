@@ -66,7 +66,11 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
       </p>
 
       <div className="task-card-meta">
-        <span className="task-card-meta-item" suppressHydrationWarning>
+        {/* The deadline item is the card's CLOCK-DERIVED string — the
+         * visual suite masks .meta-deadline (square + dashboard
+         * discovery) so baselines stay stable across capture times
+         * until the world mint pins its clock. */}
+        <span className="task-card-meta-item meta-deadline" suppressHydrationWarning>
           <ClockIcon />
           {deadline.line}
         </span>

@@ -1676,6 +1676,11 @@ body {
   gap: var(--space-1);
 }
 
+/* Marker, zero visual weight: anchors the visual suite's mask over
+   the card's clock-derived deadline line — see e2e/shot-surfaces.ts
+   student-dashboard/student-tasks. */
+.meta-deadline {}
+
 .task-card-meta-item svg {
   color: var(--subtle-foreground);
 }
@@ -2918,6 +2923,11 @@ body {
   color: var(--muted-foreground);
 }
 
+/* Marker, zero visual weight: anchors the visual suite's mask over
+   the card's one clock-derived string (the formatted window bounds)
+   — see e2e/shot-surfaces.ts student-rewards. */
+.reward-window {}
+
 /* 缺货 / 窗口关闭: the unavailable state is quiet text where the CTA
    would be — no disabled button to knock on, no badge. */
 .reward-unavailable {
@@ -3723,8 +3733,7 @@ body {
 /* Count pill: primary fill + inverse text, pinned to the bell's
    top-right arc (the bell is a 2rem circle now — the badge centers on
    the edge and may overlap the pill's rim by design); digits stay
-   tabular (§5). Hidden entirely when there is nothing to say. */
-.bell-badge {
+   tabular (§5). Hidden entirely when there is nothing to say. */.bell-badge {
   position: absolute;
   top: -0.125rem;
   right: -0.25rem;
