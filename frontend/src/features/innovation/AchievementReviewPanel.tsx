@@ -77,7 +77,7 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
           const frozen = pending.current;
           await (frozen.action === "submit" ? submitRevision : submitUpdateRevision)(projectId, record.id, frozen.body);
         }
-        if (current()) { setMessage(action === "withdraw" ? "已撤回，可以修改草稿后重新提交。" : action === "update" ? "已提交更新复审，审核期间继续展示旧通过版本，通过后才替换。" : "已提交首次核实，等待运营处理。待审期间须先撤回才能修改。" ); pending.current = null; setUncertain(false); setConfirm(null); }
+        if (current()) { setMessage(action === "withdraw" ? "已撤回，可以修改草稿后重新提交。" : action === "update" ? "已提交更新复审，审核期间保留旧通过版本及原公开状态，通过后才替换；已下架成果保持下架。" : "已提交首次核实，等待运营处理。待审期间须先撤回才能修改。" ); pending.current = null; setUncertain(false); setConfirm(null); }
       } catch (cause) {
         if (current()) { if ((!isApiError(cause) || cause.status >= 500) && pending.current) setUncertain(true); else { pending.current = null; setUncertain(false); } setConfirm(null); }
         throw cause;
@@ -130,6 +130,6 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
     {message ? <p className="alert alert-success" role="status">{message}</p> : null}
     {uncertain ? <Button ref={retryFocusRef} disabled={busy || saving} onClick={(event) => { retryOpener.current = { element: event.currentTarget, epoch: getAuthEpoch() }; void send(pending.current!.action); }}>确认上次提交结果（沿用原请求）</Button> : null}
     {busy ? <p className="field-hint" aria-live="polite">正在处理，请稍候…</p> : null}
-    <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? updateReview ? "撤回更新复审" : "撤回首次核实" : confirm === "update" ? "提交更新复审" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。已有公开版本保持不变。" : confirm === "update" ? "提交已保存的更新内容与所选证明。审核期间继续展示旧通过版本，通过后才替换；不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
+    <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? updateReview ? "撤回更新复审" : "撤回首次核实" : confirm === "update" ? "提交更新复审" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。已有公开版本保持不变。" : confirm === "update" ? "提交已保存的更新内容与所选证明。审核期间保留旧通过版本及原公开状态，通过后才替换；已下架成果保持下架。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
   </section>;
 }

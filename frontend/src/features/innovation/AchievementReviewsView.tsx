@@ -93,7 +93,7 @@ function ReviewEditor({ id, detail, onReload, onBack }: { id: string; detail: Re
     pending.current ??= { request_id: crypto.randomUUID(), version: detail.case.version, revision_id: detail.case.revision_id, decision: kind, reason: reason.trim() };
     try {
       const result = await decideReview(id, pending.current);
-      if (current()) { setOutcome(result.status === "APPROVED" ? "核实通过，公开版本已更新；已下架成果仍保持下架。" : updateReview ? "更新已退回，旧通过版本继续公开；负责人可修改重交。" : "已退回，负责人可查看原因并修改重交。"); pending.current = null; setUncertain(false); }
+      if (current()) { setOutcome(result.status === "APPROVED" ? "核实通过，公开版本已更新；已下架成果仍保持下架。" : updateReview ? "更新已退回，旧通过版本及原公开状态保持不变；负责人可修改重交。" : "已退回，负责人可查看原因并修改重交。"); pending.current = null; setUncertain(false); }
     } catch (cause) {
       if (current()) { setError(reviewError(cause)); if (!isApiError(cause) || cause.status >= 500) setUncertain(true); else { pending.current = null; setUncertain(false); } }
     } finally { if (current()) { setBusy(false); setConfirm(null); } }

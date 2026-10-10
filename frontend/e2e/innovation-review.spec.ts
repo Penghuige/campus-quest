@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+import { spawnSync } from "node:child_process";
+import { BACKEND_DIR, backendEnv } from "./global-setup";
 import { BASE_URL, API_URL, ensureStudentLogin, expect, loginThroughUi, mintToken, parseSeededAccount, staffLogin, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -10,6 +12,40 @@ async function auditAxe(page: Page) {
   await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
   const findings = await new AxeBuilder({ page }).analyze();
   expect(findings.violations.map((violation) => ({ id: violation.id, targets: violation.nodes.map((node) => node.target) }))).toEqual([]);
+}
+
+// Moderation UI is outside R2. Establish its existing database state only
+// for this world's own approved achievement; all review actions still use UI.
+function prepareTakenDownAchievement(achievementId: string) {
+  const result = spawnSync("uv", ["run", "python", "-c", `
+import asyncio, json, os, sys
+from pathlib import Path
+from uuid import UUID
+from tests.e2e.browser_world import _factory, _dispose
+from db_guard import require_test_database
+from app.core.config import get_settings
+from app.modules.innovation.models import AchievementDraft, ProjectDraft
+from app.modules.innovation.review_models import AchievementWorkflow, AchievementReviewCase
+from sqlalchemy import select
+assert os.environ.get("CQ_E2E") == "1"
+require_test_database(get_settings().database_url)
+world = json.loads(Path(sys.argv[2]).read_text())
+async def prepare():
+    factory = _factory()
+    try:
+        async with factory() as db:
+            workflow = await db.scalar(select(AchievementWorkflow).join(AchievementDraft, AchievementDraft.id == AchievementWorkflow.achievement_id).join(ProjectDraft, ProjectDraft.id == AchievementDraft.project_id).where(AchievementDraft.id == UUID(sys.argv[1]), ProjectDraft.owner_user_id == UUID(world["author"]["id"])).with_for_update())
+            assert workflow is not None and workflow.first_review_state == "APPROVED"
+            assert workflow.moderation_state == "NORMAL"
+            assert await db.scalar(select(AchievementReviewCase.id).where(AchievementReviewCase.achievement_id == workflow.achievement_id, AchievementReviewCase.status == "SUBMITTED")) is None
+            workflow.moderation_state = "TAKEN_DOWN"
+            workflow.version += 1
+            await db.commit()
+    finally:
+        await _dispose(factory)
+asyncio.run(prepare())
+`, achievementId, process.env.CQ_E2E_WORLD_FILE!], { cwd: BACKEND_DIR, env: backendEnv, encoding: "utf-8" });
+  expect(result.status, result.stderr).toBe(0);
 }
 
 test("achievement review: private proof and every update reviewed across three accounts", async ({ page, browser }, testInfo) => {
@@ -244,6 +280,25 @@ test("achievement review: private proof and every update reviewed across three a
     expect(await owner.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await owner.screenshot({ path: testInfo.outputPath("achievement-review-owner-mobile.png"), fullPage: true });
     await viewer.screenshot({ path: testInfo.outputPath("achievement-public-desktop.png"), fullPage: true });
+    prepareTakenDownAchievement(achievement.id);
+    await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
+    await expect(panel(owner)).toContainText("已下架，更新不会恢复公开");
+    await viewer.reload(); await expect(publicDetail).toHaveCount(0);
+    await owner.getByRole("button", { name: "提交更新复审", exact: true }).click();
+    await confirm(owner, "提交更新复审");
+    await expect(panel(owner)).toContainText("等待更新复审");
+    await expect.soft(panel(owner).getByRole("status")).toContainText("已下架成果保持下架");
+    await expect.soft(panel(owner).getByRole("status")).not.toContainText("继续展示");
+    await page.reload(); await expect(queue).toContainText("更新复审");
+    await page.getByRole("button", { name: "领取并核实", exact: true }).click();
+    await page.getByLabel("核实备注／退回原因", { exact: true }).fill("下架状态仍应保留，请补充依据。");
+    await page.getByRole("button", { name: "退回修改", exact: true }).click(); await confirm(page, "退回成果修改");
+    await expect(page.getByRole("status")).toContainText("更新已退回");
+    await expect.soft(page.getByRole("status")).toContainText("原公开状态保持不变");
+    await expect.soft(page.getByRole("status")).not.toContainText("继续公开");
+    await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
+    await expect(panel(owner)).toContainText("已下架，更新不会恢复公开");
+    await viewer.reload(); await expect(publicDetail).toHaveCount(0);
     // Restore the shared student grant so the existing operations suite retains its own starting contract.
     await setOperator(false);
   } finally { await ownerContext.close(); await viewerContext.close(); }
