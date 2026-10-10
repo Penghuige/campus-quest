@@ -235,14 +235,20 @@ test.describe("task card affordances (defect #5)", () => {
     const href = await depleted.locator(".task-card-title a").getAttribute("href");
     expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
     // Batch ④ (2026-10-10): the recede treatment rides the same
-    // verdict — the marker attribute plus the non-color cues (dashed
-    // border, dimmed content). The badge keeps full contrast.
+    // verdict — the marker attribute plus the NON-TEXT cues (dashed
+    // border, grayed neutral background; text contrast is untouched —
+    // axe's color-contrast gate rejects any opacity dim on the muted
+    // meta rows). The badge keeps full contrast.
     await expect(depleted).toHaveAttribute("data-depleted", "true");
     await expect(depleted).toHaveCSS("border-style", "dashed");
-    const contentOpacity = await depleted
-      .locator(".task-card-meta")
-      .evaluate((el) => getComputedStyle(el).opacity);
-    expect(Number.parseFloat(contentOpacity)).toBeCloseTo(0.62, 2);
+    const { bg, metaOpacity } = await depleted.evaluate((el) => ({
+      bg: getComputedStyle(el).backgroundColor,
+      metaOpacity: getComputedStyle(el.querySelector(".task-card-meta")).opacity,
+    }));
+    // The grayed step toward surface-2 is present, and the copy keeps
+    // full opacity (the a11y contract of the treatment).
+    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(Number.parseFloat(metaOpacity)).toBe(1);
   });
 
   test("back-navigation renders the cached square without a skeleton pass (batch ①)", async ({ page }) => {
