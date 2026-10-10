@@ -1,7 +1,8 @@
 # CampusQuest V1 设计规格
 
-> 状态：Design Approved / Implementation Not Started  
-> 日期：2026-09-19  
+> 状态：Implemented — V1 已于 2026-10-05 上线；§10.1/§16.1/§42 修订已并入正文  
+> 历史状态：Design Approved / Implementation Not Started（2026-09-19）  
+> 日期：2026-09-19（初版）；修订随并入记录于对应小节  
 > 仓库：Penghuige/campus-quest  
 > 后端：FastAPI  
 > 本文是 CampusQuest V1 的产品与工程实现基准。后续实现 Agent 必须优先遵循本文中的 MUST / SHOULD / MAY 约束；若实现阶段发现本文内部矛盾，应先提出并修正规格，而不是在代码中静默选择一种解释。
@@ -283,6 +284,7 @@ Student 强制绑定手机号。
 - Web 端不得把长期 Refresh Token 放 localStorage。
 - 推荐 HttpOnly + Secure + SameSite Cookie。
 - 若使用 Cookie 认证，所有有副作用请求必须有 CSRF 防护。
+- Refresh 轮换的稳定后继者重放窗修订（PR #10，休眠能力，默认 `REFRESH_GRACE_SECONDS=0` 保持本节原语义）见 [2026-09-30-refresh-grace-amendment.md](2026-09-30-refresh-grace-amendment.md)。
 
 Teacher/Admin：
 
@@ -2361,7 +2363,7 @@ V1 奖励曲线：
 6. 每人最多 3 个需行动 Claim，同 Task 同时最多 1 个。
 7. 主动放弃每日最多 2 次并正确释放。
 8. FIXED / RELATIVE DDL 均工作。
-9. CSV/XLSX/SQLite 安全上传和机器校验工作。
+9. CSV/XLSX/SQLite/DOCX/PDF 安全上传和机器校验工作（DOCX/PDF 为 §10.1 完整性检查）。
 10. 自动校验通过后进入人工验收。
 11. DDL 奖励 100/80/50/20 边界正确。
 12. Teacher 审核晚不会惩罚学生。

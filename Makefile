@@ -27,14 +27,17 @@ verify: lint-backend
 #
 # `make release-gate` runs, in this order (plan 10 task 11 step 1):
 #
-#   0. test-database bootstrap     (release-test-db; idempotent
+#   0. coverage accumulation reset  (coverage-clean: rm backend/.coverage —
+#      --cov-append must not inherit an earlier local run's data)
+#      + test-database bootstrap     (release-test-db; idempotent
 #      `alembic upgrade head` on campusquest_test — the integration/e2e
 #      suites need a migrated schema and nothing else creates it on
 #      fresh compose volumes)
-#   1. backend unit tests            (backend-unit)
-#   2. backend integration tests     (backend-integration; real
+#   1. backend unit tests            (backend-unit-cov; same suite as
+#      backend-unit plus the --cov-append chain feeding step 14)
+#   2. backend integration tests     (backend-integration-cov; real
 #      PostgreSQL/Redis/MinIO, S3 + composition smokes ON)
-#   3. backend worker tests          (backend-worker)
+#   3. backend worker tests          (backend-worker-cov)
 #   4. backend e2e tests             (backend-e2e, CQ_E2E=1)
 #   5. migration verification        (migration-verify; dedicated
 #      campusquest_migrate_test database: upgrade head -> schema
@@ -50,6 +53,10 @@ verify: lint-backend
 #      tests/e2e/test_ranking_recovery.py
 #  13. concurrency gate              — inside backend-e2e:
 #      tests/e2e/test_concurrency_gate.py
+#  14. coverage ratchet              (coverage-ratchet; owner-approved
+#      addition — backend: the .coverage accumulated by the -cov legs
+#      of steps 1-3 vs coverage-ratchet.json floors; frontend: the
+#      native-coverage ratchet self-runs its unit suite)
 #
 # Prerequisites (quality-gates §15; docs/operations/release-checklist.md
 # has the operator runbook):
@@ -77,10 +84,21 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
                  S3_SECRET_KEY=$${S3_SECRET_KEY:-campusquest-dev} \
                  BUSINESS_TIMEZONE=$${BUSINESS_TIMEZONE:-Asia/Shanghai}
 
+# The three backend suites, single-sourced: the bare targets, the
+# coverage-accumulating -cov variants the gate runs, and coverage-baseline
+# below all compose these, so suite paths and stack env cannot drift
+# between them. COV_APPEND_FLAGS is the accumulate-into-one-.coverage
+# chain the step-14 ratchet compares.
+COV_APPEND_FLAGS = --cov=app --cov-branch --cov-report= --cov-append
+BACKEND_UNIT_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit
+BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration
+BACKEND_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers
+
 .PHONY: backend-unit backend-integration backend-worker backend-e2e \
+        backend-unit-cov backend-integration-cov backend-worker-cov \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
-        coverage-baseline coverage-ratchet pip-audit
+        coverage-clean coverage-baseline coverage-ratchet pip-audit
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -92,13 +110,27 @@ release-test-db:
 	cd backend && $(TEST_STACK_ENV) uv run alembic upgrade head
 
 backend-unit:
-	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit -v
+	$(BACKEND_UNIT_CMD) -v
 
 backend-integration:
-	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -v -m integration
+	$(BACKEND_INTEGRATION_CMD) -v
 
 backend-worker:
-	cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers -v
+	$(BACKEND_WORKER_CMD) -v
+
+# The gate's coverage-accumulating legs: the SAME suites as the bare
+# targets above, plus the --cov-append chain whose accumulated
+# backend/.coverage step 14's ratchet compares. release-gate runs
+# coverage-clean first so a stale local .coverage (e.g. left by an
+# earlier baseline run) can never flatter the floors.
+backend-unit-cov:
+	$(BACKEND_UNIT_CMD) $(COV_APPEND_FLAGS) -v
+
+backend-integration-cov:
+	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -v
+
+backend-worker-cov:
+	$(BACKEND_WORKER_CMD) $(COV_APPEND_FLAGS) -v
 
 backend-e2e:
 	cd backend && $(TEST_STACK_ENV) CQ_E2E=1 uv run pytest tests/e2e -v
@@ -106,19 +138,25 @@ backend-e2e:
 migration-verify:
 	bash scripts/verify-migrations.sh
 
+coverage-clean:
+	rm -f backend/.coverage
+
 # Coverage ratchet (owner-approved 2026-10-07). baseline: the three
 # suites with --cov (branch, app/ only, appended into one .coverage) +
 # REWRITE the floors (--update is a deliberate, reviewable commit).
 # ratchet: compare the accumulated .coverage against the committed
-# floors (the CI gate; CI accumulates via --cov-append too).
+# floors (the CI gate; CI accumulates via --cov-append too), then the
+# frontend native-coverage ratchet, which self-runs its unit suite and
+# needs no wired input.
 coverage-baseline:
-	cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit --cov=app --cov-branch --cov-report= --cov-append -q
-	cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q
-	cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers --cov=app --cov-branch --cov-report= --cov-append -q
+	$(BACKEND_UNIT_CMD) $(COV_APPEND_FLAGS) -q
+	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -q
+	$(BACKEND_WORKER_CMD) $(COV_APPEND_FLAGS) -q
 	cd backend && uv run python scripts/coverage_ratchet.py --update
 
 coverage-ratchet:
 	cd backend && uv run python scripts/coverage_ratchet.py
+	cd frontend && npm run coverage:ratchet
 
 pip-audit:
 	cd backend && uv run python scripts/pip_audit_gate.py
@@ -147,16 +185,17 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: release-test-db backend-unit backend-integration backend-worker \
+release-gate: coverage-clean release-test-db backend-unit-cov \
+              backend-integration-cov backend-worker-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e \
-              visual-regression
+              visual-regression coverage-ratchet
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #
-# Opt-in and deliberately NOT part of release-gate/ci.yml yet: pixel
-# stability across runner environments is proven first (a Phase-C task
-# promotes it). Baselines at frontend/e2e/visual-regression.spec.ts-snapshots/
+# Gated in both places (C3 promotion, plan-12 Phase C): a prerequisite of
+# release-gate above and the ci.yml visual-regression job. Baselines at
+# frontend/e2e/visual-regression.spec.ts-snapshots/
 # are Linux-authoritative and committed (reviewed like code); regenerate
 # deliberately with CQ_VISUAL_UPDATE=1 and re-review every changed PNG.
 # Needs the compose dependency stack; the Playwright config orchestrates

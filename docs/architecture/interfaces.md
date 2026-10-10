@@ -402,7 +402,7 @@ class SmsSender(Protocol):
 
 `idempotency_key` (optional) lets a provider collapse repeated sends onto one message: notification delivery always passes `"{event_key}:{channel}:{user_id}"` (spec §25.3) so an `UnknownOutcomeError` retry — whose first attempt may have succeeded — cannot double-send; single-shot callers (identity OTP) omit it.
 
-The optional `str` return (PR #2 hardening step 5) is the provider receipt: adapters that surface one land it on the delivery row's `provider_message_id`; the development-only logging adapters return a `"logging:"`-prefixed id so a recorded SENT from a simulated send is distinguishable at a glance. Provider selection is typed settings (`sms_provider`/`email_provider`, `Literal["logging"]` in V1); the production sentinel validator refuses a logging provider under `environment="production"` — unconfigured real providers fail startup, never fake success (G4/G5).
+The optional `str` return (PR #2 hardening step 5) is the provider receipt: adapters that surface one land it on the delivery row's `provider_message_id`; the development-only logging adapters return a `"logging:"`-prefixed id so a recorded SENT from a simulated send is distinguishable at a glance. Provider selection is typed settings (`sms_provider`: `Literal["logging", "aliyun_dypns"]` since PR #22 — real adapter in `backend/app/integrations/sms_aliyun.py`; `email_provider`: still `Literal["logging"]` only); the production sentinel validator refuses a logging provider under `environment="production"` — unconfigured real providers fail startup, never fake success (G4/G5).
 
 Fake: `FakeSmsSender` records `SentSms(to, template, variables, idempotency_key=None)` for exact-delivery assertions.
 

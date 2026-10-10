@@ -1,5 +1,8 @@
 # CampusQuest 14 Tailwind v4 + Radix Migration Implementation Plan
 
+> Status: Completed & merged (PR #24-#29, 2026-10-07) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** land the design documents' prescribed styling stack — Tailwind v4 utilities over the existing OKLCH tokens, and Radix-backed dialog primitives replacing the 15 hand-rolled `<dialog>` implementations — with zero visual regression and zero selector-contract breakage.

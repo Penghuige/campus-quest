@@ -20,7 +20,10 @@
 
 Sources: `frontend/e2e/*.spec.ts` (auth, community, notifications,
 rewards-ranking, staff-auth, staff-totp-race, submission, task-claim,
-teacher, admin, visual-capture).
+teacher, admin, visual-capture) — the original Task 1b inventory. Specs
+added since are not re-listed here; each lands its own entries per the
+AGENTS.md test-artifacts manifest, and the A/B tables are the
+authoritative record.
 
 ## A. Behavior / accessibility contracts
 
@@ -111,7 +114,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `.notif-item` · `.notif-item[data-read='false']` · `.notif-title` | notifications | data-read asserts unread state |
 | `.review-item` · `.review-pair` · `.review-tier` | teacher review queue; admin redemption queue | pair/tier assert VALIDATED tier pairing; the admin queue row is located by the run-derived item name (端到端奖励卡 + RUN[:6]) — NEVER by queue position (.first() would pick a residue world's oldest request) |
 | `.import-preview` · `.moderation-key` · `.mono` | teacher import / moderation | |
-| `dialog.dialog` | generic dialog scoping | equal-strength replacement: `getByRole("dialog")` |
+| `dialog.dialog` | generic dialog scoping | retired at C3; the `getByRole("dialog")` replacement landed |
 | `#submission-file` · `#assignment-import-file` | file inputs | keep as file-upload ids or replace with `getByLabel` of equal strength |
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |

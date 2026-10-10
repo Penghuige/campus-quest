@@ -1,5 +1,8 @@
 # CampusQuest V1 Implementation Plan
 
+> Status: Completed & merged (PR #1-#10, 2026-09-20 - 2026-09-30) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver CampusQuest V1 as a production-ready modular monolith with a Next.js PWA, FastAPI backend, PostgreSQL source of truth, Redis/Celery workers, S3-compatible file storage, and full coverage of the concurrency, deadline, file-validation, points, ranking, community, notification, RBAC, and audit invariants in the approved design.

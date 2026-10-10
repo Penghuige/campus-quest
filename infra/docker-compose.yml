@@ -5,8 +5,8 @@
 #   Down:   docker compose -f infra/docker-compose.yml down
 #
 # Published host ports: PostgreSQL 15432, Redis 6379, MinIO API 9000,
-# MinIO console 9001. Application-level settings that point at this stack are
-# documented in infra/env.example.
+# MinIO console 9001 (+ e2e profile: MinIO TLS 9002). Application-level
+# settings that point at this stack are documented in infra/env.example.
 #
 # MinIO images come from the MinIO organization on quay.io: Docker Hub now
 # restricts anonymous pulls of third-party namespaces (minio/*), and since

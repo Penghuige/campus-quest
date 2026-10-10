@@ -1,5 +1,8 @@
 # CampusQuest 08 Admin, Audit & Operations Implementation Plan
 
+> Status: Completed & merged (PR #8, 2026-09-24) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement immutable audit records, Admin/Teacher operational APIs, whitelist imports, system configuration, reward/catalog administration, anonymous identity reveal auditing, and safe administrative state repair.

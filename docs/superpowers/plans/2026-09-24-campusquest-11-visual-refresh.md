@@ -1,5 +1,8 @@
 # CampusQuest 11 Visual Refresh Implementation Plan
 
+> Status: Completed & merged (PR #7, 2026-09-24) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > This is a post-Plan-10 presentation-only workstream.
 >
 > Work on branch `design/visual-refresh-v1`. Keep the PR Draft until Plan 10 / PR #6 is merged and this branch is rebased onto latest `main`.

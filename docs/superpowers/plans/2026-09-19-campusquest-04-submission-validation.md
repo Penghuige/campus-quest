@@ -1,5 +1,8 @@
 # CampusQuest 04 Submission & File Validation Implementation Plan
 
+> Status: Completed & merged (PR #4, 2026-09-22) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement presigned file upload, immutable Submission versions, safe CSV/XLSX/SQLite validation, structured reports, reward-lock creation, revision flow, malicious-lock invalidation, and human approval integration.

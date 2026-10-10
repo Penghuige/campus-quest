@@ -142,17 +142,17 @@ A task is not complete until:
 
 ## Owner acceptance
 
-Merge approval belongs to the owner. Reviewer APPROVE and green CI are necessary, not sufficient. Before merging a reviewed PR, the owner checks:
+Merge approval belongs to the owner. Reviewer APPROVE and green CI (or its pause-period local equivalent, below) are necessary, not sufficient. Before merging a reviewed PR, the owner checks:
 
 - the reviewer verdict names the exact head commit and is APPROVE;
-- CI is green on that same head (match the run URL to the head commit, not an earlier run);
+- CI is green on that same head (match the run URL to the head commit, not an earlier run); while CI is paused for quota exhaustion (2026-10-07 onward), fresh local gate logs on that same head are the equivalent evidence, and the CI requirement resumes automatically once the quota resets;
 - no unresolved reviewer or bot threads remain on the PR.
 
 Merge order follows reviewer-stated dependencies when they exist.
 
 After a batch of merges lands on main, the owner accepts at the product level:
 
-- run the strongest currently implemented gate on merged main (`make verify`, then the `make release-gate` subset that exists) as a fresh run — a reused or pre-merge log is not acceptance evidence;
+- run the strongest currently implemented gate on merged main (`make verify`, then `make release-gate`) as a fresh run — a reused or pre-merge log is not acceptance evidence;
 - manually reproduce every fixed defect from the QA sheet (docs/qa/*.csv) against a running stack, following the reproduction steps in each row, and record the outcome in the fix-status column;
 - treat any number claimed in chat, PR descriptions, or handoffs as unverified until it matches a fresh gate output or the reviewer's independently re-run results.
 

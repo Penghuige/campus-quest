@@ -45,7 +45,7 @@ Test ids are `file::test` relative to the repository root; browser tests are
 | 19 | Honor 与积分资产分离 | `backend/tests/integration/rankings/test_honor_grants.py::test_earned_points_follows_the_ranking_ledger_not_the_balance`（Honor 判据走账不余额）、`::test_auto_definition_and_grant_uniqueness`、`::test_commemorative_honor_admin_only_idempotent_and_never_ranks`；`backend/tests/unit/rankings/test_honors.py::test_fixed_catalog_is_exactly_the_spec_example_set`；`frontend/e2e/rewards-ranking.spec.ts › daily/monthly/all board renders nickname/honor/score/rank only` |
 | 20 | 评论支持公开/匿名、回复、赞/踩、Emoji、举报 | `frontend/e2e/community.spec.ts › an anonymous comment leaks none of its author's identity`、`› a reply nests under its root; a reply to the reply stays at level 2`、`› like shows a count, and pressing it again removes the vote`、`› an emoji reaction toggles with its aggregated count`、`› category + submit -> non-destructive confirmation, comment stays visible`；后端负搜索 `backend/tests/e2e/test_privacy_rbac.py::test_public_and_student_surfaces_exclude_sensitive_fields`、`::test_anonymous_privacy_and_explicit_reveal`；唯一索引 `uq_comment_votes_comment_id_user_id`、`uq_comment_reactions_comment_id_user_id_emoji`（verify-migrations.sh 断言） |
 | 21 | 完成 Task 后可 1–5 星评分 | `frontend/e2e/community.spec.ts › the aggregate renders and a star tap produces a definite outcome`、`› a non-completer sees the typed RATING_NOT_ELIGIBLE copy`（完成者门槛）；DB 兜底 `uq_task_ratings_task_id_user_id` |
-| 22 | DDL -24h/-4h 多渠道通知按策略工作并防双发 | `backend/tests/unit/notifications/test_deadline_scheduler.py::test_30h_left_plans_both_reminders`、`::test_exactly_24h_left_schedules_24h_reminder_for_now`（调度边界）；`backend/tests/unit/notifications/test_channel_eligibility.py`（按 Task policy 的渠道选择）；`backend/tests/integration/notifications/test_event_notifications.py::test_claim_creation_schedules_deadline_deliveries_in_same_transaction`、`::test_claim_at_exactly_24h_boundary_plans_reminder_for_now`、`::test_same_revision_required_key_twice_yields_one_delivery_set`（同键去重）；`backend/tests/workers/test_notification_delivery.py::test_duplicate_job_delivers_exactly_once`、`::test_concurrent_claims_produce_single_provider_call`；`backend/tests/e2e/test_worker_retries.py::test_duplicate_notification_job_delivers_exactly_once`（幂等键 == provider_idempotency_key(event_key, channel, user)）。**手动部署检查**：V1 只带 logging 供应商；接入真实 SMS/Email 供应商后需在部署环境复跑 `tests/workers/test_notification_delivery.py` 形状的真实供应商冒烟 |
+| 22 | DDL -24h/-4h 多渠道通知按策略工作并防双发 | `backend/tests/unit/notifications/test_deadline_scheduler.py::test_30h_left_plans_both_reminders`、`::test_exactly_24h_left_schedules_24h_reminder_for_now`（调度边界）；`backend/tests/unit/notifications/test_channel_eligibility.py`（按 Task policy 的渠道选择）；`backend/tests/integration/notifications/test_event_notifications.py::test_claim_creation_schedules_deadline_deliveries_in_same_transaction`、`::test_claim_at_exactly_24h_boundary_plans_reminder_for_now`、`::test_same_revision_required_key_twice_yields_one_delivery_set`（同键去重）；`backend/tests/workers/test_notification_delivery.py::test_duplicate_job_delivers_exactly_once`、`::test_concurrent_claims_produce_single_provider_call`；`backend/tests/e2e/test_worker_retries.py::test_duplicate_notification_job_delivers_exactly_once`（幂等键 == provider_idempotency_key(event_key, channel, user)）。**手动部署检查**：SMS 真实适配器 `aliyun_dypns` 已上线并在本地栈实测送达，生产启用待部署侧配置（`ALIYUN_SMS_*` 四凭证）；Email 仍只带 logging 供应商，接入真实供应商后需在部署环境复跑 `tests/workers/test_notification_delivery.py` 形状的真实供应商冒烟 |
 | 23 | grace 到期无有效提交会释放 Assignment | `backend/tests/e2e/test_deadline_flows.py::test_no_submit_expiry_releases_assignment_for_another_student`（EXPIRED → AVAILABLE → 他人可领） |
 | 24 | UNDER_REVIEW Claim 不会被错误释放 | `backend/tests/integration/tasks/test_submit_expire_race.py::test_mid_review_claims_are_protected_from_expiry`；`backend/tests/e2e/test_concurrency_gate.py::test_in_window_submission_beats_concurrent_expiry`（窗口内有效提交阻止并发释放） |
 | 25 | 文件按 Task retention policy 清理 | `backend/tests/unit/submissions/test_upload_policy.py::test_retention_snapshot_dated_policies`（快照语义）；`backend/tests/integration/submissions/test_upload_finalize.py::test_retention_snapshot_at_finalize_for_all_policies`；`backend/tests/workers/test_cleanup_deletion_claim.py::test_real_repository_claim_reevaluates_every_guard`；`backend/tests/e2e/test_worker_retries.py::test_duplicate_cleanup_job_reconciles_without_metadata_loss`（对象已删的 reconcile 不丢元数据） |
@@ -175,16 +175,15 @@ make sure no other Playwright/pytest session is seeding worlds into
   `CQ_E2E_STAFF2` / `CQ_E2E_TEACHER` / `CQ_E2E_ADMIN` + base32 TOTP
   world exports, browser_world.py); the release gate's playwright step
   asserts both suites at zero skips.
-- V1 ships logging-only SMS/Email adapters by design; real-provider
-  delivery is a post-V1 deployment check (row 22).
-- **Flake watch (E5, root cause narrowed, fix pending owner decision):**
-  `frontend/e2e/staff-auth.spec.ts › invite -> password -> TOTP confirm ->
-  recovery codes once -> done` failed once in a cold-server full-gate run
-  with every code rejected (`动态验证码错误` loop). The setup effect in
-  `frontend/src/features/auth/TotpSetup.tsx` calls the rotating
-  `/staff/totp/begin` on mount; under `next dev` React StrictMode
-  double-invokes it, and when the two overlapping rotations commit in the
-  opposite order to their responses the DOM shows a secret the server no
-  longer stores — every confirm is then wrong regardless of retry
-  (isolation passes 4/4; rerun is a valid gate recovery). Candidate fix:
-  a single-flight guard so only one begin runs per mount.
+- The real SMS adapter `aliyun_dypns` shipped (PR #22) and was verified
+  delivering on the local stack; production enablement awaits
+  deployment-side configuration (the four `ALIYUN_SMS_*` env
+  credentials). Email still ships logging-only by design;
+  real-provider delivery is a post-V1 deployment check (row 22).
+- **Flake watch (E5) — closed:** the cold-server `staff-auth.spec.ts`
+  TOTP failure (`动态验证码错误` on every confirm) is fixed —
+  `frontend/src/features/auth/TotpSetup.tsx` now single-flights the
+  rotating `/staff/totp/begin` per mount (generation-keyed dispatch
+  guard, commit 7863054), so React StrictMode's double effect can no
+  longer leave the DOM showing a secret the server has rotated away.
+  Kept as the root-cause record; no recurrence expected.

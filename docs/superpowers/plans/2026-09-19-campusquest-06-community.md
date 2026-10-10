@@ -1,5 +1,8 @@
 # CampusQuest 06 Community & Ratings Implementation Plan
 
+> Status: Completed & merged (PR #6, 2026-09-24) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement task comments, per-comment anonymity, threaded replies, soft delete/edit history, like/dislike voting, emoji reactions, reports, task ratings, and moderation permission boundaries.
