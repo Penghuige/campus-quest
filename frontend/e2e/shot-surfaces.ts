@@ -52,11 +52,27 @@ export const SHOTS: Shot[] = [
         why: "hero deadline — the same relative-clock copy; .hero-line is shared with the deterministic step rail, so the mask keys on the frozen 截止 copy (DashboardView.tsx)",
         locate: (page) => page.locator(".hero-line", { hasText: "截止" }),
       },
+      {
+        id: ".task-grid .meta-deadline",
+        why: "discovery-card deadline line — the square's cards carry the mint-relative countdown (TaskCard.tsx); same clock family the claim/hero masks cover (2026-10-10 baseline time-drift ruling)",
+        locate: (page) => page.locator(".task-grid .meta-deadline"),
+      },
       // Deliberately NOT masked: the reward-progress .progress-note
       // ("（50 积分）现在就可以兑换") is deterministic under fixed labels.
     ],
   },
-  { name: "student-tasks", path: "/tasks", auth: "student", masks: [] },
+  {
+    name: "student-tasks",
+    path: "/tasks",
+    auth: "student",
+    masks: [
+      {
+        id: ".task-grid .meta-deadline",
+        why: "card deadline line — mint-relative countdown (TaskCard.tsx); the same mechanism the dashboard mask covers (2026-10-10 baseline time-drift ruling)",
+        locate: (page) => page.locator(".task-grid .meta-deadline"),
+      },
+    ],
+  },
   {
     name: "student-task-detail",
     envPath: "CQ_E2E_TASK_OPEN_PATH",
@@ -92,7 +108,20 @@ export const SHOTS: Shot[] = [
     ],
   },
   { name: "student-rankings", path: "/rankings", auth: "student", masks: [] },
-  { name: "student-rewards", path: "/rewards", auth: "student", masks: [] },
+  {
+    name: "student-rewards",
+    path: "/rewards",
+    auth: "student",
+    // Probe proof (2026-10-10, mask-contract discipline): the world's
+    // rewards carry NO time bounds — windowLabel renders on zero
+    // cards, so a .reward-window mask is an inert no-op (forbidden).
+    // The marker class stays on the markup (RewardsView.tsx); if
+    // world seeding ever grows a bounded window, this shot MUST gain
+    // the .reward-window mask. The 10-09→10-10 whole-row drift this
+    // ruling chased turned out to be one-time world-content change
+    // (absorbed by the 64c8a08 regen), not recurring window state.
+    masks: [],
+  },
   {
     name: "student-notifications",
     path: "/notifications",

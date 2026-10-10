@@ -310,7 +310,13 @@ export function RewardCard({
       {view.stockLabel !== null || view.windowLabel !== null ? (
         <div className="reward-card-meta">
           {view.stockLabel !== null ? <span>{view.stockLabel}</span> : null}
-          {view.windowLabel !== null ? <span>{view.windowLabel}</span> : null}
+          {/* The window line is the one CLOCK-DERIVED string on the
+           * card (formatted absolute bounds) — the visual suite masks
+           * .reward-window so baselines stay stable across capture
+           * times until the world mint pins its clock. */}
+          {view.windowLabel !== null ? (
+            <span className="reward-window">{view.windowLabel}</span>
+          ) : null}
         </div>
       ) : null}
       {cta.kind === "unavailable" ? (
