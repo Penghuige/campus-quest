@@ -58,6 +58,7 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import InMemoryEventCollector
 from app.modules.identity.models import TotpCredential, User
 from app.modules.identity.session_service import SessionService
+from app.modules.submissions.models import Submission
 from app.modules.tasks.enums import (
     AssignmentAvailability,
     ClaimStatus,
@@ -226,7 +227,11 @@ async def swept_task_catalogue(db_session: AsyncSession) -> None:
     asserts on are global, so each test starts from a deterministic
     catalogue: the DELETEs ride the harness transaction and roll back at
     teardown, restoring the leftovers for the suites that own them.
+    Submissions delete first: committing suites (claim races, document
+    validation, the e2e world) leave submissions referencing claims, and
+    deleting the claims first dies on that FK.
     """
+    await db_session.execute(delete(Submission))
     await db_session.execute(delete(AssignmentClaim))
     await db_session.execute(delete(Assignment))
     await db_session.execute(delete(TaskCollaborator))
