@@ -110,6 +110,46 @@ test.describe("inbox render + filter tabs (§28; patterns §4 URL state)", () =>
     await expect(page).toHaveURL(/\/notifications/);
     await expect(page.getByLabel("通知收件箱")).toBeVisible();
   });
+
+  test("the bell and the avatar chip share one circle language (owner feedback, 2026-10-10)", async ({ page }) => {
+    // The bell used to be a control-height SQUARE with a square hover
+    // block beside the round avatar chip. Both pill slots are 2rem
+    // circles now, and BOTH have a hover treatment (the chip had
+    // none — two adjacent interactive slots must agree).
+    const bell = page
+      .getByRole("banner")
+      .getByRole("link", { name: /未读通知/ });
+    const chip = page.getByRole("banner").getByRole("link", { name: "我的账户" });
+    await expect(bell).toBeVisible();
+
+    for (const slot of [bell, chip]) {
+      const shape = await slot.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return {
+          radius: style.borderRadius,
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+      });
+      expect(shape.radius).toBe("50%");
+      expect(shape.width).toBe(32);
+      expect(shape.height).toBe(32);
+    }
+
+    // The hover fills: the bell takes the quiet surface-2, the chip
+    // deepens its primary wash — each CHANGES on hover.
+    const bellBg = async () =>
+      bell.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const chipBg = async () =>
+      chip.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const bellRest = await bellBg();
+    const chipRest = await chipBg();
+    await bell.hover();
+    expect.poll(bellBg).not.toBe(bellRest);
+    await chip.hover();
+    expect.poll(chipBg).not.toBe(chipRest);
+  });
 });
 
 test.describe("owner mark-read (the §28 owner-only surface)", () => {
