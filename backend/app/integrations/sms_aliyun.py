@@ -204,9 +204,13 @@ def _decompose_e164(to: str) -> tuple[str, str]:
     try:
         parsed = phonenumbers.parse(to, region=None)
     except phonenumbers.NumberParseException as exc:
+        # Masked recipient (spec §40 masking law): this message reaches
+        # server logs through the 500 handler's traceback, so the
+        # verbatim ``to`` — untrusted input that often embeds a full
+        # phone — must not ride along (hardening D-4).
         raise PermanentProviderError(
             "SMS recipient is not a parseable E.164 number "
-            f"(provider code equivalent MOBILE_NUMBER_ILLEGAL): {to!r}"
+            f"(provider code equivalent MOBILE_NUMBER_ILLEGAL): {mask_phone(to)}"
         ) from exc
     return str(parsed.country_code), str(parsed.national_number)
 
