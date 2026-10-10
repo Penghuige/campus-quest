@@ -119,16 +119,23 @@ test.describe("student task claim", () => {
     await expect(panel.locator(".deadline-line")).toBeVisible();
   });
 
-  test("conflict shows typed copy and stays retry-friendly", async ({ page }) => {
+  test("a depleted task's detail says so up front — the CTA is disabled, not pressable-then-rejected (owner defect 2026-10-10)", async ({ page }) => {
     test.skip(EMPTY_TASK_URL === undefined, "needs CQ_E2E_EMPTY_TASK_URL (all assignments taken)");
     await page.goto(EMPTY_TASK_URL!);
 
-    await page.getByRole("button", { name: "领取任务" }).click();
-
-    // Typed NO_ASSIGNMENT_AVAILABLE copy, not a generic crash.
-    await expect(page.getByRole("alert")).toContainText("当前没有可领取的任务单元");
-    // Retry-friendly: the button re-enables so another attempt is possible.
-    await expect(page.getByRole("button", { name: "领取任务" })).toBeEnabled();
+    // The page must never offer a pressable 领取任务 that the next
+    // press would reject: the server's availability number drives the
+    // CTA (disabled + explicit copy), and the random-allocation hint
+    // is gone — it would promise an allocation that cannot happen.
+    const cta = page.getByRole("button", { name: "名额已满" });
+    await expect(cta).toBeVisible();
+    await expect(cta).toBeDisabled();
+    await expect(page.getByRole("button", { name: "领取任务" })).toHaveCount(0);
+    await expect(page.getByText("随机分配一个任务单元")).toHaveCount(0);
+    await expect(page.getByText("该任务的所有名额都已被领取")).toBeVisible();
+    // The typed 409 copy stays the CONCURRENT-RACE fallback only
+    // (last slot leaving after render); its mapping is unit-covered
+    // (claim-errors.test.ts), not reachable from a disabled CTA.
   });
 });
 
