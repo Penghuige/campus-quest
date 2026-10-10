@@ -969,7 +969,7 @@ body {
   padding-inline: 0;
 }
 
-.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand-name, .side-nav a span, .rail-account-name) {
+.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand-name, .side-nav a span, .rail-account-name, .rail-account-name-slot) {
   position: absolute;
   clip-path: inset(50%);
   width: 1px;
@@ -1038,6 +1038,39 @@ body {
   font-size: var(--text-xs);
   font-weight: 650;
   text-decoration: none;
+}
+
+/* --- Pre-resolve placeholders (refresh shell jump fix) ------------------
+ *
+ * The optimistic loading/error frames hold the workspace geometry
+ * while /me resolves; the session-dependent slots (rail account,
+ * topbar actions) render as placeholders. Rail slots ride the INK
+ * dark rail, so they take rail-toned skeletons — the light surface-2
+ * default would glow there. */
+.rail-account[data-loading] {
+  /* A placeholder is not an affordance: no hover, no pointer. */
+  pointer-events: none;
+}
+
+/* The nickname bar's resting width — the real name is ellipsized at
+ * the same slot, so the placeholder only needs a plausible width.
+ * The collapsed-rail clip list includes this class: the icon rail
+ * must clip the placeholder exactly like the real name. */
+.rail-account-name-slot {
+  width: 5rem;
+}
+
+.app-sidebar .skeleton {
+  background: var(--rail-hover);
+}
+
+.app-sidebar .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--rail-foreground) 10%, transparent),
+    transparent
+  );
 }
 
 /* --- Defect #4 (QA 2026-09-30): the 个人信息 avatar section ----------
