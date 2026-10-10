@@ -149,9 +149,11 @@ def _build_app(db: AsyncSession, clock: Clock) -> FastAPI:
     async def admin_guard_op(
         actor: Annotated[Actor, Depends(require_admin_actor)],
     ) -> dict[str, str]:
-        # Stand-in for the PR #2 hardening Admin-only surfaces (the
-        # points redemption review decisions, the notifications failure
-        # query) until scoped delegation lands.
+        # Stand-in for the PR #2 hardening Admin-only surfaces. Plan 08
+        # T4's scoped delegation since covered the points redemption
+        # review decisions (granted Teachers pass a dedicated guard);
+        # this stand-in now represents the faces that stay Admin-only,
+        # e.g. the notifications failure query.
         return {"user_id": str(actor.user_id), "role": actor.role.value}
 
     @app.post("/test/community-op")
@@ -512,7 +514,7 @@ async def test_suspended_teacher_denied_the_management_guard(
     assert response.json()["error"]["code"] == ErrorCode.ACCOUNT_NOT_ACTIVE
 
 
-# --- the Admin-only guard (PR #2: Admin-only until scoped delegation) -----------------
+# --- the Admin-only guard (PR #2; still-Admin-only faces after T4 delegation) ---------
 
 
 @pytest.mark.integration

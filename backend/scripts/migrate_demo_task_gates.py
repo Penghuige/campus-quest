@@ -10,9 +10,12 @@ allowed set — a row already in the target state simply does not match):
    global universe, so the gate must cover what a compliant upload is.
 2. Document family (the review-materials task): flips to the
    document-type gate ["DOCX", "PDF"] with an EMPTY submission_schema
-   per spec §10.1 (two-family exclusivity). NOTE: this leg only runs
-   its update once the DOCX/PDF enum members exist (dispatch 2); the
-   guard below makes it a logged no-op until then.
+   per spec §10.1 (two-family exclusivity). NOTE: this leg gated its
+   update on the DOCX/PDF enum members existing (dispatch 2); those
+   members have since shipped (app/modules/submissions/enums.py), so
+   the guard below is now a satisfied-precondition record — on any
+   current deployment this leg simply runs (or reports already
+   applied).
 
 Usage:
     uv run python scripts/migrate_demo_task_gates.py          # apply

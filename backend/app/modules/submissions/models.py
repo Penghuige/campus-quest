@@ -17,8 +17,10 @@ Design decisions:
   metadata, length-capped at 255 and sanitized by the service before
   storage; it must never feed paths or type decisions.
 - `declared_type` is the client's claim, `detected_type` the sniffed
-  content type written by the validation worker; both are confined to the
-  CSV/XLSX/SQLITE universe the tasks module already guards.
+  content type written by the validation worker; both are confined to
+  the five members of the two §10.1 families ({CSV, XLSX, SQLITE}
+  structured, {DOCX, PDF} documents) the tasks module's
+  `allowed_file_types` CHECK guards.
 - `submitted_at` has no server default on purpose: spec §11.2 fixes it as
   the reward-tier reference time, so the finalize service must pass the
   business clock value explicitly instead of letting the database default

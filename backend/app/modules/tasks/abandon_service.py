@@ -65,12 +65,13 @@ Design decisions and rulings:
 - **Behavior history (spec §8.5 写行为历史):** the durable record is the
   claim row itself (status ABANDONED + ``terminal_at``); the audit
   trail is one ``CLAIM_ABANDONED`` DomainEvent published through the
-  identity events port (the Core Primitives port; the audit/outbox
-  module's AuditService persists it, the in-memory collector serves
-  tests) — no schema change required. Like staff_service, the event is
-  published after the flush and before the commit; the interim in-memory
-  adapter accepts that a failed commit could leave a phantom event, and
-  the outbox attaches inside the transaction. It is an audit-stream
+  identity events port (the Core Primitives port; production adapter is
+  the interim log-only LoggingEventPublisher, the in-memory collector
+  serves tests) — no schema change required. Like staff_service, the
+  event is published after the flush and before the commit; that
+  interim adapter accepts that a failed commit could leave a phantom
+  event — an outbox attaching inside the transaction is unbuilt
+  planning. It is an audit-stream
   identifier, deliberately NOT a §25 notification event.
 - **Account gate:** the abandon refuses non-STUDENT roles
   (PERMISSION_DENIED, judged role-first like the claim flow) and

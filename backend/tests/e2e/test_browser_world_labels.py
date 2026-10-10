@@ -121,7 +121,7 @@ async def test_fixed_labels_byte_identical_across_runs(
     # …produce byte-identical visible labels.
     assert labels[0] == labels[1]
 
-    # The frozen strings are the documented fixed-marker ones. All five
+    # The frozen strings are the documented fixed-marker ones. All six
     # seeded task titles are equal (the factories slice the run marker's
     # first 6 chars, so the a/b/c/d/r suffixes never reach the title) —
     # the fixed mode inherits that shape unchanged. Six = A/B (claimed

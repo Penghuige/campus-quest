@@ -50,10 +50,10 @@ Design decisions:
 - **Offset pagination** is the documented V1 choice for both public
   lists (tasks, own claims): simple to reason about, stable enough at
   V1 volumes, and the route layer owns the limit/offset bounds.
-- **Submission counts are a future seam.** The submissions table does
-  not exist yet; the field ships empty and NO submission query is
-  invented here. The submission module fills it against its own status
-  axes.
+- **Submission counts are a documented-unfilled seam.** The submissions
+  module has landed, but the statistics integration is not built: the
+  field ships empty and NO submission query is invented here. The key
+  set stays reserved for that module's own status axes.
 - **Rating summary** comes from the cross-module ``RatingSummaryPort``
   (interfaces.md: this module ships a null port; the community module
   supplies the concrete adapter backed by TaskRating). The port sketch in
@@ -144,10 +144,10 @@ class RatingSummaryPort(Protocol):
 
 
 class NullRatingSummaryPort:
-    """The interim stand-in: every task reports "not rated yet".
+    """Test-only stand-in: every task reports "not rated yet".
 
-    Used until the community module wires the TaskRating-backed adapter,
-    and by tests that exercise the None path.
+    Returns None for the tests that exercise the not-rated path;
+    production wires the community module's TaskRating-backed adapter.
     """
 
     async def summary(self, task_id: UUID) -> RatingSummary | None:
@@ -161,10 +161,10 @@ class NullRatingSummaryPort:
 class TaskStatistics:
     """Counts-only task aggregate (spec §41; privacy per §40/§42).
 
-    ``submission_counts`` is the documented future seam: empty until
-    the submission module lands, and its key set will be defined by
-    that module's own status axes (validation / review), not invented
-    here.
+    ``submission_counts`` is the documented-unfilled seam: the
+    statistics integration is not built, so the field ships empty, and
+    its key set will be defined by the submissions module's own status
+    axes (validation / review), not invented here.
     """
 
     task_id: UUID

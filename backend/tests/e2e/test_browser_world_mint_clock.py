@@ -13,8 +13,9 @@ anchor would close every submission window against the real clock the
 orchestrated app runs on (the pyjwt wall-clock lesson: pin the world,
 never the app).
 
-The anchor is pinned HERE as an independent contract (the MIME-freeze
-discipline): the implementation must match, not alias, this constant.
+The anchor is pinned HERE as an independent contract (the
+contract-freeze discipline, per the test_declared_type_content_types
+precedent): the implementation must match, not alias, this constant.
 
 These tests drive the REAL _seed/_clean pair (the entries the Node
 global-setup shells) and pin:

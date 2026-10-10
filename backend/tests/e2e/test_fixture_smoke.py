@@ -56,7 +56,7 @@ from tests.e2e.factories import (
 pytestmark = pytest.mark.e2e
 
 #: The closed answer set of the real expiry job (ClaimService's
-#: ExpireOutcome members) — the scan's payloads must all reduce to it.
+#: ExpiryOutcome members) — the scan's payloads must all reduce to it.
 _EXPIRE_OUTCOMES = {
     "EXPIRED",
     "NOT_DUE",

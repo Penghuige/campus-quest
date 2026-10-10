@@ -231,7 +231,8 @@ OWNER_DELETE_REASON = "owner"
 HARD_HIDDEN_REASON_CODE = "ADMIN_HARD_HIDE"
 
 # Audit-stream action names (the identity-module audit-vs-notification
-# distinction): consumed by the audit/outbox module's AuditService.
+# distinction): published through the events port; durable audit rows
+# ride the AuditLogWriter action constants below instead.
 COMMENT_MODERATION_DELETED = "COMMENT_MODERATION_DELETED"
 COMMENT_HARD_HIDDEN = "COMMENT_HARD_HIDDEN"
 

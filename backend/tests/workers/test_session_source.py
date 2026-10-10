@@ -89,8 +89,11 @@ _PASSWORD_HASH = (
     "$argon2id$v=19$m=65536,t=3,p=1$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaaJObG"
 )
 
-# The jobs this wave moved onto the shared session source; the pin below
-# requires exactly these modules to compose through it.
+# The three jobs moved onto the shared session source in that wave; the
+# pin below still requires exactly these modules to compose through it.
+# Further job modules have since adopted the shared source on their own
+# streams — those are covered by the process-wide-maker static pin, not
+# this list.
 _SHARED_SOURCE_JOBS = (
     "app.workers.jobs.dispatch_due_notifications",
     "app.workers.jobs.expire_claims",
@@ -357,10 +360,10 @@ def test_no_job_module_references_the_process_wide_session_maker() -> None:
 def test_db_jobs_compose_through_the_shared_session_source() -> None:
     """The jobs this wave moved must import the shared source, so a
     future edit cannot quietly fall back to a private engine recipe.
-    rebuild_rankings / validate_submission keep their own equivalent
-    per-job copies (left untouched this wave to avoid conflicting with
-    the parallel stream); the pin above still bans the process-wide
-    maker for them."""
+    rebuild_rankings / validate_submission were the per-job copies left
+    untouched that wave (parallel-stream conflict avoidance) and have
+    since moved to the shared source as well; the process-wide-maker
+    ban for every job module lives in the static pin above."""
     missing: list[str] = []
     for module_name in _SHARED_SOURCE_JOBS:
         module = importlib.import_module(module_name)

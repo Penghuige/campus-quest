@@ -28,11 +28,11 @@ logger = logging.getLogger(__name__)
 def run_health_check(request_id: str) -> dict[str, Any]:
     """Service call behind `health_job` — the "call a service" step.
 
-    Stand-in for a real application service: once services exist, the job
-    constructs its dependencies (session factory, adapters from
-    `app.integrations`) and calls the service method. The result here is
-    deliberately trivial because this job only proves the wiring and the
-    request-id threading.
+    The plan-01 wiring demonstrator: dependencies stay deliberately
+    trivial (no session factory, no adapters from `app.integrations`)
+    because this job only proves the wiring and the request-id
+    threading; real jobs construct their dependencies and call a
+    service method.
     """
     return {"ok": True, "request_id": request_id}
 

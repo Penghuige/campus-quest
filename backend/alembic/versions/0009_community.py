@@ -7,9 +7,9 @@ convention to them, and the "ck" convention interpolates
 %(constraint_name)s into the final name -- a full "ck_comment_reports_
 category" here would render doubled (the 0002/0003 gotcha).
 
-Numbering note: this migration is 0009 with down_revision 0006 by
-parallel-stream controller ruling; 0007/0008 belong to sibling streams,
-and the controller reparents the chain when the streams merge.
+Numbering note: this migration was created as 0009 with down_revision
+0006 by parallel-stream controller ruling; 0007/0008 belong to sibling
+streams, and the controller reparented it to 0012 at merge.
 
 Design decisions (see app/modules/community/models.py for the full list):
 

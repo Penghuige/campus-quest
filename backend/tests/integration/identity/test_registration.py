@@ -6,11 +6,12 @@ re-check, phone-uniqueness, validator wiring, and the database constraints
 that adjudicate concurrent registrations (spec §5.4: 并发注册最终必须由
 数据库约束兜底 — the friendly checks are UX, the constraints are the law).
 
-Task-3 seams: password hashing arrives in Task 5, so the service accepts a
-hasher callable and these tests inject a deterministic stub; the phone OTP
-lifecycle arrives in Task 4, so registration consumes an already-verified
-token through `PhoneVerificationPort` and these tests seed tokens into the
-fake below. Concurrent tests use two independent sessions bound to their
+Task-3 seams, still load-bearing for test isolation: the service accepts
+a hasher callable (password hashing itself landed in Task 5) and these
+tests inject a deterministic stub; registration consumes an
+already-verified token through `PhoneVerificationPort` (the phone OTP
+lifecycle landed in Task 4) and these tests seed tokens into the fake
+below. Concurrent tests use two independent sessions bound to their
 own connections with real commits (backend-engineering §7), so they clean
 up the rows they created instead of relying on the rollback harness.
 """

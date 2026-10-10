@@ -5,9 +5,10 @@
 TEST-ONLY code: no database, no ledger side effects. The fake records
 every accepted grant for exact-argument assertions and enforces the
 port's idempotency contract in memory: a repeated `idempotency_key`
-raises `DuplicateGrantKeyError`, mirroring the UNIQUE(claim)
-PointsLedger semantics Plan 05's concrete adapter will own at the
-database boundary (spec §14: 绝不能发两次积分). A hidden double grant
+raises `DuplicateGrantKeyError`, mirroring the database idempotency
+the concrete adapter (`PointsRewardPortAdapter`) owns —
+UNIQUE(source_type, source_id, ledger_type) on points_ledger
+(spec §14: 绝不能发两次积分). A hidden double grant
 inside one test therefore fails loudly at the second call instead of
 silently counting twice (docs/quality/backend-engineering.md §13:
 adapters distinguish the already-exists response).
@@ -75,7 +76,8 @@ class FakePointsRewardPort:
         if idempotency_key in self._seen_keys:
             raise DuplicateGrantKeyError(
                 f"idempotency_key {idempotency_key!r} granted twice; "
-                "UNIQUE(claim) reward semantics violated"
+                "UNIQUE(source_type, source_id, ledger_type) "
+                "reward semantics violated"
             )
         self._seen_keys.add(idempotency_key)
         self.calls.append(

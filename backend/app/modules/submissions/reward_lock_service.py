@@ -99,8 +99,10 @@ second caller into exactly this replay.
 Events: exactly one ``REWARD_LOCKED`` audit-stream event per ESTABLISHED
 lock (both NONE->PROVISIONAL and INVALIDATED->PROVISIONAL), published
 after the flush and before the commit through the identity events port
-(the interim in-memory/logging adapter; the audit/outbox module's
-AuditService persists it later). Replays, preserved-lock revisions, and
+(production: the interim log-only LoggingEventPublisher; tests: the
+in-memory collector — durable auditability for this surface rides the
+claim row plus the append-only lock history below, not an event
+consumer). Replays, preserved-lock revisions, and
 terminal no-ops emit nothing. Like CLAIM_ABANDONED it is an audit
 identifier, deliberately NOT a §25 notification event; the claim status
 change itself is auditable through the claim row plus the append-only

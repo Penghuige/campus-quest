@@ -112,10 +112,12 @@ Other transport decisions
   with ``extra="forbid"``: an ``assignment_id`` in the body is a 422
   before any service call (the test pins it); random allocation stays a
   server decision under lock (spec §8.3).
-- **Import preview is a raw-body upload.** The CSV travels as the
-  request body (``Content-Type: text/csv``) instead of multipart — the
-  importer wants bytes, the byte cap fast-fails before any parsing, and
-  no form-multipart dependency is pulled in for one file field.
+- **Import preview is a raw-body upload.** The file (CSV or XLSX, spec
+  §7.1) travels as the request body instead of multipart — the importer
+  wants bytes and sniffs the format itself (``import_parsing`` routes
+  on the ZIP local-header magic, so the wire ``Content-Type`` is never
+  consulted), the byte cap fast-fails before any parsing, and no
+  form-multipart dependency is pulled in for one file field.
 - **Rate limiting (spec §33.1)** on claim + abandon, normalized to the
   authenticated user id through the shared ``RateLimiter`` port and
   ``RATE_LIMIT_RULES`` (``tasks:claim``, ``claims:abandon``); an
@@ -669,10 +671,12 @@ async def preview_assignment_import(
     db: DbSession,
     imports: ImportServiceDep,
 ) -> ImportPreviewResponse:
-    """Parse and pre-check a CSV upload (spec §7.1 steps 1-4).
+    """Parse and pre-check an import upload (spec §7.1 steps 1-4).
 
-    The file is the raw request body (``text/csv``); the importer's byte
-    cap rejects oversize payloads before any parsing work.
+    The file (CSV or XLSX) is the raw request body; the importer's byte
+    cap rejects oversize payloads before any parsing work, and the
+    format is decided by content sniffing — never by the wire
+    ``Content-Type``.
     """
     data = await request.body()
     preview = await imports.preview_assignments(db, actor, task_id, data)

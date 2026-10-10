@@ -23,8 +23,9 @@ inbox and the staff failure query.
   precedent), a missing id NOT_FOUND.
 - **`GET /api/v1/admin/notification-failures`** — spec §25.4
   "后台可查询失败原因": FAILED deliveries with last_error +
-  attempts, newest first, behind `require_admin_actor` (Admin-only
-  until scoped delegation — PR #2 hardening ruling; Plan 08 builds the
+  attempts, newest first, behind `require_admin_actor` (stayed
+  Admin-only under the delegation ruling — the points review family is
+  the widened one; PR #2 hardening ruling; Plan 08 builds the
   full admin operations surface on this seam). Delivery data is
   operational state, so it is exposed HERE — admin-guarded — and never
   on the student inbox.
@@ -195,7 +196,7 @@ async def mark_notification_read(
     )
 
 
-# --- admin surface (spec §25.4; Plan 08 consumes) -----------------------------------
+# --- admin surface (spec §25.4; consumed below and by the admin router) ------------
 
 
 @router.get(
@@ -210,8 +211,9 @@ async def list_notification_failures(
     offset: PageOffset = 0,
 ) -> NotificationFailuresResponse:
     """FAILED deliveries with last_error + attempts, newest first (the
-    spec §25.4 failure query). Admin-only until scoped delegation (PR
-    #2 hardening ruling): any ACTIVE+TOTP teacher reading every user's
+    spec §25.4 failure query). Stayed Admin-only under the delegation
+    ruling (the points review family is the widened one; PR #2
+    hardening ruling): any ACTIVE+TOTP teacher reading every user's
     delivery errors was judged too broad for V1."""
     deliveries, total = await service.list_failures(db, limit=limit, offset=offset)
     return NotificationFailuresResponse(

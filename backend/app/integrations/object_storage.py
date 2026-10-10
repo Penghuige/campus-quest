@@ -7,7 +7,7 @@ docs/quality/backend-engineering.md §16): the canonical V1 shape is
 `submissions/{claim_id}/{uuid}` (the avatar channel, spec amendment D2,
 mints `avatars/{user_id}/{uuid}.{ext}` server-side the same way) and the
 original filename is display metadata only. No provider SDK is imported
-here; a real S3 adapter is a separate later task.
+here; the real S3 adapter lives in `object_storage_s3.py`.
 
 Worker-side reads (plan 04 task 7) go through `download_to_file`, not
 through `create_download_url`: presigned HTTP URLs are for BROWSERS

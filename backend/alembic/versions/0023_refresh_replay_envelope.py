@@ -1,4 +1,4 @@
-"""Points: the stable-successor replay envelope column.
+"""Identity: the stable-successor replay envelope column.
 
 `user_sessions.replay_envelope` (nullable TEXT) carries the successor
 generation's refresh secret, Fernet-encrypted with a `replay:v1:`

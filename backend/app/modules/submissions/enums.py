@@ -12,10 +12,12 @@ without redefining the frozen member set (same precedent as identity
 re-exports).
 
 `FileType` and `RetentionPolicy` are the submission module's own closed
-universes: the CSV/XLSX/SQLITE file types (spec §10/§12 — the same
-member set the tasks module's `allowed_file_types` CHECK guards) and the
-retention policies (spec §13 — the same values the Task column's CHECK
-guards). They live here, not in the tasks module, because the submission
+universes: the five upload file types across the two §10.1 families —
+{CSV, XLSX, SQLITE} structured and {DOCX, PDF} documents (spec §10/§12
+— the same member set the tasks module's `allowed_file_types` CHECK
+guards) — and the retention policies (spec §13 — the same values the
+Task column's CHECK guards). They live here, not in the tasks module,
+because the submission
 side computes against them (declared-type MIME pinning, retention
 snapshots) while the tasks side persists raw strings; the member sets
 must stay in lockstep with those CHECK constraints.

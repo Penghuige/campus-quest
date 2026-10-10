@@ -1,6 +1,11 @@
--- Remove the demo-seeded world (scoped: 【演示】 tasks + the 10 demo
+-- Remove the demo-seeded world (scoped: 【演示】 tasks + the 20 demo
 -- students' points/notifications + demo reward items). FK-ordered, same
 -- discipline as tests/e2e/factories.clean_world.
+--
+-- TARGET DATABASE: the demo/dev stack ONLY. The scoping patterns
+-- ('【演示】%' titles, '202500%' student numbers) overlap test-factory
+-- seeded rows on shared databases — running this against campusquest_test
+-- would delete the e2e world's students' points.
 BEGIN;
 
 -- Community children first, then comments/ratings (scoped to demo tasks).

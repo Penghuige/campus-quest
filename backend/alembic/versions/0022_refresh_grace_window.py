@@ -1,5 +1,5 @@
 """
-Points: the refresh-rotation grace window timestamps.
+Identity: the refresh-rotation grace window timestamps.
 
 `user_sessions.replaced_at` records WHEN a row was retired by rotation
 (set atomically with `replaced_by`); `user_sessions.replay_envelope`

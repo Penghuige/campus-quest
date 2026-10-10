@@ -1,4 +1,4 @@
-# backend/tests/integration/admin/test_account_status.py
+# backend/tests/integration/admin/test_account_admin.py
 """Account-status governance against real PostgreSQL (Plan 08 T8).
 
 Scenario map (the plan's steps, verbatim semantics):

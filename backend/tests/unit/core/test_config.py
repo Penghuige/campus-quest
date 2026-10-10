@@ -82,14 +82,15 @@ def test_production_accepts_overridden_otp_hmac_secret(monkeypatch) -> None:
     _set_required_env(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("OTP_HMAC_SECRET", "a-real-deployment-secret")
-    # Since Task 5 production refuses EVERY committed sentinel, so the
+    # Task 5 production refuses EVERY committed sentinel, so the
     # token-signing and TOTP-encryption secrets must be real here too.
     monkeypatch.setenv("TOKEN_SECRET", "a-real-access-token-secret-0123456789")
     monkeypatch.setenv("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
     # The secret rule itself now passes: with real secrets the startup
     # failure no longer names the secrets — V1 production still fails
     # closed, but on the logging provider (see the provider tests below;
-    # real SMS/EMAIL adapters land with the provider project).
+    # SMS has a real adapter in aliyun_dypns, EMAIL is still
+    # logging-only).
     with pytest.raises(ValidationError, match="SMS_PROVIDER") as exc_info:
         Settings()
     assert "OTP_HMAC_SECRET" not in str(exc_info.value)

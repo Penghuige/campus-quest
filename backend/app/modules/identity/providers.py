@@ -9,8 +9,9 @@ tests override a dependency, never service internals (§21).
 - The Redis client is process-cached; services are assembled per request
   from injected clock, settings, codec, and sender dependencies. The
   SMS/EMAIL senders are resolved from `Settings.sms_provider` /
-  `Settings.email_provider` (V1's only value is the logging adapter);
-  production refuses the logging provider at Settings construction
+  `Settings.email_provider` (SMS: logging or aliyun_dypns; EMAIL: the
+  logging adapter only); production refuses the logging provider at
+  Settings construction
   (config.py's production guard — fail closed), so this wiring can never
   hand a no-send adapter to a production request. The logging adapters
   record masked deliveries (never ``variables`` — the OTP code and email

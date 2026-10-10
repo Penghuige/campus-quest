@@ -905,8 +905,9 @@ async def test_strict_reading_unvalidated_submission_still_expires(
     task_ids = [task.id for task in seeded.tasks]
     user_ids = [seeded.teacher.id, seeded.student.id]
     try:
-        # The seam's default answers False (no submissions table on this
-        # branch; the merge wires the VALIDATED reader).
+        # The seam's default always answers False by design; the
+        # production expiry worker wires the VALIDATED reader instead
+        # (app/workers/jobs/expire_claims.py).
         async with factory() as session:
             assert not await NoValidSubmissionsInspector().has_valid_submission(
                 session, seeded.claims[0].id
