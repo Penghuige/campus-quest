@@ -250,7 +250,7 @@ An Agent's final implementation report should include:
 
 ## 15. Release gate
 
-V1 release is governed by the dedicated E2E hardening plan and eventual command:
+Release verification runs the full local gate that exists today (test-database bootstrap, backend unit/integration/worker/e2e, migration verification, frontend typecheck/lint/CSS guard/unit/build, Playwright e2e, pixel visual regression, and the coverage ratchet; the Makefile documents the order):
 
 ~~~bash
 make release-gate
@@ -258,7 +258,7 @@ make release-gate
 
 A fresh zero-failure run is required after the final release-gate fix.
 
-Until that command exists, use the strongest currently implemented subset rather than pretending the future gate has run.
+During the CI quota pause (2026-10-07 onward), a fresh `make release-gate` log on the exact head is the authoritative local evidence standing in for CI; the CI requirement resumes automatically once the quota resets.
 
 ## 16. Engineering Golden Rules（PR #2 起，长期 merge gate）
 
@@ -281,5 +281,5 @@ Until that command exists, use the strongest currently implemented subset rather
 - **G15 并发不变量需要真实 PostgreSQL 测试。** quota/stock/claim allocation/reward issuance/redemption/version allocation/abandon limits/review races 必须用独立连接的并发 integration test；mock 不算证明。
 - **G16 每个派生缓存/投影需要重建故事。** 回答不了"Redis/worker/cache 全丢后从什么事实重建"的状态不应只存在于 projection。
 - **G17 Merge-carry 债务不得在合并中幸存。** 集成 PR 必须把 carry 当 checklist 全部关闭，而不是把 carry 文档合进 main 当未来承诺。
-- **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。
+- **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。CI 配额暂停期（2026-10-07 起）等价证据：同一组组合 smoke（backend-integration 的 S3 + composition smokes）在 `make release-gate` 内同样执行，同 head 的本地门禁日志即同等组合边界证据；配额恢复后自动回落以 CI 为准。
 - **G19 测试工件是代码。** 新 spec、no-skip 豁免、像素基线、选择器契约条目、规约-测试矩阵行、覆盖率棘轮地板——随引入它们的特性 PR 同 ship（AGENTS.md 测试工件清单为完整版）；"tests will be updated later" 与降地板强转绿都是阻塞项。

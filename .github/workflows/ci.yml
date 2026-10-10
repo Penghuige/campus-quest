@@ -5,7 +5,9 @@
 # upgrade + `alembic check` proving migrations match the models.
 # Frontend: install, typecheck, lint, CSS integrity guard, unit tests,
 # production build.
-# Playwright is intentionally absent; it lands with the E2E plan (Plan 10).
+# Playwright runs here in the visual-regression job (pixel baselines +
+# the axe a11y gate); the full e2e battery runs locally via
+# `make release-gate` (playwright-e2e).
 #
 # Triggers: pushes to main, plus pull requests targeting main. Working
 # branches get CI through their PR (open the PR as a draft immediately);

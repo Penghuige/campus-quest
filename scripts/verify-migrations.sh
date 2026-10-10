@@ -20,6 +20,9 @@
 # Exit 0 means every step held. CI runs the zero-db upgrade + `alembic
 # check` pair on every push; this script is the local, one-command,
 # downgrade-inclusive counterpart.
+# CI-quota pause (2026-10-07 onward): CI is not currently running, so
+# this script — as release-gate's migration-verify step — carries the
+# migration verification locally until the quota resets.
 #
 # Required environment (the same stack backend/tests/integration uses):
 #   docker compose -f infra/docker-compose.yml up -d   # from repo root
