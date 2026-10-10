@@ -169,3 +169,4 @@ release-gate: release-test-db release-evidence-scanner backend-unit backend-inte
 visual-regression:
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npm run test:e2e:visual
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npx playwright test innovation-review-visual.spec.ts --project=chromium
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npx playwright test innovation-navigation-visual.spec.ts --project=chromium

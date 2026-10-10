@@ -1,0 +1,31 @@
+import AxeBuilder from "@axe-core/playwright";
+import { API_URL, BASE_URL, ensureStudentLogin, expect, mintToken, test } from "./fixtures";
+
+test.skip(process.env.CQ_E2E !== "1" || process.env.CQ_VISUAL !== "1" || process.env.CQ_E2E_FIXED_LABELS !== "1", "CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 pins Linux fonts and disposable labels");
+
+test("R1 navigation visual: campus landing, mobile full menu and logout confirmation", async ({ page }) => {
+  test.setTimeout(90_000);
+  const headers = { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_ADMIN_ID!)}` };
+  const grant = await page.request.put(`${API_URL}/admin/ie/operations-grants/${process.env.CQ_E2E_STUDENT_ID!}`, { headers, data: { version: 0, enabled: true, reason: "独立 R1 视觉世界" } });
+  expect(grant.status()).toBe(200);
+  await ensureStudentLogin(page);
+  const pinFonts = async () => { await page.addStyleTag({ content: ':root { --font-sans: "Noto Sans CJK SC", sans-serif; } .mono { font-family: "Liberation Mono", monospace !important; } *, *::before, *::after { animation: none !important; transition: none !important; }' }); };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/innovation`);
+  await expect(page.getByRole("region", { name: "校内已核实成果" })).toContainText("暂无可浏览的成果");
+  await expect(page.getByRole("navigation", { name: "双创运营", exact: true })).toBeVisible();
+  await pinFonts();
+  await expect(page).toHaveScreenshot("innovation-campus-landing.png", { fullPage: true, maxDiffPixelRatio: 0.01 });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "全部导航", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "全部导航", exact: true }).getByRole("link", { name: "双创运营工作台", exact: true })).toBeVisible();
+  await expect(page).toHaveScreenshot("innovation-mobile-full-menu.png", { fullPage: true, maxDiffPixelRatio: 0.01 });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "退出登录", exact: true }).filter({ visible: true }).click();
+  await expect(page.getByRole("heading", { name: "退出当前账号", exact: true })).toBeVisible();
+  await pinFonts();
+  await expect(page).toHaveScreenshot("innovation-logout-confirmation.png", { fullPage: true, maxDiffPixelRatio: 0.01 });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});

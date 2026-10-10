@@ -11,6 +11,12 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-navigation-visual.spec.ts",
+    title: "R1 navigation visual: campus landing, mobile full menu and logout confirmation",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason: "R1 pixel and axe coverage runs in a separate pinned-font Linux world, with its own operations grant.",
+  },
+  {
     file: "innovation-review-visual.spec.ts",
     title: "achievement review visual: owner proof workspace, operator queue and campus empty list",
     gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",

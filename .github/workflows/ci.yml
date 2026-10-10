@@ -414,6 +414,10 @@ jobs:
         working-directory: frontend
         run: npx playwright test innovation-review-visual.spec.ts --project=chromium
 
+      - name: Innovation navigation visual regression (3 baselines, no regen)
+        working-directory: frontend
+        run: npx playwright test innovation-navigation-visual.spec.ts --project=chromium
+
       # P3-A: the axe accessibility gate rides the same stack — the
       # 11-shot ratchet (new violations fail; baselined entries live in
       # e2e/a11y-baseline.ts with reasons and MUST stay reproducing).
