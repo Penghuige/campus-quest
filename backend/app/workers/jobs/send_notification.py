@@ -69,14 +69,14 @@ def build_delivery_service(
 
     The SMS/EMAIL senders are resolved from settings
     (`build_sms_sender`/`build_email_sender` over `sms_provider` /
-    `email_provider`): V1's only value is the logging adapter, whose
+    `email_provider`): SMS offers logging or the real `aliyun_dypns`
+    adapter; EMAIL's only value is the logging adapter, whose
     "logging:"-prefixed receipts mark recorded deliveries as simulated.
     The chain is fail-closed — production refuses provider="logging" at
     Settings construction (config.py's production guard), so this job
-    can never deliver through a no-send adapter there. When this plan's
-    provider wiring lands real adapters, they translate their SDK
-    failures into the §13 taxonomy and honor `idempotency_key`; nothing
-    else changes.
+    can never deliver through a no-send adapter there. Real adapters
+    translate their SDK failures into the §13 taxonomy and honor
+    `idempotency_key`; nothing else changes.
     """
     from datetime import timedelta
 

@@ -7,8 +7,9 @@ scaffolding contract as ``test_identity_api``.
 
 Frozen contract under test:
 
-- ``POST /api/v1/me/avatar`` — multipart direct upload, ≤ 2 MiB, magic
-  byte validated (png/jpeg/webp only); replacement swaps the stored
+- ``POST /api/v1/me/avatar`` — raw-body direct upload (the request
+  body IS the image bytes; no multipart envelope), ≤ 2 MiB, magic byte
+  validated (png/jpeg/webp only); replacement swaps the stored
   object and deletes the previous one; every committed change appends a
   ``USER_AVATAR_CHANGED`` audit row.
 - ``DELETE /api/v1/me/avatar`` — clears the pointer and deletes the

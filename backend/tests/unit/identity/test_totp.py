@@ -225,9 +225,9 @@ class TestTotpSettings:
 
         # The Fernet rule itself passes: with a real key the startup
         # failure no longer names TOTP_ENCRYPTION_KEY. V1 production
-        # still fails closed, but on the logging SMS/EMAIL providers
-        # (see tests/unit/core/test_config.py; real adapters land with
-        # the provider project).
+        # still fails closed, but on the logging SMS/EMAIL provider
+        # defaults (see tests/unit/core/test_config.py; SMS has a real
+        # adapter in aliyun_dypns, EMAIL is still logging-only).
         with pytest.raises(ValidationError, match="SMS_PROVIDER") as exc_info:
             Settings()
 

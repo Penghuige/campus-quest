@@ -18,8 +18,8 @@ machinery — the smoke test pins it anyway.
 (the cleanup-harness / composition-smoke precedent) scoped to THIS
 test's seeded ids, plus the honor-definition snapshot delta (the
 approve path lazily creates global ``honors`` rows — deleting only the
-delta never touches another suite's seeded definitions). Deferred to
-later task modules, deliberately: audit rows (no FKs, nothing blocks on
+delta never touches another suite's seeded definitions). Left to the
+owning task modules, deliberately: audit rows (no FKs, nothing blocks on
 them) and ``student_whitelist`` entries (flow-scoped, created through
 the public API with run-prefixed student numbers, not by these
 factories).
@@ -151,8 +151,9 @@ def _now() -> datetime:
 #: from this instant (plus one-minute steps) instead of the wall clock,
 #: FUTURE-dated so the seeded claims stay on-time and windows stay open
 #: against the real clock the orchestrated app runs on. Pinned as an
-#: independent contract by test_browser_world_mint_clock (the MIME-freeze
-#: discipline: the implementation must match the pinned value, not
+#: independent contract by test_browser_world_mint_clock (the
+#: contract-freeze discipline, per the test_declared_type_content_types
+#: precedent: the implementation must match the pinned value, not
 #: alias it).
 FIXED_MINT_ANCHOR = datetime(2030, 1, 1, tzinfo=UTC)
 

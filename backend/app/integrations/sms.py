@@ -5,10 +5,11 @@ Domain modules call `SmsSender.send`; provider specifics (Aliyun, Twilio,
 ...) live in real adapters, not here. Tests assert exact deliveries via
 `FakeSmsSender.messages` (docs/architecture/interfaces.md, Adapter Ports).
 
-`LoggingSmsSender` is the development-only adapter: the real provider
-project owns actual delivery, so until it lands the composition root
+`LoggingSmsSender` is the development-only adapter: the composition root
 (`build_sms_sender`, wired from `Settings.sms_provider`) resolves the
-sender that logs the masked recipient and template only — NEVER
+real provider adapter when one is configured — SMS offers `aliyun_dypns`
+(integrations/sms_aliyun.py) — and otherwise the sender that logs the
+masked recipient and template only — NEVER
 `variables` (the OTP code travels there, spec §33.2) — instead of
 silently dropping the send. Its receipt carries the "logging:" prefix so
 recorded deliveries distinguish simulated sends from real provider

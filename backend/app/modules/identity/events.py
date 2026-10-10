@@ -7,14 +7,17 @@ staff flows that need them first — so there is exactly one Actor type:
 the identity dependencies re-export `Actor` as the authenticated request
 context instead of redefining it.
 
-The audit action names below are audit-stream identifiers consumed by
-the audit/outbox module's `AuditService` (spec §5.8: 账号创建、角色提升、
-角色撤销必须写 AuditLog). They are deliberately NOT additions to the §25
-notification event list in interfaces.md — that list is the
-notification-delivery contract; this is the audit contract. Persistence
-arrives with the audit/outbox module; until then the service publishes
-through `DomainEventPublisher`, whose in-memory implementation
-(`InMemoryEventCollector`) is what tests attach to.
+The audit action names below are audit-stream identifiers (spec §5.8:
+账号创建、角色提升、角色撤销必须写 AuditLog). They are deliberately NOT
+additions to the §25 notification event list in interfaces.md — that list
+is the notification-delivery contract; this is the audit contract. Durable
+audit rows are written by the `AuditLogWriter` direct write with its own
+action constants (the dual-stream vocabulary; see staff_service); this
+event stream rides `DomainEventPublisher`, whose production adapter is
+the interim log-only `LoggingEventPublisher` and whose in-memory
+implementation (`InMemoryEventCollector`) is what tests attach to. An
+outbox-backed persistent publisher is unbuilt planning, not current
+wiring.
 """
 
 from __future__ import annotations
@@ -73,9 +76,11 @@ class DomainEvent:
 class DomainEventPublisher(Protocol):
     """Port through which services emit domain/audit events.
 
-    The production adapter (the audit/outbox module's `AuditService`)
-    attaches inside the domain transaction; the in-memory collector below
-    is the test and interim-production adapter.
+    The production adapter is the interim log-only `LoggingEventPublisher`
+    below; the in-memory collector is the test adapter. Durable audit
+    persistence does not ride this stream — it is the `AuditLogWriter`
+    direct write with its own action constants (the dual-stream
+    vocabulary).
     """
 
     def publish(self, event: DomainEvent) -> None: ...

@@ -20,7 +20,7 @@ Design decisions (see app/modules/notifications/models.py):
   runs in bounded batches.
 
 Revision ID: 0010
-Revises: 0006
+Revises: 0009
 Create Date: 2026-09-21
 """
 

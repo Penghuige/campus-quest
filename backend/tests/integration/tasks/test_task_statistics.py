@@ -9,9 +9,10 @@ Pinned behavior:
   could carry an Assignment payload (platform/keyword) ever enters the
   DTO — spec §40/§42 keep Assignment lists hidden, so statistics are
   counts only by construction.
-- Submission status counts are a Plan 04 seam: the field exists and is
-  empty until the submission module lands; no submission query is
-  invented here.
+- Submission status counts are a documented-unfilled Plan 04 seam: the
+  submissions module has since landed, but the statistics integration
+  was never built and the key set belongs to that module's own status
+  axis, so the field stays empty; no submission query is invented here.
 - Read authorization: owner, Admin, or a collaborator holding
   VIEW_TASK; any other Teacher (and Students) get PERMISSION_DENIED.
 - The rating port is None-safe: NullRatingSummaryPort yields rating

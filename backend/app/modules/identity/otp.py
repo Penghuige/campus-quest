@@ -186,8 +186,9 @@ class OtpPolicy:
     ``OtpPolicy.from_settings`` maps the typed deployment settings; unit
     tests construct policies directly so no environment is needed. Kept in
     the module (not `enums.py`) because the frozen interfaces.md registry
-    does not yet list OTP contracts; promote it when a second consumer
-    needs the type.
+    still lists no OTP contract; a second consumer now exists (the
+    profile module reads this policy), so the registry entry is due
+    with the next interfaces.md freeze batch.
     """
 
     ttl_seconds: int

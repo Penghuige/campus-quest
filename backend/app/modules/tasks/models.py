@@ -20,8 +20,10 @@ Design decisions:
   `NotificationChannel` members (SMS/EMAIL/IN_APP, interfaces.md); the enum
   class itself arrives with the notification module. An empty
   `allowed_file_types` array is representable but useless — publish-time
-  validation (`TaskService.publish`) requires a non-empty file policy, a
-  deadline policy, and a submission schema, so DRAFT rows may legitimately
+  validation (`TaskService.publish`) requires a non-empty file policy and
+  a deadline policy, and the submission-schema leg is family-conditional
+  (spec §10.1: a structured task must carry a schema, a document task
+  must not), so DRAFT rows may legitimately
   carry incomplete configuration and there is deliberately no table-level
   deadline-mode/fixed-deadline consistency CHECK either.
 - `grace_period_minutes` is NOT NULL with server_default 1440 and is
@@ -377,8 +379,10 @@ class AssignmentClaim(Base):
     reward_tier_locked: Mapped[int | None] = mapped_column(Integer)
     reward_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_reward_points: Mapped[int | None] = mapped_column(Integer)
-    # Plain UUID on purpose: the submissions table does not exist yet; the
-    # module that introduces it adds the FK.
+    # Plain UUID on purpose (the 0005 decision): submissions FK to
+    # claims, so a reciprocal FK pair would be circular; consistency is
+    # kept transactionally by the upload finalize service with
+    # UNIQUE(claim_id, version) as the anchor.
     latest_submission_id: Mapped[UUID | None] = mapped_column()
     revision_deadline_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)

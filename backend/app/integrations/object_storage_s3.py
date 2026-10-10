@@ -231,7 +231,8 @@ class S3ObjectStorage:
                 # Bounded provider calls: every API call — including
                 # delete_object's HEAD-then-DELETE pair — is capped at
                 # connect+read per attempt; see the constant block above
-                # and Settings.s3_worst_case_delete_budget_seconds.
+                # and Settings.s3_connect_timeout_seconds /
+                # Settings.s3_read_timeout_seconds.
                 connect_timeout=settings.s3_connect_timeout_seconds,
                 read_timeout=settings.s3_read_timeout_seconds,
             ),

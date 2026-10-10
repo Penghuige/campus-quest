@@ -19,8 +19,9 @@ Three FastAPI dependencies, one per policy layer:
   TOTP credential.
 - ``require_admin_actor`` — the guard for Admin-only surfaces (PR #2
   hardening ruling): the management guard's checks with ``role == ADMIN``
-  — the narrow composition staff review/oversight endpoints sit behind
-  until scoped delegation lands.
+  — the narrow composition for staff review/oversight endpoints; scoped
+  delegation has landed (Plan 08 T4), and this guard covers the surfaces
+  that stayed Admin-only.
 - ``require_active_community_actor`` — the guard for ordinary community
   participation (spec §4.1/§4.2 "普通社区能力"): ACTIVE Student or
   Teacher. Admin is deliberately NOT a participant (the PR #2 hardening
@@ -395,9 +396,11 @@ async def require_admin_actor(
     same typed errors. A TEACHER — even ACTIVE with a confirmed TOTP
     credential — answers ``PERMISSION_DENIED`` (403): the guarded
     surfaces are the ones the hardening ruling pulled out of the staff
-    family until scoped delegation lands (the points redemption review
-    decisions, the notifications failure query), where any-active-staff
-    power was judged too broad. An ACTIVE Admin without a confirmed TOTP
+    family (the notifications failure query), where any-active-staff
+    power was judged too broad. The points redemption review decisions
+    now ride scoped delegation instead (Plan 08 T4's
+    ``require_reward_review_actor``); this guard keeps the remaining
+    Admin-only face. An ACTIVE Admin without a confirmed TOTP
     credential still gets ``TotpSetupRequiredError``: the Admin role does
     not waive the §5.8 step-3 management 2FA gate these surfaces inherit.
     """

@@ -213,7 +213,7 @@ EVENT_VARIABLES: dict[NotificationEventType, frozenset[str]] = {
 }
 
 
-# --- seed templates (8 event types x 3 channels; Plan 08 adds DB overrides) ----
+# --- seed templates (8 event types x 3 channels; DB overrides: Plan 08, landed) -
 #
 # Concise Chinese per the product language; SMS bodies short enough for
 # a single segment; EMAIL bodies slightly fuller with a sign-off. The

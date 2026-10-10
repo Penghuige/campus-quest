@@ -239,11 +239,11 @@ class Settings(BaseSettings):
     comment_max_length: int = 2000
     # The current academic term key snapshotted onto new reward
     # redemptions (spec §16.1). The committed value is the development
-    # default; deployments set CURRENT_ACADEMIC_TERM per term. Plan 08
-    # moves this to the audited, admin-configurable CURRENT_ACADEMIC_TERM
-    # system setting; until then this settings field is the single
-    # non-code place a deployment turns the term. Consumed by
-    # `SettingsAcademicTermProvider` (points/redemption_service.py).
+    # default. Plan 08 moved the term to the audited, admin-configurable
+    # CURRENT_ACADEMIC_TERM system setting: that store row is the FACT
+    # and this field is only the INITIAL SEED a deployment boots with,
+    # never an override (G7; resolved store-first by
+    # `SystemAcademicTermProvider`, points/redemption_service.py).
     current_academic_term: str = "2026-fall"
     # Due-delivery dispatcher (plan 07 T8; spec §25.4: bounded retries must
     # stay observable): one scan batch's enqueue ceiling, and how long a
@@ -321,9 +321,10 @@ class Settings(BaseSettings):
     # store-first by app/core/admin_network_policy.py. These env fields
     # survive ONLY as the per-key fallback while no store row exists,
     # so deployments configured against them keep working through the
-    # transition; they WILL BE REMOVED BEFORE THE V1 RELEASE (the
-    # fields and the loader's fallbacks go together — do not build new
-    # deployment configuration on them). ``management_network_cidrs``
+    # transition; they are transitional fallbacks whose removal rides
+    # the store-backed policy fully replacing them (the fields and the
+    # loader's fallbacks go together — do not build new deployment
+    # configuration on them). ``management_network_cidrs``
     # is comma-separated CIDRs parsed by app/core/admin_network_policy.py
     # (standard-library ipaddress; an invalid entry fails policy
     # construction loudly). Disabled (the default) is pure pass-through

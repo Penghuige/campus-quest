@@ -9,6 +9,11 @@ dist/
 build/
 *.egg-info/
 
+# Coverage data (the ratchet runs leave COVERAGE_FILE variants behind;
+# .coverage was committed once by accident — untracked in this change)
+.coverage
+.coverage.*
+
 # Node
 node_modules/
 .next/
@@ -24,7 +29,9 @@ test-results/
 playwright-report/
 blob-report/
 
-# Environment / secrets
+# Environment / secrets (one block: rules were duplicated verbatim at
+# the file tail; the template lives at backend/env.example, pending the
+# owner's rename to .env.example)
 .env
 .env.*
 !.env.example
@@ -45,8 +52,3 @@ frontend/e2e/.certs/
 
 # e2e-only MinIO TLS cert (infra/scripts/gen-e2e-minio-cert.sh output)
 infra/e2e-certs/
-
-# local env files (template: backend/.env.example)
-.env
-.env.*
-!.env.example

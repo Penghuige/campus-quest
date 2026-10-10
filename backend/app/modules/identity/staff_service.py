@@ -57,11 +57,14 @@ Design decisions:
   used invitation tokens and wrong password/TOTP/recovery inputs all
   raise the same ``AUTHENTICATION_REQUIRED``; the unknown-identifier path
   still burns one Argon2 verify (timing shield). Wrong second-factor
-  attempts are counted via server-side rejection logs (rate limiting is
-  deliberately deferred; the login already requires the password).
+  attempts are counted via server-side rejection logs; rate limiting is
+  the endpoint limiter's job (staff_router's ``auth:staff-login``
+  bucket), not this service's.
 - **Audit events** (`events.py`) are published inside the transaction,
-  before commit, so the audit/outbox module's `AuditService` can persist
-  them atomically; the in-memory collector is the interim adapter.
+  before commit, through `DomainEventPublisher` (the interim production
+  adapter is the log-only `LoggingEventPublisher`; the in-memory
+  collector serves tests). Durable audit rows ride the
+  `AuditLogWriter` direct write below, not this event stream.
 - **Durable audit rows (Plan 08 T2) ride the same transactions.** Every
   staff lifecycle write appends a `audit_logs` row through the
   flush-only `AuditLogWriter` before the service's one commit:
@@ -654,8 +657,8 @@ class StaffService:
         # The second factor is a current TOTP code, or — as the documented
         # lockout path — one unused recovery code. Neither matching is the
         # uniform authentication failure; the rejection log line below is
-        # the server-side count (rate limiting is deferred, see the module
-        # docstring).
+        # the server-side count (rate limiting is the endpoint limiter's
+        # job — see the module docstring).
         if not verify_totp_code(
             secret, totp_code, at=now
         ) and not await self._consume_recovery_code(db, user.id, totp_code, now):

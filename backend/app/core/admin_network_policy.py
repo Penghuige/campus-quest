@@ -42,12 +42,12 @@ Design decisions:
   or ASYNC: a loader that reads the audited system_settings store needs
   a database round-trip per request, so the guard awaits an awaitable
   result and passes a plain value through (``inspect.isawaitable``).
-  The DEFAULT loader is the process-cached env policy — TRANSITIONAL
-  ONLY (see below): production wiring passes the store-reading loader
-  explicitly (read the two ``MANAGEMENT_NETWORK_*`` rows through
-  ``SystemSettingService.get`` per request and resolve them via
-  ``load_management_network_policy``), which is the T9 composition
-  step.
+  The DEFAULT loader is the process-cached env policy — used only by
+  tests and callers that pass no loader: production wiring passes the
+  store-reading loader explicitly (read the two ``MANAGEMENT_NETWORK_*``
+  rows through ``SystemSettingService.get`` per request and resolve them
+  via ``load_management_network_policy``) — the landed T9 composition
+  (identity/admin_router's ``require_management_network_from_store``).
 - **Store first, env fallback (Plan 08 T5 migration).** The policy's
   values live in the audited ``system_settings`` store under
   ``MANAGEMENT_NETWORK_ENABLED`` / ``MANAGEMENT_NETWORK_CIDRS``;
@@ -57,9 +57,10 @@ Design decisions:
   ``management_network_cidrs`` (comma-separated) when it does not —
   deployments configured against the env vars keep working through the
   transition, and admins migrate by writing the store keys. The env
-  fields are DEPRECATED transitional fallbacks and WILL BE REMOVED
-  BEFORE THE V1 RELEASE (config.py marks them); after removal the
-  loader's fallbacks go with them and the store is the only source.
+  fields are DEPRECATED transitional fallbacks (config.py marks them);
+  their removal rides the store-backed policy fully replacing them —
+  the loader's fallbacks go with them, after which the store is the
+  only source.
   ``MANAGEMENT_NETWORK_ENABLED`` is stored ``"true"``/``"false"`` and
   ``MANAGEMENT_NETWORK_CIDRS`` comma-separated canonical CIDRs (the
   registry's canonical forms — see system/service.py).
@@ -204,8 +205,9 @@ def load_management_network_policy(
 @lru_cache(maxsize=1)
 def _cached_settings_policy() -> ManagementNetworkPolicy:
     # TRANSITIONAL DEFAULT (Plan 08 T5): the env-only, process-cached
-    # policy — kept only until the T9 composition wires the
-    # store-reading async loader (read the MANAGEMENT_NETWORK_* rows per
+    # policy — used only when no loader is passed (tests and bare
+    # factory calls); production goes through the T9 store-reading
+    # async loader (read the MANAGEMENT_NETWORK_* rows per
     # request, resolve via ``load_management_network_policy``). Env
     # settings are process-frozen (get_settings is lru_cached), so the
     # parsed policy is too; tests inject policies through the factory

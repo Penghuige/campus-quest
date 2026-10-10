@@ -1,4 +1,4 @@
-# backend/tests/unit/core/test_readiness.py
+# backend/tests/unit/core/test_readiness_probes.py
 """Probe boundedness (spec §34): /health/ready must report `down` quickly
 against a wedged dependency instead of hanging the endpoint.
 

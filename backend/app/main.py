@@ -42,8 +42,9 @@ from app.workers.celery_app import get_celery_app
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Bind the shared Celery app in the API process: nothing else here
-    # constructs one, so without this call `shared_task` proxies (future
-    # modules enqueue deadline/validation jobs from request handlers) would
+    # constructs one, so without this call `shared_task` proxies (modules
+    # enqueue deadline/validation jobs from request handlers — the
+    # submissions router's validation dispatch is the live example) would
     # resolve to Celery's fallback default app and its amqp://guest@
     # localhost broker instead of the settings-configured Redis URL.
     # Construction makes it the current app; get_celery_app also sets it

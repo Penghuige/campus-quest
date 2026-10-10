@@ -77,10 +77,9 @@ Composition root
   threaded from the request middleware into the job's correlation id.
 - **Object storage** (spec §10/§33.3) arrives through the
   ``ObjectStorage`` port. The provider is the settings-driven factory
-  seam: the object-storage provider adapter does not exist yet, so no
-  environment has a default binding — deployments and tests inject an
-  implementation through this provider (tests bind the in-memory fake).
-  Failing loudly beats silently talking to nothing.
+  seam: the production binding is the real ``S3ObjectStorage`` built
+  from Settings (hardening P0-1); tests override the provider with the
+  in-memory fake, so no test contacts a real endpoint.
 - **The points port** (spec §14 step 8) is the points-module ledger
   adapter, constructed per request over the request's session: the
   grant joins the approve transaction and the caller's commit decides

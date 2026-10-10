@@ -452,7 +452,7 @@ async def test_failed_claim_records_no_notification_intent(
     assert await _count(db_session, NotificationDelivery) == 0
 
 
-# --- validation-failed re-arm (synthetic; the emitter lands at merge) -----------------
+# --- validation-failed re-arm (synthetic; real emitter: test_validation_worker.py) ----
 
 
 @pytest.mark.integration

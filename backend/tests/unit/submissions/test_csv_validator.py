@@ -10,7 +10,8 @@ no services.
 
 Coverage matrix:
 
-- the 11 fixture cases from the task brief: valid UTF-8; UTF-8 BOM;
+- the brief-table fixture cases plus later regression additions:
+  valid UTF-8; UTF-8 BOM;
   empty file; header only; missing required field; duplicate unique
   URL; min_rows-1; exactly min_rows; max_rows+1; invalid datetime;
   extremely long cell; binary masquerading as CSV (NUL bytes and a
@@ -159,7 +160,7 @@ class ReadProbe(io.RawIOBase):
         return part
 
 
-# --- the 11 fixture cases -------------------------------------------------
+# --- the brief-table fixture cases plus regressions -----------------------
 
 
 def test_valid_utf8_csv_passes() -> None:

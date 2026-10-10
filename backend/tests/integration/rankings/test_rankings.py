@@ -517,8 +517,9 @@ async def test_real_directory_enrichment_reads_nickname(
     projection: RankingRedisProjection,
 ) -> None:
     """End-to-end with the concrete adapter: nickname comes from the
-    users table through the frozen port; the honor title is the None
-    placeholder until the honors module lands (Task 7)."""
+    users table through the frozen port; the honor title is None
+    because this user holds no chosen display honor (the landed honors
+    module resolves users.display_honor_id through the directory)."""
     from app.modules.identity.directory import SqlAlchemyUserDirectory
 
     await _seed_scores(db_session, projection, rankings_redis, [250])
