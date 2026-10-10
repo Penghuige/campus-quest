@@ -13,7 +13,7 @@
 | U5 | R2 事务原子性 | 通知或审计失败时待审事项与旧公开指针保留，无新增通知 | `tests/integration/innovation/test_achievement_review_operations.py::test_failed_decision_dependency_rolls_back_decision_and_notification` | 已覆盖（SUBMIT/UPDATE） |
 | U6 | R2 历史边界 | 无审核记录的历史 UPDATE 不声称已复审，私有字段不进入公开响应 | `tests/integration/innovation/test_update_review.py::test_legacy_update_without_case_does_not_claim_review` + `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` | 已覆盖 |
 | U7 | R2 界面 | 当前 UPDATE 待审/退回/撤回与首次状态分离、公开新版核实文案诚实；使用 submit-update | `tests/../../frontend/src/__tests__/innovation-review.test.ts` | 已覆盖（RED 2 → GREEN 10） |
-| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 缺口 G-5（待本轮新鲜浏览器结果） |
+| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 已覆盖（本轮新鲜真实浏览器，G-5关闭） |
 
 ## 历史首次核实记录（免复审条款已被 R2 覆盖）
 
@@ -40,7 +40,7 @@
 
 ## 缺口明细
 
-- G-5：R2 三账号更新复审的本轮浏览器验证仍待执行；历史 R1/首次核实结果不代替本轮。
+- G-5：已关闭。本轮 r2-final-full-browser.log 的三账号更新复审流程通过；历史 R1/首次核实结果未用来替代本轮。最终完整门禁见 innovation-update-review-verification.md。
 
 - G-1：已关闭后端材料与运营读取缺口（R4/R8–R10）。
 - G-2：已关闭后端工作流与运营批准/撤回竞争缺口（R5/R11）。
