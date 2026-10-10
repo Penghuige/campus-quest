@@ -265,19 +265,32 @@ body {
   animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
 }
 
-/* Lists choreograph: the first three children stagger (capped — a
-   20-row list must not take a second to settle). One :is() rule keeps
-   the reduced-motion override in the consolidated end-of-file block
-   matchable at IDENTICAL specificity (audit finding #1/#6/#7). */
-:is(.task-grid > li, .claim-rows > .claim-row-link):nth-child(-n + 3) {
+/* Task grid (owner ruling 2026-10-10): EVERY card takes the
+ * orchestrated entrance, and the grid stays fast at ANY size — the
+ * component derives --grid-stagger from the card count so the stagger
+ * TAIL (last delay) never exceeds the 80ms the old three-child cap
+ * spent; total entrance keeps §11's ~300ms ceiling. The interval is
+ * monotone-decreasing in the count, so a load-more append can never
+ * push a completed entrance back before its (now larger) delay and
+ * visibly rewind. */
+.task-grid > li {
+  animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
+  animation-delay: calc(var(--grid-stagger, 40ms) * var(--card-index, 0));
+}
+
+/* Dashboard claim rows keep the original capped choreography (the
+ * ruling is the task square's). One :is()-free selector set keeps the
+ * reduced-motion override in the consolidated end-of-file block
+ * matchable at IDENTICAL specificity (audit finding #1/#6/#7). */
+.claim-rows > .claim-row-link:nth-child(-n + 3) {
   animation: cq-rise var(--motion-in) var(--ease-out-soft) both;
 }
 
-:is(.task-grid > li, .claim-rows > .claim-row-link):nth-child(2) {
+.claim-rows > .claim-row-link:nth-child(2) {
   animation-delay: var(--stagger);
 }
 
-:is(.task-grid > li, .claim-rows > .claim-row-link):nth-child(3) {
+.claim-rows > .claim-row-link:nth-child(3) {
   animation-delay: calc(var(--stagger) * 2);
 }
 
@@ -1970,6 +1983,23 @@ body {
   .task-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Batch ③ (owner ruling 2026-10-10): rows are uniform — the li is
+   itself a grid so the card FILLS its stretched row (heights were
+   content-ragged before: 1-line vs 2-line titles, badge presence),
+   and the title clamps at two lines so an extreme title cannot
+   balloon a row. */
+.task-grid > li {
+  display: grid;
+}
+
+.task-card-title a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .task-card {
@@ -4258,7 +4288,8 @@ body {
 
   .section,
   .hero,
-  :is(.task-grid > li, .claim-rows > .claim-row-link):nth-child(-n + 3) {
+  .task-grid > li,
+  .claim-rows > .claim-row-link:nth-child(-n + 3) {
     animation-name: cq-fade-in;
   }
 }

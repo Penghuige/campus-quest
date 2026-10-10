@@ -235,4 +235,54 @@ test.describe("task card affordances (defect #5)", () => {
     const href = await depleted.locator(".task-card-title a").getAttribute("href");
     expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
   });
+
+  test("every card takes the orchestrated entrance, bounded in total (owner ruling 2026-10-10)", async ({ page }) => {
+    // Batch ②: the old choreography animated only the first three
+    // children — every later card (and every load-more append) popped
+    // in with no entrance. The ruling: ALL cards enter, and the grid
+    // stays fast at any size (§11's ~300ms ceiling).
+    const cards = page.locator(".task-grid > li");
+    const count = await cards.count();
+    expect(count).toBeGreaterThanOrEqual(4);
+    let previousDelay = -1;
+    for (let i = 0; i < count; i += 1) {
+      const { name, delay } = await cards.nth(i).evaluate((el) => ({
+        name: getComputedStyle(el).animationName,
+        delay: getComputedStyle(el).animationDelay,
+      }));
+      // EVERY card rises — not just the first three.
+      expect(name).toBe("cq-rise");
+      const ms = Number.parseFloat(delay);
+      // Delays increase monotonically (the stagger is ordered)…
+      expect(ms).toBeGreaterThanOrEqual(previousDelay);
+      previousDelay = ms;
+    }
+    // …and the whole grid settles inside the §11 budget: last delay +
+    // --motion-in 220ms ≤ ~320ms (small float slack).
+    expect(previousDelay + 220).toBeLessThanOrEqual(320);
+  });
+
+  test("cards in the same grid row share one height (batch ③)", async ({ page }) => {
+    // Owner ruling: rows are uniform — the card fills its stretched
+    // li (heights were content-ragged: 1-line vs 2-line titles, badge
+    // presence). Group by row via bounding-rect top and compare.
+    const rows = await page.evaluate(() => {
+      const byRow = new Map<number, number[]>();
+      for (const card of document.querySelectorAll<HTMLElement>(".task-card")) {
+        const rect = card.getBoundingClientRect();
+        const top = Math.round(rect.top);
+        const heights = byRow.get(top) ?? [];
+        heights.push(Math.round(rect.height));
+        byRow.set(top, heights);
+      }
+      return [...byRow.values()];
+    });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    for (const row of rows) {
+      const tallest = Math.max(...row);
+      for (const height of row) {
+        expect(Math.abs(height - tallest)).toBeLessThanOrEqual(1);
+      }
+    }
+  });
 });

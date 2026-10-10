@@ -10,7 +10,7 @@
  * effect only starts a fetch and applies results in async callbacks, so
  * effects never cascade renders synchronously.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 
 import {
   EmptyState,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sectionStates";
 
 import { listTasks, type TaskCardDto, type TaskListPageDto } from "./api";
+import { entranceStaggerMs } from "./display";
 import { TaskCard } from "./TaskCard";
 import { useNow } from "./useNow";
 import { Button } from "@/components/ui/button";
@@ -108,11 +109,20 @@ export function TaskDiscovery() {
   }
 
   const canLoadMore = total !== null && items.length < total;
+  // Owner ruling 2026-10-10: every card enters, bounded in total —
+  // the interval shrinks with the count so the stagger tail stays
+  // inside the 80ms the old three-child cap spent (§11 ~300ms).
+  const gridStyle = {
+    "--grid-stagger": `${entranceStaggerMs(items.length)}ms`,
+  } as CSSProperties;
   return (
     <>
-      <ul className="task-grid" aria-label="可领取的任务">
-        {items.map((card) => (
-          <li key={card.id}>
+      <ul className="task-grid" aria-label="可领取的任务" style={gridStyle}>
+        {items.map((card, index) => (
+          <li
+            key={card.id}
+            style={{ "--card-index": index } as CSSProperties}
+          >
             <TaskCard card={card} nowMs={now} />
           </li>
         ))}

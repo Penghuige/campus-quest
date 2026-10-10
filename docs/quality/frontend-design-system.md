@@ -558,10 +558,16 @@ Motion is subordinate to comprehension.
 **Motion spec (review round 3 — tokens live in globals.css):**
 
 - entrances: ONE orchestrated rise (opacity + 8px, `--motion-in` 220ms,
-  `--ease-out-soft` settle) when a section's data mounts; lists stagger
-  `--stagger` 40ms per child, capped at three children so long lists
-  never crawl. Nothing animates longer than ~300ms — this is a
-  productivity tool, not a showcase;
+  `--ease-out-soft` settle) when a section's data mounts. Task-square
+  cards stagger per child with a LIST-LENGTH-AWARE interval (the grid
+  component derives it so the stagger tail stays ≤ 80ms — the budget
+  the original three-child cap spent) while EVERY card takes the
+  entrance; dashboard claim rows keep the fixed 40ms interval capped
+  at three children. Nothing animates longer than ~300ms — this is a
+  productivity tool, not a showcase. (Owner ruling 2026-10-10: all
+  task cards enter together, quickly, at any count — replaces the
+  three-child cap for the square; `entranceStaggerMs` in
+  `features/tasks/display.ts` owns the math.);
 - only `transform` and `opacity` animate (GPU-composited; never
   width/height/padding/margins);
 - skeletons are a LOW-CONTRAST directional sweep (`cq-sweep`,
