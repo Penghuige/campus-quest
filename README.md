@@ -34,7 +34,7 @@
 | 后端 | Python 3.12 · FastAPI · SQLAlchemy 2.x（异步）· Pydantic v2 |
 | 任务队列 | Celery（文件校验、通知调度、超期释放、清理） |
 | 数据 | PostgreSQL 16（事实源）· Redis 7（缓存 / 排行榜投影 / OTP）· MinIO（S3 兼容对象存储） |
-| 基础设施 | Docker Compose · Caddy（HTTPS 反代）· Alembic 迁移 · GitHub Actions CI |
+| 基础设施 | Docker Compose · Caddy（HTTPS 反代）· Alembic 迁移 · GitHub Actions CI（配额暂停期以本地门禁为准） |
 | 测试 | pytest（单元 / 真实 PostgreSQL 集成 / 并发不变量 / e2e）· 覆盖率棘轮 · 规约-测试对账矩阵 · axe 无障碍 · 跨浏览器 smoke |
 
 ## 架构
@@ -92,7 +92,7 @@ CQ_DEV_API_PROXY=http://localhost:8100 npm run dev
 make test-backend     # 单元 + worker
 make test-integration # 真实 PostgreSQL 集成（含并发不变量）
 make frontend-unit    # 前端单元
-CQ_E2E=1 make playwright-e2e   # 全量 e2e（需端口 3000/8100 空闲）
+CQ_E2E=1 make playwright-e2e   # 全量 e2e（需 3000/8000 空闲；与常驻栈互斥，借用协议见 docs/quality/agent-tooling.md）
 make verify           # 全部门禁
 ```
 

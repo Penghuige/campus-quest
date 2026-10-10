@@ -1,7 +1,7 @@
 # e2e teardown 覆盖审计——写面 × 清理清单缺口矩阵
 
 > 建立日期：2026-10-08 · 批准：campus reviewer（对账式方法；缺口列出不补；world clean 补齐走独立 PR 逐项）
-> 审计对象：`backend/tests/e2e/browser_world.py::_clean` + `backend/tests/e2e/factories.py::clean_world`（清理引擎）× 全部 14 个 e2e spec 的**经真实表面（UI/API）落库写面**。
+> 审计对象：`backend/tests/e2e/browser_world.py::_clean` + `backend/tests/e2e/factories.py::clean_world`（清理引擎）× 全部 14 个 e2e spec 的**经真实表面（UI/API）落库写面**。（as of 2026-10-08，审计时点为 14 个 spec；此后新增的 spec——如 logout、shell-refresh——的写面尚未入本矩阵，重枚举在 backlog。）
 > 方法：枚举每个 spec 会创建哪些表行/对象 → 对照清理路径的**作用域参数**（user_ids / task_ids / reward_item_ids / honors snapshot delta / whitelist numbers / term_before）→ 判定覆盖；**实证**=有污染日志或前科记录，**推定**=写面存在且无清理路径覆盖。
 > 位置说明：放 docs/quality/ 根（非 test-matrix/）——本矩阵行引用**机制代码位置**而非测试位置，混入会使 check_test_matrix 的词表校验误伤。
 
@@ -37,7 +37,7 @@ comments（含 revisions/votes/reactions/reports 按 comment 域）· task_ratin
 
 | 例 | 时间 | 现状 |
 |---|---|---|
-| upload_intents 残留（`assignment_claims←upload_intents` FK 拦 clean_world） | 2026-10-06 本会话 TRUNCATE 事故 | **已入引擎**：clean_world 现按 claim 域删 UploadIntent（factories.py:530） |
+| upload_intents 残留（`assignment_claims←upload_intents` FK 拦 clean_world） | 2026-10-06 本会话 TRUNCATE 事故 | **已入引擎**：clean_world 现按 claim 域删 UploadIntent（factories.py:599） |
 | 注册用户残留 | Phase C 记录 | **已入引擎**：drift 扫描（register_prefix） |
 | 第三例疑似残料 | Phase C 记录（未定性） | 无工件可核——若再现按本矩阵方法定位；四例中唯一未闭环 |
 
