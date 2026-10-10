@@ -960,16 +960,26 @@ async function performRotation(epochAtStart: number): Promise<boolean> {
  * its Set-Cookie was already applied, so the transition's own cookies
   * are the last writers.
  */
-export async function beginAuthTransition(): Promise<void> {
+export async function beginAuthTransition(signal?: AbortSignal): Promise<void> {
   transitionActive = true;
   authEpoch += 1;
   if (refreshInFlight !== null) {
-    await refreshInFlight.catch(() => {
+    const drain = refreshInFlight.catch(() => {
       // The drained rotation's own outcome is irrelevant here — what
       // mattered was ordering its response (and its Set-Cookie) ahead
       // of the transition request.
     });
+    if (!signal) await drain;
+    else await new Promise<void>((resolve, reject) => {
+      const aborted = () => reject(signal.reason);
+      if (signal.aborted) { aborted(); return; }
+      signal.addEventListener("abort", aborted, { once: true });
+      void drain.then(() => { signal.removeEventListener("abort", aborted); resolve(); });
+    });
   }
+  // An expired wait must never send logout ahead of an older cookie writer.
+  // Keep refreshInFlight tracked so a retry still drains that same response.
+  signal?.throwIfAborted();
 }
 
 /** Close the transition window opened by beginAuthTransition. */

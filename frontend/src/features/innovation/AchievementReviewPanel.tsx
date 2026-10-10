@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionError, SectionSkeleton } from "@/components/ui/sectionStates";
 import { useSection } from "@/components/ui/useSection";
@@ -12,6 +12,7 @@ import { completeEvidence, getWorkflow, listEvidence, publishRevision, readEvide
 import { evidenceFileError, evidenceStatusText, reviewError, reviewStatusText } from "./reviewPresentation";
 import { ReviewConfirm } from "./ReviewConfirm";
 import { getOwnerQualification } from "./qualificationApi";
+import { restoreReviewFocus } from "./reviewFocus";
 
 type Action = "submit" | "publish" | "withdraw";
 export function AchievementReviewPanel({ projectId, record, dirty, saving, onLocked }: { projectId: string; record: AchievementDraftDto; dirty: boolean; saving: boolean; onLocked: (locked: boolean) => void }) {
@@ -25,6 +26,7 @@ export function AchievementReviewPanel({ projectId, record, dirty, saving, onLoc
 function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { projectId: string; record: AchievementDraftDto; dirty: boolean; saving: boolean; onLocked: (locked: boolean) => void }) {
   const focusRef = useRef<HTMLElement>(null);
   const retryFocusRef = useRef<HTMLButtonElement>(null);
+  const retryOpener = useRef<{ element: HTMLElement; epoch: number } | null>(null);
   const { state, retry } = useSection(async () => {
     const [workflow, evidence] = await Promise.all([getWorkflow(projectId, record.id), listEvidence(projectId, record.id)]);
     return { workflow, evidence: evidence.items };
@@ -35,6 +37,12 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<Action | null>(null);
   const [uncertain, setUncertain] = useState(false);
+  useLayoutEffect(() => {
+    if (!busy && retryOpener.current) {
+      restoreReviewFocus(retryOpener.current, retryFocusRef.current ?? focusRef.current, getAuthEpoch());
+      retryOpener.current = null;
+    }
+  }, [busy, uncertain]);
   const pending = useRef<{ action: "submit" | "publish"; body: RevisionCommand } | null>(null);
   const upload = useRef<{ file: File; requestId: string } | null>(null);
   const [retryUpload, setRetryUpload] = useState(false);
@@ -119,7 +127,7 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
     </>}
     {error ? <p className="alert alert-error" role="alert">{error}</p> : null}
     {message ? <p className="alert alert-success" role="status">{message}</p> : null}
-    {uncertain ? <Button ref={retryFocusRef} disabled={busy || saving} onClick={() => void send(pending.current!.action)}>确认上次提交结果（沿用原请求）</Button> : null}
+    {uncertain ? <Button ref={retryFocusRef} disabled={busy || saving} onClick={(event) => { retryOpener.current = { element: event.currentTarget, epoch: getAuthEpoch() }; void send(pending.current!.action); }}>确认上次提交结果（沿用原请求）</Button> : null}
     {busy ? <p className="field-hint" aria-live="polite">正在处理，请稍候…</p> : null}
     <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? "撤回首次核实" : confirm === "publish" ? "发布更新" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。" : confirm === "publish" ? "校内用户将看到已保存的更新内容。本次更新不会逐项复审，也不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
   </section>;

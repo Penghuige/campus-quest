@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, SectionError, SectionSkeleton } from "@/components/ui/sectionStates";
 import { useSection } from "@/components/ui/useSection";
@@ -8,6 +8,7 @@ import { getAuthEpoch } from "@/lib/accessToken";
 import { isApiError } from "@/lib/errors";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 import { getInnovationCapabilities } from "./operationsApi";
+import { restoreReviewFocus } from "./reviewFocus";
 import { claimReview, declareConflict, decideReview, getReviewDetail, listReviewQueue, readReviewEvidence, saveProofBlob, type DecisionCommand, type ReviewDetailDto, type ReviewItemDto } from "./reviewApi";
 import { reviewError } from "./reviewPresentation";
 import { ReviewConfirm } from "./ReviewConfirm";
@@ -69,9 +70,16 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
 function ReviewEditor({ id, detail, onReload, onBack }: { id: string; detail: ReviewDetailDto; onReload: () => void; onBack: () => void }) {
   const focusRef = useRef<HTMLElement>(null);
   const retryFocusRef = useRef<HTMLButtonElement>(null);
+  const retryOpener = useRef<{ element: HTMLElement; epoch: number } | null>(null);
   const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<"APPROVED" | "RETURNED" | null>(null);
   const [outcome, setOutcome] = useState(""); const [uncertain, setUncertain] = useState(false);
+  useLayoutEffect(() => {
+    if (!busy && retryOpener.current) {
+      restoreReviewFocus(retryOpener.current, retryFocusRef.current ?? focusRef.current, getAuthEpoch());
+      retryOpener.current = null;
+    }
+  }, [busy, uncertain]);
   const pending = useRef<DecisionCommand | null>(null);
   const active = useRef(false); const epoch = useRef(getAuthEpoch());
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -104,7 +112,7 @@ function ReviewEditor({ id, detail, onReload, onBack }: { id: string; detail: Re
     <div className="panel"><h3 className="section-title">提交证明</h3><div className="ie-draft-actions">{detail.evidence.map((evidence, index) => <Button key={evidence} variant="secondary" disabled={busy || uncertain} onClick={() => void download(evidence)}>下载核实证明 {index + 1}</Button>)}</div></div>
     <div className="field"><label className="field-label" htmlFor="review-reason">核实备注／退回原因</label><textarea className="input ie-draft-textarea" id="review-reason" rows={4} maxLength={1000} value={reason} disabled={busy || uncertain} onChange={(event) => setReason(event.target.value)} aria-describedby="review-reason-hint" /><p id="review-reason-hint" className="field-hint">退回须说明具体修改要求，最多 1000 字；负责人将收到结果通知。</p></div>
     {error ? <p className="alert alert-error" role="alert">{error}</p> : null}
-    <div className="ie-draft-actions"><Button disabled={busy || uncertain} onClick={() => setConfirm("APPROVED")}>通过首次核实</Button><Button variant="secondary" disabled={busy || uncertain} onClick={() => setConfirm("RETURNED")}>退回修改</Button><Button variant="ghost" disabled={busy || uncertain} onClick={onReload}>重新读取核实快照</Button>{uncertain ? <Button ref={retryFocusRef} disabled={busy} onClick={() => void decision(pending.current!.decision)}>确认上次决定结果（沿用原请求）</Button> : null}</div>
+    <div className="ie-draft-actions"><Button disabled={busy || uncertain} onClick={() => setConfirm("APPROVED")}>通过首次核实</Button><Button variant="secondary" disabled={busy || uncertain} onClick={() => setConfirm("RETURNED")}>退回修改</Button><Button variant="ghost" disabled={busy || uncertain} onClick={onReload}>重新读取核实快照</Button>{uncertain ? <Button ref={retryFocusRef} disabled={busy} onClick={(event) => { retryOpener.current = { element: event.currentTarget, epoch: getAuthEpoch() }; void decision(pending.current!.decision); }}>确认上次决定结果（沿用原请求）</Button> : null}</div>
     <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={Boolean(confirm)} busy={busy} title={confirm === "RETURNED" ? "退回成果修改" : "通过首次核实"} description={confirm === "RETURNED" ? "该版本不会公开；负责人将看到退回原因，并可以修改后重新提交。" : "确认材料与已提交内容一致。通过后仅公开项目概况与成果内容，私密证明及负责人资料不会进入公开版本。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void decision(confirm); }} />
   </section>;
 }

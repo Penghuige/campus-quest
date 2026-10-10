@@ -206,10 +206,10 @@ export async function loginStaff(
  * user asked to drop (a survived cookie would simply re-bootstrap on
  * the next request — the server stays the authority).
  */
-export async function logout(): Promise<void> {
-  await beginAuthTransition();
+export async function logout(signal?: AbortSignal): Promise<void> {
   try {
-    await apiRequest<void>(`${BASE}/logout`, { method: "POST" });
+    await beginAuthTransition(signal);
+    await apiRequest<void>(`${BASE}/logout`, { method: "POST", signal });
   } finally {
     // An explicit logout CLOSES the auth context (epoch bump): in-
     // flight requests from the closed context must never replay

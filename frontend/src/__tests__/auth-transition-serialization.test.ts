@@ -65,6 +65,54 @@ afterEach(() => {
 });
 
 describe("auth-transition serialization (final re-review P0)", () => {
+  test("D: timed-out logout drain fails without racing old refresh, and a later retry still drains it", async () => {
+    recordLogin("token-A");
+    const refreshA = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    route({ [REFRESH]: [() => { started.resolve(); return refreshA.promise; }], [LOGOUT]: [json(undefined, 204)] });
+    const refresh = refreshAccessToken();
+    await started.promise;
+    const controller = new AbortController();
+    const loggingOut = logout(controller.signal).then(() => "resolved", () => "rejected");
+    controller.abort();
+    try {
+      const result = await Promise.race([loggingOut, new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 50))]);
+      assert.equal(result, "rejected");
+      assert.ok(!urls().includes(LOGOUT), "a timed-out drain must not race the old cookie writer");
+      const retry = logout();
+      await Promise.resolve();
+      assert.ok(!urls().includes(LOGOUT));
+      refreshA.resolve(new Response(JSON.stringify(tokenPair("old-refreshed"))));
+      await retry;
+      assert.equal(getAccessToken(), null);
+    } finally {
+      refreshA.resolve(new Response(JSON.stringify(tokenPair("old-refreshed"))));
+      await refresh;
+      await loggingOut;
+    }
+  });
+
+  test("E: logout forwards cancellation to its pending HTTP request and clears memory on failure", async () => {
+    recordLogin("token-A");
+    const response = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | null | undefined;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal;
+      requestSignal?.addEventListener("abort", () => response.reject(new DOMException("Aborted", "AbortError")), { once: true });
+      started.resolve();
+      return response.promise;
+    }) as typeof fetch;
+    const loggingOut = logout(controller.signal).then(() => "resolved", () => "rejected");
+    await started.promise;
+    try {
+      assert.equal(requestSignal, controller.signal);
+      controller.abort();
+      assert.equal(await loggingOut, "rejected");
+      assert.equal(getAccessToken(), null);
+    } finally { response.resolve(new Response(null, { status: 204 })); await loggingOut; }
+  });
   test("A: logout drains the in-flight refresh before its request — and the drained rotation cannot restore the token", async () => {
     recordLogin("token-A");
     const refreshA = Promise.withResolvers<Response>();

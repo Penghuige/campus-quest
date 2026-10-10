@@ -116,6 +116,7 @@ test("achievement review: real private upload, withdrawal, return, approval and 
       expect(submissions[1]).toEqual(submissions[0]);
     } finally { releaseWorkflow(); }
     await expect(panel(owner)).toContainText("等待首次核实");
+    await expect(panel(owner)).toBeFocused();
     await owner.unroute("**/api/v1/ie/me/project-drafts/*/achievements/*/workflow");
     await owner.unroute("**/api/v1/ie/me/project-drafts/*/achievements/*/submit");
     await expect(owner.getByLabel("成果名称", { exact: true })).toBeDisabled();
@@ -175,6 +176,7 @@ test("achievement review: real private upload, withdrawal, return, approval and 
     await expect(page.getByRole("button", { name: "确认上次决定结果（沿用原请求）", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "确认上次决定结果（沿用原请求）", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("核实通过");
+    await expect(page.getByRole("region", { name: "核实处理结果" })).toBeFocused();
     await expect.poll(() => decisions.length).toBe(2); expect(decisions[1]).toEqual(decisions[0]);
     await page.unroute("**/api/v1/ie/ops/achievement-reviews/*/decision");
     await viewer.goto(`${BASE_URL}/innovation/achievements/${achievement.id}`);

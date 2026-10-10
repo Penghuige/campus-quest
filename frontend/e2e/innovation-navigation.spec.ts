@@ -138,3 +138,29 @@ test("R1: settings logout cannot report success after server failure or lost ack
   await page.getByRole("button", { name: "重试退出登录", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test("R1: a hanging logout reaches a bounded failure and can retry", async ({ page }) => {
+  await ensureStudentLogin(page);
+  await page.goto(`${BASE_URL}/logout`);
+  await page.clock.install();
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let attempts = 0;
+  await page.route("**/api/v1/auth/logout", async (route) => {
+    if (++attempts === 1) {
+      started.resolve();
+      await release.promise;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  try {
+    await page.getByRole("button", { name: "确认退出登录", exact: true }).click();
+    await started.promise;
+    await page.clock.runFor(15_001);
+    await expect(page.getByRole("alert", { name: "退出结果" })).toContainText("退出尚未确认");
+    await expect(page.getByRole("button", { name: "重试退出登录", exact: true })).toBeEnabled();
+    release.resolve();
+    await page.getByRole("button", { name: "重试退出登录", exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+  } finally { release.resolve(); }
+});

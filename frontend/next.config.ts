@@ -24,6 +24,7 @@ const basePath = process.env.CQ_BASE_PATH || undefined;
 const nextConfig: NextConfig = {
   agentRules: false,
   basePath,
+  env: { NEXT_PUBLIC_APP_BASE_PATH: basePath ?? "" },
   ...(proxyTarget !== undefined && proxyTarget !== ""
     ? {
         async rewrites() {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { isApiError } from "@/lib/errors";
+import { resolveAppPath } from "@/lib/appPath";
 import { logout } from "./api";
 
 /** Standalone page: private workspaces unmount before revocation starts. */
@@ -15,20 +16,24 @@ export function LogoutView() {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
     try {
-      await logout();
+      await logout(controller.signal);
       // A full document transition drops Router caches as well as auth stores.
-      window.location.replace("/login");
+      window.location.replace(resolveAppPath("/login"));
     } catch (error) {
       // This endpoint returns this precise verdict only when there is no
       // refresh credential. A lost 204 may already have cleared the cookie.
       if (isApiError(error) && error.status === 401 && error.code === "AUTHENTICATION_REQUIRED") {
-        window.location.replace("/login");
+        window.location.replace(resolveAppPath("/login"));
         return;
       }
       setFailed(true);
       setBusy(false);
       inFlight.current = false;
+    } finally {
+      clearTimeout(timer);
     }
   }
   return <>
