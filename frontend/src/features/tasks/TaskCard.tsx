@@ -42,8 +42,13 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
   const rarity = rarityView(card.rarity);
   const deadline = deadlineView(card, nowMs);
   const RarityGlyph = RARITY_GLYPHS[rarity.rarity];
+  const depleted = card.assignments_available === 0;
   return (
-    <article className="task-card" data-rarity={rarity.rarity}>
+    <article
+      className="task-card"
+      data-rarity={rarity.rarity}
+      data-depleted={depleted ? "true" : undefined}
+    >
       <div className="task-card-head">
         <h3 className="task-card-title">
           <Link href={`/tasks/${card.id}`}>{card.title}</Link>
@@ -83,7 +88,8 @@ export function TaskCard({ card, nowMs }: TaskCardProps) {
       {/* Defect #20 (QA 2026-10-03): a fully-claimed task stays
           browsable on the square but carries an explicit depleted MARK
           — a text badge (never a color-only cue), sibling of the
-          deadline badges. */}
+          deadline badges. Batch ④ (2026-10-10): data-depleted drives
+          the restrained recede treatment in CSS. */}
       {card.assignments_available === 0 ? (
         <span className="badge badge-muted">已被领完</span>
       ) : null}

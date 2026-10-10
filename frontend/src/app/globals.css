@@ -519,19 +519,6 @@ body {
   text-decoration-thickness: 2px;
 }
 
-/* Inline link inside a hint paragraph (the import help's template
- * download, PR #53): the .link token colors on a body-text-weight
- * anchor. */
-.text-link {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.text-link:hover {
-  color: var(--primary-strong);
-}
-
 /* --- alerts / result summaries -------------------------------------------- */
 
 .alert {
@@ -2075,6 +2062,23 @@ body {
 .task-card[data-rarity="LEGENDARY"]:hover,
 .task-card[data-rarity="LEGENDARY"]:focus-within {
   border-color: color-mix(in oklab, var(--rarity-legendary) 45%, var(--border));
+}
+
+/* Batch ④ (2026-10-10, reviewer-approved treatment): a depleted card
+ * RECEDES through NON-TEXT channels only. The border turns dashed,
+ * the rarity border + wash yield back to a neutral, slightly-grayed
+ * base, and the 已被领完 badge keeps full contrast. Text is
+ * deliberately NOT dimmed: the meta rows ride --muted-foreground,
+ * and any opacity on them drops below axe's 4.5:1 color-contrast
+ * threshold (the gate caught exactly that on the first cut) — the
+ * recede must stay a property of the card chrome, never of the copy.
+ * Hover/focus keep their interactive feedback (the card stays
+ * browsable); source order after the rarity rules is what makes the
+ * equal-specificity base override win. */
+.task-card[data-depleted="true"] {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--border) 78%, transparent);
+  background: color-mix(in oklab, var(--surface-2) 45%, var(--surface-1));
 }
 
 /* (task-card reduced-motion override consolidated at end of file) */

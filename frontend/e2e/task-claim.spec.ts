@@ -234,6 +234,66 @@ test.describe("task card affordances (defect #5)", () => {
     // Browsable means the title link still navigates to the detail.
     const href = await depleted.locator(".task-card-title a").getAttribute("href");
     expect(href).toMatch(/^\/tasks\/[0-9a-f-]{36}$/);
+    // Batch ④ (2026-10-10): the recede treatment rides the same
+    // verdict — the marker attribute plus the NON-TEXT cues (dashed
+    // border, grayed neutral background; text contrast is untouched —
+    // axe's color-contrast gate rejects any opacity dim on the muted
+    // meta rows). The badge keeps full contrast.
+    await expect(depleted).toHaveAttribute("data-depleted", "true");
+    await expect(depleted).toHaveCSS("border-style", "dashed");
+    const { bg, metaOpacity } = await depleted.evaluate((el) => ({
+      bg: getComputedStyle(el).backgroundColor,
+      metaOpacity: getComputedStyle(el.querySelector(".task-card-meta")).opacity,
+    }));
+    // The grayed step toward surface-2 is present, and the copy keeps
+    // full opacity (the a11y contract of the treatment).
+    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(Number.parseFloat(metaOpacity)).toBe(1);
+  });
+
+  test("back-navigation renders the cached square without a skeleton pass (batch ①)", async ({ page }) => {
+    // The flicker root cause: the square island refetched from zero on
+    // every mount — a task-detail round trip re-entered through a
+    // skeleton flash. With the first page on the shared data cache, a
+    // remount inside the fresh window renders the cached snapshot
+    // with NO skeleton pass and NO refetch.
+    const taskRequests: number[] = [];
+    page.on("request", (req) => {
+      if (new URL(req.url()).pathname === "/api/v1/tasks") {
+        taskRequests.push(Date.now());
+      }
+    });
+
+    await page.goto(`${BASE_URL}/tasks`);
+    await expect(page.locator(".task-card").first()).toBeVisible();
+    const requestsAfterLoad = taskRequests.length;
+
+    // Watch for any skeleton recurrence during the round trip.
+    await page.evaluate(() => {
+      (window as unknown as { __sawSkeleton?: boolean }).__sawSkeleton = false;
+      const look = () => {
+        if (document.querySelector(".skeleton-cards") !== null) {
+          (window as unknown as { __sawSkeleton?: boolean }).__sawSkeleton = true;
+        }
+      };
+      look();
+      new MutationObserver(look).observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+    });
+
+    await page.locator(".task-card-title a").first().click();
+    await page.waitForURL(/\/tasks\/[0-9a-f-]{36}/);
+    await page.goBack();
+    await expect(page.locator(".task-card").first()).toBeVisible();
+    // Cards are back WITHOUT a skeleton pass…
+    const sawSkeleton = await page.evaluate(
+      () => (window as unknown as { __sawSkeleton?: boolean }).__sawSkeleton,
+    );
+    expect(sawSkeleton).toBe(false);
+    // …and without a refetch (the fresh cache window serves read-only).
+    expect(taskRequests.length).toBe(requestsAfterLoad);
   });
 
   test("every card takes the orchestrated entrance, bounded in total (owner ruling 2026-10-10)", async ({ page }) => {
