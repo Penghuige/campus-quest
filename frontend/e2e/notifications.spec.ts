@@ -121,34 +121,44 @@ test.describe("inbox render + filter tabs (§28; patterns §4 URL state)", () =>
       .getByRole("link", { name: /未读通知/ });
     const chip = page.getByRole("banner").getByRole("link", { name: "我的账户" });
     await expect(bell).toBeVisible();
+    await expect(chip).toBeVisible();
 
-    for (const slot of [bell, chip]) {
-      const shape = await slot.evaluate((el) => {
+    const shape = await page.evaluate(() => {
+      const read = (selector: string) => {
+        const el = document.querySelector(selector);
+        if (el === null) {
+          return null;
+        }
         const style = getComputedStyle(el);
         const rect = el.getBoundingClientRect();
         return {
           radius: style.borderRadius,
           width: Math.round(rect.width),
           height: Math.round(rect.height),
+          bg: style.backgroundColor,
         };
-      });
-      expect(shape.radius).toBe("50%");
-      expect(shape.width).toBe(32);
-      expect(shape.height).toBe(32);
-    }
+      };
+      return { bell: read(".app-topbar-actions .topbar-bell"), chip: read(".app-topbar-actions .avatar-chip") };
+    });
+    expect(shape.bell?.radius).toBe("50%");
+    expect(shape.bell?.width).toBe(32);
+    expect(shape.bell?.height).toBe(32);
+    expect(shape.chip?.radius).toBe("50%");
+    expect(shape.chip?.width).toBe(32);
+    expect(shape.chip?.height).toBe(32);
 
     // The hover fills: the bell takes the quiet surface-2, the chip
     // deepens its primary wash — each CHANGES on hover.
-    const bellBg = async () =>
-      bell.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const chipBg = async () =>
-      chip.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const bellRest = await bellBg();
-    const chipRest = await chipBg();
+    const bgOf = () =>
+      page.evaluate(() => ({
+        bell: getComputedStyle(document.querySelector(".app-topbar-actions .topbar-bell")!).backgroundColor,
+        chip: getComputedStyle(document.querySelector(".app-topbar-actions .avatar-chip")!).backgroundColor,
+      }));
+    const rest = await bgOf();
     await bell.hover();
-    expect.poll(bellBg).not.toBe(bellRest);
+    await expect.poll(async () => (await bgOf()).bell).not.toBe(rest.bell);
     await chip.hover();
-    expect.poll(chipBg).not.toBe(chipRest);
+    await expect.poll(async () => (await bgOf()).chip).not.toBe(rest.chip);
   });
 });
 
