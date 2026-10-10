@@ -45,14 +45,14 @@
                     └─────┬──────┘
               ┌───────────┼───────────┐
               ▼           ▼           ▼
-        ┌──────────┐ ┌─────────┐ ┌─────────┐
-        │ Next.js  │ │ FastAPI │ │ Celery  │
-        │  前端 SSR │ │ 模块化单体│ │ Worker  │
-        └──────────┘ └────┬────┘ └────┬────┘
-                          ▼           ▼
-                  ┌───────────────────────┐
+        ┌──────────┐ ┌──────────┐ ┌─────────┐
+        │ Next.js  │ │  FastAPI │ │ Celery  │
+        │ 前端 SSR │ │模块化单体│ │ Worker  │
+        └──────────┘ └────┬─────┘ └────┬────┘
+                          ▼            ▼
+                  ┌────────────────────────────┐
                   │ PostgreSQL · Redis · MinIO │
-                  └───────────────────────┘
+                  └────────────────────────────┘
 ```
 
 后端是模块化单体（按业务域组织：identity / tasks / submissions / points / community / notifications / audit），每个域内 `router → service → repository/port → adapter` 分层，事务边界在服务层。
@@ -65,7 +65,7 @@ cd infra && docker compose up -d
 
 # 2. 后端
 cd backend && uv sync
-cp .env.example .env   # 本地开发环境变量（模板即 infra/docker-compose.yml 的默认值）
+cp .env.example .env
 uv run alembic upgrade head
 uv run python scripts/seed_demo_accounts.py
 uv run python scripts/seed_demo_content.py
