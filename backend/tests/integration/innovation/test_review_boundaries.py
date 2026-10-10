@@ -218,7 +218,7 @@ async def test_pending_case_and_unapproved_update_cannot_bypass_workflow(
         db_session, clock, client, storage
     )
     assert (
-        await client.post(f"{base}/publish-update", headers=headers, json=command)
+        await client.post(f"{base}/submit-update", headers=headers, json=command)
     ).status_code == 409
     duplicate = {**command, "evidence_ids": command["evidence_ids"] * 2}
     assert (

@@ -283,6 +283,7 @@ class ReviewOperationsService:
         query = select(
             AchievementReviewCase.id,
             AchievementReviewCase.revision_id,
+            AchievementRevision.operation,
             AchievementReviewCase.status,
             AchievementReviewCase.version,
             AchievementReviewCase.submitted_at,
@@ -335,6 +336,7 @@ class ReviewOperationsService:
                 ReviewQueueItem(
                     id=row.id,
                     revision_id=row.revision_id,
+                    operation=row.operation,
                     status=row.status,
                     version=row.version,
                     reason=None,
@@ -397,7 +399,7 @@ class ReviewOperationsService:
                 action = "IE_REVIEW_CLAIM_RECOVER"
             case.assigned_user_id = actor.user_id
             case.version += 1
-        result = case_summary(case)
+        result = await case_summary(db, case)
         await self._record(db, actor, case.id, action, context, case.version)
         await db.commit()
         return result
@@ -484,7 +486,7 @@ class ReviewOperationsService:
             )
         )
         result = ReviewPrivateDetail(
-            case=case_summary(case),
+            case=await case_summary(db, case),
             project_content=revision.project_content,
             achievement_content=revision.achievement_content,
             owner_profile=revision.owner_profile,
@@ -513,13 +515,17 @@ class ReviewOperationsService:
         if case.decision_request_id == payload.request_id:
             if case.decision_payload_fingerprint != fingerprint:
                 raise _conflict("这次决定请求已用于其他内容")
-            result = case_summary(case)
+            result = await case_summary(db, case)
             await self._record(db, actor, case.id, "IE_REVIEW_DECISION_REPLAY", context)
             await db.commit()
             return result
+        revision = await db.get(AchievementRevision, case.revision_id)
+        if revision is None:
+            raise RuntimeError("review revision missing")
+        expected_state = "SUBMITTED" if revision.operation == "SUBMIT" else "APPROVED"
         if (
             case.status != "SUBMITTED"
-            or workflow.first_review_state != "SUBMITTED"
+            or workflow.first_review_state != expected_state
             or case.version != payload.version
             or case.revision_id != payload.revision_id
         ):
@@ -531,11 +537,13 @@ class ReviewOperationsService:
         case.decision_request_id = payload.request_id
         case.decision_payload_fingerprint = fingerprint
         case.version += 1
-        workflow.first_review_state = payload.decision
+        if revision.operation == "SUBMIT":
+            workflow.first_review_state = payload.decision
         workflow.version += 1
         if payload.decision == "APPROVED":
             workflow.public_revision_id = case.revision_id
-            workflow.first_approved_at = now
+            if revision.operation == "SUBMIT":
+                workflow.first_approved_at = now
             workflow.latest_update_at = now
         title = await db.scalar(
             select(AchievementRevision.achievement_content["title"].astext).where(
@@ -559,7 +567,7 @@ class ReviewOperationsService:
         await self._record(
             db, actor, case.id, "IE_REVIEW_DECISION", context, case.version
         )
-        result = case_summary(case)
+        result = await case_summary(db, case)
         await db.commit()
         return result
 

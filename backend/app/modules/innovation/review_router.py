@@ -90,8 +90,8 @@ async def withdraw(
     )
 
 
-@router.post("/publish-update", response_model=AchievementWorkflowResponse)
-async def publish_update(
+@router.post("/submit-update", response_model=AchievementWorkflowResponse)
+async def submit_update(
     project_id: UUID,
     achievement_id: UUID,
     payload: SavedRevisionCommand,
@@ -100,7 +100,7 @@ async def publish_update(
     actor: Student,
     service: Service,
 ) -> AchievementWorkflowResponse:
-    return await service.publish_update(
+    return await service.submit_update(
         db,
         actor=actor,
         project_id=project_id,

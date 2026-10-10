@@ -296,8 +296,9 @@ async def test_return_requires_reason_and_owner_can_resubmit(
 
 
 @pytest.mark.parametrize("failure", ["audit", "notification"])
+@pytest.mark.parametrize("operation", ["SUBMIT", "UPDATE"])
 async def test_failed_decision_dependency_rolls_back_decision_and_notification(
-    db_session, clock, storage, client, failure
+    db_session, clock, storage, client, failure, operation
 ):
     from app.modules.audit.service import AuditLogWriter
     from app.modules.identity.enums import Role
@@ -319,10 +320,23 @@ async def test_failed_decision_dependency_rolls_back_decision_and_notification(
         async def record_event(self, *args, **kwargs):
             raise RuntimeError("notification persistence unavailable")
 
-    owner, _, achievement, _, _, _, submitted = await review(
+    owner, _, achievement, owner_headers, base, command, submitted = await review(
         client, db_session, clock, storage
     )
     operator, headers = await account(db_session, clock, operator=True)
+    old_public_id = None
+    if operation == "UPDATE":
+        from tests.integration.innovation.test_update_review import decide
+
+        await decide(client, submitted, headers)
+        current = (await client.get(f"{base}/workflow", headers=owner_headers)).json()
+        old_public_id = UUID(current["public_revision_id"])
+        command.update(request_id=str(uuid4()), workflow_version=current["version"])
+        pending = await client.post(
+            f"{base}/submit-update", headers=owner_headers, json=command
+        )
+        assert pending.status_code == 200
+        submitted = pending.json()
     claimed = await claim(client, submitted["review_case"], headers)
     aid, oid, uid, cid = achievement.id, operator.id, owner.id, UUID(claimed["id"])
     service = ReviewOperationsService(
@@ -348,12 +362,13 @@ async def test_failed_decision_dependency_rolls_back_decision_and_notification(
     await db_session.rollback()
     case = await db_session.get(AchievementReviewCase, cid)
     workflow = await db_session.get(AchievementWorkflow, aid)
-    assert case.status == "SUBMITTED" and workflow.public_revision_id is None
-    assert not list(
+    assert case.status == "SUBMITTED" and workflow.public_revision_id == old_public_id
+    notifications = list(
         await db_session.scalars(
             select(Notification).where(Notification.user_id == uid)
         )
     )
+    assert len(notifications) == (1 if operation == "UPDATE" else 0)
 
 
 async def test_failed_snapshot_or_file_audit_never_returns_private_data(

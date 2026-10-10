@@ -11,6 +11,7 @@ from app.core.errors import BusinessError
 from app.modules.identity.events import Actor
 from app.modules.innovation.operations_service import _USERS
 from app.modules.innovation.review_models import (
+    AchievementReviewCase,
     AchievementRevision,
     AchievementWorkflow,
 )
@@ -22,7 +23,13 @@ from app.modules.innovation.review_schemas import (
 )
 
 PublicProjection = tuple[
-    UUID, datetime | None, datetime | None, dict[str, str], dict[str, str], str
+    UUID,
+    datetime | None,
+    datetime | None,
+    dict[str, str],
+    dict[str, str],
+    str,
+    datetime | None,
 ]
 
 
@@ -50,6 +57,14 @@ class PublicAchievementService:
                 AchievementRevision.project_content,
                 AchievementRevision.achievement_content,
                 AchievementRevision.operation,
+                select(AchievementReviewCase.decided_at)
+                .where(
+                    AchievementReviewCase.revision_id == AchievementRevision.id,
+                    AchievementReviewCase.status == "APPROVED",
+                )
+                .correlate(AchievementRevision)
+                .scalar_subquery()
+                .label("latest_reviewed_at"),
             )
             .join(
                 AchievementRevision,
@@ -69,6 +84,7 @@ class PublicAchievementService:
             achievement=PublicAchievementContent(**row.achievement_content),
             first_approved_at=row.first_approved_at,
             updated_at=row.latest_update_at,
+            latest_reviewed_at=row.latest_reviewed_at,
             updated_after_first_review=row.operation == "UPDATE",
         )
 

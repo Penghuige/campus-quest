@@ -39,10 +39,16 @@ ACHIEVEMENT_FIELDS = ("title", "description", "work_url", "award_text")
 PROFILE_FIELDS = ("name", "student_no", "major", "grade")
 
 
-def case_summary(row: AchievementReviewCase) -> ReviewCaseSummary:
+async def case_summary(
+    db: AsyncSession, row: AchievementReviewCase
+) -> ReviewCaseSummary:
+    revision = await db.get(AchievementRevision, row.revision_id)
+    if revision is None:
+        raise RuntimeError("review revision missing")
     return ReviewCaseSummary(
         id=row.id,
         revision_id=row.revision_id,
+        operation=revision.operation,
         status=row.status,
         version=row.version,
         reason=row.reason,
@@ -145,7 +151,7 @@ class AchievementReviewService:
             first_review_state=workflow.first_review_state,
             moderation_state=workflow.moderation_state,
             version=workflow.version,
-            review_case=case_summary(case) if case else None,
+            review_case=await case_summary(db, case) if case else None,
             public_revision_id=workflow.public_revision_id,
             first_approved_at=workflow.first_approved_at,
             latest_update_at=workflow.latest_update_at,
@@ -251,7 +257,15 @@ class AchievementReviewService:
         ):
             raise _conflict("当前成果不能重复首次提交")
         if operation == "UPDATE" and workflow.first_review_state != "APPROVED":
-            raise _conflict("首次核实通过后才能发布免复审更新")
+            raise _conflict("首次核实通过后才能提交更新复审")
+        pending = await db.scalar(
+            select(AchievementReviewCase.id).where(
+                AchievementReviewCase.achievement_id == achievement_id,
+                AchievementReviewCase.status == "SUBMITTED",
+            )
+        )
+        if pending is not None:
+            raise _conflict("成果正在核实，请先撤回再修改或重新提交")
         materials = list(
             await db.scalars(
                 select(AchievementEvidence)
@@ -307,18 +321,15 @@ class AchievementReviewService:
             )
         if operation == "SUBMIT":
             workflow.first_review_state = "SUBMITTED"
-            db.add(
-                AchievementReviewCase(
-                    achievement_id=achievement_id,
-                    revision_id=revision.id,
-                    status="SUBMITTED",
-                    version=1,
-                    submitted_at=now,
-                )
+        db.add(
+            AchievementReviewCase(
+                achievement_id=achievement_id,
+                revision_id=revision.id,
+                status="SUBMITTED",
+                version=1,
+                submitted_at=now,
             )
-        else:
-            workflow.public_revision_id = revision.id
-            workflow.latest_update_at = now
+        )
         workflow.version += 1
         await db.flush()
         result = await self._response(db, workflow, project, achievement)
@@ -326,9 +337,7 @@ class AchievementReviewService:
             db,
             actor,
             workflow,
-            "IE_REVIEW_SUBMIT"
-            if operation == "SUBMIT"
-            else "IE_ACHIEVEMENT_PUBLISH_UPDATE",
+            "IE_REVIEW_SUBMIT" if operation == "SUBMIT" else "IE_REVIEW_SUBMIT_UPDATE",
             context,
         )
         await db.commit()
@@ -354,7 +363,7 @@ class AchievementReviewService:
             context=context,
         )
 
-    async def publish_update(
+    async def submit_update(
         self,
         db: AsyncSession,
         *,
@@ -399,7 +408,7 @@ class AchievementReviewService:
         if case is None:
             raise _not_found()
         if (
-            workflow.first_review_state != "SUBMITTED"
+            workflow.first_review_state not in ("SUBMITTED", "APPROVED")
             or workflow.version != payload.workflow_version
             or case.status != "SUBMITTED"
             or case.version != payload.case_version
@@ -407,7 +416,8 @@ class AchievementReviewService:
             raise _conflict("核实状态已变更，请刷新后再操作")
         case.status = "WITHDRAWN"
         case.version += 1
-        workflow.first_review_state = "DRAFT"
+        if workflow.first_review_state == "SUBMITTED":
+            workflow.first_review_state = "DRAFT"
         workflow.version += 1
         await db.flush()
         result = await self._response(db, workflow, project, achievement)

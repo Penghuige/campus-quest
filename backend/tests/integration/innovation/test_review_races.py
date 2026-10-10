@@ -176,12 +176,49 @@ async def waiting(sessions, pid):
 
 
 @pytest.mark.parametrize("first", ["approve", "withdraw"])
+@pytest.mark.parametrize("operation", ["SUBMIT", "UPDATE"])
 async def test_approval_and_withdrawal_have_one_committed_winner(
-    committed, clock, storage, first
+    committed, clock, storage, first, operation
 ):
-    sessions, owner_args, operators, submitted, _ = committed
+    sessions, owner_args, operators, submitted, eid = committed
     ops = ReviewOperationsService(clock=clock, storage=storage)
     owner_service = AchievementReviewService(clock=clock)
+    old_public_id = None
+    if operation == "UPDATE":
+        async with sessions() as seed:
+            initial = submitted.review_case
+            claimed_first = await ops.claim(
+                seed,
+                actor=operators[0],
+                case_id=initial.id,
+                payload=ReviewVersionCommand(version=initial.version),
+            )
+            await ops.decision(
+                seed,
+                actor=operators[0],
+                case_id=initial.id,
+                payload=ReviewDecisionCommand(
+                    request_id=uuid4(),
+                    version=claimed_first.version,
+                    revision_id=initial.revision_id,
+                    decision="APPROVED",
+                ),
+            )
+            current = await owner_service.workflow(seed, **owner_args)
+            old_public_id = current.public_revision_id
+            parent = await seed.get(ProjectDraft, owner_args["project_id"])
+            achievement = await seed.get(AchievementDraft, owner_args["achievement_id"])
+            submitted = await owner_service.submit_update(
+                seed,
+                **owner_args,
+                payload=SavedRevisionCommand(
+                    request_id=uuid4(),
+                    workflow_version=current.version,
+                    project_version=parent.version,
+                    achievement_version=achievement.version,
+                    evidence_ids=[eid],
+                ),
+            )
     case = submitted.review_case
     async with sessions() as assign:
         claimed = await ops.claim(
@@ -248,13 +285,20 @@ async def test_approval_and_withdrawal_have_one_committed_winner(
             await asyncio.gather(*tasks, return_exceptions=True)
     async with sessions() as check:
         row = await check.get(AchievementWorkflow, owner_args["achievement_id"])
-        assert row.first_review_state == ("APPROVED" if first == "approve" else "DRAFT")
+        assert row.first_review_state == (
+            "APPROVED" if first == "approve" or operation == "UPDATE" else "DRAFT"
+        )
+        assert row.public_revision_id == (
+            case.revision_id if first == "approve" else old_public_id
+        )
         count = await check.scalar(
             select(func.count())
             .select_from(Notification)
             .where(Notification.user_id == owner_args["actor"].user_id)
         )
-        assert count == (1 if first == "approve" else 0)
+        assert count == (1 if first == "approve" else 0) + (
+            1 if operation == "UPDATE" else 0
+        )
 
 
 async def test_read_rechecks_revocation_after_external_io(committed, clock, storage):

@@ -1,4 +1,21 @@
-# 成果首次核实规约对账
+# 成果核实规约对账
+
+## R2 更新复审（当前规则）
+
+预期依据 2026-10-10 update-review design 与用户已确认的“更新全部重新审核；旧版保留，批准才替换”。以下行覆盖旧表 R6/R12 的免复审预期；旧表执行数字只保留为历史索引。
+
+| # | 规则引用 | 预期行为 | 测试位置（file::test） | 状态 |
+|---|---|---|---|---|
+| U1 | R2 生命周期 | 保存、待审、退回、撤回保留 V1；批准 V3 才切换，首次时间不变，本版通过时间正确 | `tests/integration/innovation/test_update_review.py::test_update_preserves_public_until_approval_and_old_commands_are_fenced` | 已覆盖（当前回执另记） |
+| U2 | R2 不可变/幂等 | 待审阻断成果与证明修改、项目独立保存不改快照；重复请求不生成新事项，旧命令不能影响新版 | `tests/integration/innovation/test_update_review.py::test_update_preserves_public_until_approval_and_old_commands_are_fenced` | 已覆盖 |
+| U3 | R2 并发/CAS | 首次与更新两类批准/撤回竞争、两个先后顺序，独立 PG 连接仅一个成功；指针符合赢家 | `tests/integration/innovation/test_review_races.py::test_approval_and_withdrawal_have_one_committed_winner` | 已覆盖 |
+| U4 | R2 下架独立 | 更新通过保留 TAKEN_DOWN，校内仍不可见 | `tests/integration/innovation/test_update_review.py::test_update_approval_preserves_takedown` | 已覆盖 |
+| U5 | R2 事务原子性 | 通知或审计失败时待审事项与旧公开指针保留，无新增通知 | `tests/integration/innovation/test_achievement_review_operations.py::test_failed_decision_dependency_rolls_back_decision_and_notification` | 已覆盖（SUBMIT/UPDATE） |
+| U6 | R2 历史边界 | 无审核记录的历史 UPDATE 不声称已复审，私有字段不进入公开响应 | `tests/integration/innovation/test_update_review.py::test_legacy_update_without_case_does_not_claim_review` + `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` | 已覆盖 |
+| U7 | R2 界面 | 当前 UPDATE 待审/退回/撤回与首次状态分离、公开新版核实文案诚实；使用 submit-update | `tests/../../frontend/src/__tests__/innovation-review.test.ts` | RED 2 → GREEN 10 |
+| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 实施中，待本轮新鲜浏览器结果 |
+
+## 历史首次核实记录（免复审条款已被 R2 覆盖）
 
 预期从双创需求 PR-06/08/11/12、OP-01、AC-01 和成果核实设计推导，不把原科研 Task 上传/奖励规则套用于成果。
 

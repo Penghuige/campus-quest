@@ -35,6 +35,7 @@ class WithdrawCommand(BaseModel):
 class ReviewCaseSummary(BaseModel):
     id: UUID
     revision_id: UUID
+    operation: Literal["SUBMIT", "UPDATE"]
     status: Literal["SUBMITTED", "WITHDRAWN", "APPROVED", "RETURNED"]
     version: int
     reason: str | None
@@ -118,6 +119,7 @@ class PublicAchievementResponse(BaseModel):
     achievement: PublicAchievementContent
     first_approved_at: datetime
     updated_at: datetime
+    latest_reviewed_at: datetime | None
     updated_after_first_review: bool
 
 

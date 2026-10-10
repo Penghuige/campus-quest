@@ -192,7 +192,7 @@ async def test_submission_rejects_incomplete_or_stale_saved_state(
     assert not list(await db_session.scalars(select(AchievementReviewCase)))
 
 
-async def test_publish_update_is_explicit_immutable_and_never_restores_takedown(
+async def test_submit_update_is_immutable_pending_and_preserves_takedown(
     client, db_session, clock, storage
 ):
     from app.modules.innovation.review_models import (
@@ -240,28 +240,37 @@ async def test_publish_update_is_explicit_immutable_and_never_restores_takedown(
         achievement_version=achievement.version,
     )
     published = await client.post(
-        f"{base}/publish-update", headers=headers, json=payload
+        f"{base}/submit-update", headers=headers, json=payload
     )
     assert published.status_code == 200, published.text
-    assert published.json()["public_revision_id"] != str(first_id)
+    assert published.json()["public_revision_id"] == str(first_id)
     await db_session.refresh(workflow)
     assert workflow.first_approved_at == approved_at
-    assert len(list(await db_session.scalars(select(AchievementReviewCase)))) == 1
-    revision = await db_session.get(AchievementRevision, workflow.public_revision_id)
+    assert len(list(await db_session.scalars(select(AchievementReviewCase)))) == 2
+    revision = await db_session.get(
+        AchievementRevision, UUID(published.json()["review_case"]["revision_id"])
+    )
     assert revision.achievement_content["title"] == "公开更新"
     await db_session.execute(
         update(AchievementWorkflow)
         .where(AchievementWorkflow.achievement_id == achievement.id)
         .values(moderation_state="TAKEN_DOWN")
     )
-    payload.update(
-        request_id=str(uuid4()), workflow_version=published.json()["version"]
-    )
+    pending = published.json()
     assert (
-        await client.post(f"{base}/publish-update", headers=headers, json=payload)
+        await client.post(
+            f"{base}/withdraw",
+            headers=headers,
+            json={
+                "workflow_version": pending["version"],
+                "case_id": pending["review_case"]["id"],
+                "case_version": pending["review_case"]["version"],
+            },
+        )
     ).status_code == 200
     await db_session.refresh(workflow)
     assert workflow.moderation_state == "TAKEN_DOWN"
+    assert workflow.public_revision_id == first_id
 
 
 async def test_database_rejects_revision_and_checked_content_mutation(

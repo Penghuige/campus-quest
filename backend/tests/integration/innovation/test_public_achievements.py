@@ -82,8 +82,26 @@ async def test_public_projection_visibility_and_private_fields(
         workflow_version=workflow["version"],
         achievement_version=achievement.version,
     )
+    pending = await client.post(
+        f"{base}/submit-update", headers=owner_headers, json=command
+    )
+    assert pending.status_code == 200
     assert (
-        await client.post(f"{base}/publish-update", headers=owner_headers, json=command)
+        await client.get(f"{PUBLIC}/{achievement.id}", headers=headers)
+    ).json() == original
+    updated_case = pending.json()["review_case"]
+    claimed = await claim(client, updated_case, ops)
+    assert (
+        await client.post(
+            f"{OPS}/{updated_case['id']}/decision",
+            headers=ops,
+            json={
+                **decision,
+                "request_id": str(uuid4()),
+                "version": claimed["version"],
+                "revision_id": updated_case["revision_id"],
+            },
+        )
     ).status_code == 200
     changed = await client.get(f"{PUBLIC}/{achievement.id}", headers=headers)
     assert (
