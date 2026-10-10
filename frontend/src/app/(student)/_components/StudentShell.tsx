@@ -170,7 +170,9 @@ function MinimalShell({ state, children }: { state: string; children?: ReactNode
           <span className="app-brand">CampusQuest</span>
         </div>
       </div>
-      <main className="app-main">{children}</main>
+      <main className="app-main" aria-busy={state === "loading" ? "true" : undefined}>
+        {children}
+      </main>
     </div>
   );
 }
