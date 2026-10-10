@@ -2302,6 +2302,11 @@ Task Card：
 
 领取后不暴露其他 Assignment 列表，只展示分配给本人的具体 platform/keyword。
 
+任务广场列表排序（owner 裁定 2026-10-10）：仍有可领 Assignment（AVAILABLE > 0）的
+任务排在已领完（AVAILABLE = 0，含全部 OCCUPIED/COMPLETED/RETIRED 与无 Assignment）
+的任务之前；两组内部保持发布时间新→旧。已领完的任务仍在列表中可见（卡片不因领完
+而隐藏），排序仅为可领优先展示。排序键由查询时聚合计算，不落存储列。
+
 逾期页面始终表达“当前仍可获得 X 积分”，不采用“你被扣了 X 分”的惩罚性文案。
 
 倒计时仅用于 UX；服务端时间是最终裁决。
