@@ -54,10 +54,12 @@
 - [x] Step 2: 专用库运行完整浏览器电池及授权/切换专项；Linux 固定字体像素/axe，失败先查因，不放宽门槛。
 - [x] Step 3: 有意产品变化按新旧截图逐图走查，基线独立 commit；新增选择器/豁免/矩阵同 ship。
 - [x] Step 4: 独立只读 reviewer 按 R1 spec/plan 评审本轮起点至成品提交。调用前说明模型；重要项 RED→GREEN 修复，记录取舍。
-- [ ] Step 5: 保存验收/验证/交接，推送授权 fork 分支，核实 Draft PR #43 的最终 head 与完整 CI；恢复本地体验服务。
+- [x] Step 5: 保存验收/验证/交接，推送授权 fork 分支，核实 Draft PR #43 的最终 head 与完整 CI；恢复本地体验服务。
 
 ## 自查与执行记录
 
 三项任务覆盖当前 R1；不重复已完成的成果审核实现。Task 2 依赖 Task 1 的账号区；Task 3 依赖全部路由和 fallbackFocus，命名一致。详尽日志在仓库外 `.local-dev/logs`，本计划执行状态随实际证据更新。
 
 Task 1/2 共享壳修改按一次产品提交保存（699b45e），独立评审三项 Important 由 c6247bc 修复；有意截图独立 25b9a84，视觉/CI 工件 b83bbe6。未修改 API、数据库、覆盖率地板、像素阈值或 main。详见本轮 verification。
+
+Task 3 完成：640 单测、113 浏览器与 no-skip、3 fence/wave、22 PNG、14 矩阵均 PASS；本机三个已有演示账号真实退出 204 PASS，体验服务恢复。交付前 8290211 本地/fork/PR 同 head、工作树干净、Draft；该 head 两仓库 Actions 均 0，完整远端 CI 未确认。最终同轮发布回执位于仓库外 .local-dev/logs/r1-final-git-ci.json。
