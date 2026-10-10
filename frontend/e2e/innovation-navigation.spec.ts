@@ -29,6 +29,8 @@ test("R1: desktop public navigation is separate from personal management and per
   await expect(page.getByRole("link", { name: "双创运营工作台", exact: true })).toHaveCount(0);
   await page.goto(`${BASE_URL}/profile`);
   await expect(page.getByRole("link", { name: "我的项目", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "退出当前账号", exact: true }).getByRole("link", { name: "退出登录", exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "退出登录", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "浏览校内成果", exact: true })).toHaveCount(0);
   await page.goto(`${BASE_URL}/innovation/reviews`);
   await expect(page.getByRole("alert").filter({ hasText: "尚未获" })).toBeVisible();
@@ -92,7 +94,8 @@ test("R1: real logout removes private forms across tabs, revokes refresh and all
   try {
     await sibling.goto(`${BASE_URL}/profile/project-drafts`);
     await expect(sibling.getByRole("button", { name: "新建项目草稿", exact: true })).toBeVisible();
-    await page.getByRole("link", { name: "退出登录", exact: true }).filter({ visible: true }).click();
+    await page.getByRole("link", { name: "我的账户", exact: true }).click();
+    await page.getByRole("region", { name: "退出当前账号", exact: true }).getByRole("link", { name: "退出登录", exact: true }).click();
     await expect(page).toHaveURL(/\/logout$/);
     await expect(page.getByLabel("项目名称", { exact: true })).toHaveCount(0);
     const revoked = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/auth/logout" && response.request().method() === "POST");

@@ -59,7 +59,6 @@ import {
   validatePasswordConfirmation,
 } from "@/features/auth/accountView";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 
 /** Re-auth failure copy for the settings forms (login copy doesn't fit). */
 const REAUTH_ERROR_TEXT = "当前密码不正确，请重新输入";
@@ -149,9 +148,6 @@ export function AccountSettings() {
       <PhoneChangeForm me={me} onUpdated={refresh} />
       <EmailPanel me={me} onUpdated={refresh} />
       <PasswordForm onUpdated={refresh} />
-      <SettingsSection title="退出当前账号" hint="结束当前浏览器的登录会话，随后可以切换账号。">
-        <Button asChild variant="secondary"><Link href="/logout" prefetch={false}>退出登录</Link></Button>
-      </SettingsSection>
     </>
   );
 }

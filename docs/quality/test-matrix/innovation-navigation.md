@@ -12,7 +12,8 @@
 | IN06 | privacy §40 | 换账号、跨标签、后退不显示旧私密草稿 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/auth-cross-tab-fence.spec.ts` | 已覆盖（real logout removes private forms；显式 login fence 专项） |
 | IN07 | G4 | 退出 5xx/网络失败不得假成功，可安全重试；refresh drain 不被超时绕过；应用前缀保留 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/src/__tests__/auth-transition-serialization.test.ts` + `tests/../../frontend/src/__tests__/app-path.test.ts` | 已覆盖（503、真实注销丢 ACK、15s 无响应、单位 RED→GREEN；/campus 构建导航探针） |
 | IN08 | historical focus debt | 审核完成/失败后焦点到稳定结果/重试/队列；cancel 回原按钮 | `tests/../../frontend/e2e/innovation-review.spec.ts` + `tests/../../frontend/src/__tests__/review-focus.test.ts` | 已覆盖（负责人/运营原请求重试焦点 RED→GREEN，防旧 epoch 回焦） |
-| IN09 | quality visual/a11y | 三屏宽可用、长内容不溢出、axe、Linux 像素 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` + `tests/../../frontend/e2e/visual-regression.spec.ts` | 已覆盖（320/390/800；22 PNG 不更新比较；新页面 axe 0） |
+| IN09 | quality visual/a11y | 三屏宽可用、长内容不溢出、axe、Linux 像素 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` + `tests/../../frontend/e2e/visual-regression.spec.ts` | 已覆盖（320/390/800；退出位置调整后 23 PNG 不更新比较；新页面 axe 0） |
+| IN10 | 2026-10-10 用户体验调整 | 学生退出在“我的”两分区内容最底部；顶栏无退出；滚动可达且真实注销 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` | 已覆盖（已有本机探针 RED→GREEN；113 浏览器通过；实际手机底部无导航遮挡；详见 innovation-logout-placement-verification.md） |
 
 ID 从初版 R1-01 改为 IN01，以符合既有对账检查器的行识别规则；不修改检查器。文件引用证明存在，具体运行结果见 `docs/quality/innovation-navigation-verification.md`。
 

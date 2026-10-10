@@ -212,7 +212,6 @@ function StudentNavigationShell({ children, nickname, active }: { children: Reac
                 <span aria-hidden="true">{nicknameInitial(nickname)}</span>
               </Link>
               <StaffMenuSheet label="全部导航" items={nav} />
-              <Link className="btn btn-ghost" href="/logout" prefetch={false}>退出登录</Link>
             </div>
           </div>
         </header>

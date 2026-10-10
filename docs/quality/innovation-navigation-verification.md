@@ -2,6 +2,8 @@
 
 2026-10-10，起点 `971b16cb35d6faba9a6dae5503148ca264a0d247`，分支 `codex/innovation-platform`。用户授权只交付 R1；既有成果更新免复审行为由后续 R2 替换，本轮不变更后端业务状态、接口或迁移。
 
+之后用户调整退出入口位置：最新交付与当次新跑门禁见 [退出位置调整回执](innovation-logout-placement-verification.md)。本文件以下保留最初 R1 的历史证据，不用其数字替代本次改动的验证。
+
 ## 交付范围
 
 设计和计划分别为 `docs/superpowers/specs/2026-10-10-innovation-navigation-design.md`、`docs/superpowers/plans/2026-10-10-innovation-navigation.md`。成果浏览在一级“创新创业”；本人维护在“我的”；运营入口仅在 ACTIVE 学生获服务端授权后显示。人才／导师尚未开放文字不生成假路由。手机五栏与全部导航保留既有奖励等目的地；教师／管理员有校内浏览及返回各自工作台路径。

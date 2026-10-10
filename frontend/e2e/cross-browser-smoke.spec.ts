@@ -96,7 +96,8 @@ test.describe("cross-browser smoke (firefox + webkit subset)", () => {
     await expect(page.getByRole("region", { name: "校内已核实成果" })).toBeVisible();
     await page.goto(`${BASE}/profile/project-drafts`);
     await expect(page.getByRole("button", { name: "新建项目草稿", exact: true })).toBeVisible();
-    await page.getByRole("link", { name: "退出登录", exact: true }).filter({ visible: true }).click();
+    await page.getByRole("link", { name: "我的账户", exact: true }).click();
+    await page.getByRole("region", { name: "退出当前账号", exact: true }).getByRole("link", { name: "退出登录", exact: true }).click();
     await page.getByRole("button", { name: "确认退出登录", exact: true }).click();
     await expect(page).toHaveURL(/\/login$/);
     await page.goBack();
