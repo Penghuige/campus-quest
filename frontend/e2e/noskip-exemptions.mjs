@@ -29,13 +29,6 @@ export const NOSKIP_EXEMPTIONS = [
     reason: "Wave-probe instrumentation runs as its own battery stage.",
   },
   {
-    file: "task-claim.spec.ts",
-    title: "conflict shows typed copy",
-    gate: "CQ_E2E_EMPTY_TASK_URL",
-    reason:
-      "Needs a task whose assignments are all taken; the orchestrated world exports no such deep link.",
-  },
-  {
     file: "notifications.spec.ts",
     title: "owner mark-read (the §28 owner-only surface)",
     gate: "runtime seed state",

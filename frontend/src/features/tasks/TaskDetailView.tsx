@@ -175,6 +175,7 @@ export function TaskDetailView({ taskId }: { taskId: string }) {
           </dl>
           <ClaimButton
             taskId={detail.id}
+            availability={detail.assignments_available}
             existingClaim={detail.my_claim}
             onClaimed={refreshAfterClaim}
           />

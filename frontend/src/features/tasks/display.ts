@@ -284,3 +284,31 @@ export function entranceStaggerMs(count: number): number {
   }
   return Math.min(40, 80 / (count - 1));
 }
+
+// --- depleted detail CTA (owner defect, 2026-10-10) -------------------------
+
+export type ClaimCtaView =
+  | { kind: "claim" }
+  | { kind: "depleted"; ctaLabel: string; hint: string };
+
+/**
+ * The detail page's CTA shape from the server's availability number —
+ * the same field the square card carries. A depleted task must say so
+ * UP FRONT (disabled CTA + explicit copy), never offer a pressable
+ * button that the next press rejects. The concurrent-race window
+ * (last slot leaves after render) keeps the typed 409 copy as the
+ * fallback; this table only owns the pre-press verdict.
+ */
+export function claimCtaView(
+  assignmentsAvailable: number,
+  hasExistingClaim: boolean,
+): ClaimCtaView {
+  if (assignmentsAvailable === 0 && !hasExistingClaim) {
+    return {
+      kind: "depleted",
+      ctaLabel: "名额已满",
+      hint: "该任务的所有名额都已被领取，看看其他任务吧",
+    };
+  }
+  return { kind: "claim" };
+}

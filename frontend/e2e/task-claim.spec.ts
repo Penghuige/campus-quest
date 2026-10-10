@@ -22,8 +22,6 @@
  *                          at least one AVAILABLE assignment (required for
  *                          the claim-flow tests; Plan 10's fixture prepares
  *                          it — until then those tests skip);
- * - CQ_E2E_EMPTY_TASK_URL  task detail deep link whose assignments are all
- *                          taken (optional; drives the conflict-copy test);
  * - CQ_E2E_STUDENT         pre-seeded student credentials
  *                          "student-number:password" (required with
  *                          CQ_E2E_TASK_URL; the fixture seeds the account).
@@ -38,7 +36,6 @@ import { ensureStudentLogin, expect, test } from "./fixtures";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
-const EMPTY_TASK_URL = process.env.CQ_E2E_EMPTY_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
 
 test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
@@ -119,16 +116,34 @@ test.describe("student task claim", () => {
     await expect(panel.locator(".deadline-line")).toBeVisible();
   });
 
-  test("conflict shows typed copy and stays retry-friendly", async ({ page }) => {
-    test.skip(EMPTY_TASK_URL === undefined, "needs CQ_E2E_EMPTY_TASK_URL (all assignments taken)");
-    await page.goto(EMPTY_TASK_URL!);
+  test("a depleted task's detail says so up front — the CTA is disabled, not pressable-then-rejected (owner defect 2026-10-10)", async ({ page }) => {
+    // The standard world's deterministic depleted card (task_r, its
+    // one assignment claimed by the redeemer — the square badge test
+    // above pins the same task) doubles as the depleted DETAIL deep
+    // link, so this pin runs in every battery — no EMPTY_TASK_URL
+    // stage needed (that env no longer ships; its old exemption dies
+    // with the press-then-reject test it gated).
+    const depletedCard = page
+      .locator(".task-card", { hasText: "已被领完" })
+      .first();
+    await page.goto(`${BASE_URL}/tasks`);
+    await expect(depletedCard).toBeVisible();
+    await depletedCard.locator(".task-card-title a").click();
+    await page.waitForURL(/\/tasks\/[0-9a-f-]{36}$/);
 
-    await page.getByRole("button", { name: "领取任务" }).click();
-
-    // Typed NO_ASSIGNMENT_AVAILABLE copy, not a generic crash.
-    await expect(page.getByRole("alert")).toContainText("当前没有可领取的任务单元");
-    // Retry-friendly: the button re-enables so another attempt is possible.
-    await expect(page.getByRole("button", { name: "领取任务" })).toBeEnabled();
+    // The page must never offer a pressable 领取任务 that the next
+    // press would reject: the server's availability number drives the
+    // CTA (disabled + explicit copy), and the random-allocation hint
+    // is gone — it would promise an allocation that cannot happen.
+    const cta = page.getByRole("button", { name: "名额已满" });
+    await expect(cta).toBeVisible();
+    await expect(cta).toBeDisabled();
+    await expect(page.getByRole("button", { name: "领取任务" })).toHaveCount(0);
+    await expect(page.getByText("随机分配一个任务单元")).toHaveCount(0);
+    await expect(page.getByText("该任务的所有名额都已被领取")).toBeVisible();
+    // The typed 409 copy stays the CONCURRENT-RACE fallback only
+    // (last slot leaving after render); its mapping is unit-covered
+    // (claim-errors.test.ts), not reachable from a disabled CTA.
   });
 });
 
