@@ -154,6 +154,75 @@ def lying_zip(
     return local + central + eocd
 
 
+def _lying_zip_many(entries: list[tuple[str, int]]) -> bytes:
+    """The multi-entry lying craft: each part declares ``size`` at a
+    1:1 ratio (STORED semantics) so only the AGGREGATE cap can fire."""
+    payload = b"p"
+    locals_: list[bytes] = []
+    centrals: list[bytes] = []
+    offset = 0
+    for name, declared in entries:
+        name_bytes = name.encode()
+        local = (
+            struct.pack(
+                "<IHHHHHIIIHH",
+                0x04034B50,
+                20,
+                0,
+                0,
+                0,
+                0,
+                0,
+                len(payload),
+                len(payload),
+                len(name_bytes),
+                0,
+            )
+            + name_bytes
+            + payload
+        )
+        central = (
+            struct.pack(
+                "<IHHHHHHIIIHHHHHII",
+                0x02014B50,
+                20,
+                20,
+                0,
+                0,
+                0,
+                0,
+                0,
+                declared,
+                declared,
+                len(name_bytes),
+                0,
+                0,
+                0,
+                0,
+                0,
+                offset,
+            )
+            + name_bytes
+        )
+        offset += len(local)
+        locals_.append(local)
+        centrals.append(central)
+    body = b"".join(locals_)
+    directory = b"".join(centrals)
+    eocd = struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,
+        0,
+        0,
+        len(entries),
+        len(entries),
+        len(directory),
+        len(body),
+        0,
+    )
+    return body + directory + eocd
+
+
 def test_honest_zip_bomb_rejected_before_decompression() -> None:
     # 64 MiB of zeros inside a 2 MiB-capped upload: compresses to well
     # under the byte cap, declared size sails past the per-part cap.
@@ -200,6 +269,50 @@ def test_entry_count_cap_rejected() -> None:
     parsed = parse_upload(data, **_CAPS)
     assert parsed.file_error is not None
     assert parsed.file_error.code.value == "MALFORMED_XLSX"
+
+
+def test_total_uncompressed_cap_rejected() -> None:
+    """The aggregate cap: 33 parts each DECLARING ~16 MiB at a 1:1
+    ratio stay under every per-entry rule (part cap, ratio) but total
+    528 MiB — over the 512 MiB archive cap. The ratchet caught this
+    branch unexercised; the lying-directory craft keeps the on-disk
+    bytes tiny while the declared total sails over."""
+    data = _lying_zip_many(
+        [(f"part{index:02d}.xml", 16 * 1024 * 1024) for index in range(33)]
+    )
+    parsed = parse_upload(data, **_CAPS)
+    assert parsed.file_error is not None
+    assert parsed.file_error.code.value == "MALFORMED_XLSX"
+    assert "总大小" in parsed.file_error.message
+    assert "536870912" in parsed.file_error.message  # the interpolated cap
+
+
+def test_truncated_zip_directory_rejected() -> None:
+    """A file with the ZIP magic whose central directory cannot even be
+    read answers the preflight's BadZipFile branch (MALFORMED_XLSX),
+    not an openpyxl crash."""
+    whole = _zip_bytes({"[Content_Types].xml": b"x"})
+    parsed = parse_upload(whole[:14], **_CAPS)
+    assert parsed.file_error is not None
+    assert parsed.file_error.code.value == "MALFORMED_XLSX"
+
+
+def test_blank_rows_inside_sheet_are_not_data_rows() -> None:
+    """A sheet with blank rows interleaved: the in-enumeration row cap
+    mirrors ``_classify_rows``' blank-row semantics (a blank row is not
+    a spreadsheet row), so the import succeeds and the blanks vanish."""
+    rows = [
+        ("xiaohongshu", "考研"),
+        ("", ""),
+        ("douyin", "留学"),
+    ]
+    data = _xlsx_bytes(_sheet(rows))
+    parsed = parse_upload(data, **_CAPS)
+    assert parsed.file_error is None
+    assert [(row.platform, row.keyword) for row in parsed.valid] == [
+        ("xiaohongshu", "考研"),
+        ("douyin", "留学"),
+    ]
 
 
 def test_row_cap_enforced_during_enumeration() -> None:
