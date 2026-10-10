@@ -112,13 +112,15 @@ export const SHOTS: Shot[] = [
     name: "student-rewards",
     path: "/rewards",
     auth: "student",
-    masks: [
-      {
-        id: ".reward-window",
-        why: "redemption-window line — formatted absolute bounds, the shelf's one clock-derived string (RewardsView.tsx); the whole-row drift this mask kills was the student-rewards baseline archaeology's mechanism (2026-10-10 ruling)",
-        locate: (page) => page.locator(".reward-window"),
-      },
-    ],
+    // Probe proof (2026-10-10, mask-contract discipline): the world's
+    // rewards carry NO time bounds — windowLabel renders on zero
+    // cards, so a .reward-window mask is an inert no-op (forbidden).
+    // The marker class stays on the markup (RewardsView.tsx); if
+    // world seeding ever grows a bounded window, this shot MUST gain
+    // the .reward-window mask. The 10-09→10-10 whole-row drift this
+    // ruling chased turned out to be one-time world-content change
+    // (absorbed by the 64c8a08 regen), not recurring window state.
+    masks: [],
   },
   {
     name: "student-notifications",
