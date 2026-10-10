@@ -83,13 +83,63 @@ class RateLimitRule:
 # limit) and moderation-queue flooding (spec §23) are the abuse surfaces —
 # while edit/vote/reaction windows only anti-hammer toggles the services
 # already keep idempotent.
+# --- parallel IP-keyed caps (hardening A-1) ---------------------------------------
+#
+# Every per-identifier cap above is defeated by one source address
+# rotating through MANY identifiers (credential stuffing): each fresh
+# username/email/phone opens a fresh bucket, so the attacker's aggregate
+# volume stays unlimited. The login-family endpoints therefore carry a
+# SECOND, IP-keyed rule named ``<identifier-bucket>-ip`` (the pairing
+# convention `routing_common._enforce_rate_limit` resolves), enforced
+# next to the identifier check — either layer refusing rejects the
+# request.
+#
+# ``IP_HOURLY_LIMIT`` mirrors the OTP service's per-IP hourly default
+# (``otp_ip_hourly_request_limit`` = 50, spec §33.2): the same
+# "tens per hour per address" budget the OTP side already accepts for
+# shared campus NAT egress, so a login burst from one lab address lands
+# in the same order as its OTP traffic instead of behind an unrelated
+# stricter/looser knob. Tunable here in one place.
+IP_HOURLY_LIMIT = 50
+HOURLY_WINDOW_SECONDS = 3600
+# The verify endpoint's per-challenge identifier layer: the OTP service
+# already bounds code attempts per challenge (5 wrong codes consume it),
+# so 30/hour never binds a human retrying a mistyped code — it only
+# anti-hammers the HTTP surface itself.
+OTP_VERIFY_CHALLENGE_HOURLY_LIMIT = 30
+
 RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
     rule.bucket: rule
     for rule in (
         RateLimitRule(bucket="auth:login", limit=10, window_seconds=300),
+        RateLimitRule(
+            bucket="auth:login-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:staff-login", limit=10, window_seconds=300),
+        RateLimitRule(
+            bucket="auth:staff-login-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:register", limit=5, window_seconds=3600),
         RateLimitRule(bucket="auth:otp-send", limit=5, window_seconds=3600),
+        RateLimitRule(
+            bucket="auth:otp-send-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
+        RateLimitRule(
+            bucket="auth:otp-verify",
+            limit=OTP_VERIFY_CHALLENGE_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
+        RateLimitRule(
+            bucket="auth:otp-verify-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:password-reset", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:email-verify", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:phone-change", limit=5, window_seconds=3600),

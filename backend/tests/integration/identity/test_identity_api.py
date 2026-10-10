@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from http import cookies as http_cookies
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 import pyotp
@@ -733,6 +734,70 @@ async def test_exhausted_rate_limit_renders_429_envelope(
 ) -> None:
     await _seed_student(db_session)
     fake_limiter.fail_on("auth:login")
+
+    throttled = await client.post(
+        "/api/v1/auth/login", json={"username": _STUDENT, "password": _PASSWORD}
+    )
+    assert throttled.status_code == 429
+    assert _envelope(throttled)["code"] == "RATE_LIMITED"
+
+
+@pytest.mark.integration
+async def test_login_family_checks_the_transport_ip_in_parallel(
+    db_session: AsyncSession,
+    client: httpx.AsyncClient,
+    fake_limiter: FakeRateLimiter,
+) -> None:
+    # Hardening A-1: the identifier buckets alone cannot stop one IP
+    # credential-stuffing MANY identifiers — every fresh identifier opens
+    # a fresh bucket. Each credential endpoint therefore runs a SECOND,
+    # IP-keyed check next to the identifier one; either layer refusing
+    # rejects the request. The ASGITransport peer (127.0.0.1) stands in
+    # for the client address the limiter must key on.
+    await _seed_student(db_session)
+
+    await client.post(
+        "/api/v1/auth/login", json={"username": _STUDENT, "password": _PASSWORD}
+    )
+    assert fake_limiter.checks_for("auth:login-ip")[-1].identifier == "127.0.0.1"
+
+    await client.post(
+        "/api/v1/auth/staff/login",
+        json={"email": _STAFF_EMAIL, "password": "irrelevant", "totp_code": "123456"},
+    )
+    assert fake_limiter.checks_for("auth:staff-login-ip")[-1].identifier == "127.0.0.1"
+
+    send = await client.post(
+        "/api/v1/auth/phone/challenges", json={"phone": "138 0013 8000"}
+    )
+    assert send.status_code == 200
+    assert fake_limiter.checks_for("auth:otp-send-ip")[-1].identifier == "127.0.0.1"
+
+    challenge_id = uuid4()
+    await client.post(
+        f"/api/v1/auth/phone/challenges/{challenge_id}/verify",
+        json={"code": "482913"},
+    )
+    # The verify endpoint's identifier layer keys the challenge id (the
+    # OTP service bounds code attempts per challenge; this layer
+    # anti-hammers the HTTP surface), plus the parallel IP layer.
+    assert fake_limiter.checks_for("auth:otp-verify")[-1].identifier == str(
+        challenge_id
+    )
+    assert fake_limiter.checks_for("auth:otp-verify-ip")[-1].identifier == "127.0.0.1"
+
+
+@pytest.mark.integration
+async def test_exhausted_ip_bucket_renders_429_envelope(
+    db_session: AsyncSession,
+    client: httpx.AsyncClient,
+    fake_limiter: FakeRateLimiter,
+) -> None:
+    # Either layer refusing is a rejection: an exhausted IP bucket 429s
+    # even though the identifier bucket still has headroom (the exact
+    # stuffing shape the IP layer exists for).
+    await _seed_student(db_session)
+    fake_limiter.fail_on("auth:login-ip")
 
     throttled = await client.post(
         "/api/v1/auth/login", json={"username": _STUDENT, "password": _PASSWORD}

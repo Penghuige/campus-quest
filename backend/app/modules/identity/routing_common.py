@@ -245,8 +245,13 @@ def _client_ip(request: Request) -> str:
 
 
 async def _enforce_rate_limit(
-    limiter: RateLimiter, bucket: str, identifier: str
+    limiter: RateLimiter, bucket: str, identifier: str, *, client_ip: str | None = None
 ) -> None:
+    """One or two fixed-window checks: the identifier bucket, plus — when
+    ``client_ip`` is given — the parallel ``<bucket>-ip`` bucket keyed by
+    the transport peer (hardening A-1: per-identifier caps cannot bound
+    one address stuffing many identifiers; either layer refusing rejects
+    the request, and both counters count the request before any raise)."""
     rule = RATE_LIMIT_RULES[bucket]
     await limiter.check(
         bucket=rule.bucket,
@@ -254,6 +259,14 @@ async def _enforce_rate_limit(
         limit=rule.limit,
         window_seconds=rule.window_seconds,
     )
+    if client_ip is not None:
+        ip_rule = RATE_LIMIT_RULES[f"{bucket}-ip"]
+        await limiter.check(
+            bucket=ip_rule.bucket,
+            identifier=client_ip,
+            limit=ip_rule.limit,
+            window_seconds=ip_rule.window_seconds,
+        )
 
 
 # --- Typed-exception -> envelope mapping (docs/architecture/interfaces.md) ----
