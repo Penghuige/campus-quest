@@ -7,13 +7,13 @@
 | # | 规则引用 | 预期行为 | 测试位置（file::test） | 状态 |
 |---|---|---|---|---|
 | U1 | R2 生命周期 | 保存、待审、退回、撤回保留 V1；批准 V3 才切换，首次时间不变，本版通过时间正确 | `tests/integration/innovation/test_update_review.py::test_update_preserves_public_until_approval_and_old_commands_are_fenced` | 已覆盖（当前回执另记） |
-| U2 | R2 不可变/幂等 | 待审阻断成果与证明修改、项目独立保存不改快照；重复请求不生成新事项，旧命令不能影响新版 | `tests/integration/innovation/test_update_review.py::test_update_preserves_public_until_approval_and_old_commands_are_fenced` | 已覆盖 |
+| U2 | R2 不可变/幂等 | 待审阻断成果与证明修改、项目独立保存不改快照；重复请求不生成新事项，旧命令不能影响新版 | `tests/integration/innovation/test_update_review.py::test_update_preserves_public_until_approval_and_old_commands_are_fenced` | 缺口 G-6：已验证同一提交、旧撤回和旧退回决定；跨新轮的旧提交及旧批准决定直接断言待补，见最终评审 |
 | U3 | R2 并发/CAS | 首次与更新两类批准/撤回竞争、两个先后顺序，独立 PG 连接仅一个成功；指针符合赢家 | `tests/integration/innovation/test_review_races.py::test_approval_and_withdrawal_have_one_committed_winner` | 已覆盖 |
 | U4 | R2 下架独立 | 更新通过保留 TAKEN_DOWN，校内仍不可见 | `tests/integration/innovation/test_update_review.py::test_update_approval_preserves_takedown` | 已覆盖 |
 | U5 | R2 事务原子性 | 通知或审计失败时待审事项与旧公开指针保留，无新增通知 | `tests/integration/innovation/test_achievement_review_operations.py::test_failed_decision_dependency_rolls_back_decision_and_notification` | 已覆盖（SUBMIT/UPDATE） |
 | U6 | R2 历史边界 | 无审核记录的历史 UPDATE 不声称已复审，私有字段不进入公开响应 | `tests/integration/innovation/test_update_review.py::test_legacy_update_without_case_does_not_claim_review` + `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` | 已覆盖 |
 | U7 | R2 界面 | 当前 UPDATE 待审/退回/撤回与首次状态分离、公开新版核实文案诚实；使用 submit-update | `tests/../../frontend/src/__tests__/innovation-review.test.ts` | 已覆盖（RED 2 → GREEN 10） |
-| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 已覆盖（本轮新鲜真实浏览器，G-5关闭） |
+| U8 | R2 三账号闭环 | 更新提交、撤回、退回保留旧内容及原公开状态，新版批准才替换，网络响应丢失沿用原请求；已下架成果的提交与退回提示不声称公开 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 已覆盖（两处下架提示 RED 4 断言 → GREEN；本轮新鲜真实浏览器，G-5关闭） |
 
 ## 历史首次核实记录（免复审条款已被 R2 覆盖）
 
@@ -39,6 +39,8 @@
 | R16 | 测试隔离/G19 | 仅清理world A时拒绝跨world授权引用，任何修改前拒绝，两world用户、授权和项目保留；明确包含两world才清理 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_rejects_cross_world_grant_before_any_mutation` | 已覆盖（真实独立PG连接，缺少拒绝RED→GREEN） |
 
 ## 缺口明细
+
+- G-6：新增覆盖缺口，跨新轮的旧提交原文和旧批准决定缺少直接重放断言。独立评审未发现源码状态破坏，定为 Minor，按单次修复规则延期；本轮没有用其他重放测试冒充这两项覆盖。
 
 - G-5：已关闭。本轮 r2-final-full-browser.log 的三账号更新复审流程通过；历史 R1/首次核实结果未用来替代本轮。最终完整门禁见 innovation-update-review-verification.md。
 

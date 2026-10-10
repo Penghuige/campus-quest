@@ -20,3 +20,5 @@ Declined to judge 的事项逐条处置：
 4. 完整门禁、缓存恢复、最终 HEAD 的远端 CI 由新鲜回执核验，评审不代签；错误代价是误报通过，因此交付须匹配最终源码和提交。
 
 最终测试结果与环境修正见 [验证回执](innovation-update-review-verification.md)。Important 的验证记录收齐后，按单次修复规则提交；不把评审的 REQUEST_CHANGES 原始结论改写成第二次 APPROVE，也不据此自动合并。
+
+Important 修复提交 b3d35d0：三账号实际下架状态回归 RED（1 test、4个状态提示断言失败）→GREEN（1 passed、50.6s）。负责人提交、运营退回均保留原公开状态，观察者看不到该成果；Windows641单测及六项门禁、25张有效截图已经通过，完整浏览器113通过、29已有明确豁免，no-skip通过；Linux七项原门禁及生成类型一致检查通过。单次修复验证完成，原评审结论仍保留。

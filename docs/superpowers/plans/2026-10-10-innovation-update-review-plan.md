@@ -1,6 +1,6 @@
 # 双创 R2 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 所有已公开成果内容更新重新审核，待审、退回、撤回保留旧通过版本，批准才替换。
 
@@ -35,11 +35,11 @@
 
 补充文件：backend/app/modules/notifications/templates.py。更新通过的默认通知不声称再次“首次核实”，并说明下架不恢复；实际通知快照由 test_update_review.py 验证。
 
-- [ ] 写失败测试：V1 真通过、V2 提交/退回/撤回仍公开 V1，V3 通过才替换，首次时间不变；重复提交仅一事项，待审编辑阻断，旧命令不影响新事项，下架不恢复、通知审计失败回滚。
-- [ ] 执行独占 PostgreSQL focused suite，Expected: 新路由 404 或公开指针断言失败（RED）。
-- [ ] 实现 submit-update 生成 UPDATE 快照与待审事项；更新决定/撤回按 operation 保留首次状态；共享编辑 guard 识别待审事项；公开时间源于对应通过记录。
-- [ ] 扩展现有真实连接 race 为首次和 UPDATE 两种情境；批准/撤回两个顺序只有首个成功，公开指针匹配胜者。
-- [ ] 执行创新创业集成模块，Expected: 0 failures；静态 format/lint/mypy 0；再提交后端和矩阵变更。
+- [x] 写失败测试：V1 真通过、V2 提交/退回/撤回仍公开 V1，V3 通过才替换，首次时间不变；重复提交仅一事项，待审编辑阻断，旧命令不影响新事项，下架不恢复、通知审计失败回滚。
+- [x] 执行独占 PostgreSQL focused suite，Expected: 新路由 404 或公开指针断言失败（RED）。
+- [x] 实现 submit-update 生成 UPDATE 快照与待审事项；更新决定/撤回按 operation 保留首次状态；共享编辑 guard 识别待审事项；公开时间源于对应通过记录。
+- [x] 扩展现有真实连接 race 为首次和 UPDATE 两种情境；批准/撤回两个顺序只有首个成功，公开指针匹配胜者。
+- [x] 执行创新创业集成模块，Expected: 0 failures；静态 format/lint/mypy 0；再提交后端和矩阵变更。
 
 ### Task 2: 负责人、运营、校内浏览 UI
 
@@ -49,10 +49,10 @@
 
 补充文件：AchievementDraftsView.tsx、InnovationCapabilities.tsx 的审核说明同步 R2；innovation-review-visual.spec.ts 为两个稳定新状态建立固定字体基线。文案变化的既有截图按具体差异独立保存与走查。
 
-- [ ] 写状态/公开展示失败测试：已首次通过+UPDATE SUBMITTED/RETURNED/WITHDRAWN 与历史无审核时间 UPDATE 不混淆。Expected: 缺少新状态文案/接口失败。
-- [ ] 生成 API 工件，实现更新复审确认、等待旧版展示、退回原因和运营操作类型；不展示内部编号或私有资料。
-- [ ] 将原即时更新 e2e 改为提交后观察者仍看旧版、运营批准后看新版，加入撤回/退回及 ACK 丢失重试情境。
-- [ ] 前端 typecheck/lint/check:css/unit/coverage/build，Expected: 全部 exit 0、覆盖棘轮通过；提交界面、测试和工件。
+- [x] 写状态/公开展示失败测试：已首次通过+UPDATE SUBMITTED/RETURNED/WITHDRAWN 与历史无审核时间 UPDATE 不混淆。Expected: 缺少新状态文案/接口失败。
+- [x] 生成 API 工件，实现更新复审确认、等待旧版展示、退回原因和运营操作类型；不展示内部编号或私有资料。
+- [x] 将原即时更新 e2e 改为提交后观察者仍看旧版、运营批准后看新版，加入撤回/退回及 ACK 丢失重试情境。
+- [x] 前端 typecheck/lint/check:css/unit/coverage/build，Expected: 全部 exit 0、覆盖棘轮通过；提交界面、测试和工件。
 
 ### Task 3: 双树验证、独立评审、交付
 
@@ -60,10 +60,10 @@
 
 **Interfaces:** consumes Task 1/2 完整实现；produces 最新本地 gate、真实浏览器记录、精确 HEAD 的 Draft PR/CI 回执和验收说明。
 
-- [ ] 新鲜后端全静态/单测/PG集成/greenlet+thread coverage、API drift、矩阵检查；前端全门禁/e2e/no-skip/像素/a11y/audit（独占库，借用自有本地服务端口后恢复）。Expected: 全部 exit 0 或逐项如实记录真实外部阻塞，不能替用历史数字。
-- [ ] 一次新上下文整体评审，给出范围基线至当前 HEAD、spec/plan/裁决；Important/Critical 先 RED 再修复和重新验证，不安排循环复评。
-- [ ] 提交交接/验证证据，推送 feature 分支，更新现有 Draft PR，并核验 fork/PR HEAD 与当前提交相同的 CI 状态。
-- [ ] 恢复本地可体验环境，给出负责人/运营/观察者验收步骤、验证结果、Git 状态和 CI 限制。
+- [x] 新鲜后端全静态/单测/PG集成/greenlet+thread coverage、API drift、矩阵检查；前端全门禁/e2e/no-skip/像素/a11y/audit（独占库，借用自有本地服务端口后恢复）。Expected: 全部 exit 0 或逐项如实记录真实外部阻塞，不能替用历史数字。
+- [x] 一次新上下文整体评审，给出范围基线至当前 HEAD、spec/plan/裁决；Important/Critical 先 RED 再修复和重新验证，不安排循环复评。
+- [x] 提交交接/验证证据，推送 feature 分支，更新现有 Draft PR，并核验 fork/PR HEAD 与当前提交相同的 CI 状态。
+- [x] 恢复本地可体验环境，给出负责人/运营/观察者验收步骤、验证结果、Git 状态和 CI 限制。
 
 ## 自检
 
