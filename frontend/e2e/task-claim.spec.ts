@@ -22,8 +22,6 @@
  *                          at least one AVAILABLE assignment (required for
  *                          the claim-flow tests; Plan 10's fixture prepares
  *                          it — until then those tests skip);
- * - CQ_E2E_EMPTY_TASK_URL  task detail deep link whose assignments are all
- *                          taken (optional; drives the conflict-copy test);
  * - CQ_E2E_STUDENT         pre-seeded student credentials
  *                          "student-number:password" (required with
  *                          CQ_E2E_TASK_URL; the fixture seeds the account).
@@ -38,7 +36,6 @@ import { ensureStudentLogin, expect, test } from "./fixtures";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
-const EMPTY_TASK_URL = process.env.CQ_E2E_EMPTY_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
 
 test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
