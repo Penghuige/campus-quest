@@ -188,6 +188,15 @@ async def test_update_preserves_public_until_approval_and_old_commands_are_fence
         ]["status"] == "SUBMITTED"
     approved, decision = await decide(client, newer, ops)
     assert approved["operation"] == "UPDATE"
+    from app.modules.notifications.models import Notification
+
+    notification = await db_session.scalar(
+        select(Notification).where(
+            Notification.event_key == f"ie_review:{approved['id']}:decision"
+        )
+    )
+    assert "首次核实" not in notification.body
+    assert "下架" in notification.body
     changed = (await client.get(url, headers=viewer)).json()
     assert changed["achievement"]["title"] == "新版成果"
     assert changed["project"]["summary"] == parent.summary

@@ -33,6 +33,8 @@
 
 **Interfaces:** consumes 已保存版本与 SavedRevisionCommand；produces `submit_update(...) -> AchievementWorkflowResponse`、ReviewCaseSummary.operation、PublicAchievementResponse.latest_reviewed_at。
 
+补充文件：backend/app/modules/notifications/templates.py。更新通过的默认通知不声称再次“首次核实”，并说明下架不恢复；实际通知快照由 test_update_review.py 验证。
+
 - [ ] 写失败测试：V1 真通过、V2 提交/退回/撤回仍公开 V1，V3 通过才替换，首次时间不变；重复提交仅一事项，待审编辑阻断，旧命令不影响新事项，下架不恢复、通知审计失败回滚。
 - [ ] 执行独占 PostgreSQL focused suite，Expected: 新路由 404 或公开指针断言失败（RED）。
 - [ ] 实现 submit-update 生成 UPDATE 快照与待审事项；更新决定/撤回按 operation 保留首次状态；共享编辑 guard 识别待审事项；公开时间源于对应通过记录。
@@ -44,6 +46,8 @@
 **Files:** frontend/src/features/innovation/{AchievementReviewPanel,AchievementReviewsView,PublicAchievementsView,reviewApi,reviewPresentation}.tsx/ts 及对应单测、frontend/e2e/innovation-review.spec.ts；frontend/openapi.json 与 src/lib/api/schema.d.ts（采用实际已有路径）。
 
 **Interfaces:** consumes Task 1 新路由和 operation/latest_reviewed_at；produces 按当前事项判断待审、退回、撤回文案及真实三账号更新复审体验。
+
+补充文件：AchievementDraftsView.tsx、InnovationCapabilities.tsx 的审核说明同步 R2；innovation-review-visual.spec.ts 为两个稳定新状态建立固定字体基线。文案变化的既有截图按具体差异独立保存与走查。
 
 - [ ] 写状态/公开展示失败测试：已首次通过+UPDATE SUBMITTED/RETURNED/WITHDRAWN 与历史无审核时间 UPDATE 不混淆。Expected: 缺少新状态文案/接口失败。
 - [ ] 生成 API 工件，实现更新复审确认、等待旧版展示、退回原因和运营操作类型；不展示内部编号或私有资料。

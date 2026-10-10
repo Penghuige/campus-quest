@@ -129,7 +129,7 @@ function Editor({ projectId, initial, onBack }: { projectId: string; initial?: A
   return <section className="section" aria-label="成果草稿编辑器">
     <div className="section-head"><h2 className="section-title" tabIndex={-1} ref={heading}>{record ? "编辑成果草稿" : "新建成果草稿"}</h2><Button variant="ghost" disabled={busy} onClick={back}>返回成果列表</Button></div>
     <form className="panel form ie-draft-form" method="post" onSubmit={submit} noValidate ref={form}>
-      <p className="field-hint">此处保存个人草稿。首次核实通过或显式发布更新后，校内用户才能看到对应公开版本。</p>
+      <p className="field-hint">此处保存个人草稿。首次核实或更新复审通过后，校内用户才能看到对应公开版本。</p>
       {ACHIEVEMENT_FIELDS.map((field) => {
         const count = Array.from(fields[field.key].trim()).length;
         const change = (value: string) => { setFields({ ...fields, [field.key]: value }); setSaved(false); };

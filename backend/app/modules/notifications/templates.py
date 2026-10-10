@@ -455,7 +455,7 @@ for _channel in NotificationChannel:
     DEFAULT_TEMPLATES[(NotificationEventType.IE_ACHIEVEMENT_APPROVED, _channel)] = (
         TemplateText(
             title="成果核实通过",
-            body="您的成果《{achievement_title}》首次核实通过，现可在校内成果展示中浏览。",
+            body="您的成果《{achievement_title}》已核实通过，公开版本已更新；已下架成果仍保持下架。",
         )
     )
     DEFAULT_TEMPLATES[(NotificationEventType.IE_ACHIEVEMENT_RETURNED, _channel)] = (
