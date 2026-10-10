@@ -1071,6 +1071,40 @@ async def test_import_preview_reports_row_errors(
     assert confirmed.json()["inserted"] == 1
 
 
+@pytest.mark.integration
+async def test_import_preview_oversize_body_rejected_streaming(
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    client: httpx.AsyncClient,
+    fake_limiter: FakeRateLimiter,
+) -> None:
+    """Security round F2: an import body over the byte cap is rejected
+    at the transport (400 FILE_TOO_LARGE) by the streaming-bounded
+    reader — never buffered whole first. Oversized uploads used to
+    ride ``request.body()`` into memory before the parser's cap ever
+    ran. The route is rate limited like claim/abandon (FakeRateLimiter
+    records the bucket)."""
+    teacher, teacher_tokens = await _seed_management_teacher(
+        db_session, api_clock, username=_TEACHER_EMAIL
+    )
+    task = _seed_task(teacher.id)
+    db_session.add(task)
+    await db_session.flush()
+
+    three_mib = b"x" * (3 * 1024 * 1024)
+    rejected = await client.post(
+        f"/api/v1/teacher/tasks/{task.id}/assignments/import/preview",
+        content=three_mib,
+        headers={**_bearer(teacher_tokens), "Content-Type": "text/csv"},
+    )
+    assert rejected.status_code == 400, rejected.text
+    error = _envelope(rejected)
+    assert error["code"] == "FILE_TOO_LARGE"
+    assert error["details"]["limit"] == 2 * 1024 * 1024
+
+    assert any(check.bucket == "tasks:import-preview" for check in fake_limiter.checks)
+
+
 # --- statistics surface ---------------------------------------------------------------
 
 

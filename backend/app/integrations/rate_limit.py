@@ -98,6 +98,10 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="me:avatar-upload", limit=1, window_seconds=600),
         RateLimitRule(bucket="tasks:claim", limit=20, window_seconds=60),
         RateLimitRule(bucket="claims:abandon", limit=10, window_seconds=60),
+        # Import preview (security round F2): per staff actor. The body
+        # rides the API streaming-bounded, so this is the anti-abuse
+        # bound on repeated parse work, not a size control.
+        RateLimitRule(bucket="tasks:import-preview", limit=10, window_seconds=60),
         # The presigned-upload grant: per authenticated user id. Each
         # intent issues a short-lived presigned URL against the object
         # store, so hammering it burns provider signing quota; the
