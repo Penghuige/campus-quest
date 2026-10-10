@@ -1022,6 +1022,21 @@ async def test_concurrent_replay_of_one_recovery_code_exactly_one_succeeds(
     codes = await _seed_confirmed_staff_with_recovery_codes(
         db_engine, service, clock, email=email, admin_name=admin_name
     )
+    # The seeding's invitation-accept step already minted the staff
+    # member's first (pending-TOTP) session — capture that baseline so
+    # the post-race count asserts exactly what the RACE minted.
+    async with AsyncSession(db_engine) as baseline:
+        seeded_user = await baseline.scalar(
+            select(User).where(User.email_normalized == email)
+        )
+        assert seeded_user is not None
+        sessions_before = len(
+            (
+                await baseline.scalars(
+                    select(UserSession).where(UserSession.user_id == seeded_user.id)
+                )
+            ).all()
+        )
     try:
         results = await asyncio.gather(
             _authenticate_on_own_session(db_engine, service, email, codes[0]),
@@ -1054,7 +1069,8 @@ async def test_concurrent_replay_of_one_recovery_code_exactly_one_succeeds(
                     select(UserSession).where(UserSession.user_id == user.id)
                 )
             ).all()
-            assert len(sessions) == 1  # only the winner minted a session
+            # Baseline (the seed's accept session) + exactly one winner.
+            assert len(sessions) == sessions_before + 1
     finally:
         await _cleanup_committed_staff_rows(
             db_engine, usernames={email, admin_name}, email=email

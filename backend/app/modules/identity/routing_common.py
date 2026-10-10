@@ -241,6 +241,13 @@ def _resolve_refresh_token(request: Request, body_token: str | None) -> str:
 
 
 def _client_ip(request: Request) -> str:
+    # Deployment dependency (A-1 review note): this is the transport
+    # peer as uvicorn reports it. On the production shape (Caddy on the
+    # same host proxying to the loopback listener) uvicorn's default
+    # proxy-headers trust rewrites client.host from X-Forwarded-For, so
+    # IP-keyed buckets see real client addresses; a future non-loopback
+    # proxy hop would silently collapse every caller onto the proxy's
+    # address — revisit here before changing that topology.
     return request.client.host if request.client is not None else "unknown"
 
 
