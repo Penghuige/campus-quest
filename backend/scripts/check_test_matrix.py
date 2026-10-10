@@ -11,7 +11,10 @@ Checks, per matrix file:
 1. every table row carries a status from the closed vocabulary
    (covered / gap / mismatch / process, Chinese markers included);
 2. covered rows cite at least one ``path::name`` (or a bare tests/
-   path) whose FILE part exists on disk relative to the backend root;
+   path) whose FILE part exists on disk — backend suites (``tests/``)
+   resolve against the backend root, frontend suites
+   (``frontend/e2e/`` or ``frontend/src/``) against the repository
+   root;
 3. gap rows reference a gap id (G-\\d+) that the file's gap section
    also lists;
 4. mismatch rows appear in the file's mismatch section.
@@ -31,14 +34,27 @@ import sys
 from pathlib import Path
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _BACKEND_ROOT.parent
 
 _COVERED = ("已覆盖", "covered")
 _GAP = ("缺口", "gap")
 _MISMATCH = ("不匹配", "mismatch")
 _PROCESS = ("流程行", "process")
 
-_TEST_CITE = re.compile(r"`(tests/[^`:]+)(?:::[\w.]+)?`")
+# A covered row's citation: a backend suite path (tests/...) or a
+# frontend suite path (frontend/e2e/... or frontend/src/...), each with
+# an optional ::test suffix. The two roots differ (backend root vs
+# repository root), so _cite_file resolves the prefix.
+_TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::[\w.]+)?`")
 _GAP_ID = re.compile(r"G-\d+")
+
+
+def _cite_file(cited: str) -> Path:
+    """Resolve one cited suite path to its on-disk file: backend suites
+    hang off the backend root, frontend suites off the repository root."""
+    if cited.startswith("frontend/"):
+        return _REPO_ROOT / cited
+    return _BACKEND_ROOT / cited
 
 
 def _status_of(cells: list[str]) -> str | None:
@@ -62,9 +78,7 @@ def check_matrix(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
 
     gap_section = text.split("缺口明细", 1)[-1] if "缺口明细" in text else ""
-    mismatch_section = (
-        text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
-    )
+    mismatch_section = text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
 
     row_id = 0
     for line in text.splitlines():
@@ -92,16 +106,14 @@ def check_matrix(path: Path) -> list[str]:
                 )
                 continue
             for cited_file in citations:
-                if not (_BACKEND_ROOT / cited_file).exists():
+                if not _cite_file(cited_file).exists():
                     violations.append(
                         f"{path.name}: row {row} cites missing file {cited_file}"
                     )
         elif status == "gap":
             ids = _GAP_ID.findall(" ".join(cells))
             if not ids:
-                violations.append(
-                    f"{path.name}: gap row {row} carries no gap id (G-N)"
-                )
+                violations.append(f"{path.name}: gap row {row} carries no gap id (G-N)")
             for gap_id in ids:
                 if gap_id not in gap_section:
                     violations.append(
