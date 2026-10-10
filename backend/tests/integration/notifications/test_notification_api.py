@@ -57,6 +57,7 @@ from app.modules.identity.dependencies import (
     get_business_clock,
 )
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.events import Actor
 from app.modules.identity.models import TotpCredential, User
 from app.modules.identity.session_service import SessionService
 from app.modules.notifications.enums import (
@@ -66,6 +67,7 @@ from app.modules.notifications.enums import (
     NotificationEventType,
 )
 from app.modules.notifications.models import Notification, NotificationDelivery
+from app.modules.system.service import SystemSettingService
 
 pytestmark = pytest.mark.integration
 
@@ -629,3 +631,51 @@ async def test_admin_failure_surface_lists_failed_deliveries(
     )
     assert unconfirmed.status_code == 403
     assert _envelope(unconfirmed)["code"] == "TOTP_SETUP_REQUIRED"
+
+
+async def test_notification_failures_refuses_out_of_network_admin(
+    api_app: FastAPI,
+    db_session: AsyncSession,
+    api_clock: StepClock,
+) -> None:
+    """The failure surface carries the store-backed management-network
+    guard (hardening B-F1), mounted the identity admin-router way: an
+    in-role, ACTIVE, TOTP-confirmed Admin from OUTSIDE the enabled
+    management CIDR gets the network 403; an in-network peer passes the
+    guard and reaches the handler. Without the guard the endpoint was
+    reachable from any network the API itself accepts."""
+    admin, admin_headers = await _seed_management_account(
+        db_session, api_clock, username=f"adm-net-{uuid4().hex[:10]}"
+    )
+    settings_service = SystemSettingService()
+    actor = Actor(user_id=admin.id, role=Role.ADMIN)
+    # CIDRs first, then the flag: each intermediate pair stays loadable
+    # (the admin suite's _seed_policy ordering).
+    await settings_service.set_management_network_policy(
+        db_session, actor=actor, cidrs=["10.0.0.0/8"]
+    )
+    await settings_service.set_management_network_policy(
+        db_session, actor=actor, enabled=True
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app, client=("203.0.113.9", 123)),
+        base_url="http://test",
+    ) as outside:
+        denied = await outside.get(
+            "/api/v1/admin/notification-failures", headers=admin_headers
+        )
+    assert denied.status_code == 403, denied.text
+    assert _envelope(denied)["code"] == "PERMISSION_DENIED"
+    assert _envelope(denied)["message"] == "当前网络不允许访问管理功能"
+
+    # An in-network peer passes the guard and reaches the handler.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app, client=("10.1.2.3", 123)),
+        base_url="http://test",
+    ) as inside:
+        allowed = await inside.get(
+            "/api/v1/admin/notification-failures", headers=admin_headers
+        )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["total"] == 0

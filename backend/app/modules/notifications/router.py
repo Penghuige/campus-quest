@@ -26,9 +26,11 @@ inbox and the staff failure query.
   attempts, newest first, behind `require_admin_actor` (stayed
   Admin-only under the delegation ruling — the points review family is
   the widened one; PR #2 hardening ruling; Plan 08 builds the
-  full admin operations surface on this seam). Delivery data is
-  operational state, so it is exposed HERE — admin-guarded — and never
-  on the student inbox.
+  full admin operations surface on this seam) AND the store-backed
+  management-network guard (hardening B-F1, mounted per-route — the
+  identity admin-router pattern adapted to a router that also serves
+  students). Delivery data is operational state, so it is exposed HERE
+  — admin-guarded — and never on the student inbox.
 
 Every typed exception these handlers raise subclasses BusinessError
 with its frozen code/status, so the core envelope handler renders them;
@@ -50,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
 from app.db.session import get_db_session
+from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
@@ -202,6 +205,11 @@ async def mark_notification_read(
 @router.get(
     "/admin/notification-failures",
     response_model=NotificationFailuresResponse,
+    # The store-backed management-network guard, mounted the identity
+    # admin-router way (hardening B-F1): route-level rather than
+    # router-level because this router also serves the student inbox —
+    # only the admin surface is management access.
+    dependencies=[Depends(require_management_network_from_store)],
 )
 async def list_notification_failures(
     actor: AdminActor,
