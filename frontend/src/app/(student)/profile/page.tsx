@@ -65,8 +65,6 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         </>
       )}
       <section className="section" aria-label="退出当前账号">
-        <div className="section-head"><h2 className="section-title">退出当前账号</h2></div>
-        <p className="field-hint">结束当前浏览器的登录会话，随后可以切换账号。</p>
         <Button asChild variant="secondary" block><Link href="/logout" prefetch={false}>退出登录</Link></Button>
       </section>
     </>

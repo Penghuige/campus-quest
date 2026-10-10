@@ -14,6 +14,7 @@
 | IN08 | historical focus debt | 审核完成/失败后焦点到稳定结果/重试/队列；cancel 回原按钮 | `tests/../../frontend/e2e/innovation-review.spec.ts` + `tests/../../frontend/src/__tests__/review-focus.test.ts` | 已覆盖（负责人/运营原请求重试焦点 RED→GREEN，防旧 epoch 回焦） |
 | IN09 | quality visual/a11y | 三屏宽可用、长内容不溢出、axe、Linux 像素 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` + `tests/../../frontend/e2e/visual-regression.spec.ts` | 已覆盖（320/390/800；退出位置调整后 23 PNG 不更新比较；新页面 axe 0） |
 | IN10 | 2026-10-10 用户体验调整 | 学生退出在“我的”两分区内容最底部；顶栏无退出；滚动可达且真实注销 | `tests/../../frontend/e2e/innovation-navigation.spec.ts` + `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` | 已覆盖（已有本机探针 RED→GREEN；113 浏览器通过；实际手机底部无导航遮挡；详见 innovation-logout-placement-verification.md） |
+| IN11 | 2026-10-10 用户两张截图的具体要求 | 我的页底部退出按钮前无可见标题／说明；顶栏账号入口使用常见线条人像，仍可进入我的页 | `tests/../../frontend/e2e/innovation-navigation-visual.spec.ts` + `tests/../../frontend/e2e/innovation-navigation.spec.ts` | 已覆盖（预期来自用户截图；现有演示探针 RED→GREEN；最新结果见 innovation-profile-polish-verification.md） |
 
 ID 从初版 R1-01 改为 IN01，以符合既有对账检查器的行识别规则；不修改检查器。文件引用证明存在，具体运行结果见 `docs/quality/innovation-navigation-verification.md`。
 

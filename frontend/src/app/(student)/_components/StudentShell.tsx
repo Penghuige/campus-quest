@@ -209,7 +209,7 @@ function StudentNavigationShell({ children, nickname, active }: { children: Reac
                 aria-label="我的账户"
                 title="我的账户"
               >
-                <span aria-hidden="true">{nicknameInitial(nickname)}</span>
+                <UserIcon />
               </Link>
               <StaffMenuSheet label="全部导航" items={nav} />
             </div>
