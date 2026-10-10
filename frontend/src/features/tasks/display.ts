@@ -263,3 +263,24 @@ export function claimRewardLine(
   }
   return `当前可获得 ${baseRewardPoints} 积分`;
 }
+
+// --- square entrance choreography (owner ruling 2026-10-10) -----------------
+
+/**
+ * The task grid's per-card stagger interval, list-length-aware: every
+ * card takes the orchestrated rise, and the interval shrinks with the
+ * count so the stagger TAIL ((count-1) × interval) stays within the
+ * 80ms budget the old three-child cap spent (2 × --stagger 40ms).
+ * Total entrance = --motion-in 220ms + tail ≤ 80ms — §11's ~300ms
+ * ceiling holds at ANY grid size.
+ *
+ * Monotone-decreasing BY CONSTRUCTION: a load-more append can only
+ * shrink the interval, so an already-completed entrance can never be
+ * pushed back before its (now larger) delay and visibly rewind.
+ */
+export function entranceStaggerMs(count: number): number {
+  if (count <= 1) {
+    return 0;
+  }
+  return Math.min(40, 80 / (count - 1));
+}
