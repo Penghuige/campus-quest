@@ -75,7 +75,9 @@ async def request_phone_challenge(
     proofs for password reset or phone change.
     """
     phone = normalize_phone(body.phone, region)
-    await _enforce_rate_limit(limiter, "auth:otp-send", phone)
+    await _enforce_rate_limit(
+        limiter, "auth:otp-send", phone, client_ip=_client_ip(request)
+    )
     challenge = await otp.request_phone_challenge(
         body.phone, OtpPurpose.REGISTER, client_ip=_client_ip(request)
     )
@@ -90,9 +92,22 @@ async def request_phone_challenge(
 async def verify_phone_challenge(
     challenge_id: uuid.UUID,
     body: PhoneChallengeVerifyRequest,
+    request: Request,
     otp: OtpServiceDep,
+    limiter: LimiterDep,
 ) -> PhoneTokenResponse:
-    """Consume the challenge with its SMS code; mint the single-use proof."""
+    """Consume the challenge with its SMS code; mint the single-use proof.
+
+    Rate-limited per challenge id AND per transport peer (hardening A-1):
+    the OTP service already bounds wrong-code attempts per challenge, so
+    these buckets anti-hammer the HTTP surface itself.
+    """
+    await _enforce_rate_limit(
+        limiter,
+        "auth:otp-verify",
+        str(challenge_id),
+        client_ip=_client_ip(request),
+    )
     verified = await otp.verify_phone_challenge(challenge_id, body.code)
     return PhoneTokenResponse(
         phone_token=verified.token, expires_at=verified.expires_at
@@ -122,13 +137,21 @@ async def register_student(
 @router.post("/auth/login", response_model=TokenPairResponse)
 async def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     sessions: SessionsDep,
     settings: AppSettings,
     limiter: LimiterDep,
     db: DbSession,
 ) -> TokenPairResponse:
-    await _enforce_rate_limit(limiter, "auth:login", body.username.strip().lower())
+    # Two layers (hardening A-1): per username and per transport peer —
+    # the identifier cap cannot bound one IP stuffing many usernames.
+    await _enforce_rate_limit(
+        limiter,
+        "auth:login",
+        body.username.strip().lower(),
+        client_ip=_client_ip(request),
+    )
     tokens = await sessions.login_student(db, body.username, body.password)
     return _token_pair_response(response, tokens, settings)
 

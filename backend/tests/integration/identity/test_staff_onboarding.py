@@ -511,8 +511,8 @@ async def _cleanup_committed_staff_rows(
     """Delete rows this test committed (registration's cleanup pattern).
 
     Deletion order respects the FKs: invitations reference their creating
-    admin user, and sessions reference their user, so both go before the
-    users themselves.
+    admin user, and sessions, recovery codes, and TOTP credentials all
+    reference their user, so all four go before the users themselves.
     """
     async with AsyncSession(engine) as session:
         await session.execute(
@@ -524,6 +524,12 @@ async def _cleanup_committed_staff_rows(
         for user in users:
             await session.execute(
                 delete(UserSession).where(UserSession.user_id == user.id)
+            )
+            await session.execute(
+                delete(RecoveryCode).where(RecoveryCode.user_id == user.id)
+            )
+            await session.execute(
+                delete(TotpCredential).where(TotpCredential.user_id == user.id)
             )
             await session.delete(user)
         await session.commit()
@@ -942,3 +948,130 @@ async def test_onboarding_flow_never_logs_secrets(
         message = record.getMessage()
         for secret in secret_material:
             assert secret not in message
+
+
+async def _seed_confirmed_staff_with_recovery_codes(
+    engine: AsyncEngine,
+    service: StaffService,
+    clock: FrozenClock,
+    *,
+    email: str,
+    admin_name: str,
+) -> list[str]:
+    """Commit a fully onboarded staff account on one dedicated
+    connection (invite -> accept -> begin -> confirm); return the
+    recovery codes shown once at confirmation.
+
+    Concurrent authenticators on other connections must see every row
+    (the rollback harness would hide uncommitted seeds) — the committed
+    -invitation seeding pattern, carried through TOTP confirmation."""
+    async with AsyncSession(engine) as session:
+        admin = User(
+            username=admin_name,
+            password_hash=hash_password(_PASSWORD),
+            nickname="并发管理员",
+            role=Role.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        session.add(admin)
+        await session.flush()
+        issued = await service.create_staff_invitation(
+            session, _actor(admin), email, Role.TEACHER
+        )  # commits the admin and the invitation together
+        pending = await service.accept_staff_invitation(
+            session, issued.token, _PASSWORD
+        )
+        setup = await service.begin_totp_setup(session, pending.user_id)
+        return await service.confirm_totp_setup(
+            session, pending.user_id, _code_for(setup.secret, clock)
+        )
+
+
+async def _authenticate_on_own_session(
+    engine: AsyncEngine, service: StaffService, email: str, code: str
+) -> SessionTokens | BusinessError:
+    """One staff login on an independent session with real commits,
+    returning the tokens or the BusinessError so `asyncio.gather`
+    results classify without losing either side (the invitation-race
+    pattern)."""
+    async with AsyncSession(engine) as session:
+        try:
+            return await service.authenticate_staff(session, email, _PASSWORD, code)
+        except BusinessError as exc:
+            return exc
+
+
+@pytest.mark.integration
+async def test_concurrent_replay_of_one_recovery_code_exactly_one_succeeds(
+    db_engine: AsyncEngine,
+) -> None:
+    # Two independent sessions present the SAME recovery code with real
+    # commits. `_consume_recovery_code` locks the candidate rows FOR
+    # UPDATE precisely so the racers serialize: the winner marks used_at
+    # in its transaction, the loser's locked re-read no longer matches
+    # used_at IS NULL and fails. Sequential-only coverage (the
+    # `test_recovery_code_works_once_only` replay) would degrade
+    # silently if that lock were ever refactored away — a plain-SELECT
+    # re-check passes every sequential test — so this pins the guarantee
+    # the same way the invitation race pins its single-use token.
+    suffix = uuid4().hex[:8]
+    email = f"recovery-race-{suffix}@campus.example.edu.cn"
+    admin_name = f"rec-admin-{suffix}"
+    clock = FrozenClock(_T0)
+    service = _make_service(clock)
+    codes = await _seed_confirmed_staff_with_recovery_codes(
+        db_engine, service, clock, email=email, admin_name=admin_name
+    )
+    # The seeding's invitation-accept step already minted the staff
+    # member's first (pending-TOTP) session — capture that baseline so
+    # the post-race count asserts exactly what the RACE minted.
+    async with AsyncSession(db_engine) as baseline:
+        seeded_user = await baseline.scalar(
+            select(User).where(User.email_normalized == email)
+        )
+        assert seeded_user is not None
+        sessions_before = len(
+            (
+                await baseline.scalars(
+                    select(UserSession).where(UserSession.user_id == seeded_user.id)
+                )
+            ).all()
+        )
+    try:
+        results = await asyncio.gather(
+            _authenticate_on_own_session(db_engine, service, email, codes[0]),
+            _authenticate_on_own_session(db_engine, service, email, codes[0]),
+        )
+
+        wins = [result for result in results if isinstance(result, SessionTokens)]
+        losses = [result for result in results if isinstance(result, BusinessError)]
+        assert len(wins) == 1
+        assert len(losses) == 1
+        assert losses[0].code == ErrorCode.AUTHENTICATION_REQUIRED
+        assert losses[0].status_code == 401
+
+        async with AsyncSession(db_engine) as verifier:
+            user = await verifier.scalar(
+                select(User).where(User.email_normalized == email)
+            )
+            assert user is not None
+            consumed = (
+                await verifier.scalars(
+                    select(RecoveryCode).where(
+                        RecoveryCode.user_id == user.id,
+                        RecoveryCode.used_at.is_not(None),
+                    )
+                )
+            ).all()
+            assert len(consumed) == 1  # the code was spendable exactly once
+            sessions = (
+                await verifier.scalars(
+                    select(UserSession).where(UserSession.user_id == user.id)
+                )
+            ).all()
+            # Baseline (the seed's accept session) + exactly one winner.
+            assert len(sessions) == sessions_before + 1
+    finally:
+        await _cleanup_committed_staff_rows(
+            db_engine, usernames={email, admin_name}, email=email
+        )

@@ -32,6 +32,7 @@ from app.integrations.errors import (
     TemporaryProviderError,
     UnknownOutcomeError,
 )
+from app.integrations.masking import mask_phone
 from app.integrations.sms_aliyun import (
     OTP_TEMPLATE_NAME,
     AliyunDypnsSmsSender,
@@ -226,6 +227,27 @@ def test_unparseable_recipient_rejected_before_the_wire() -> None:
         _sender(httpx.MockTransport(handler)).send(
             to="not-a-phone", template=OTP_TEMPLATE_NAME, variables=_OTP_VARS
         )
+
+
+def test_unparseable_recipient_error_masks_the_phone() -> None:
+    # Spec §40 masking law (hardening D-4): the PermanentProviderError
+    # escapes the request handler and lands in server logs via the 500
+    # traceback, so its message may name the recipient only through the
+    # shared masked form — never the verbatim value, which for a
+    # garbage-prefixed recipient still embeds the full phone digits.
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("an invalid recipient must not reach the wire")
+
+    to = "+8613530417625#"  # '#' makes it unparseable; digits stay legible
+    with pytest.raises(PermanentProviderError) as exc_info:
+        _sender(httpx.MockTransport(handler)).send(
+            to=to, template=OTP_TEMPLATE_NAME, variables=_OTP_VARS
+        )
+
+    message = str(exc_info.value)
+    assert to not in message
+    assert "13530417625" not in message
+    assert mask_phone(to) in message
 
 
 def test_credentials_and_code_never_leak_in_exceptions_or_logs(

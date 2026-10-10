@@ -24,6 +24,7 @@ from app.modules.identity.providers import (
     get_staff_service,
 )
 from app.modules.identity.routing_common import (
+    _client_ip,
     _enforce_rate_limit,
     _token_pair_response,
 )
@@ -49,6 +50,7 @@ router = APIRouter()
 @router.post("/auth/staff/login", response_model=TokenPairResponse)
 async def staff_login(
     body: StaffLoginRequest,
+    request: Request,
     response: Response,
     staff: Annotated[StaffService, Depends(get_staff_service)],
     settings: AppSettings,
@@ -59,9 +61,15 @@ async def staff_login(
 
     A correct password without a confirmed TOTP raises the typed setup
     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
-    finish ``/staff/totp/*`` first.
+    finish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):
+    per email and per transport peer.
     """
-    await _enforce_rate_limit(limiter, "auth:staff-login", body.email.strip().lower())
+    await _enforce_rate_limit(
+        limiter,
+        "auth:staff-login",
+        body.email.strip().lower(),
+        client_ip=_client_ip(request),
+    )
     tokens = await staff.authenticate_staff(
         db, body.email, body.password, body.totp_code
     )

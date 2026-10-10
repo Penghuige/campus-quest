@@ -1076,7 +1076,14 @@ class ReviewService:
         owner_id = await db.scalar(
             select(Task.owner_teacher_id).where(Task.id == task_id)
         )
-        if owner_id is None or owner_id == actor.user_id or is_admin(actor.role):
+        # Deny on a missing owner row (hardening B-F2): the claim ->
+        # task -> owner FK chain makes None unreachable in a consistent
+        # database, but the defensive default is fail closed — an absent
+        # owner must never widen review authority to "everyone".
+        if owner_id is None:
+            await db.rollback()
+            raise ReviewerPermissionDeniedError(task_id, actor.user_id)
+        if owner_id == actor.user_id or is_admin(actor.role):
             # The FK guarantees the task exists; owner/Admin hold every
             # capability (the add_collaborator owner exemption, §4.3).
             return

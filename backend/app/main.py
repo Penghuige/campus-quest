@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
 from app.core import rbac
+from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
@@ -54,7 +55,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CampusQuest API", lifespan=_lifespan)
+    # Interactive API docs are a development convenience (hardening D-3):
+    # /docs, /redoc, and /openapi.json hand an attacker a complete route
+    # map of the deployment (spec §33.1 posture), so environment=
+    # production mounts none of them; development keeps the defaults.
+    docs_disabled = get_settings().environment == "production"
+    app = FastAPI(
+        title="CampusQuest API",
+        lifespan=_lifespan,
+        docs_url=None if docs_disabled else "/docs",
+        redoc_url=None if docs_disabled else "/redoc",
+        openapi_url=None if docs_disabled else "/openapi.json",
+    )
     app.add_middleware(RequestIDMiddleware)
     register_exception_handlers(app)
 
