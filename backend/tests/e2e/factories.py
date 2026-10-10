@@ -23,13 +23,31 @@ later task modules, deliberately: audit rows (no FKs, nothing blocks on
 them) and ``student_whitelist`` entries (flow-scoped, created through
 the public API with run-prefixed student numbers, not by these
 factories).
+
+**The mint clock (fixed-labels mode).** Under ``CQ_E2E_FIXED_LABELS=1``
+every timestamp this layer stamps at seed time rides
+``mint_now()`` — a FUTURE anchor plus one-minute steps per call —
+instead of the wall clock, so date text, review-queue stamps, and
+deadline snapshots are byte-stable between a pixel-baseline capture
+and a re-shoot (the walkthrough-measured drift: pinning the labels
+alone still left student-rewards ~173k / dashboard ~48k px moving).
+Future on purpose: the functional specs sharing this world submit
+against the seeded claims on the orchestrated app's REAL clock, so a
+past anchor would close every submission window — the pyjwt wall-clock
+lesson applied in reverse (pin the WORLD, never the app; token minting
+and login stay on the real clock). The steps keep sibling stamps
+distinct: one shared instant would tie every ``published_at`` and
+leave list order to the uuid tiebreak. The ONE exception is
+``seed_points_balance``'s ``ranking_effective_at`` (see there).
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import os
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import count
 from typing import Any
 from uuid import UUID
 
@@ -129,6 +147,39 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+#: The fixed-labels world's mint anchor: every seed-time stamp derives
+#: from this instant (plus one-minute steps) instead of the wall clock,
+#: FUTURE-dated so the seeded claims stay on-time and windows stay open
+#: against the real clock the orchestrated app runs on. Pinned as an
+#: independent contract by test_browser_world_mint_clock (the MIME-freeze
+#: discipline: the implementation must match the pinned value, not
+#: alias it).
+FIXED_MINT_ANCHOR = datetime(2030, 1, 1, tzinfo=UTC)
+
+_FIXED_MINT_STEP = timedelta(minutes=1)
+_fixed_mint_steps: Iterator[int] = count()
+
+
+def reset_mint_clock() -> None:
+    """Restart the stepped mint sequence (browser_world._seed calls
+    this at entry). The production seed path is a fresh process per
+    world, so this only matters for in-process double seeds (the pytest
+    label/mint tests) — resetting keeps their stamps byte-identical."""
+    global _fixed_mint_steps
+    _fixed_mint_steps = count()
+
+
+def mint_now() -> datetime:
+    """The seed-time ``now``: the anchor's stepped sequence under
+    ``CQ_E2E_FIXED_LABELS=1``, the real clock otherwise (the pre-flag
+    behavior every non-visual e2e module relies on). Read per call, not
+    at import, so pytest can toggle the flag with monkeypatch — the
+    same discipline as browser_world's label_run."""
+    if os.environ.get("CQ_E2E_FIXED_LABELS") == "1":
+        return FIXED_MINT_ANCHOR + _FIXED_MINT_STEP * next(_fixed_mint_steps)
+    return datetime.now(UTC)
+
+
 def _unique_phone(run: str) -> str:
     """A run-unique E.164 mobile number for the ACTIVE-student rule.
 
@@ -159,6 +210,7 @@ async def seed_student(
             phone_e164=_unique_phone(run),
             role=Role.STUDENT,
             status=UserStatus.ACTIVE,
+            created_at=mint_now(),
         )
         db.add(student)
         await db.commit()
@@ -184,6 +236,7 @@ async def seed_teacher_confirmed_totp(
             phone_e164=None,
             role=Role.TEACHER,
             status=UserStatus.ACTIVE,
+            created_at=mint_now(),
         )
         db.add(teacher)
         await db.flush()
@@ -191,7 +244,7 @@ async def seed_teacher_confirmed_totp(
             TotpCredential(
                 user_id=teacher.id,
                 secret_encrypted=f"e2e-totp-stand-in:{run}".encode(),
-                confirmed_at=_now(),
+                confirmed_at=mint_now(),
             )
         )
         await db.commit()
@@ -215,6 +268,7 @@ async def seed_admin(
             phone_e164=None,
             role=Role.ADMIN,
             status=UserStatus.ACTIVE,
+            created_at=mint_now(),
         )
         db.add(admin)
         await db.commit()
@@ -256,7 +310,7 @@ async def seed_task_with_assignments(
     if duration_minutes <= 0:
         raise ValueError("duration_minutes must be positive")
     async with factory() as db:
-        now = _now()
+        now = mint_now()
         task = Task(
             owner_teacher_id=teacher_id,
             title=f"端到端数据采集任务{run[:6]}",
@@ -337,6 +391,7 @@ async def seed_admin_confirmed_totp(
             phone_e164=None,
             role=Role.ADMIN,
             status=UserStatus.ACTIVE,
+            created_at=mint_now(),
         )
         db.add(admin)
         await db.flush()
@@ -344,7 +399,7 @@ async def seed_admin_confirmed_totp(
             TotpCredential(
                 user_id=admin.id,
                 secret_encrypted=f"e2e-totp-stand-in:{run}".encode(),
-                confirmed_at=_now(),
+                confirmed_at=mint_now(),
             )
         )
         await db.commit()
@@ -397,7 +452,7 @@ async def seed_claim(
         assert task_row is not None
         assignment = await db.get(Assignment, task.assignment_ids[0])
         assert assignment is not None
-        claimed_at = _now()
+        claimed_at = mint_now()
         deadlines = compute_claim_deadlines(task_row, claimed_at)
         claim = AssignmentClaim(
             assignment_id=assignment.id,
@@ -437,6 +492,13 @@ async def seed_points_balance(
     exact column shape: ``ASSIGNMENT_CLAIM`` source, balance+ranking
     effects, effective-at now). Returns the ranking_effective_at the
     caller should hand the ranking projection."""
+    # The ONE mint-clock exception, on purpose: ranking_effective_at is a
+    # STORAGE ADDRESS (the projection lands in business_day/month(effective)
+    # boards, and the live ranking reads derive the window from REAL now) —
+    # pinning it to the fixed anchor would empty the dashboard's monthly
+    # widget and the month-filtered wallet figures instead of freezing
+    # them. The projected VALUES are label-deterministic regardless; the
+    # cross-month re-shoot residual belongs to the frontend window masks.
     now = _now()
     async with factory() as db:
         db.add(
