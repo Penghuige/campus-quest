@@ -359,7 +359,7 @@ function RewardFormDialog({
         size="wide"
         aria-labelledby="reward-form-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >
@@ -591,7 +591,7 @@ function DisableRewardDialog({
         asChild
         aria-labelledby="reward-disable-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >

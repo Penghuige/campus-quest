@@ -7,11 +7,12 @@
  * the existing `.btn*` classes in globals.css — the visual shell gains
  * NO new CSS, the five context overrides that style `.btn` descendants
  * (`.otp-row` / `.avatar-actions` / `.dialog-actions` / `.row-actions`
- * / `.cq-dialog-footer`) keep applying verbatim, and the C3
- * retirement can re-point every button in the product by changing the
- * mapping in THIS file alone. (The alternative — a parallel
- * `.cq-btn*` family token-copied from `.btn` — would duplicate five
- * context overrides and double the drift surface until C3.)
+ * / `.cq-dialog-footer`) keep applying verbatim, so the C3
+ * retirement could re-point every button in the product by changing
+ * the mapping in THIS file alone. (The alternative — a parallel
+ * `.cq-btn*` family token-copied from `.btn` — would have
+ * duplicated five context overrides and doubled the drift surface
+ * before C3.)
  *
  * `type` defaults to "button" (explicit-safe); form submit sites pass
  * type="submit" — adoption audited every call site so no implicit

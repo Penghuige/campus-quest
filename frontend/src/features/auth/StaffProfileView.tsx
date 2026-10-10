@@ -6,9 +6,9 @@
  * shell.
  *
  * Field scope: 昵称/账号/角色/账号状态 from the original DTO;
- * 注册日期 joined when the backend contract landed it (PR #46:
- * MePublic.created_at) — formatted date-only in the business
- * timezone, the growth view's honor-date shape.
+ * 注册日期 carried by MePublic.created_at since PR #46 — formatted
+ * date-only in the business timezone, the growth view's honor-date
+ * shape.
  */
 import { BUSINESS_TIME_CONFIG } from "@/lib/time";
 

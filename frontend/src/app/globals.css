@@ -1351,11 +1351,9 @@ body {
 
 /* --- staff menu sheet (narrow band; full navigation list) -------------------- */
 
-/* C3 self-contained shell: the sheet keeps its sanctioned native
-   <dialog> (plan-14 ledger: transient nav menu, outside the five
-   contract flows) but no longer rides the legacy `.dialog*` classes —
-   the shell values below are the retired `.dialog`/`.dialog-body`
-   contract folded in verbatim. */
+/* C3: the sheet keeps its sanctioned native <dialog> (plan-14 ledger:
+   transient nav menu); values inherited from the retired .dialog
+   contract. */
 .app-menusheet {
   width: min(18rem, calc(100vw - 2 * var(--space-4)));
   padding: 0;
@@ -2946,8 +2944,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Native dialog: the platform's focus containment + Escape handling.
-   The element itself is the backdrop target; the body is the card. */
+/* Generic actions strip (Radix dialogs + admin pages). */
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4215,9 +4212,9 @@ body {
 }
 
 /* ==== Plan-14 T4: shadcn-pattern Dialog primitive (src/components/ui/dialog).
-   Replicates the retired native .dialog contract verbatim — same tokens,
-   same values (the C3 retirement removed the .dialog* originals; the
-   shared .dialog-actions row below survives as the generic actions strip).
+   Values inherited from the retired native .dialog contract (the C3
+   retirement removed the .dialog* originals; the shared .dialog-actions
+   row above (:2948) survives as the generic actions strip).
    The Radix portal renders plain divs outside the top layer, so the
    primitive carries its own fixed positioning, centering transform, scrim
    element (instead of ::backdrop), and z-index. NO open/close animation: the

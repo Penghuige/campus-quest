@@ -208,7 +208,7 @@ describe("login synchronously invalidates the anonymous session cache (targeted 
   });
 });
 
-describe("a sibling reset bumps the session-cache generation exactly ONCE (round-5 review P2)", () => {
+describe("a sibling reset bumps the session-cache generation exactly ONCE", () => {
   test("N mounted consumers fence without stranding each other's /me", () => {
     resetSessionCacheForTests();
     resetAccessTokenManagerForTests();

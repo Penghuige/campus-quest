@@ -546,7 +546,7 @@ function WhitelistDisableDialog({
         asChild
         aria-labelledby="whitelist-disable-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >

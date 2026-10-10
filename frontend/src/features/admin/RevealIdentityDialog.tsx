@@ -4,8 +4,7 @@
  * 10 step 2; G11/G12): the ONE surface where a comment author's student
  * number is representable at all. On the plan-14 Dialog primitive
  * (components/ui/dialog; the form is the content element via
- * `DialogContent asChild`, keeping the grid that lived on
- * `form.dialog-body`).
+ * `DialogContent asChild`, keeping the form's own grid intact).
  *
  * Binding rules this component exists to enforce:
  * - the reason is MANDATORY and capped (the backend refuses blanks and
@@ -85,7 +84,8 @@ export function RevealIdentityDialog({
         asChild
         aria-labelledby="reveal-identity-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close (reveal is a
+          // destructive-ish confirm).
           event.preventDefault();
         }}
       >

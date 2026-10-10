@@ -932,7 +932,9 @@ export function moderationRowView(
     deleted: comment.deleted,
     edited: comment.edited,
     hardHidden: comment.hard_hidden,
-    moderationKey: comment.moderation_key,
+    // generated type marks this optional (Pydantic default); the wire
+    // always carries it — normalize undefined to null at the boundary.
+    moderationKey: comment.moderation_key ?? null,
     createdAtMs: parseInstant(comment.created_at),
   };
 }

@@ -10,7 +10,8 @@ export default defineConfig([
   ...nextTypescript,
   // e2e/ holds the Playwright specs + shared fixtures. @playwright/test
   // is installed (Plan 10 E1), so the directory is linted; tsc still
-  // skips it (tsconfig includes only src/** — Playwright transpiles the
-  // specs itself), and `next build` never touches files outside src/app.
+  // skips it (tsconfig's include has no e2e/** — Playwright transpiles
+  // the specs itself), and `next build` never touches files outside
+  // src/app.
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);

@@ -2,16 +2,10 @@
  * Typed wrappers for the community endpoints (spec §20-§24; backend
  * `app/modules/community/router.py` + `schemas.py`, Stream S2).
  *
- * HAND-WRITTEN CONTRACT, NOT GENERATED: `openapi.snapshot.json` on this
- * branch predates the community module (it ends at the S1/S3 surface),
- * so these DTOs are transcribed field-by-field from the S2 router's
- * Pydantic models. MERGE-TIME STEP: when the S2 stream merges, point
- * `npm run api:types` at the combined backend and replace these local
- * shapes with `components["schemas"]["CommentPublicResponse"]` etc.
- * (`git grep CommentPublicResponse src/features/community` finds every
- * seam). The unit tests in `__tests__/community-api.test.ts` pin the
- * wire paths/methods/bodies against the S2 router so drift is caught
- * at that boundary.
+ * DTOs come from the GENERATED OpenAPI types in `lib/api/schema`
+ * (the snapshot carries the S2 surface); the unit tests in
+ * `__tests__/community-api.test.ts` pin the wire paths/methods/bodies
+ * as a second drift boundary.
  *
  * PRIVACY BY CONSTRUCTION (spec §21.4/§40): `CommentDto` carries NO
  * author identity beyond `author_display` (nickname for named comments,
@@ -20,67 +14,32 @@
  * `content: null` with the uniform 该评论已删除 display.
  */
 import { apiRequest } from "@/lib/api";
+import type { components } from "@/lib/api/schema";
 
-// --- DTOs (transcribed from S2 `router.py` wire schemas) ---------------------------
+type Schemas = components["schemas"];
+
+// --- DTOs (generated snapshot) --------------------------------------------------
 
 /** `CommentPublicResponse` — exactly the privacy-safe public shape. */
-export interface CommentDto {
-  id: string;
-  task_id: string;
-  parent_id: string | null;
-  /** null exactly on tombstones (deleted parents kept for anchoring). */
-  content: string | null;
-  is_anonymous: boolean;
-  /** nickname | 匿名用户 | 该评论已删除 (server-resolved display only). */
-  author_display: string;
-  created_at: string;
-  updated_at: string;
-  edited: boolean;
-  deleted: boolean;
-}
+export type CommentDto = Schemas["CommentPublicResponse"];
 
 /** `CommentListResponse` — one offset page of the public thread. */
-export interface CommentPageDto {
-  items: CommentDto[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+export type CommentPageDto = Schemas["CommentListResponse"];
 
 /** Sort keys the backend accepts (spec §24; hot is server-computed). */
 export type CommentSortKey = "latest" | "hot";
 
 /** `VoteResponse` — the caller's post-transition stance + comment totals. */
-export interface VoteResultDto {
-  current_value: number; // 1 | 0 | -1 AFTER the transition
-  likes: number;
-  dislikes: number;
-}
+export type VoteResultDto = Schemas["VoteResponse"];
 
 /** `ReactionResponse` — toggle verdict + the comment's per-emoji counts. */
-export interface ReactionResultDto {
-  emoji: string;
-  added: boolean;
-  counts: Record<string, number>;
-}
+export type ReactionResultDto = Schemas["ReactionResponse"];
 
 /** `ReportResponse` — the caller's OWN report row (201). */
-export interface ReportDto {
-  id: string;
-  comment_id: string;
-  category: string;
-  note: string | null;
-  status: string;
-  created_at: string;
-}
+export type ReportDto = Schemas["ReportResponse"];
 
 /** `RatingResponse` — the rater's own rating echo (public stays aggregate-only). */
-export interface RatingResultDto {
-  task_id: string;
-  rating: number;
-  created_at: string;
-  updated_at: string;
-}
+export type RatingResultDto = Schemas["RatingResponse"];
 
 // --- closed sets (backend-owned; mirrored for the UI) ------------------------------
 

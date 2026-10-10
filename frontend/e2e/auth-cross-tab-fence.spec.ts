@@ -47,17 +47,17 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   await pageB.getByRole("button", { name: "登录", exact: true }).click();
   await expect(pageB).not.toHaveURL(/\/login/);
 
-  // Round-3 P0: NO RELOAD. The reset must fence the MOUNTED tab: the
+  // NO RELOAD. The reset must fence the MOUNTED tab: the
   // session cache is invalidated and useSession revalidates in place —
   // A's UI must leave the stale A-authenticated state without a reload,
   // so a stale-A click can never 401-refresh-retry as B.
-  // Round-5: the early-phase assertion is IDENTITY-AWARE. On this stack
+  // The early-phase assertion is IDENTITY-AWARE. On this stack
   // the whole transition (loading gate -> B settled) can complete well
   // inside 300ms, and a fully-rendered dashboard at the sample point is
   // then B's — the SAFE terminal state — while a text-presence
   // classifier cannot tell whose dashboard it is. The invariant under
   // test is that A's identity is gone from the account surface the
-  // moment the reset has landed (fence probe evidence, round 5).
+  // moment the reset has landed (fence probe evidence).
   await pageA.waitForTimeout(300);
   const earlyChip = await pageA
     .locator(".rail-account-name, .app-user")
@@ -118,7 +118,7 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   expect(aNick).not.toContain(aNickname);
 });
 
-test("out-of-order /me: a straggler answering OLD identity after the reset NEVER repaints (round-5 P0)", async ({
+test("out-of-order /me: a straggler answering OLD identity after the reset NEVER repaints", async ({
   browser,
 }) => {
   const context = await browser.newContext();
@@ -175,7 +175,7 @@ test("out-of-order /me: a straggler answering OLD identity after the reset NEVER
   // Wait until the OLD request is in flight (held at the route). Poll
   // the handler's own flag: a request stalled inside an async route
   // handler does not reliably settle page.waitForRequest (fence probe
-  // evidence, round 5).
+  // evidence).
   await expect.poll(() => heldRequested, { timeout: 5_000 }).toBe(true);
 
   // Sibling tab B logs in (explicit transition): the reset fences A, A

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
  * Teacher profile page (defect #17, QA 2026-10-03): the workspace's
  * own-account view, /me facts only (the shell gates the route on a
  * TEACHER session — students get the workspace guidance, not broken
- * controls). 注册日期 joins when the backend DTO carries created_at.
+ * controls). 注册日期 rides MePublic.created_at (since PR #46).
  */
 export default function TeacherProfilePage() {
   return <StaffProfileView />;

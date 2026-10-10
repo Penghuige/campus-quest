@@ -4,7 +4,7 @@
  * over the SAME shared fields (`TaskFormFields`), prefilled from the
  * task detail, on the plan-14 Dialog primitive (components/ui/dialog;
  * the form is the content element via `DialogContent asChild`, keeping
- * the legacy grid/gap that lived on `form.dialog-body`).
+ * the form's own grid/gap intact).
  *
  * This closes the load-bearing gap: a DRAFT created without the
  * submission schema (create is DRAFT-legal) becomes publishable by
@@ -58,9 +58,9 @@ export interface EditTaskDialogProps {
 
 export function EditTaskDialog({ task, open, onClose, onUpdated }: EditTaskDialogProps) {
   // Mounting the inner dialog per open re-seeds the form from the
-  // CURRENT task prop — the legacy reset-on-open effect's job, without
-  // an effect (the parent refetches the task only after the dialog
-  // closes, so no mid-open re-seed case exists).
+  // CURRENT task prop — reset-on-open without an effect (the parent
+  // refetches the task only after the dialog closes, so no mid-open
+  // re-seed case exists).
   return open ? (
     <EditTaskDialogInner task={task} onClose={onClose} onUpdated={onUpdated} />
   ) : null;

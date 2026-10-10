@@ -1,7 +1,7 @@
 /**
  * Task 6 (Plan 09): community API wrappers against the fetch stub —
- * wire-shape pins for the S2 community surface (hand-written contract
- * until the merged snapshot regenerates `lib/api/schema`):
+ * wire-shape pins for the S2 community surface — the DTOs are generated
+ * from the snapshot; these pins are the second drift boundary:
  * paths, methods, bodies (extra-free by the backend's extra=forbid),
  * the server sort param, and the toggle echoes the UI reconciles from.
  */

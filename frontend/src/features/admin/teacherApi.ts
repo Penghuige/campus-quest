@@ -4,15 +4,9 @@
  * and the S2 `app/modules/community/router.py` moderation surfaces).
  *
  * Shapes for the tasks/submissions surfaces come from the GENERATED
- * OpenAPI types in `lib/api/schema` (the S1 contract is in the snapshot).
- * The community moderation endpoints below are HAND-WRITTEN — the same
- * documented pattern as `features/community/api.ts`: the branch snapshot
- * predates the S2 module, so those DTOs are transcribed field-by-field
- * from the S2 router's Pydantic models. MERGE-TIME STEP: when S2 merges,
- * replace the local shapes with `components["schemas"]` references and
- * drop this note (`git grep ModerationCommentDto src/features/admin`
- * finds every seam). The unit tests pin the wire paths/methods/bodies
- * against the S2 router so drift is caught at that boundary.
+ * OpenAPI types in `lib/api/schema`, as do the community moderation
+ * DTOs below (the snapshot carries the S2 surface). The unit tests
+ * pin the wire paths/methods/bodies as a second drift boundary.
  *
  * PRIVACY SPOT-CHECK (binding constraint, spec §40/§21.4): the review
  * queue DTO carries platform/keyword — the sanctioned teacher judging
@@ -236,8 +230,8 @@ export function runTaskLifecycle(
 }
 
 /**
- * Parse and pre-check a CSV upload (spec §7.1 steps 1-4). The file is
- * the RAW request body with `Content-Type: text/csv` — the backend's
+ * Parse and pre-check a CSV/XLSX upload (spec §7.1 steps 1-4). The
+ * file is the RAW request body (sent as text/csv) — the backend's
  * documented transport choice (no multipart); the byte cap rejects
  * oversize payloads before any parsing.
  */
@@ -353,56 +347,19 @@ export function mintSubmissionDownload(
   );
 }
 
-// --- S2 community moderation (HAND-WRITTEN contract; see the module note) -------------
+// --- S2 community moderation (generated snapshot types) ------------------------------
 
 /** `ModerationCommentResponse` — the Teacher-safe comment shape (§21.4). */
-export interface ModerationCommentDto {
-  id: string;
-  task_id: string;
-  parent_id: string | null;
-  content: string | null;
-  is_anonymous: boolean;
-  /** nickname | 匿名用户 (server-resolved; NO identity field exists here). */
-  author_display: string;
-  created_at: string;
-  updated_at: string;
-  edited: boolean;
-  deleted: boolean;
-  /** Pseudonymous key, present exactly on anonymous rows (§21.4). */
-  moderation_key: string | null;
-  hard_hidden: boolean;
-}
+export type ModerationCommentDto = Schemas["ModerationCommentResponse"];
 
 /** `ModerationCommentListResponse` — one offset page. */
-export interface ModerationCommentPageDto {
-  items: ModerationCommentDto[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+export type ModerationCommentPageDto = Schemas["ModerationCommentListResponse"];
 
 /** `CommentReportResponse` — one report-queue row (§23 moderator surface). */
-export interface ModerationReportDto {
-  id: string;
-  comment: ModerationCommentDto;
-  category: string;
-  note: string | null;
-  status: string;
-  /** Reporter identity — sanctioned on the moderation surface only. */
-  reporter_user_id: string | null;
-  reporter_nickname: string | null;
-  created_at: string;
-  handled_by: string | null;
-  handled_at: string | null;
-}
+export type ModerationReportDto = Schemas["CommentReportResponse"];
 
 /** `CommentReportListResponse` — one offset page. */
-export interface ModerationReportPageDto {
-  items: ModerationReportDto[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+export type ModerationReportPageDto = Schemas["CommentReportListResponse"];
 
 /** Teacher-safe comment listing for one task (GET /teacher/tasks/{id}/comments/moderation). */
 export function listModerationComments(

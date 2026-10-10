@@ -245,7 +245,7 @@ export function preCheckFile(
     return {
       ok: false,
       reason: "type-unknown",
-      message: "不支持的文件格式，请选择 CSV、Excel（.xlsx）或 SQLite 文件",
+      message: "不支持的文件格式，请选择 CSV、Excel（.xlsx）、SQLite、Word（.docx）或 PDF 文件",
     };
   }
   if (allowedTypes !== undefined && !allowedTypes.includes(declaredType)) {

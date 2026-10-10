@@ -72,8 +72,8 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // FOLD (T7 review): a failed load-more used to vanish silently; the
-  // inline message + retry below keep the failure observable.
+  // FOLD (T7 review): a failed load-more surfaces inline; the
+  // message + retry below keep the failure observable.
   const [moreError, setMoreError] = useState<unknown>(null);
   const [markErrors, setMarkErrors] = useState<Record<string, SectionErrorView>>(
     {},

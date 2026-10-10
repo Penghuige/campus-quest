@@ -1,13 +1,13 @@
 "use client";
 /**
  * Assignment import (spec §7.1 steps 1-6; design §9 File upload):
- * upload a CSV -> the server parses and pre-checks -> a preview with
- * total/valid/error counts and per-row errors -> an EXPLICIT confirm ->
- * the all-or-nothing result summary.
+ * upload a CSV/XLSX file -> the server parses and pre-checks -> a
+ * preview with total/valid/error counts and per-row errors -> an
+ * EXPLICIT confirm -> the all-or-nothing result summary.
  *
  * Contract notes that shape this UI:
- * - the file rides the request as the RAW BODY (`Content-Type:
- *   text/csv`, ≤2 MB, ≤5000 rows, header exactly `platform,keyword`);
+ * - the file rides the request as the RAW BODY (≤2 MB, ≤5000 rows;
+ *   CSV header exactly `platform,keyword`);
  * - the preview echoes COUNTS + errors only — the valid rows stay
  *   server-side, named by the single-use `preview_token` that expires
  *   (15 min); confirm inserts EXACTLY the previewed rows in one

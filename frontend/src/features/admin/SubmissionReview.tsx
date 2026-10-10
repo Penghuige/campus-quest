@@ -574,7 +574,7 @@ function RevisionDialog({
       <DialogContent
         aria-labelledby={invalidate ? "invalidate-title" : "revision-title"}
         onPointerDownOutside={(event) => {
-          // The legacy dialog had NO backdrop-click close (a half-typed
+          // Deliberate: no backdrop-click close (a half-typed
           // mandatory note must survive an accidental scrim click).
           event.preventDefault();
         }}

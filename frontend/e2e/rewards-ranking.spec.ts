@@ -41,7 +41,7 @@ import { ensureStudentLogin, mintToken } from "./fixtures";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8000/api/v1";
-const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
+const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
 const RUN = process.env.CQ_E2E_RUN;
 const REWARD_ITEM_ID = process.env.CQ_E2E_REWARD_ITEM_ID;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;

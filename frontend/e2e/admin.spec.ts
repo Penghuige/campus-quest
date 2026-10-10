@@ -48,7 +48,7 @@ const RUN = process.env.CQ_E2E_RUN;
 
 test.skip(
   !E2E_ENABLED,
-  "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
+  "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
 // The staff contract itself is a HARD requirement now (PR #6 final

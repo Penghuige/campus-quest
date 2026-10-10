@@ -1,12 +1,13 @@
 "use client";
 /**
  * Plan-14 T4: shadcn-pattern Dialog primitive on @radix-ui/react-dialog,
- * styled to the CampusQuest `.dialog` contract (globals.css).
+ * styled to the CampusQuest dialog contract.
  *
  * Styling ruling (plan-14 T4): this repo compiles NO default Tailwind
  * scales (utilities-only import, no default theme — `p-4`, `md:*`,
  * `rounded-lg` generate nothing), so the visual shell is plain CSS
- * classes `.cq-dialog*` in globals.css, replicating `.dialog` verbatim:
+ * classes `.cq-dialog*` in globals.css (values inherited from the
+ * retired native `.dialog` contract, C3):
  * width min(26rem, 100vw - 2*--space-4) / 40rem wide variant, --border,
  * --radius-lg, --shadow-dialog, --surface-1, --overlay-scrim scrim, and
  * NO open/close animation (the product has none).

@@ -470,7 +470,7 @@ function ConfirmSettingDialog({
       <DialogContent
         aria-labelledby="setting-confirm-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >

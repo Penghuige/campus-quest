@@ -6,8 +6,8 @@
  * `points/admin_router.py` and the points review-queue routes).
  *
  * Every shape comes from the GENERATED OpenAPI snapshot in
- * `lib/api/schema` (already regenerated on this branch — no hand-written
- * DTOs). Wire-shape pins live in `src/__tests__/admin-api.test.ts`.
+ * `lib/api/schema` (regenerated in the same PR as the API change —
+ * no hand-written DTOs). Wire-shape pins live in `src/__tests__/admin-api.test.ts`.
  *
  * Guard posture (backend `require_admin_actor` + the store-backed
  * management-network dependency): these paths answer 403 for non-admin

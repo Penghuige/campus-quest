@@ -68,7 +68,7 @@ const STATUS_FILTERS: readonly { value: UserStatusDto | ""; label: string }[] = 
 
 type Filters = { role: RoleDto | ""; status: UserStatusDto | "" };
 
-/** adminView's literal class unions -> Button variant props (C2 map). */
+/** adminView's literal class unions -> Button variant props. */
 const BUTTON_VARIANT: Record<"btn-primary" | "btn-secondary" | "btn-danger", ButtonVariant> = {
   "btn-primary": "primary",
   "btn-secondary": "secondary",
@@ -388,7 +388,7 @@ function AccountStatusDialog({
         asChild
         aria-labelledby="account-status-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >
