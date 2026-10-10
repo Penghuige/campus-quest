@@ -5,8 +5,7 @@
  * the button's width and meaning do not shift.
  *
  * C2-auth: rides the shared Button primitive (class-mapping route) — the
- * variant/block props and the .btn* classes now come from one place; the
- * output className string is byte-identical to the hand-rolled version.
+ * variant/block props and the .btn* classes now come from one place.
  */
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 

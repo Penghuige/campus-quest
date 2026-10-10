@@ -1,10 +1,10 @@
 /**
  * P3-A: axe-core accessibility gate — rides the SAME 11-shot page
  * collection as the pixel suite (imports SHOTS/authenticate from
- * visual-regression.spec.ts; one source of truth for the surfaces).
+ * shot-surfaces.ts — one source of truth for the surfaces).
  *
  * Policy (owner-approved): NEW violations are zero-tolerance; EXISTING
- * ones are baselined in e2e/a11y-baseline.mjs with a reason each —
+ * ones are baselined in e2e/a11y-baseline.ts with a reason each —
  * fix one, delete its entry. The gate is a BOTH-DIRECTION ratchet:
  *   - a finding with no baseline entry  -> FAIL (new violation);
  *   - a baseline entry with no finding  -> FAIL (stale entry — the fix

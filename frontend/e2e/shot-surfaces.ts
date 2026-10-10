@@ -28,9 +28,9 @@ export interface Shot {
   path?: string;
   /** …or a world-export env carrying a seeded deep link (claim/task
    * detail): the shot skips when the export is absent, mirroring
-   * visual-capture.spec.ts's conditional-capture discipline. These two
-   * shots are deliberately NOT in scripts/assert-e2e-no-skips.mjs's
-   * watched list — the skip is legal. */
+   * visual-capture.spec.ts's conditional-capture discipline. Their
+   * skips are legal through per-title noskip-exemptions entries (the
+   * v2 gate watches every spec by default). */
   envPath?: string;
 }
 

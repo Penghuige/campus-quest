@@ -5,8 +5,9 @@
  * A short focused confirmation on the plan-14 Dialog primitive
  * (components/ui/dialog): Radix supplies role=dialog, the focus trap,
  * Escape, and outside-click close (modality via hideOthers +
- * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell is the
- * `.cq-dialog*` replication of the legacy `.dialog` values.
+ * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell
+ * carries the `.cq-dialog*` values (inherited from the retired native
+ * `.dialog` contract, C3).
  *
  * Mutation rules (patterns §7): NO optimistic anything — the confirm
  * button stays disabled until the server answers; success renders the
@@ -62,8 +63,8 @@ export function RedeemDialog({
     >
       <DialogContent aria-labelledby="redeem-dialog-title">
         {/* The primitive unmounts the content on close, so the body's
-            attempt state starts fresh on every open — the legacy reset-
-            on-open effect's job, without an effect. */}
+            attempt state starts fresh on every open — reset-on-open
+            without an effect. */}
         <RedeemDialogBody
           reward={reward}
           spendablePoints={spendablePoints}

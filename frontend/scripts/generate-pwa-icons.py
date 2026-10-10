@@ -22,7 +22,7 @@ Recipe (deliberately dependency-light and deterministic):
   image, font, or network asset is read;
 - the color is the OKLCH `--primary` token string converted to sRGB hex
   by the same reference OKLab->sRGB pipeline as frontend
-  src/lib/designTokens.ts (oklch(52% 0.15 258) -> #2a67bd), so icons,
+  src/lib/designTokens.ts (oklch(50% 0.18 264) -> #2b59c8), so icons,
   manifest theme_color, and app chrome stay one color;
 - "maskable" art keeps everything inside the central 80% safe zone on a
   full-bleed square (the launcher mask crops the corners);
@@ -40,8 +40,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-# oklch(52% 0.15 258) — the `--primary` token from src/app/globals.css.
-PRIMARY_TOKEN = "oklch(52% 0.15 258)"
+# oklch(50% 0.18 264) — the `--primary` token from src/app/globals.css.
+PRIMARY_TOKEN = "oklch(50% 0.18 264)"
 # --surface-1 (the icon's white mark sits on the primary fill).
 MARK_COLOR = (255, 255, 255, 255)
 

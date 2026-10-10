@@ -26,8 +26,8 @@ interface ProfilePageProps {
  * the landing slot; the 个人信息 subpage now owns ALL account editing
  * (nickname/avatar/phone/email/password — formerly interleaved with
  * the growth data). The server parses the tab (garbage degrades to
- * the default); the avatar section gates itself on the live
- * has_avatar contract (absent until the backend avatar PR deploys).
+ * the default); the avatar section gates itself on (the live
+ * has_avatar contract).
  */
 export default async function ProfilePage({ searchParams }: ProfilePageProps) {
   const params = await searchParams;

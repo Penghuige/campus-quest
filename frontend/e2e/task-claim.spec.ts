@@ -1,27 +1,17 @@
 /**
  * CampusQuest task-claim e2e — Plan 09 Task 3 (task discovery + claim).
  *
- * STATUS: SPEC ONLY — NOT WIRED TO A RUNNER YET.
- *
- * Same guard pattern as `e2e/auth.spec.ts`: Playwright itself is installed
- * by Plan 10 (no `@playwright/test` dependency and no `test:e2e` script
- * yet). Until then this file stays invisible to the gates:
- * - `tsconfig.json` includes only `src/**` + `.next/**`, so `tsc` skips it;
- * - `eslint.config.mjs` lists `e2e/**` in globalIgnores for the same reason;
- * - `next build` never touches files outside `src/app`.
- * Once Plan 10 installs Playwright, remove the eslint ignore, add the
- * `test:e2e` script, and run with `CQ_E2E=1` — every test below is skipped
- * unless that flag is set, so importing the file can never depend on a
- * live backend during ordinary development.
+ * Gate discipline: every test is skipped unless CQ_E2E=1, so importing
+ * the file never depends on a live backend during ordinary development.
+ * ESLint covers e2e/**; tsc does not (tsconfig's include stops at src).
  *
  * Environment contract (defaults work against local dev servers):
  * - CQ_E2E=1               enable the suite (required);
  * - CQ_E2E_BASE_URL        frontend origin (default https://localhost:3000);
- * - CQ_E2E_LOGIN_URL       login page (default $CQ_E2E_BASE_URL/login);
  * - CQ_E2E_TASK_URL        task DETAIL deep link to a published task with
  *                          at least one AVAILABLE assignment (required for
- *                          the claim-flow tests; Plan 10's fixture prepares
- *                          it — until then those tests skip);
+ *                          the claim-flow tests; the world export provides
+ *                          it);
  * - CQ_E2E_STUDENT         pre-seeded student credentials
  *                          "student-number:password" (required with
  *                          CQ_E2E_TASK_URL; the fixture seeds the account).
@@ -36,9 +26,9 @@ import { ensureStudentLogin, expect, test } from "./fixtures";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
-const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
+const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
 
-test.skip(!E2E_ENABLED, "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
+test.skip(!E2E_ENABLED, "set CQ_E2E=1 (and the CQ_E2E_* URLs) to run this suite.");
 
 /** Scoped to the claim-flow describe ONLY (r4 M2): the defect-#5 card
  * tests below need just CQ_E2E_STUDENT + the /tasks square, so a
@@ -120,9 +110,7 @@ test.describe("student task claim", () => {
     // The standard world's deterministic depleted card (task_r, its
     // one assignment claimed by the redeemer — the square badge test
     // above pins the same task) doubles as the depleted DETAIL deep
-    // link, so this pin runs in every battery — no EMPTY_TASK_URL
-    // stage needed (that env no longer ships; its old exemption dies
-    // with the press-then-reject test it gated).
+    // link, so this pin runs in every battery — no extra env stage.
     const depletedCard = page
       .locator(".task-card", { hasText: "已被领完" })
       .first();

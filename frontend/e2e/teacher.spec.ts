@@ -36,7 +36,7 @@ import { expect, test } from "@playwright/test";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
-const STAFF = process.env.CQ_E2E_STAFF; // "teacher@school.edu:correct-horse"
+const STAFF = process.env.CQ_E2E_STAFF; // "e2e-teacher-{run}@school.edu:password" (factories' DEFAULT_PASSWORD)
 const STAFF_TOTP_SECRET = process.env.CQ_E2E_STAFF_TOTP_SECRET;
 // An UNRELATED teacher for the access-denied negative (F6): a second
 // seeded account with no collaboration on the first teacher's task.
@@ -45,7 +45,7 @@ const STAFF2_TOTP_SECRET = process.env.CQ_E2E_STAFF2_TOTP_SECRET;
 
 test.skip(
   !E2E_ENABLED,
-  "Playwright lands in Plan 10; set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
+  "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
 // The staff contract itself is a HARD requirement now (PR #6 final

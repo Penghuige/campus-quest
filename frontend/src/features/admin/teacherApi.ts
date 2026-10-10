@@ -236,8 +236,8 @@ export function runTaskLifecycle(
 }
 
 /**
- * Parse and pre-check a CSV upload (spec §7.1 steps 1-4). The file is
- * the RAW request body with `Content-Type: text/csv` — the backend's
+ * Parse and pre-check a CSV/XLSX upload (spec §7.1 steps 1-4). The
+ * file is the RAW request body (sent as text/csv) — the backend's
  * documented transport choice (no multipart); the byte cap rejects
  * oversize payloads before any parsing.
  */

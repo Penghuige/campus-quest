@@ -4,10 +4,10 @@
  * Ruling (E1 brief): the config itself orchestrates BOTH servers — the
  * backend (uvicorn serving create_app) and the frontend (next dev) —
  * through webServer, so `npx playwright test` is self-contained against
- * the local docker-compose dependency stack. CI wiring lands with E5;
- * the ports follow the spec defaults (frontend 3000, backend 8000) and
- * are derived from the same CQ_E2E_* variables the specs read, so an
- * override moves the client and the servers together.
+ * the local docker-compose dependency stack. The ports follow the spec
+ * defaults (frontend 3000, backend 8000) and are derived from the same
+ * CQ_E2E_* variables the specs read, so an override moves the client
+ * and the servers together.
  *
  * E2 adds the seeded world: globalSetup runs browser_world.py (the
  * backend e2e factories) BEFORE the workers fork and publishes the
@@ -99,10 +99,10 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   // P3-B: cross-browser smoke. Chromium stays the default (full suite,
-  // zero change); firefox/webkit projects run ONLY the smoke spec with
-  // CQ_SMOKE=1 injected — the trade-off (deliberately narrow subset,
-  // no full matrix — CI time vs signal) is recorded in the spec header
-  // and the PR.
+  // zero change); firefox/webkit projects run ONLY the smoke spec
+  // (project selection, no extra env) — the trade-off (deliberately
+  // narrow subset, no full matrix — CI time vs signal) is recorded in
+  // the spec header and the PR.
   projects: [
     {
       name: "chromium",

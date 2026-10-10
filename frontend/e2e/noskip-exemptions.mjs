@@ -58,7 +58,7 @@ export const NOSKIP_EXEMPTIONS = [
     (title) => ({
       file: "visual-capture.spec.ts",
       title,
-      gate: "CQ_E2E_CAPTURE=1",
+      gate: "CQ_E2E_CAPTURE_DIR",
       reason:
         "Evidence-capture harness (screenshots for review), gated off the standard battery.",
     }),

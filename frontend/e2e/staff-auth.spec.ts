@@ -19,8 +19,9 @@
  * This file covers the brief's STEP 1 (invitation -> password -> TOTP setup
  * -> recovery codes once -> done pointing at staff login). Step 2 (2FA
  * enforcement at login: password-without-TOTP must not yield a session;
- * reused recovery code fails) needs a seeded staff fixture contract from
- * Plan 10 and lands with the runner.
+ * reused recovery code fails) is a KNOWN UNCOVERED gap — the seeded
+ * staff contract exists (CQ_E2E_STAFF/_TOTP_SECRET), the scenarios
+ * have no tests yet (owner backlog).
  *
  * The confirm code is computed IN-TEST from the displayed secret
  * (RFC 6238, SHA-1, 30s step, 6 digits — node:crypto, no test dependency),

@@ -3,16 +3,16 @@
  * Create-task dialog (spec §6; patterns §6 forms): the DRAFT-creation
  * form on the plan-14 Dialog primitive (components/ui/dialog) — Radix
  * supplies role=dialog/focus-trap/Escape (modality via hideOthers +
- * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell is
- * the `.cq-dialog*` replication of the legacy `.dialog` values. The
- * fields are the publish-validation set (binding constraint) rendered
- * by the shared `TaskFormFields` (the edit dialog reuses them under the
- * V1 edit rule).
+ * RemoveScroll; Radix 1.2 emits no aria-modal); the visual shell
+ * carries the `.cq-dialog*` values (inherited from the retired native
+ * `.dialog` contract, C3). The fields are the publish-validation set
+ * (binding constraint) rendered by the shared `TaskFormFields` (the
+ * edit dialog reuses them under the V1 edit rule).
  *
- * The form IS the content element (`DialogContent asChild`): the legacy
- * grid/gap lived on `form.dialog-body`, and the primitive's grid lives
- * on `.cq-dialog-content` — a bare nested form would collapse into one
- * grid item and lose the child gaps.
+ * The form IS the content element (`DialogContent asChild`): the
+ * form's own grid/gap must stay intact — a bare nested form would
+ * collapse into one grid item of `.cq-dialog-content`'s grid and lose
+ * the child gaps.
  *
  * Client mirrors are CONVENIENCE ONLY (`validateTaskForm`): a bad band
  * never leaves the browser; every business verdict (unsupported values,
@@ -50,8 +50,8 @@ export interface CreateTaskDialogProps {
 }
 
 export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogProps) {
-  // Mounting the inner dialog per open starts every field fresh — the
-  // legacy reset-on-open effect's job, without an effect.
+  // Mounting the inner dialog per open starts every field fresh —
+  // reset-on-open without an effect.
   return open ? (
     <CreateTaskDialogInner onClose={onClose} onCreated={onCreated} />
   ) : null;

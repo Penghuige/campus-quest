@@ -77,8 +77,8 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // FOLD (T7 review): a failed load-more used to vanish silently; the
-  // inline message + retry below keep the failure observable.
+  // FOLD (T7 review): a failed load-more surfaces inline; the
+  // message + retry below keep the failure observable.
   const [moreError, setMoreError] = useState<unknown>(null);
   const [replyTo, setReplyTo] = useState<CommentRowView | null>(null);
   const [reportTarget, setReportTarget] = useState<CommentRowView | null>(null);
@@ -354,14 +354,14 @@ export function CommentRowItem({
 
 /**
  * Report form on the plan-14 Dialog primitive (components/ui/dialog):
- * Radix supplies the focus trap + Escape; the shell is the `.cq-dialog*`
- * replication of the legacy `.dialog` values. The accessible name is the
- * CONSTANT aria-label 举报评论 (the legacy contract) in both states, so
- * no DialogTitle/labelledby wiring; the form is the content element via
- * `DialogContent asChild`, keeping the grid that lived on
- * `form.dialog-body`. The submitted state is deliberately
- * NON-DESTRUCTIVE: the reported comment stays visible while moderation
- * reviews — the confirmation says so.
+ * Radix supplies the focus trap + Escape; the shell carries the
+ * `.cq-dialog*` values (inherited from the retired native `.dialog`
+ * contract, C3). The accessible name is the CONSTANT aria-label 举报评论
+ * in both states, so no DialogTitle/labelledby wiring; the form is the
+ * content element via `DialogContent asChild` — a bare form child would
+ * collapse into a single grid item, losing its own grid/gap. The
+ * submitted state is deliberately NON-DESTRUCTIVE: the reported comment
+ * stays visible while moderation reviews — the confirmation says so.
  */
 function ReportDialog({
   comment,
@@ -435,7 +435,8 @@ function ReportDialog({
         asChild
         aria-label="举报评论"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close (a stray click must not
+          // discard a half-written comment).
           event.preventDefault();
         }}
       >

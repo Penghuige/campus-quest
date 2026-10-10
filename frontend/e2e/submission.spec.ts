@@ -56,7 +56,7 @@ const CLAIM_URL_2 = process.env.CQ_E2E_CLAIM_PATH_2
 const TASK_OPEN_URL = process.env.CQ_E2E_TASK_OPEN_PATH
   ? `${BASE_URL}${process.env.CQ_E2E_TASK_OPEN_PATH}`
   : undefined;
-const STUDENT = process.env.CQ_E2E_STUDENT; // "20240001:correct-horse"
+const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
 const GOOD_CSV = process.env.CQ_E2E_GOOD_CSV;
 const BAD_CSV = process.env.CQ_E2E_BAD_CSV;
 const STUDENT_ID = process.env.CQ_E2E_STUDENT_ID;

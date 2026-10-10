@@ -14,6 +14,13 @@ Next.js (App Router) client for the CampusQuest backend. Product rules live in
 | `npm run lint` | ESLint (eslint-config-next) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run test:unit` | unit tests (node:test via tsx) |
+| `npm run test:e2e` | Playwright e2e battery (needs `CQ_E2E=1`; the config starts both servers) |
+| `npm run test:e2e:visual` | visual-regression suite (`CQ_VISUAL_UPDATE=1` regenerates baselines) |
+| `npm run test:e2e:a11y` | axe-core accessibility suite |
+| `npm run test:e2e:smoke` | firefox/webkit cross-browser smoke projects |
+| `npm run coverage:ratchet` | unit-suite coverage ratchet gate |
+| `npm run coverage:update` | re-record coverage floors (intentional change) |
+| `npm run audit:gate` | audit guard (scripts/check-audit.mjs) |
 | `npm run api:types` | regenerate `src/lib/api/schema.d.ts` from a running backend |
 | `npm run api:types:snapshot` | regenerate it from the committed snapshot instead |
 
@@ -63,17 +70,22 @@ in tests are exercised through a stubbed `globalThis.fetch` (the api client's
 test seam); no mocking library is used because
 `docs/quality/frontend-patterns.md` prescribes none.
 
-## e2e (spec only until Plan 10)
+## e2e
 
-`e2e/auth.spec.ts` holds the registration/login Playwright flows written by
-Plan 09 Task 2; `e2e/task-claim.spec.ts` (Plan 09 Task 3) covers task
-discovery and the claim flow — including the spec §42 privacy pins (no
-assignment list, no assignment_id input, platform/keyword only after the
-server allocates) and a 375x812 claim-CTA viewport check. It additionally
-skips its claim-flow tests unless `CQ_E2E_TASK_URL` + `CQ_E2E_STUDENT`
-(the Plan 10 fixture contract) are provided. Playwright is NOT installed yet: the directory is excluded
-from `tsconfig.json` (by include list) and from ESLint (`eslint.config.mjs`
-globalIgnores), and every test is skipped unless `CQ_E2E=1` — so typecheck,
-lint, and build never depend on it. Plan 10 installs `@playwright/test`, adds
-the `test:e2e` script, removes the eslint ignore, and runs the suite with
-`CQ_E2E=1 CQ_E2E_BASE_URL=… CQ_E2E_API_URL=… CQ_E2E_OTP_CODE=…`.
+The Playwright battery lives in `e2e/` — 20 spec files covering auth, task
+claim, submission, community, notifications, the teacher/admin/staff
+surfaces, rewards + rankings, accessibility, visual regression, and the
+cross-browser/fence specials. Every spec is skipped unless `CQ_E2E=1`, so
+ordinary development never depends on a live stack. ESLint lints `e2e/**`;
+`tsc` does not (Playwright transpiles the specs itself).
+
+`playwright.config.ts` is self-contained: its two `webServer` entries start
+the backend (uvicorn) and the frontend (`next dev`) themselves, and
+`globalSetup` seeds the e2e world and publishes the `CQ_E2E_*` contract
+before the workers fork. Run it with `cd frontend && CQ_E2E=1 npm run
+test:e2e` (or `make playwright-e2e` from the repo root).
+
+The battery runs under a no-skip gate: `scripts/assert-e2e-no-skips.mjs`
+reads the JSON report and fails on any skip not covered by a per-title
+entry in `e2e/noskip-exemptions.mjs` (gate + reason), so a silently
+skipped spec can never read as a green run.

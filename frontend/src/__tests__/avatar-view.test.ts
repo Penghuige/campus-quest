@@ -2,9 +2,9 @@
  * Defect #4 (QA 2026-09-30) — avatar view derivations: client-side
  * pre-checks (convenience only, the server re-validates by magic
  * number per the avatar proposal D2), the square-crop math, and the
- * capability gate that keeps the whole avatar section unrendered until
- * the backend merges has_avatar into MePublic (schema regen flips the
- * gate; before that the section must NOT render — no silent no-ops).
+ * capability gate that keeps the whole avatar section unrendered
+ * unless MePublic carries a boolean has_avatar (defense against a
+ * missing/non-boolean field — no silent no-ops).
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -40,7 +40,7 @@ describe("avatar pre-checks (D2 contract: <=2MB, png/jpeg/webp)", () => {
     }
   });
 
-  test("the SIZE gate runs on the CROPPED bytes (r1 review rationale)", () => {
+  test("the SIZE gate runs on the CROPPED bytes", () => {
     // At the ceiling passes; over it gets the limit copy. A large RAW
     // photo is deliberately NOT this gate's input — the crop may
     // legally shrink it under the ceiling before this ever runs.
@@ -69,7 +69,7 @@ describe("square-crop math (center max-square, D2: crop then upload)", () => {
   });
 });
 
-describe("the capability gate (has_avatar lands with the backend PR)", () => {
+describe("the capability gate (boolean-required gate)", () => {
   test("a MePublic WITHOUT the field keeps the section hidden", () => {
     assert.equal(avatarSupported({ id: "u", nickname: "同学" }), false);
   });

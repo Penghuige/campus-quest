@@ -20,8 +20,7 @@
  * font rasterization deltas are expected; regenerate deliberately with
  * `CQ_VISUAL_UPDATE=1 npm run test:e2e:visual` (the npm script wires the
  * flag to --update-snapshots) and re-review every changed PNG before
- * committing. Not wired into release-gate/ci.yml yet: pixel stability
- * across runner environments is proven first (Phase C promotes it).
+ * committing. (Wired into both the CI visual job and `make release-gate`.)
  *
  * Determinism discipline (per shot): real login through the app's own
  * forms (fixtures' ensureStudentLogin/staffLogin), wait for the page's
@@ -32,8 +31,7 @@
  * frozen at their initial state — the gallery skeleton's shimmer) and
  * hide the caret.
  *
- * Masks — how they actually work here (fix-round-1 correction; the
- * earlier "masks apply at comparison only" note was wrong):
+ * Masks — how they actually work here:
  * - a mask paints an opaque box over the matched element's box AT
  *   CAPTURE TIME — the produced PNG (baseline write or actual) carries
  *   the box, which is why the stored baselines show pink strips;

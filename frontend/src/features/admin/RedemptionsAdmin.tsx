@@ -377,7 +377,7 @@ function ApproveDialog({
       <DialogContent
         aria-labelledby="redemption-approve-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >
@@ -466,7 +466,7 @@ function RejectDialog({
         asChild
         aria-labelledby="redemption-reject-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >
@@ -568,7 +568,7 @@ function FulfillDialog({
         asChild
         aria-labelledby="redemption-fulfill-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >

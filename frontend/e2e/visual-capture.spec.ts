@@ -11,8 +11,8 @@
  *
  * Off by default: runs only when BOTH CQ_E2E=1 (the suite-wide
  * convention) and CQ_E2E_CAPTURE_DIR are set, so ordinary development
- * and the release gate (whose no-skip assertion watches
- * teacher/admin only) never depend on it.
+ * and the release gate (covered by its noskip exemption
+ * entries) never depend on it.
  *
  * Output: ${CQ_E2E_CAPTURE_DIR}/${pass}/${name}.png plus a
  * manifest.json recording route / account / viewport / world run for

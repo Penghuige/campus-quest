@@ -310,7 +310,7 @@ function ModerationDeleteDialog({
         asChild
         aria-labelledby="moderation-delete-title"
         onPointerDownOutside={(event) => {
-          // The legacy dialog had no backdrop-click close.
+          // Deliberate: no backdrop-click close.
           event.preventDefault();
         }}
       >

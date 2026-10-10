@@ -36,7 +36,7 @@ export interface TaskLifecycleActionsProps {
 }
 import { Button, type ButtonVariant } from "@/components/ui/button";
 
-/** teacherView's literal class unions -> Button variant props (C2 map). */
+/** teacherView's literal class unions -> Button variant props. */
 const BUTTON_VARIANT: Record<"btn-primary" | "btn-secondary" | "btn-danger", ButtonVariant> = {
   "btn-primary": "primary",
   "btn-secondary": "secondary",
