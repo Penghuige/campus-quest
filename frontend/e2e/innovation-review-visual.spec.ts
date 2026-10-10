@@ -100,6 +100,7 @@ test("achievement review visual: owner proof workspace, operator queue and campu
   const publicDetail = page.getByRole("article", { name: "校内成果详情" });
   await expect(publicDetail).toContainText("当前为更新复审通过的版本。");
   await expect(publicDetail).not.toContainText("00889900");
+  await expect(publicDetail.locator("time")).toHaveCount(2);
   await page.addStyleTag({ content: ':root { --font-sans: "Noto Sans CJK SC", sans-serif; } * { animation: none !important; transition: none !important; }' });
   await expect(publicDetail).toHaveScreenshot("achievement-update-approved.png", { mask: [publicDetail.locator("time")], maxDiffPixelRatio: 0.01 });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
