@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cryptography.fernet import Fernet
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Development-only secrets (backend-engineering §17 fail-fast): all are
 # KNOWN values committed to the repository, so production must override them.
@@ -65,6 +65,13 @@ _ALIYUN_SMS_CREDENTIAL_FIELDS: tuple[tuple[str, str], ...] = (
 
 
 class Settings(BaseSettings):
+    # Optional local dotenv: `cp .env.example .env` in backend/ fills the
+    # required deployment values for local development. Real environment
+    # variables always WIN over the file (pydantic-settings precedence),
+    # so CI/production (which export env or source an env file into the
+    # process) are unaffected by a stray local .env.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     database_url: str
     redis_url: str
     s3_endpoint_url: str

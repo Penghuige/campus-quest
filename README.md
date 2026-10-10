@@ -65,13 +65,7 @@ cd infra && docker compose up -d
 
 # 2. 后端
 cd backend && uv sync
-export DATABASE_URL="postgresql+asyncpg://campusquest:campusquest-dev@localhost:15432/campusquest" \
-       BUSINESS_TIMEZONE="Asia/Shanghai" \
-       REDIS_URL="redis://localhost:6379/0" \
-       S3_ENDPOINT_URL="http://localhost:9000" \
-       S3_BUCKET="campusquest-test" \
-       S3_ACCESS_KEY="campusquest" \
-       S3_SECRET_KEY="campusquest-dev"
+cp .env.example .env   # 本地开发环境变量（模板即 infra/docker-compose.yml 的默认值）
 uv run alembic upgrade head
 uv run python scripts/seed_demo_accounts.py
 uv run python scripts/seed_demo_content.py
