@@ -67,6 +67,47 @@ async def test_download_standing_denies_when_owner_row_is_missing() -> None:
         )
 
 
+async def test_download_standing_allows_the_task_owner() -> None:
+    """The B-F2 split left the owner-match arm without a covering test
+    (the ratchet caught it): the owner's own download answers the
+    allow ``return`` before any collaborator lookup runs."""
+    actor = _teacher_actor()
+    db = _ScriptedSession([actor.user_id])
+    service = SubmissionQueryService()
+
+    await service._require_download_standing(
+        db, SimpleNamespace(task_id=uuid4()), actor, uuid4()
+    )
+    assert db.rollbacks == 0
+
+
+async def test_download_standing_denies_without_collaborator_standing() -> None:
+    """A teacher who is neither the owner nor a REVIEW_SUBMISSIONS
+    collaborator is denied — the tail of the same gate."""
+    owner, stranger = uuid4(), uuid4()
+    db = _ScriptedSession([owner, None])
+    service = SubmissionQueryService()
+
+    with pytest.raises(SubmissionNotOwnedError):
+        await service._require_download_standing(
+            db,
+            SimpleNamespace(task_id=uuid4()),
+            Actor(user_id=stranger, role=Role.TEACHER),
+            uuid4(),
+        )
+
+
+async def test_download_standing_allows_review_collaborator() -> None:
+    owner = uuid4()
+    collaborator = _teacher_actor()
+    db = _ScriptedSession([owner, ("REVIEW_SUBMISSIONS",)])
+    service = SubmissionQueryService()
+
+    await service._require_download_standing(
+        db, SimpleNamespace(task_id=uuid4()), collaborator, uuid4()
+    )
+
+
 async def test_review_permission_denies_when_owner_row_is_missing() -> None:
     db = _ScriptedSession([None])
     service = ReviewService(

@@ -89,6 +89,15 @@ def test_pdf_early_fake_trailer_without_tail_is_none(tmp_path: Path) -> None:
     assert detect_file_type(_write(tmp_path, garbage)) is None
 
 
+def test_zip_magic_with_unreadable_directory_is_none(tmp_path: Path) -> None:
+    """A file starting with the ZIP local-header magic but too short
+    to carry a central directory: not a usable archive of any kind —
+    the BadZipFile branch, not an exception."""
+    whole = bytearray()
+    whole += b"PK\x03\x04" + b"\x00" * 8
+    assert detect_file_type(_write(tmp_path, bytes(whole))) is None
+
+
 def test_zip_without_manifest_is_none(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
