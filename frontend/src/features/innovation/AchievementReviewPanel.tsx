@@ -8,13 +8,13 @@ import { getAuthEpoch } from "@/lib/accessToken";
 import { isApiError } from "@/lib/errors";
 import { getProjectDraft } from "./api";
 import type { AchievementDraftDto } from "./achievementApi";
-import { completeEvidence, getWorkflow, listEvidence, publishRevision, readEvidence, removeEvidence, saveProofBlob, submitRevision, uploadEvidence, withdrawReview, type RevisionCommand } from "./reviewApi";
-import { evidenceFileError, evidenceStatusText, reviewError, reviewStatusText } from "./reviewPresentation";
+import { completeEvidence, getWorkflow, listEvidence, submitUpdateRevision, readEvidence, removeEvidence, saveProofBlob, submitRevision, uploadEvidence, withdrawReview, type RevisionCommand } from "./reviewApi";
+import { evidenceFileError, evidenceStatusText, isReviewPending, reviewError, reviewStatusText } from "./reviewPresentation";
 import { ReviewConfirm } from "./ReviewConfirm";
 import { getOwnerQualification } from "./qualificationApi";
 import { restoreReviewFocus } from "./reviewFocus";
 
-type Action = "submit" | "publish" | "withdraw";
+type Action = "submit" | "update" | "withdraw";
 export function AchievementReviewPanel({ projectId, record, dirty, saving, onLocked }: { projectId: string; record: AchievementDraftDto; dirty: boolean; saving: boolean; onLocked: (locked: boolean) => void }) {
   const { state, retry } = useSection(getOwnerQualification);
   useEffect(() => { if (state.status !== "ready" || state.data.status !== "APPROVED") onLocked(state.status === "loading"); }, [state, onLocked]);
@@ -43,12 +43,13 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
       retryOpener.current = null;
     }
   }, [busy, uncertain]);
-  const pending = useRef<{ action: "submit" | "publish"; body: RevisionCommand } | null>(null);
+  const pending = useRef<{ action: "submit" | "update"; body: RevisionCommand } | null>(null);
   const upload = useRef<{ file: File; requestId: string } | null>(null);
   const [retryUpload, setRetryUpload] = useState(false);
   const active = useRef(false); const epoch = useRef(getAuthEpoch());
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const pendingReview = state.status === "ready" && state.data.workflow.first_review_state === "SUBMITTED";
+  const pendingReview = state.status === "ready" && isReviewPending(state.data.workflow);
+  const updateReview = state.status === "ready" && state.data.workflow.first_review_state === "APPROVED";
   useEffect(() => { onLocked(busy || uncertain || state.status === "loading" || pendingReview); }, [busy, uncertain, state.status, pendingReview, onLocked]);
   function current() { return active.current && epoch.current === getAuthEpoch(); }
   async function run(action: () => Promise<void>) {
@@ -74,9 +75,9 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
             pending.current = { action, body: { request_id: crypto.randomUUID(), workflow_version: wf.version, project_version: project.version, achievement_version: record.version, evidence_ids: [...selected] } };
           }
           const frozen = pending.current;
-          await (frozen.action === "submit" ? submitRevision : publishRevision)(projectId, record.id, frozen.body);
+          await (frozen.action === "submit" ? submitRevision : submitUpdateRevision)(projectId, record.id, frozen.body);
         }
-        if (current()) { setMessage(action === "withdraw" ? "已撤回，可以修改草稿后重新提交。" : action === "publish" ? "更新已发布；首次核实时间不变，本次更新未逐项复审。" : "已提交首次核实，等待运营处理。待审期间须先撤回才能修改。" ); pending.current = null; setUncertain(false); setConfirm(null); }
+        if (current()) { setMessage(action === "withdraw" ? "已撤回，可以修改草稿后重新提交。" : action === "update" ? "已提交更新复审，审核期间继续展示旧通过版本，通过后才替换。" : "已提交首次核实，等待运营处理。待审期间须先撤回才能修改。" ); pending.current = null; setUncertain(false); setConfirm(null); }
       } catch (cause) {
         if (current()) { if ((!isApiError(cause) || cause.status >= 500) && pending.current) setUncertain(true); else { pending.current = null; setUncertain(false); } setConfirm(null); }
         throw cause;
@@ -102,9 +103,9 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
   return <section className="section" aria-label="成果核实与证明" ref={focusRef} tabIndex={-1}>
     <h3 className="section-title">核实与公开状态</h3>
     {state.status === "loading" ? <SectionSkeleton /> : state.status === "error" ? <SectionError error={state.error} onRetry={retry} /> : <>
-      <p className="alert">{reviewStatusText(state.data.workflow.first_review_state)} · {state.data.workflow.moderation_state === "TAKEN_DOWN" ? "已下架，更新不会恢复公开" : state.data.workflow.first_review_state === "APPROVED" ? "校内登录用户可浏览已发布版本" : "尚未公开"}</p>
+      <p className="alert">{reviewStatusText(state.data.workflow.first_review_state, state.data.workflow.review_case, state.data.workflow.moderation_state)} · {state.data.workflow.moderation_state === "TAKEN_DOWN" ? "已下架，更新不会恢复公开" : state.data.workflow.first_review_state === "APPROVED" ? "校内登录用户可浏览已发布版本" : "尚未公开"}</p>
       {state.data.workflow.review_case?.reason ? <p className="alert alert-warning">退回原因：{state.data.workflow.review_case.reason}</p> : null}
-      {state.data.workflow.first_review_state === "APPROVED" ? <><Link className="section-link" href={`/innovation/achievements/${record.id}`}>查看校内公开版本</Link><p className="field-hint">保存草稿不会更新公开版本。发布更新无需再次核实，但会明确标记为更新内容未逐项复审。</p></> : <p className="field-hint">提交会冻结已保存的项目概况、成果内容、负责人资料与所选证明。请先补齐资料，核对后再提交。</p>}
+      {state.data.workflow.first_review_state === "APPROVED" ? <><Link className="section-link" href={`/innovation/achievements/${record.id}`}>查看校内公开版本</Link><p className="field-hint">保存草稿不会更新公开版本。更新须重新核实；待审、退回或撤回期间保留旧通过版本，新版通过后才替换。</p></> : <p className="field-hint">提交会冻结已保存的项目概况、成果内容、负责人资料与所选证明。请先补齐资料，核对后再提交。</p>}
       <h4 className="field-label">私密证明材料</h4>
       <p className="field-hint" id="evidence-upload-hint">PDF、PNG 或 JPEG；单份最多 10 MiB，每次提交选择 1～5 份。仅本人及领取该审核单的运营可下载。文件检查通过不代表人工核实通过。</p>
       {!pendingReview ? <div className="field"><label className="field-label" htmlFor="evidence-file">上传证明材料</label><input className="input" id="evidence-file" type="file" accept="application/pdf,image/png,image/jpeg" aria-describedby="evidence-upload-hint" disabled={disabled || retryUpload} onChange={(event) => void pick(event)} /></div> : <p className="field-hint">待审期间材料不可变更；如需修改，请先撤回。</p>}
@@ -118,9 +119,9 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
         </div>
       </li>)}</ul> : <p className="field-hint">还没有证明材料。</p>}
       <p className="field-hint">已选择 {selected.length} 份检查通过的证明。已提交或公开版本引用的材料保留在历史记录中，不能通过移除改写历史。</p>
-      {dirty ? <p className="alert alert-warning">请先保存上方成果修改，再提交或发布更新。</p> : null}
+      {dirty ? <p className="alert alert-warning">请先保存上方成果修改，再提交核实。</p> : null}
       <div className="ie-draft-actions">
-        {pendingReview ? <Button variant="secondary" disabled={disabled} onClick={() => setConfirm("withdraw")}>撤回首次核实</Button> : <Button disabled={disabled || dirty || selected.length < 1 || selected.length > 5} onClick={() => setConfirm(state.data.workflow.first_review_state === "APPROVED" ? "publish" : "submit")}>{state.data.workflow.first_review_state === "APPROVED" ? "发布更新（免复审）" : "提交首次核实"}</Button>}
+        {pendingReview ? <Button variant="secondary" disabled={disabled} onClick={() => setConfirm("withdraw")}>{updateReview ? "撤回更新复审" : "撤回首次核实"}</Button> : <Button disabled={disabled || dirty || selected.length < 1 || selected.length > 5} onClick={() => setConfirm(updateReview ? "update" : "submit")}>{updateReview ? "提交更新复审" : "提交首次核实"}</Button>}
         <Button variant="secondary" disabled={busy || saving} onClick={retry}>重新读取核实与材料状态</Button>
 
       </div>
@@ -129,6 +130,6 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
     {message ? <p className="alert alert-success" role="status">{message}</p> : null}
     {uncertain ? <Button ref={retryFocusRef} disabled={busy || saving} onClick={(event) => { retryOpener.current = { element: event.currentTarget, epoch: getAuthEpoch() }; void send(pending.current!.action); }}>确认上次提交结果（沿用原请求）</Button> : null}
     {busy ? <p className="field-hint" aria-live="polite">正在处理，请稍候…</p> : null}
-    <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? "撤回首次核实" : confirm === "publish" ? "发布更新" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。" : confirm === "publish" ? "校内用户将看到已保存的更新内容。本次更新不会逐项复审，也不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
+    <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? updateReview ? "撤回更新复审" : "撤回首次核实" : confirm === "update" ? "提交更新复审" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。已有公开版本保持不变。" : confirm === "update" ? "提交已保存的更新内容与所选证明。审核期间继续展示旧通过版本，通过后才替换；不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
   </section>;
 }

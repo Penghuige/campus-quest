@@ -12,8 +12,8 @@ async function auditAxe(page: Page) {
   expect(findings.violations.map((violation) => ({ id: violation.id, targets: violation.nodes.map((node) => node.target) }))).toEqual([]);
 }
 
-test("achievement review: real private upload, withdrawal, return, approval and explicit update across three accounts", async ({ page, browser }, testInfo) => {
-  test.setTimeout(180_000);
+test("achievement review: private proof and every update reviewed across three accounts", async ({ page, browser }, testInfo) => {
+  test.setTimeout(300_000);
   await ensureStudentLogin(page);
   const ownerContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 } });
   const viewerContext = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -190,9 +190,55 @@ test("achievement review: real private upload, withdrawal, return, approval and 
     await owner.getByRole("button", { name: "保存成果草稿", exact: true }).click();
     await expect(owner.getByRole("status").first()).toContainText("成果草稿已保存");
     await viewer.reload(); await expect(publicDetail).toContainText("已补充第一次验证结果。"); await expect(publicDetail).not.toContainText("第二版公开进展。");
-    await owner.getByRole("button", { name: "发布更新（免复审）", exact: true }).click(); await confirm(owner, "发布更新");
-    await expect(panel(owner).getByRole("status")).toContainText("更新已发布");
-    await viewer.reload(); await expect(publicDetail).toContainText("第二版公开进展。"); await expect(publicDetail).toContainText("未逐项复审");
+    const firstApprovedAt = await publicDetail.locator("time").first().getAttribute("datetime");
+    const updates: unknown[] = [];
+    await owner.route("**/api/v1/ie/me/project-drafts/*/achievements/*/submit-update", async (route) => {
+      updates.push(route.request().postDataJSON());
+      if (updates.length === 1) {
+        const committed = await route.fetch(); expect(committed.status()).toBe(200);
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "SERVICE_UNAVAILABLE", message: "update response lost", request_id: "update-lost-ack" }) });
+      } else await route.continue();
+    });
+    await owner.getByRole("button", { name: "提交更新复审", exact: true }).click(); await confirm(owner, "提交更新复审");
+    await expect(owner.getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true })).toBeVisible();
+    await owner.getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true }).click();
+    await expect.poll(() => updates.length).toBe(2); expect(updates[1]).toEqual(updates[0]);
+    await owner.unroute("**/api/v1/ie/me/project-drafts/*/achievements/*/submit-update");
+    await expect(panel(owner)).toContainText("等待更新复审");
+    await expect(owner.getByLabel("成果名称", { exact: true })).toBeDisabled();
+    async function stillOldPublic() {
+      await viewer.reload(); await expect(publicDetail).toContainText("已补充第一次验证结果。");
+      await expect(publicDetail).not.toContainText("第二版公开进展。");
+      expect(await publicDetail.locator("time").first().getAttribute("datetime")).toBe(firstApprovedAt);
+    }
+    await stillOldPublic();
+    await owner.getByRole("button", { name: "撤回更新复审", exact: true }).click(); await confirm(owner, "撤回更新复审");
+    await expect(panel(owner)).toContainText("更新已撤回"); await stillOldPublic();
+    await expect(owner.getByLabel("成果名称", { exact: true })).toBeEnabled();
+    await owner.getByRole("button", { name: "提交更新复审", exact: true }).click(); await confirm(owner, "提交更新复审");
+    await expect(panel(owner)).toContainText("等待更新复审");
+    await page.getByRole("button", { name: "返回核实待办", exact: true }).click();
+    await expect(queue).toContainText("更新复审");
+    await page.getByRole("button", { name: "领取并核实", exact: true }).click();
+    await expect(detail).toContainText("第二版公开进展。");
+    await expect(detail).toContainText("更新复审：通过后才替换公开版本");
+    await page.getByLabel("核实备注／退回原因", { exact: true }).fill("请补充第二版的验证依据。");
+    await page.getByRole("button", { name: "退回修改", exact: true }).click(); await confirm(page, "退回成果修改");
+    await expect(page.getByRole("status")).toContainText("更新已退回");
+    await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
+    await expect(panel(owner)).toContainText("退回原因：请补充第二版的验证依据。"); await stillOldPublic();
+    await owner.getByRole("button", { name: "提交更新复审", exact: true }).click(); await confirm(owner, "提交更新复审");
+    await expect(panel(owner)).toContainText("等待更新复审");
+    await page.getByRole("button", { name: "返回核实待办", exact: true }).click();
+    await page.getByRole("button", { name: "领取并核实", exact: true }).click();
+    await page.getByRole("button", { name: "通过更新复审", exact: true }).click(); await confirm(page, "通过更新复审");
+    await expect(page.getByRole("status")).toContainText("核实通过");
+    await viewer.reload(); await expect(publicDetail).toContainText("第二版公开进展。");
+    await expect(publicDetail).toContainText("当前为更新复审通过的版本。"); await expect(publicDetail).not.toContainText("未逐项复审");
+    expect(await publicDetail.locator("time").first().getAttribute("datetime")).toBe(firstApprovedAt);
+    await expect(publicDetail).not.toContainText("00998877");
+    await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
+    await expect(panel(owner)).toContainText("更新复审已通过");
     await page.getByRole("button", { name: "返回核实待办", exact: true }).click(); await expect(queue).toContainText("暂无可领取的成果");
     await auditAxe(viewer);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

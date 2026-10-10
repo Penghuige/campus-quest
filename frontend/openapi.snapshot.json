@@ -2280,13 +2280,13 @@
         }
       }
     },
-    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/publish-update": {
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/submit-update": {
       "post": {
         "tags": [
           "innovation review workflow"
         ],
-        "summary": "Publish Update",
-        "operationId": "publish_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__publish_update_post",
+        "summary": "Submit Update",
+        "operationId": "submit_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_update_post",
         "security": [
           {
             "HTTPBearer": []
@@ -10732,6 +10732,18 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "latest_reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Reviewed At"
+          },
           "updated_after_first_review": {
             "type": "boolean",
             "title": "Updated After First Review"
@@ -10744,6 +10756,7 @@
           "achievement",
           "first_approved_at",
           "updated_at",
+          "latest_reviewed_at",
           "updated_after_first_review"
         ],
         "title": "PublicAchievementResponse"
@@ -11659,6 +11672,14 @@
             "format": "uuid",
             "title": "Revision Id"
           },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "SUBMIT",
+              "UPDATE"
+            ],
+            "title": "Operation"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -11689,6 +11710,7 @@
         "required": [
           "id",
           "revision_id",
+          "operation",
           "status",
           "version",
           "reason"
@@ -11794,6 +11816,14 @@
             "format": "uuid",
             "title": "Revision Id"
           },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "SUBMIT",
+              "UPDATE"
+            ],
+            "title": "Operation"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -11841,6 +11871,7 @@
         "required": [
           "id",
           "revision_id",
+          "operation",
           "status",
           "version",
           "reason",

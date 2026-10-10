@@ -25,7 +25,7 @@ export const completeEvidence = (p: string, a: string, e: string) => request<Evi
 export const removeEvidence = (p: string, a: string, e: string) => request<void>(`${ownerPath(p, a)}/evidence/${encoded(e)}`, { method: "DELETE" });
 export const readEvidence = (p: string, a: string, e: string) => request<Blob>(`${ownerPath(p, a)}/evidence/${encoded(e)}/content`, { responseFormat: "blob", cache: "no-store" });
 export const submitRevision = (p: string, a: string, body: RevisionCommand) => request<WorkflowDto>(`${ownerPath(p, a)}/submit`, { method: "POST", body });
-export const publishRevision = (p: string, a: string, body: RevisionCommand) => request<WorkflowDto>(`${ownerPath(p, a)}/publish-update`, { method: "POST", body });
+export const submitUpdateRevision = (p: string, a: string, body: RevisionCommand) => request<WorkflowDto>(`${ownerPath(p, a)}/submit-update`, { method: "POST", body });
 export const withdrawReview = (p: string, a: string, body: WithdrawalCommand) => request<WorkflowDto>(`${ownerPath(p, a)}/withdraw`, { method: "POST", body });
 export const listReviewQueue = (offset = 0) => request<Schema["app__modules__innovation__review_schemas__ReviewQueueResponse"]>(`/api/v1/ie/ops/achievement-reviews?limit=20&offset=${offset}`);
 export const claimReview = (c: string, version: number) => request<Schema["ReviewCaseSummary"]>(`${opsPath(c)}/claim`, { method: "POST", body: { version } });

@@ -12,8 +12,8 @@
 | U4 | R2 下架独立 | 更新通过保留 TAKEN_DOWN，校内仍不可见 | `tests/integration/innovation/test_update_review.py::test_update_approval_preserves_takedown` | 已覆盖 |
 | U5 | R2 事务原子性 | 通知或审计失败时待审事项与旧公开指针保留，无新增通知 | `tests/integration/innovation/test_achievement_review_operations.py::test_failed_decision_dependency_rolls_back_decision_and_notification` | 已覆盖（SUBMIT/UPDATE） |
 | U6 | R2 历史边界 | 无审核记录的历史 UPDATE 不声称已复审，私有字段不进入公开响应 | `tests/integration/innovation/test_update_review.py::test_legacy_update_without_case_does_not_claim_review` + `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` | 已覆盖 |
-| U7 | R2 界面 | 当前 UPDATE 待审/退回/撤回与首次状态分离、公开新版核实文案诚实；使用 submit-update | `tests/../../frontend/src/__tests__/innovation-review.test.ts` | RED 2 → GREEN 10 |
-| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 实施中，待本轮新鲜浏览器结果 |
+| U7 | R2 界面 | 当前 UPDATE 待审/退回/撤回与首次状态分离、公开新版核实文案诚实；使用 submit-update | `tests/../../frontend/src/__tests__/innovation-review.test.ts` | 已覆盖（RED 2 → GREEN 10） |
+| U8 | R2 三账号闭环 | 更新提交、撤回、退回仍公开旧内容，新版批准才替换，网络响应丢失沿用原请求 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 缺口 G-5（待本轮新鲜浏览器结果） |
 
 ## 历史首次核实记录（免复审条款已被 R2 覆盖）
 
@@ -26,19 +26,21 @@
 | R3 | G1/G2：真实扫描 | 官方病毒库、真实 Clamd，正常文件通过、标准 EICAR 拒绝；10 MiB 容器内末尾独立 EICAR 被检测 | `tests/integration/test_evidence_scanner_smoke.py::test_real_clamd_ready_and_clean_file` + `tests/integration/test_evidence_scanner_smoke.py::test_real_clamd_detects_eicar` + `tests/integration/test_evidence_scanner_smoke.py::test_real_clamd_scans_entire_10_mib_including_final_threat` | 已覆盖（CQ_EVIDENCE_SCAN_SMOKE=1 本地真实服务；完整应用 wiring 尚见 G-1） |
 | R4 | PR-06/OP-01：证明权限 | 负责人上传/授权领取人读；其他账号和未领取 ADMIN 不读；撤权和审计失败拒绝 | `tests/integration/innovation/test_achievement_review_operations.py::test_operator_claim_gates_private_material_and_publication` + `tests/integration/innovation/test_review_races.py::test_read_rechecks_revocation_after_external_io` + `tests/integration/innovation/test_achievement_review_operations.py::test_failed_snapshot_or_file_audit_never_returns_private_data` | 已覆盖（后端，前端见 G-4） |
 | R5 | PR-08/11：不可变首次核实 | 首次提交冻结快照；待审先撤回再改；旧审不得公开新稿；批准/撤回竞争只能一方成功 | `tests/integration/innovation/test_achievement_workflow.py::test_submit_freezes_saved_content_and_withdraw_allows_edit` + `tests/integration/innovation/test_review_races.py::test_approval_and_withdrawal_have_one_committed_winner` | 已覆盖（真实独立 PG 连接，两个赢家顺序） |
-| R6 | PR-12/AC-01 | 通过后显式发布更新免复审；保存不公开；匿名/未审/下架与私有字段不公开；更新不恢复下架 | `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` + `tests/integration/innovation/test_achievement_workflow.py::test_publish_update_is_explicit_immutable_and_never_restores_takedown` | 已覆盖（真实 HTTP/PG，前端见 G-4） |
+| R6 | PR-12/AC-01 | 通过后显式发布更新免复审；保存不公开；匿名/未审/下架与私有字段不公开；更新不恢复下架 | `tests/integration/innovation/test_public_achievements.py::test_public_projection_visibility_and_private_fields` + `tests/integration/innovation/test_achievement_workflow.py::test_submit_update_is_immutable_pending_and_preserves_takedown` | 已覆盖（真实 HTTP/PG，前端见 G-4） |
 | R7 | UI/G19：真实闭环 | 三账号浏览器闭环、手机键盘、axe、固定字体视觉及生成契约工件随功能 | `tests/../../frontend/e2e/innovation-review.spec.ts` + `tests/../../frontend/e2e/innovation-review-visual.spec.ts` + `tests/../../frontend/src/__tests__/innovation-review.test.ts` | 已覆盖（修复后完整105浏览器及16既有/3新PNG通过；一次独立评审重要项已修复，Minor异步焦点延期） |
 | R8 | G1/G2：材料组合 | 真实生产 provider 通过 PG/MinIO/ClamAV 完成；写一次与类型/长度签名生效，读取上限生效 | `tests/integration/innovation/test_evidence_composition_smoke.py::test_real_provider_checks_uploaded_bytes_and_write_once` + `tests/integration/innovation/test_evidence_composition_smoke.py::test_evidence_signature_pins_type_and_size` | 已覆盖（双 smoke 标记，本地真实组合） |
 | R9 | 有界检查/锁后重验 | 扫描不持业务锁；移除、停用或新 attempt 完成后，旧扫描结果不得写入 READY | `tests/integration/innovation/test_evidence_races.py::test_late_scan_revalidates_committed_state` | 已覆盖（真实 PG 独立提交连接；可控外部扫描 fake） |
 | R10 | 本人材料生命周期/G12 | 资格、归属、大小数量、缺失、过期、扫描失败重试、已检内容变化和审计失败均执行拒绝规则 | `tests/integration/innovation/test_achievement_evidence.py::test_real_http_upload_check_and_private_proxy` + `tests/integration/innovation/test_achievement_evidence.py::test_owner_qualification_scope_and_authentication` + `tests/integration/innovation/test_achievement_evidence.py::test_finish_audit_failure_never_commits_ready` | 已覆盖（负责人及运营接口均已覆盖） |
 | R11 | PR-08/11：本人提交版本 | 已保存概况/身份/说明/READY 材料才可提交；冻结版本，待审先撤回再改；旧撤回不关闭新单；历史不可写 | `tests/integration/innovation/test_achievement_workflow.py::test_submit_freezes_saved_content_and_withdraw_allows_edit` + `tests/integration/innovation/test_achievement_workflow.py::test_new_submission_uses_new_revision_and_old_withdrawal_cannot_close_it` + `tests/integration/innovation/test_achievement_workflow.py::test_database_rejects_revision_and_checked_content_mutation` | 已覆盖（并包含独立 PG 连接的运营批准/撤回竞争） |
-| R12 | PR-12：显式更新 | 保存草稿不改公开指针，发布更新不创建二次审单、不改首次核实日期、不恢复下架 | `tests/integration/innovation/test_achievement_workflow.py::test_publish_update_is_explicit_immutable_and_never_restores_takedown` | 已覆盖（真实运营批准及公开响应由 Task 4/5 覆盖） |
+| R12 | PR-12：显式更新 | 保存草稿不改公开指针，发布更新不创建二次审单、不改首次核实日期、不恢复下架 | `tests/integration/innovation/test_achievement_workflow.py::test_submit_update_is_immutable_pending_and_preserves_takedown` | 已覆盖（真实运营批准及公开响应由 Task 4/5 覆盖） |
 | R13 | 异常恢复/G12 | 上传失败保留原文件请求，可显式放弃本地重试并重新选择；移除服务器记录不将页面永久锁死 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 已覆盖（真实签名PUT403→移除意向→明确放弃→重新上传，RED缺入口→GREEN闭环1通过59.4秒） |
 | R14 | OP-01/领取恢复 | 原领取人撤权、停用或角色变化后，有效运营可接手；有效领取不可被抢占，等锁后资格恢复应拒绝接手，审计失败不改变分配 | `tests/integration/innovation/test_review_assignment_recovery.py::test_ineligible_assignee_is_visible_and_reclaimable_without_owner_resubmit` + `tests/integration/innovation/test_review_assignment_recovery.py::test_reclaim_rechecks_restored_authority_after_waiting_for_old_user_lock` + `tests/integration/innovation/test_review_assignment_recovery.py::test_assignment_recovery_audit_failure_rolls_back_all_claim_changes` | 已覆盖（3项失效RED→GREEN及真实PG锁等待；修复后完整1307单元/worker+1227集成通过） |
 | R15 | OP-01/项目回避 | 项目回避释放本人该项目全部待审领取，保留其他项目与已完成历史；多条释放与审计原子提交 | `tests/integration/innovation/test_review_assignment_recovery.py::test_project_conflict_releases_all_pending_claims_but_not_other_projects` + `tests/integration/innovation/test_review_assignment_recovery.py::test_assignment_recovery_audit_failure_rolls_back_all_claim_changes` | 已覆盖（两份待审与已通过历史、另一项目、第二运营；批量回避RED→GREEN） |
 | R16 | 测试隔离/G19 | 仅清理world A时拒绝跨world授权引用，任何修改前拒绝，两world用户、授权和项目保留；明确包含两world才清理 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_rejects_cross_world_grant_before_any_mutation` | 已覆盖（真实独立PG连接，缺少拒绝RED→GREEN） |
 
 ## 缺口明细
+
+- G-5：R2 三账号更新复审的本轮浏览器验证仍待执行；历史 R1/首次核实结果不代替本轮。
 
 - G-1：已关闭后端材料与运营读取缺口（R4/R8–R10）。
 - G-2：已关闭后端工作流与运营批准/撤回竞争缺口（R5/R11）。

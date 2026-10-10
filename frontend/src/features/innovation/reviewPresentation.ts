@@ -1,12 +1,26 @@
 import { isApiError } from "@/lib/errors";
-import type { WorkflowDto, EvidenceDto } from "./reviewApi";
+import type { WorkflowDto, EvidenceDto, PublicAchievementDto } from "./reviewApi";
 
 export function evidenceFileError(file: Blob): string | null {
   if (!["application/pdf", "image/png", "image/jpeg"].includes(file.type)) return "请选择 PDF、PNG 或 JPEG 文件。";
   if (file.size < 1 || file.size > 10 * 1024 * 1024) return "单份证明须大于 0 字节，且不超过 10 MiB。";
   return null;
 }
-export const reviewStatusText = (state: WorkflowDto["first_review_state"]) => ({ DRAFT: "尚未提交首次核实", SUBMITTED: "等待首次核实", RETURNED: "已退回，修改后可重新提交", APPROVED: "首次核实已通过" })[state];
+export function reviewStatusText(state: WorkflowDto["first_review_state"], current?: WorkflowDto["review_case"], moderation: WorkflowDto["moderation_state"] = "NORMAL") {
+  if (current?.operation === "UPDATE") {
+    if (current.status === "APPROVED") return "更新复审已通过";
+    const status = ({ SUBMITTED: "等待更新复审", RETURNED: "更新已退回", WITHDRAWN: "更新已撤回" })[current.status];
+    return `${status}，${moderation === "TAKEN_DOWN" ? "旧通过版本保持下架" : "旧通过版本继续公开"}`;
+  }
+  return ({ DRAFT: "尚未提交首次核实", SUBMITTED: "等待首次核实", RETURNED: "已退回，修改后可重新提交", APPROVED: "首次核实已通过" })[state];
+}
+export function isReviewPending(workflow: Pick<WorkflowDto, "first_review_state" | "review_case">) {
+  return workflow.first_review_state === "SUBMITTED" || workflow.review_case?.status === "SUBMITTED";
+}
+export function publicReviewText(item: Pick<PublicAchievementDto, "updated_after_first_review" | "latest_reviewed_at">) {
+  if (!item.updated_after_first_review) return "当前为首次核实通过的版本。";
+  return item.latest_reviewed_at ? "当前为更新复审通过的版本。" : "历史更新内容，未逐项复审。";
+}
 export const evidenceStatusText = (state: EvidenceDto["state"]) => ({ PENDING: "等待上传或重新检查", CHECKING: "文件检查中", READY: "文件检查通过", REJECTED: "文件检查未通过" })[state];
 export function reviewError(cause: unknown): string {
   const message = reviewErrorMessage(cause);

@@ -2,23 +2,39 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { apiRequest } from "../lib/api";
 import { recordLogout, setAccessToken } from "../lib/accessToken";
-import { getWorkflow, listEvidence, completeEvidence, removeEvidence, claimReview, declareConflict, readReviewEvidence, submitRevision, withdrawReview, publishRevision, listReviewQueue, getReviewDetail, decideReview, listPublicAchievements, getPublicAchievement, readEvidence, uploadEvidence, saveProofBlob } from "../features/innovation/reviewApi";
+import { getWorkflow, listEvidence, completeEvidence, removeEvidence, claimReview, declareConflict, readReviewEvidence, submitRevision, withdrawReview, submitUpdateRevision, listReviewQueue, getReviewDetail, decideReview, listPublicAchievements, getPublicAchievement, readEvidence, uploadEvidence, saveProofBlob } from "../features/innovation/reviewApi";
 import { evidenceFileError, evidenceStatusText, reviewError, reviewStatusText } from "../features/innovation/reviewPresentation";
+import * as presentation from "../features/innovation/reviewPresentation";
 import { ApiError } from "../lib/errors";
 
 const original = globalThis.fetch;
 afterEach(() => { globalThis.fetch = original; recordLogout(); });
 const command = { request_id: "key", workflow_version: 2, project_version: 3, achievement_version: 4, evidence_ids: ["proof"] };
 
+test("published workflow uses current update case for status and editing, rather than first approval", () => {
+  const current = { id: "case", revision_id: "revision", operation: "UPDATE" as const, status: "SUBMITTED" as const, version: 1, reason: null };
+  assert.equal(reviewStatusText("APPROVED", current), "等待更新复审，旧通过版本继续公开");
+  assert.equal(reviewStatusText("APPROVED", current, "TAKEN_DOWN"), "等待更新复审，旧通过版本保持下架");
+  assert.equal(reviewStatusText("APPROVED", { ...current, status: "RETURNED" }), "更新已退回，旧通过版本继续公开");
+  assert.equal(reviewStatusText("APPROVED", { ...current, status: "WITHDRAWN" }), "更新已撤回，旧通过版本继续公开");
+  assert.equal(reviewStatusText("APPROVED", { ...current, status: "APPROVED" }), "更新复审已通过");
+  assert.equal(presentation.isReviewPending({ first_review_state: "APPROVED", review_case: current }), true);
+  assert.equal(presentation.isReviewPending({ first_review_state: "APPROVED", review_case: { ...current, status: "RETURNED" } }), false);
+  assert.equal(presentation.isReviewPending({ first_review_state: "SUBMITTED", review_case: null }), true);
+  assert.equal(presentation.publicReviewText({ updated_after_first_review: true, latest_reviewed_at: "2026-10-10T12:00:00Z" }), "当前为更新复审通过的版本。");
+  assert.equal(presentation.publicReviewText({ updated_after_first_review: true, latest_reviewed_at: null }), "历史更新内容，未逐项复审。");
+  assert.equal(presentation.publicReviewText({ updated_after_first_review: false, latest_reviewed_at: "2026-10-10T12:00:00Z" }), "当前为首次核实通过的版本。");
+});
+
 test("review commands preserve saved version and stable request key; never grant themselves authority", async () => {
   const seen: unknown[] = [];
   globalThis.fetch = (async (path, init) => { seen.push([String(path), init?.method ?? "GET", init?.body ? JSON.parse(String(init.body)) : null]); return new Response("{}"); }) as typeof fetch;
   await submitRevision("p/x", "a", command); await submitRevision("p/x", "a", command);
   await withdrawReview("p/x", "a", { workflow_version: 2, case_id: "c", case_version: 1 });
-  await publishRevision("p/x", "a", command);
+  await submitUpdateRevision("p/x", "a", command);
   await decideReview("c", { version: 3, revision_id: "r", request_id: "key", decision: "RETURNED", reason: "补充说明" });
   const base = "/api/v1/ie/me/project-drafts/p%2Fx/achievements/a";
-  assert.deepEqual(seen, [[`${base}/submit`, "POST", command], [`${base}/submit`, "POST", command], [`${base}/withdraw`, "POST", { workflow_version: 2, case_id: "c", case_version: 1 }], [`${base}/publish-update`, "POST", command], ["/api/v1/ie/ops/achievement-reviews/c/decision", "POST", { version: 3, revision_id: "r", request_id: "key", decision: "RETURNED", reason: "补充说明" }]]);
+  assert.deepEqual(seen, [[`${base}/submit`, "POST", command], [`${base}/submit`, "POST", command], [`${base}/withdraw`, "POST", { workflow_version: 2, case_id: "c", case_version: 1 }], [`${base}/submit-update`, "POST", command], ["/api/v1/ie/ops/achievement-reviews/c/decision", "POST", { version: 3, revision_id: "r", request_id: "key", decision: "RETURNED", reason: "补充说明" }]]);
 });
 
 test("binary responses retain authenticated transport and error envelopes", async () => {

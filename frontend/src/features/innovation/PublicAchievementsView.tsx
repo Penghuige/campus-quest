@@ -9,6 +9,7 @@ import { getAuthEpoch } from "@/lib/accessToken";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 import { validWorkLink } from "./achievementForm";
 import { getPublicAchievement, listPublicAchievements, type PublicAchievementDto } from "./reviewApi";
+import { publicReviewText } from "./reviewPresentation";
 import { StudentShell } from "@/app/(student)/_components/StudentShell";
 
 /** Campus reads accept every active school role, unlike the student workspace. */
@@ -49,5 +50,5 @@ function PublicDetail({ id }: { id: string }) {
   </article>;
 }
 function PublicationDates({ item }: { item: PublicAchievementDto }) {
-  return <div><p className="field-hint">首次核实：<time dateTime={item.first_approved_at}>{formatDeadlineDateTime(parseServerInstant(item.first_approved_at))}</time> · 最近发布：<time dateTime={item.updated_at}>{formatDeadlineDateTime(parseServerInstant(item.updated_at))}</time></p><p className={item.updated_after_first_review ? "alert" : "field-hint"}>{item.updated_after_first_review ? "首次核实后的更新内容，未逐项复审。" : "当前为首次核实通过的版本。"}</p></div>;
+  return <div><p className="field-hint">首次核实：<time dateTime={item.first_approved_at}>{formatDeadlineDateTime(parseServerInstant(item.first_approved_at))}</time> · {item.latest_reviewed_at ? <>本版核实：<time dateTime={item.latest_reviewed_at}>{formatDeadlineDateTime(parseServerInstant(item.latest_reviewed_at))}</time></> : <>最近发布：<time dateTime={item.updated_at}>{formatDeadlineDateTime(parseServerInstant(item.updated_at))}</time></>}</p><p className={item.updated_after_first_review && !item.latest_reviewed_at ? "alert" : "field-hint"}>{publicReviewText(item)}</p></div>;
 }

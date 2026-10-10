@@ -772,7 +772,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/publish-update": {
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/submit-update": {
         parameters: {
             query?: never;
             header?: never;
@@ -781,8 +781,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Publish Update */
-        post: operations["publish_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__publish_update_post"];
+        /** Submit Update */
+        post: operations["submit_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_update_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4308,6 +4308,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Latest Reviewed At */
+            latest_reviewed_at: string | null;
             /** Updated After First Review */
             updated_after_first_review: boolean;
         };
@@ -4755,6 +4757,11 @@ export interface components {
              */
             revision_id: string;
             /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "SUBMIT" | "UPDATE";
+            /**
              * Status
              * @enum {string}
              */
@@ -4819,6 +4826,11 @@ export interface components {
              * Format: uuid
              */
             revision_id: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "SUBMIT" | "UPDATE";
             /**
              * Status
              * @enum {string}
@@ -7576,7 +7588,7 @@ export interface operations {
             };
         };
     };
-    publish_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__publish_update_post: {
+    submit_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_update_post: {
         parameters: {
             query?: never;
             header?: never;
