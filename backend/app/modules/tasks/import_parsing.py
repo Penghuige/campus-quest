@@ -49,6 +49,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from app.integrations.zip_safety import (
+    ZipSafetyKind,
+    ZipSafetyViolation,
+    preflight,
+)
+
 # Canonical platform codes (spec §7): case-insensitive input, exact output.
 # Parity with the assignments CHECK constraint set is pinned by tests.
 SUPPORTED_IMPORT_PLATFORMS: frozenset[str] = frozenset(
@@ -146,6 +152,8 @@ def _header_match_dialect(text: str) -> csv.Dialect | None:
 
 def _parse_xlsx(
     data: bytes,
+    *,
+    max_rows: int,
 ) -> tuple[list[list[str]] | None, AssignmentImportError | None]:
     """Read the first visible worksheet's cells as plain text (QA #19).
 
@@ -157,13 +165,31 @@ def _parse_xlsx(
     table) lands as one MALFORMED_XLSX rejection — parser exceptions
     never escape this module.
 
-    Resource bounds ride the SAME caps as CSV: the byte cap bounded the
-    archive before this call, the per-import row cap stops enumeration
-    one row past the limit, and TEXT_TOO_LONG reports oversized cells
-    (keyword_max_length) instead of crashing. A giant sheet of empty
-    rows terminates fast (read-only mode yields EmptyCell without
-    materializing the dimension).
+    Security round F3, two guards before/around openpyxl:
+
+    - the shared ZIP preflight (``app.integrations.zip_safety``,
+      default-deny — no streaming exemptions on the import path) reads
+      the central directory's DECLARED sizes and rejects lying
+      directories, bombs, and extraction-hazard names before any
+      member is decompressed;
+    - the row cap fires DURING enumeration: a sheet that never ends is
+      cut off one row past ``max_rows`` data rows instead of
+      materializing first and classifying after. Blank rows stay
+      non-rows (the ``_classify_rows`` semantics mirrored in-loop).
     """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+    except zipfile.BadZipFile:
+        return None, AssignmentImportError(
+            ImportErrorCode.MALFORMED_XLSX, _MALFORMED_XLSX_MESSAGE
+        )
+    violation = preflight(infos)
+    if violation is not None:
+        return None, _zip_safety_rejection(violation)
+
     from typing import Any, BinaryIO
 
     from openpyxl import load_workbook
@@ -176,8 +202,17 @@ def _parse_xlsx(
         )
         sheet = workbook.worksheets[0]
         rows: list[list[str]] = []
+        nonblank = 0  # header included; data rows = nonblank - 1
         for row in sheet.iter_rows(values_only=True):
             cells = ["" if value is None else str(value) for value in row]
+            if any(cell.strip() for cell in cells):
+                nonblank += 1
+                if nonblank - 1 > max_rows:
+                    return None, AssignmentImportError(
+                        ImportErrorCode.LIMIT_EXCEEDED,
+                        _LIMIT_EXCEEDED_MESSAGE,
+                        details={"rows": max_rows + 1, "limit": max_rows},
+                    )
             rows.append(cells)
     except Exception:
         return None, AssignmentImportError(
@@ -197,6 +232,39 @@ def _parse_xlsx(
             ImportErrorCode.MALFORMED_XLSX, _XLSX_HEADER_MESSAGE
         )
     return rows[1:], None
+
+
+def _zip_safety_rejection(
+    violation: ZipSafetyViolation,
+) -> AssignmentImportError:
+    """Map one shared ZIP-safety violation onto the import vocabulary.
+
+    One MALFORMED_XLSX verdict whose message names the exact rule and
+    numbers (the import surface has no per-rule codes; the message is
+    the teacher-facing explanation, same posture as the submission
+    validator's findings).
+    """
+    if violation.kind is ZipSafetyKind.TOO_MANY_ENTRIES:
+        text = f"归档条目数 {violation.entries} 超过上限 4096"
+    elif violation.kind is ZipSafetyKind.SUSPICIOUS_NAME:
+        text = f"归档内条目路径可疑: {violation.name!r}"
+    elif violation.kind is ZipSafetyKind.PART_TOO_LARGE:
+        text = (
+            f"归档部件 {violation.name} 声明解压后 {violation.file_size} 字节"
+            "超过单部件上限 16 MiB"
+        )
+    elif violation.kind is ZipSafetyKind.COMPRESSION_RATIO:
+        text = (
+            f"条目 {violation.name} 的压缩比超过 100:1"
+            f"（声明解压后 {violation.file_size} 字节）"
+        )
+    elif violation.kind is ZipSafetyKind.TOTAL_TOO_LARGE:
+        text = (
+            f"归档声明解压后总大小 {violation.total_uncompressed} 字节超过上限 512 MiB"
+        )
+    else:
+        text = "归档整体压缩比超过 100:1"
+    return AssignmentImportError(ImportErrorCode.MALFORMED_XLSX, text)
 
 
 def _parse_csv(
@@ -323,6 +391,12 @@ def parse_upload(
     everything else to the strict CSV reader. Both produce the same
     canonicalized ``(platform, keyword)`` stream, so every downstream
     validation, dedup, preview, and confirm path is shared.
+
+    Security round F3: the XLSX leg runs the shared ZIP preflight
+    (``app.integrations.zip_safety`` — declared sizes, entry count,
+    suspicious names, ratios) BEFORE anything is decompressed, and the
+    row cap fires DURING sheet enumeration instead of after the whole
+    sheet has materialized.
     """
     if len(data) > max_file_bytes:
         return ParsedImport.file_rejection(
@@ -337,7 +411,7 @@ def parse_upload(
         )
 
     if data[:4] == _XLSX_LOCAL_MAGIC:
-        rows, file_error = _parse_xlsx(data)
+        rows, file_error = _parse_xlsx(data, max_rows=max_rows)
         if file_error is not None:
             return ParsedImport.file_rejection(file_error)
         assert rows is not None

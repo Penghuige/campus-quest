@@ -1577,7 +1577,7 @@
     "/api/v1/teacher/tasks/{task_id}/assignments/import/preview": {
       "post": {
         "summary": "Preview Assignment Import",
-        "description": "Parse and pre-check a CSV upload (spec §7.1 steps 1-4).\n\nThe file is the raw request body (``text/csv``); the importer's byte\ncap rejects oversize payloads before any parsing work.",
+        "description": "Parse and pre-check an import upload (spec §7.1 steps 1-4).\n\nThe file (CSV or XLSX) is the raw request body; the format is\ndecided by content sniffing — never by the wire ``Content-Type``.\nSecurity round F2: the body is read streaming-bounded (reject the\nmoment the running total crosses the import byte cap — no\nunbounded buffering before any check) and the route is rate\nlimited like claim/abandon.",
         "operationId": "preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post",
         "security": [
           {
@@ -3781,7 +3781,7 @@
     "/api/v1/admin/notification-failures": {
       "get": {
         "summary": "List Notification Failures",
-        "description": "FAILED deliveries with last_error + attempts, newest first (the\nspec §25.4 failure query). Admin-only until scoped delegation (PR\n#2 hardening ruling): any ACTIVE+TOTP teacher reading every user's\ndelivery errors was judged too broad for V1.",
+        "description": "FAILED deliveries with last_error + attempts, newest first (the\nspec §25.4 failure query). Stayed Admin-only under the delegation\nruling (the points review family is the widened one; PR #2\nhardening ruling): any ACTIVE+TOTP teacher reading every user's\ndelivery errors was judged too broad for V1.",
         "operationId": "list_notification_failures_api_v1_admin_notification_failures_get",
         "security": [
           {

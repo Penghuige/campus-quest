@@ -36,8 +36,9 @@ Cross-phase design decisions:
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import timedelta
 from uuid import UUID
 
@@ -94,6 +95,37 @@ _DENIED_MESSAGE = (
 
 
 # --- authorization -----------------------------------------------------------------
+
+
+#: The transport-level rejection message for an oversized import body
+#: (security round F2): the route reads the upload streaming-bounded,
+#: so this fires BEFORE any parsing — the service-level byte cap stays
+#: as defense in depth and keeps its preview-payload shape.
+_IMPORT_TOO_LARGE_MESSAGE = "导入文件超过大小上限"
+
+
+async def read_import_body(stream: AsyncIterator[bytes], cap: int) -> bytes:
+    """Read the import upload body, bounded by the cap DURING the read.
+
+    The avatar-ingress pattern: the file travels as the raw request
+    body (no multipart), and Starlette's ``request.body()`` would
+    buffer an unbounded upload to memory before any application check
+    runs — this reader rejects the moment the running total crosses
+    ``cap`` instead (security round F2).
+    """
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in stream:
+        total += len(chunk)
+        if total > cap:
+            raise BusinessError(
+                ErrorCode.FILE_TOO_LARGE,
+                _IMPORT_TOO_LARGE_MESSAGE,
+                status_code=400,
+                details={"size": total, "limit": cap},
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 async def _require_import_access(db: AsyncSession, task: Task, actor: Actor) -> None:
@@ -183,7 +215,13 @@ class AssignmentImportService:
             raise TaskNotFoundError(task_id)
         await _require_import_access(db, task, actor)
 
-        parsed = parse_upload(
+        # Security round F6: the parse (csv dialect sniffing, the ZIP
+        # preflight, openpyxl) is pure CPU over up-to-2 MiB of bytes —
+        # it must not block the event loop that called this async
+        # handler, so it rides a worker thread like otp.py's to_thread
+        # seam.
+        parsed = await asyncio.to_thread(
+            parse_upload,
             data,
             max_file_bytes=self._max_file_bytes,
             max_rows=self._max_rows,

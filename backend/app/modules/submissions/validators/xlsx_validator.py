@@ -153,6 +153,13 @@ from xml.etree import ElementTree
 from openpyxl import load_workbook
 from openpyxl.cell.read_only import EmptyCell, ReadOnlyCell
 
+from app.integrations import zip_safety
+from app.integrations.zip_safety import (
+    MAX_ARCHIVE_ENTRIES,
+    MAX_COMPRESSION_RATIO,
+    MAX_TOTAL_UNCOMPRESSED,
+    MAX_WHOLE_READ_PART,
+)
 from app.modules.submissions.enums import FileType
 from app.modules.submissions.schema import ColumnRule, SubmissionSchema
 
@@ -175,21 +182,15 @@ __all__ = ["PARSER_VERSION", "validate_xlsx"]
 PARSER_VERSION = "xlsx-1"
 
 #: Preflight caps (see the module docstring for the reasoning).
-_MAX_ARCHIVE_ENTRIES = 4096
-_MAX_TOTAL_UNCOMPRESSED = 512 * 1024 * 1024
+#: Submission-specific archive caps. The FIVE shared ZIP rules (entry
+#: count, suspicious names, per-part cap, ratios, totals) moved to
+#: ``app.integrations.zip_safety`` (security round F3) — import their
+#: canonical names from there. What stays here is the submission-only
+#: policy: sharedStrings' dedicated streaming cap (below) and the
+#: streaming-exempt families (``_STREAMING_EXEMPT_PREFIXES`` further
+#: down; ``.rels`` parts are NEVER exempt — the fix-round-2
+#: default-deny that a renamed oversized part cannot sidestep).
 _MAX_SHARED_STRINGS_XML = 128 * 1024 * 1024
-#: DEFAULT per-part cap (fix rounds 1+2): every part is capped at
-#: 16 MB unless it belongs to a streaming-exempt family. openpyxl
-#: reads several parts WHOLE and parses them into objects (~12x
-#: amplification measured in review F1), and it resolves the workbook
-#: and sharedStrings parts by manifest CONTENT TYPE — so a by-name
-#: allowlist was sidestepped in review round 2 by renaming an
-#: oversized part (fix-round-2). The largest legitimate capped part
-#: stays under ~1 MB even at the 4096-entry cap, so 16 MB leaves an
-#: order of magnitude of headroom while bounding a parsed part's
-#: materialized peak at ~200 MB.
-_MAX_WHOLE_READ_PART = 16 * 1024 * 1024
-_MAX_COMPRESSION_RATIO = 100.0
 
 #: Scan bounds.
 _MAX_EMPTY_ROW_STREAK = 1024
@@ -348,10 +349,13 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
     """Declared-size and layout checks before anything is decompressed.
 
     ``False`` means a fatal violation was recorded; warnings (external
-    links) do not abort. First fatal violation wins, deterministic
-    order: entry count, then per-entry (name, default part size,
-    sharedStrings size, ratio), then totals (size, aggregate ratio),
-    then the manifest scan (rename hardening).
+    links) do not abort. The five shared rules (entry count, suspicious
+    names, per-part cap, per-entry ratio, totals) run in the shared
+    core (``app.integrations.zip_safety.preflight`` — security round
+    F3 extracted them so the assignment-import parser enforces the
+    same policy); this validator keeps the submission-specific half:
+    the sharedStrings cap, the renamed-role scan, and the
+    external-links warning.
     """
     try:
         archive = zipfile.ZipFile(reader)
@@ -365,40 +369,19 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
             builder.add_error(ValidationCode.MALFORMED_XLSX, _NOT_XLSX_MESSAGE)
             return False
 
-        if len(infos) > _MAX_ARCHIVE_ENTRIES:
-            builder.add_error(
-                ValidationCode.ARCHIVE_TOO_LARGE,
-                f"归档条目数 {len(infos)} 超过上限 {_MAX_ARCHIVE_ENTRIES}",
-            )
+        violation = zip_safety.preflight(
+            infos, exempt_prefixes=_STREAMING_EXEMPT_PREFIXES
+        )
+        if violation is not None:
+            code, message = _zip_safety_finding(violation)
+            builder.add_error(code, message)
             return False
 
-        total_uncompressed = 0
-        total_compressed = 0
-        external_links = False
+        external_links = any(
+            info.filename.startswith("xl/externalLinks/") for info in infos
+        )
         for info in infos:
-            name = info.filename
-            if _is_suspicious_name(name):
-                builder.add_error(
-                    ValidationCode.SUSPICIOUS_ARCHIVE_ENTRY,
-                    f"归档内条目路径可疑: {name!r}",
-                )
-                return False
-            # DEFAULT-DENY (fix round 2): a part is exempt from the
-            # per-part cap only as a member of a streaming family;
-            # any other name — including renamed whole-read parts —
-            # is capped.
-            if not _is_streaming_exempt(name) and info.file_size > (
-                _MAX_WHOLE_READ_PART
-            ):
-                builder.add_error(
-                    ValidationCode.PART_TOO_LARGE,
-                    f"归档部件 {name} 声明解压后 {info.file_size} 字节超过单部件"
-                    f"上限 {_MAX_WHOLE_READ_PART}",
-                )
-                return False
-            if name.startswith("xl/externalLinks/"):
-                external_links = True
-            if name.startswith("xl/sharedStrings") and info.file_size > (
+            if info.filename.startswith("xl/sharedStrings") and info.file_size > (
                 _MAX_SHARED_STRINGS_XML
             ):
                 builder.add_error(
@@ -407,33 +390,6 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
                     f" {_MAX_SHARED_STRINGS_XML}，已拒绝解析",
                 )
                 return False
-            if info.file_size and (
-                info.compress_size == 0
-                or info.file_size / info.compress_size > _MAX_COMPRESSION_RATIO
-            ):
-                builder.add_error(
-                    ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
-                    f"条目 {name} 的压缩比超过 {_MAX_COMPRESSION_RATIO}:1"
-                    f"（声明解压后 {info.file_size} 字节）",
-                )
-                return False
-            total_uncompressed += info.file_size
-            total_compressed += info.compress_size
-        if total_uncompressed > _MAX_TOTAL_UNCOMPRESSED:
-            builder.add_error(
-                ValidationCode.ARCHIVE_TOO_LARGE,
-                f"归档声明解压后总大小 {total_uncompressed} 字节超过上限"
-                f" {_MAX_TOTAL_UNCOMPRESSED}",
-            )
-            return False
-        if total_compressed and (
-            total_uncompressed / total_compressed > _MAX_COMPRESSION_RATIO
-        ):
-            builder.add_error(
-                ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
-                f"归档整体压缩比超过 {_MAX_COMPRESSION_RATIO}:1",
-            )
-            return False
         if _renamed_role_violation(archive, infos, builder):
             return False
         if external_links:
@@ -446,28 +402,45 @@ def _zip_preflight(reader: _BoundedReads, builder: ValidationReportBuilder) -> b
         archive.close()
 
 
-def _is_suspicious_name(name: str) -> bool:
-    """Extraction-hazard entry names, checked before anything opens."""
-    if not name or name.startswith(("/", "\\")):
-        return True
-    if len(name) > 1 and name[1] == ":":  # Windows drive letter
-        return True
-    return ".." in name.replace("\\", "/").split("/")
-
-
-def _is_streaming_exempt(name: str) -> bool:
-    """Is this part a member of a streaming family?
-
-    Worksheets iterate row-by-row (row/timeout capped), the canonical
-    sharedStrings part streams under its own dedicated 128 MB cap,
-    and media/drawings are never parsed by the read-only data path.
-    Relationship parts (``*.rels``) are ALWAYS read whole wherever
-    they sit, so they are never exempt. Everything else falls to the
-    default per-part cap (fix-round-2 default-deny).
-    """
-    if name.endswith(".rels"):
-        return False
-    return name.startswith(_STREAMING_EXEMPT_PREFIXES)
+def _zip_safety_finding(
+    violation: zip_safety.ZipSafetyViolation,
+) -> tuple[ValidationCode, str]:
+    """Map one shared-core violation onto this validator's codes,
+    keeping the historical message texts (fragments are pinned by
+    tests)."""
+    kind = violation.kind
+    if kind is zip_safety.ZipSafetyKind.TOO_MANY_ENTRIES:
+        return (
+            ValidationCode.ARCHIVE_TOO_LARGE,
+            f"归档条目数 {violation.entries} 超过上限 {MAX_ARCHIVE_ENTRIES}",
+        )
+    if kind is zip_safety.ZipSafetyKind.SUSPICIOUS_NAME:
+        return (
+            ValidationCode.SUSPICIOUS_ARCHIVE_ENTRY,
+            f"归档内条目路径可疑: {violation.name!r}",
+        )
+    if kind is zip_safety.ZipSafetyKind.PART_TOO_LARGE:
+        return (
+            ValidationCode.PART_TOO_LARGE,
+            f"归档部件 {violation.name} 声明解压后 {violation.file_size} 字节超过单部件"
+            f"上限 {MAX_WHOLE_READ_PART}",
+        )
+    if kind is zip_safety.ZipSafetyKind.COMPRESSION_RATIO:
+        return (
+            ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
+            f"条目 {violation.name} 的压缩比超过 {MAX_COMPRESSION_RATIO}:1"
+            f"（声明解压后 {violation.file_size} 字节）",
+        )
+    if kind is zip_safety.ZipSafetyKind.TOTAL_TOO_LARGE:
+        return (
+            ValidationCode.ARCHIVE_TOO_LARGE,
+            f"归档声明解压后总大小 {violation.total_uncompressed} 字节超过上限"
+            f" {MAX_TOTAL_UNCOMPRESSED}",
+        )
+    return (
+        ValidationCode.SUSPICIOUS_COMPRESSION_RATIO,
+        f"归档整体压缩比超过 {MAX_COMPRESSION_RATIO}:1",
+    )
 
 
 def _renamed_role_violation(
@@ -494,12 +467,12 @@ def _renamed_role_violation(
     for target in sorted(targets):
         if target.startswith("xl/sharedStrings"):
             continue  # canonical placement: the 128 MB family cap rules
-        if sizes.get(target, 0) > _MAX_WHOLE_READ_PART:
+        if sizes.get(target, 0) > MAX_WHOLE_READ_PART:
             builder.add_error(
                 ValidationCode.PART_TOO_LARGE,
                 f"归档部件 {target} 通过 content type 解析为需整体读取的角色，"
                 f"声明解压后 {sizes[target]} 字节超过单部件上限"
-                f" {_MAX_WHOLE_READ_PART}（改名部件同样受限）",
+                f" {MAX_WHOLE_READ_PART}（改名部件同样受限）",
             )
             return True
     return False

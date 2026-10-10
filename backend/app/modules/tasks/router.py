@@ -185,7 +185,7 @@ from app.modules.tasks.abandon_service import AbandonService, SystemDailyAbandon
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
 from app.modules.tasks.commands import CreateTask, UpdateTask
-from app.modules.tasks.importer import AssignmentImportService
+from app.modules.tasks.importer import AssignmentImportService, read_import_body
 from app.modules.tasks.models import Task
 from app.modules.tasks.query_service import (
     RatingSummaryPort,
@@ -670,15 +670,22 @@ async def preview_assignment_import(
     actor: StaffActor,
     db: DbSession,
     imports: ImportServiceDep,
+    limiter: LimiterDep,
+    settings: AppSettings,
 ) -> ImportPreviewResponse:
     """Parse and pre-check an import upload (spec §7.1 steps 1-4).
 
-    The file (CSV or XLSX) is the raw request body; the importer's byte
-    cap rejects oversize payloads before any parsing work, and the
-    format is decided by content sniffing — never by the wire
-    ``Content-Type``.
+    The file (CSV or XLSX) is the raw request body; the format is
+    decided by content sniffing — never by the wire ``Content-Type``.
+    Security round F2: the body is read streaming-bounded (reject the
+    moment the running total crosses the import byte cap — no
+    unbounded buffering before any check) and the route is rate
+    limited like claim/abandon.
     """
-    data = await request.body()
+    await _enforce_rate_limit(limiter, "tasks:import-preview", str(actor.user_id))
+    data = await read_import_body(
+        request.stream(), settings.assignment_import_max_file_bytes
+    )
     preview = await imports.preview_assignments(db, actor, task_id, data)
     return ImportPreviewResponse.from_domain(preview)
 
