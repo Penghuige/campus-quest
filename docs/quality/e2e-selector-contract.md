@@ -117,6 +117,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
 | `.app-shell[data-shell]` | student shell state marker | shell-refresh spec pins the chrome verdict per state (loading/workspace/anonymous/error/gate); the optimistic frame reuses the existing `.app-sidebar`/`.app-nav`/`.app-bottomnav` structural locators |
 | `.task-card[data-depleted='true']` | depleted square card marker | same verdict as the 已被领完 badge (defect #20 / batch ④); the recede treatment assertions (dashed border, dimmed content) key on it |
+| `.meta-deadline` · `.reward-window` | zero-weight mask anchors | visual-suite mask hooks (shot-surfaces): the task card's clock-derived deadline line and the reward card's window line; the classes carry no styles by design |
 
 ## Rules for the visual workstream
 
