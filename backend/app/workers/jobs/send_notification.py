@@ -111,7 +111,7 @@ def build_delivery_service(
     settings = get_settings()
     return DeliveryService(
         session_maker=session_maker,
-        sms_sender=build_sms_sender(settings.sms_provider),
+        sms_sender=build_sms_sender(settings.sms_provider, settings),
         email_sender=build_email_sender(settings.email_provider),
         clock=SystemClock(),
         # The claim gate's lease threshold comes from the SAME setting

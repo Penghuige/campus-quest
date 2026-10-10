@@ -661,6 +661,46 @@ def test_build_delivery_service_wires_logging_senders_from_settings(
     assert isinstance(service._email_sender, LoggingEmailSender)
 
 
+def test_build_delivery_service_wires_aliyun_sender_under_real_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The worker composition point must hand the FULL settings to the
+    # adapter factory: under sms_provider=aliyun_dypns with complete
+    # credentials the built service carries the real Aliyun adapter —
+    # the wiring production SMS dispatch rides on. Red before the fix:
+    # the worker called build_sms_sender(provider) without settings,
+    # so composition died with the factory's own fail-closed
+    # LookupError ("needs the deployment settings") — the identity
+    # composition root (providers.py) already passed settings; only
+    # the worker side was wired bare.
+    from app.integrations.sms_aliyun import AliyunDypnsSmsSender
+
+    for name, value in {
+        "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:15433/"
+        "campusquest_test",
+        "REDIS_URL": "redis://localhost:6379/0",
+        "S3_ENDPOINT_URL": "http://localhost:9000",
+        "S3_BUCKET": "campusquest-test",
+        "S3_ACCESS_KEY": "campusquest",
+        "S3_SECRET_KEY": "campusquest-dev",
+        "BUSINESS_TIMEZONE": "Asia/Shanghai",
+        "SMS_PROVIDER": "aliyun_dypns",
+        "ALIYUN_SMS_ACCESS_KEY_ID": "test-key-id",
+        "ALIYUN_SMS_ACCESS_KEY_SECRET": "test-key-secret",
+        "ALIYUN_SMS_SIGN_NAME": "测试签名",
+        "ALIYUN_SMS_OTP_TEMPLATE_CODE": "SMS_123456789",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        service = send_notification_job.build_delivery_service(
+            session_maker=cast("Any", object())  # never used at construction
+        )
+    finally:
+        get_settings.cache_clear()
+    assert isinstance(service._sms_sender, AliyunDypnsSmsSender)
+
+
 # --- bounded retry ladder (spec §25.4) ---------------------------------------------
 
 
