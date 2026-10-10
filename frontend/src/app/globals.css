@@ -2077,6 +2077,25 @@ body {
   border-color: color-mix(in oklab, var(--rarity-legendary) 45%, var(--border));
 }
 
+/* Batch ④ (2026-10-10, reviewer-approved treatment): a depleted card
+ * RECEDES. Content dims, the border turns dashed, and the rarity
+ * border + wash yield back to the neutral base — on a depleted card
+ * the rarity recognition value deliberately steps aside for the
+ * depleted verdict (the badge keeps full contrast). Three non-color
+ * cues carry the state: the dashed border, the 已被领完 text badge,
+ * and the dimming. Hover/focus keep their interactive feedback (the
+ * card stays browsable); source order after the rarity rules is what
+ * makes the equal-specificity base override win. */
+.task-card[data-depleted="true"] {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--border) 78%, transparent);
+  background: var(--surface-1);
+}
+
+.task-card[data-depleted="true"] :is(.task-card-head, .task-card-reward, .task-card-meta) {
+  opacity: 0.62;
+}
+
 /* (task-card reduced-motion override consolidated at end of file) */
 
 .task-card-head {
