@@ -63,6 +63,8 @@ from app.modules.identity.models import (  # noqa: E402
 from tests.e2e.factories import (  # noqa: E402
     DEFAULT_PASSWORD,
     clean_world,
+    mint_now,
+    reset_mint_clock,
     seed_admin_confirmed_totp,
     seed_claim,
     seed_points_balance,
@@ -100,6 +102,18 @@ _GOOD_CSV = (
 #: failure the machine gate reports with findings — drives the legacy
 #: failed-validation spec's report/retry assertions.
 _BAD_CSV = b"platform,date\nxiaohongshu,2026-09-21\n"
+
+#: The fixed-labels flag also pins the MINT clock (factories.mint_now):
+#: under CQ_E2E_FIXED_LABELS=1 every timestamp the world stamps at seed
+#: time — published_at, claim deadlines, review-queue stamps, created_at
+#: — rides the FUTURE 2030 anchor instead of the wall clock, so date
+#: text and deadline snapshots are byte-stable between a baseline
+#: capture and a re-shoot (the walkthrough measured the label freeze
+#: alone still drifting student-rewards ~173k / dashboard ~48k px).
+#: Token minting (``mint``) and every login stay on the real clock —
+#: pyjwt validates exp against wall time; the world is pinned, never
+#: the app. The one exception, ranking_effective_at, is documented at
+#: seed_points_balance.
 
 #: The §12.4 report shape the validation worker persists for
 #: `_GOOD_CSV` (the 13-key `report_to_json` contract the review-queue
@@ -166,6 +180,7 @@ def _answerable_staff_row(username: str, nickname: str, role: Any) -> tuple[Any,
         phone_e164=None,
         role=role,
         status=SeedStatus.ACTIVE,
+        created_at=mint_now(),
     )
     return user, generate_totp_secret()
 
@@ -199,6 +214,10 @@ async def _seed() -> dict[str, Any]:
     from app.modules.tasks.models import Task
     from app.workers.jobs.project_ranking_update import run_ranking_projection
 
+    # Fixed mode's stamps must reproduce byte-identically per seed: the
+    # production path is a fresh process per world, and the reset keeps
+    # in-process double seeds (the pytest label/mint tests) identical.
+    reset_mint_clock()
     run = uuid.uuid4().hex[:12]
     # The label marker fed to every VISIBLE string (see FIXED_LABEL_RUN):
     # the unique run id by default, the frozen marker under
@@ -328,7 +347,7 @@ async def _seed() -> dict[str, Any]:
                         secret_encrypted=encrypt_totp_secret(
                             Fernet(get_settings().totp_encryption_key), secret
                         ),
-                        confirmed_at=dt.datetime.now(dt.UTC),
+                        confirmed_at=mint_now(),
                     )
                 )
             db.add(
@@ -337,6 +356,7 @@ async def _seed() -> dict[str, Any]:
                     user_id=author.user_id,
                     content=f"匿名治理目标{label_run[:6]}：大家记得提前预约座位",
                     is_anonymous=True,
+                    created_at=mint_now(),
                 )
             )
             await db.commit()
@@ -422,7 +442,7 @@ async def _seed() -> dict[str, Any]:
             # state.
             claim_row = await db.get(AssignmentClaim, claim_r.claim_id)
             assert claim_row is not None
-            now = dt.datetime.now(dt.UTC)
+            now = mint_now()
             claim_row.status = ClaimStatus.UNDER_REVIEW
             claim_row.reward_lock_status = RewardLockStatus.PROVISIONAL
             claim_row.reward_tier_locked = 100
@@ -455,6 +475,7 @@ async def _seed() -> dict[str, Any]:
                 status="REQUESTED",
                 term_key=term_key,
                 points=item.point_cost,
+                created_at=mint_now(),
             )
             db.add(redemption)
             await db.flush()
@@ -476,6 +497,7 @@ async def _seed() -> dict[str, Any]:
                 phone_e164=None,
                 role=SeedRole.STUDENT,
                 status=SeedStatus.ACTIVE,
+                created_at=mint_now(),
             )
             db.add(suspended_student)
             await db.commit()
