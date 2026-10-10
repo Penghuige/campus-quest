@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 13 | I1-I13 |
+| 已覆盖 | 14 | I1-I13, I15 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | I14 |
@@ -31,6 +31,7 @@
 | I12 | §5.7 | 状态机五转移 + 冻结五影响 + 不物删 | `tests/integration/admin/test_account_admin.py::test_legal_transition_commits_and_audits_in_one_transaction` / `test_illegal_transition_is_a_typed_409_and_writes_nothing` / `test_full_governance_cycle_leaves_history_untouched`（保留）+ `tests/integration/identity/test_account_status.py::test_suspended_student_with_valid_token_denied_state_change` + `test_account_admin.py::test_non_active_account_with_live_token_is_refused_by_service_gates`；域级冻结影响：claims C5（领取门）/ submissions S3（上传门）/ community M4（评论门）互引 | 已覆盖 |
 | I13 | §21.4 + G12 | Admin 揭示：权限+reason+每次审计 | `tests/integration/community/test_anonymous_moderation.py::test_reveal_requires_a_reason` / `test_reveal_is_admin_only` + e2e `tests/e2e/test_privacy_rbac.py::test_anonymous_privacy_and_explicit_reveal` | 已覆盖（community M11 的完整落位） |
 | I14 | G10 | 元规则：RBAC=角色+所有权+状态；不确定默认拒 | ——（流程行：I1-I4 的正负空间矩阵即其执法面） | 流程行 |
+| I15 | design §8 + patterns §8（owner QA 2026-10-03 遗留项） | 会话证据在场（文档请求携带 csrf cookie）时加载/错误帧乐观渲染工作区几何（三带与认证态同几何，用户数据槽占位），刷新无壳跳变；无证据访客保持极简壳，401→anonymous 退场不引入 sidebar→card 新跳变方向；终态跟随 /me 答案而非探针 | `frontend/e2e/shell-refresh.spec.ts`（SSR HTML 含乐观 rail 断言 + 三带 loading↔workspace 几何逐项相等 + 无 cookie 极简壳→auth 卡 + error 帧乐观壳就地重试）+ `frontend/src/__tests__/shell-chrome.test.ts`（chrome 决策表） | 已覆盖 |
 
 ## 缺口明细
 

@@ -115,6 +115,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `#submission-file` · `#assignment-import-file` | file inputs | keep as file-upload ids or replace with `getByLabel` of equal strength |
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
+| `.app-shell[data-shell]` | student shell state marker | shell-refresh spec pins the chrome verdict per state (loading/workspace/anonymous/error/gate); the optimistic frame reuses the existing `.app-sidebar`/`.app-nav`/`.app-bottomnav` structural locators |
 
 ## Rules for the visual workstream
 
