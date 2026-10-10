@@ -14,7 +14,7 @@
 
 - 工作区：`C:/Users/111/Desktop/华师令`；仓库：该目录下的 `campus-quest`。新对话继续同一项目的本地 checkout。
 - 分支 `codex/innovation-platform`；成果重要修复检查点 `a4ce7305994384264625ea2b4d00649c79544b96`，资格真实会话准备 `d0749fb`，排行榜日期夹具修复 `144a229`。前后端成果链路已实现，一次整分支独立评审已完成，三项Important修复已有失败回归及47项针对性通过；修复后完整双树门禁与42项后台端到端（139.76秒）全部通过。收尾文档是这些源码提交的后继，以实时Git为准。
-- `origin` 为 Penghuige/campus-quest；已授权推送的是 `fork`（tzshsta/campus-quest）。既有 Draft PR：<https://github.com/Penghuige/campus-quest/pull/43>。提交署名已在本项目配置，无需再次询问。保持 Draft，不合并 main；不自行给学姐或其他人发送消息。
+- `origin` 为 Penghuige/campus-quest；已授权推送的是 `fork`（YeZesen0121/campus-quest，原用户名tzshsta已改名，本地remote已更新）。既有 Draft PR：<https://github.com/Penghuige/campus-quest/pull/43>。提交署名已在本项目配置，无需再次询问。保持 Draft，不合并 main；不自行给学姐或其他人发送消息。
 - 最后已确认本地 API `http://127.0.0.1:8000`、Web `http://127.0.0.1:3000`。负责人页 `/profile/owner-profile`，项目草稿页 `/profile/project-drafts`；资格管理页 `/admin/owner-qualifications`。
 - 启动脚本在工作区 `.local-dev/Start-Dev.ps1`，`-Component All`；运行前核对已有监听进程归属。成果材料需要本地 ClamAV；Linux 测试运行时使用独占数据库和 HTTPS MinIO，借用本会话拥有的 Web 3000 后恢复开发预览。续接仍须验证进程归属及服务状态。
 
@@ -24,7 +24,7 @@
 
 负责人资格的未申请→等待开通→已开通已实现。提交四项快照；待开通可用新保存资料显式更新申请，旧管理员页 409。申请队列无四项 PII，ADMIN 显式查看后才读取快照并先提交访问审计。保留 ADMIN/TOTP/管理网络策略、锁后重验身份、真实 PG 并发及事务审计；保存资料不自动授权，开通不表示成果核实。开发库已迁移至 0032，开发数据保留。
 
-提交节点：`1e440fa` 资格源码/测试；`3936d3c` 资格 Linux PNG；`7e1b44b` 成果核实设计；`6ff1511` 有界扫描器；`8c141d3` 写一次证明与私密代理；`0e49439` 不可变提交及显式更新；`491eaa0` 运营领取、审计、核实决定、通知与公开白名单；`2a0116c` 成果前端闭环；`95f1f85` 独立视觉基线；`f19d8f8` 真实扫描CI与浏览器准备；`a4ce730`重要修复；`d0749fb`资格会话；`144a229`日历夹具；`147c6f1`最终门禁记录。本轮均已保存为本地提交，但push被GitHub拒绝：OAuth缺少workflow范围，PR43仍停在`491eaa0`，前端及后续修复未进入远端。用户已收到补充权限的确认问题，等待答复；不得擅自升级账号授权或移除必要CI改动来绕过拒绝。实施计划最后一项保持未关闭；ledger保留用于权限补齐后续接。成功推送后更新PR正文、核对精确HEAD、清理本计划ledger即可；应用源码未改变，无需机械重跑已通过门禁。
+提交节点：`1e440fa` 资格源码/测试；`3936d3c` 资格 Linux PNG；`7e1b44b` 成果核实设计；`6ff1511` 有界扫描器；`8c141d3` 写一次证明与私密代理；`0e49439` 不可变提交及显式更新；`491eaa0` 运营领取、审计、核实决定、通知与公开白名单；`2a0116c` 成果前端闭环；`95f1f85` 独立视觉基线；`f19d8f8` 真实扫描CI与浏览器准备；`a4ce730`重要修复；`d0749fb`资格会话；`144a229`日历夹具；`147c6f1`最终门禁记录；`17bef7e`记录首次推送受阻。2026-10-10用户改名并完成workflow网页授权，新用户名登录及keyring存储已核验；本地fork地址已更新，`491eaa0..17bef7e`成功推送，PR43精确head已核对，前端及后续修复已进入远端。后继收尾文档提交以实时Git为准，须一并推送。使用单次git credential helper调用gh的新授权，不修改全局Git配置、不移除必要CI改动。应用源码未改变，不机械重跑已有完整门禁；远端完整CI及维护者合并批准仍待核验，GitGuardian不等于完整CI。
 
 ## 当前实施设计
 
