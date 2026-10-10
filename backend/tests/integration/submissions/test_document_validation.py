@@ -120,6 +120,45 @@ def test_pdf_validates_with_integrity_only_report() -> None:
 
 
 @pytest.mark.integration
+def test_large_pdf_beyond_sniff_window_validates() -> None:
+    """C-F1 end-to-end: a real PDF larger than the sniff window (its
+    ``%%EOF`` at the file's end, far past the first 8 KiB) validates
+    VALIDATED — the prefix-only trailer search rejected exactly this
+    shape as FILE_CORRUPT, taking down every legitimate >8 KiB PDF
+    submission on a document task."""
+    large_pdf = _pdf_bytes()[:-6] + b"x" * 9000 + b"\n%%EOF\n"
+    assert len(large_pdf) > 8192
+    factory = _new_factory()
+    run = uuid.uuid4().hex[:8]
+    task_ids: list[Any] = []
+    user_ids: list[Any] = []
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                declared_type="PDF",
+                content=large_pdf,
+                task_schema=None,
+                allowed_types=["DOCX", "PDF"],
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, large_pdf))
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+
+        assert result.status is ValidationStatus.VALIDATED
+        assert result.detected_type is not None
+        assert result.detected_type.value == "PDF"
+        assert result.report.row_count is None
+        assert result.report.errors == ()
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
 def test_declared_pdf_with_docx_content_fails_file_corrupt() -> None:
     """The §10.1 mismatch branch: content says DOCX, declaration says
     PDF — one FILE_CORRUPT finding, VALIDATION_FAILED, row_count None."""

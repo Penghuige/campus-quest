@@ -4,7 +4,7 @@
 The two new members of the upload universe classify by content:
 DOCX is a ZIP whose OOXML manifest sits beside ``word/`` members
 (the XLSX/DOCX disambiguation rule), PDF is ``%PDF-`` with an
-``%%EOF`` trailer inside the bounded prefix. The task-side family
+``%%EOF`` trailer inside the bounded tail read. The task-side family
 exclusivity and the schema-empty rule are covered in the task
 lifecycle suite; these tests pin the CONTENT side.
 """
@@ -59,8 +59,34 @@ def test_pdf_with_eof_trailer_detected(tmp_path: Path) -> None:
 
 def test_pdf_header_without_trailer_is_none(tmp_path: Path) -> None:
     """§10.1's head+tail rule: a ``%PDF-`` header with no ``%%EOF`` in
-    the bounded prefix is not a usable PDF — truncated or a fake."""
+    the bounded tail is not a usable PDF — truncated or a fake."""
     assert detect_file_type(_write(tmp_path, b"%PDF-1.7\njunk")) is None
+
+
+def test_large_pdf_trailer_beyond_sniff_detected(tmp_path: Path) -> None:
+    """A real PDF larger than the sniff window carries its ``%%EOF`` at
+    the file's end, not in the first 8 KiB (C-F1: the prefix-only
+    trailer search misjudged every such document as corrupt). The
+    header plus a page-body's worth of padding plus the trailer is the
+    smallest shape that reproduces it."""
+    pdf = (
+        b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n"
+        + b"1 0 obj\n<< /Length 9000 >>\nstream\n"
+        + b"x" * 9000
+        + b"\nendstream\nendobj\ntrailer\n<<>>\n%%EOF\n"
+    )
+    assert len(pdf) > 8192
+    assert detect_file_type(_write(tmp_path, pdf)) == FileType.PDF
+
+
+def test_pdf_early_fake_trailer_without_tail_is_none(tmp_path: Path) -> None:
+    """The other direction of the same defect: garbage whose ``%%EOF``
+    sits inside the sniffed prefix but whose tail carries none is NOT
+    a PDF (the trailer must live within the bounded tail, ISO 32000
+    §7.5.5) — the prefix-only search accepted exactly this shape."""
+    garbage = b"%PDF-1.7\n%%EOF\n" + b"j" * 9000
+    assert len(garbage) > 8192
+    assert detect_file_type(_write(tmp_path, garbage)) is None
 
 
 def test_zip_without_manifest_is_none(tmp_path: Path) -> None:

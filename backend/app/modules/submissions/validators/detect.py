@@ -31,7 +31,8 @@ An empty file is CSV-plausible: detection judges structure, and the
 EMPTY_FILE verdict belongs to the format validator that follows.
 
 Resource shape: one bounded prefix read (``_SNIFF_BYTES``) for rules 1
-and 3; rule 2 additionally opens the archive through ``zipfile`` to
+and 3, one bounded TAIL read (``_PDF_TAIL_BYTES``) for the PDF
+trailer; rule 2 additionally opens the archive through ``zipfile`` to
 list member names. THIS MODULE IS BUILT TO RUN INSIDE THE SANDBOXED
 VALIDATOR CHILD (spec §33.3 解析器隔离): a hostile archive that turns the
 member listing into a memory bomb dies against the child's RLIMIT_AS,
@@ -52,7 +53,7 @@ from __future__ import annotations
 
 import codecs
 import zipfile
-from os import PathLike
+from os import SEEK_END, PathLike
 from typing import BinaryIO
 
 from app.modules.submissions.enums import FileType
@@ -64,10 +65,18 @@ __all__ = ["detect_file_type"]
 #: could sit beyond it.
 _SNIFF_BYTES = 8192
 
+#: How much of the file the PDF trailer search reads from the END:
+#: ISO 32000 §7.5.5 places ``%%EOF`` within the last 1024 bytes, and
+#: §10.1's head+tail rule rides that contract. The old implementation
+#: searched the prefix instead, so every real PDF larger than the
+#: sniff window was misjudged corrupt while early-fake-trailer garbage
+#: passed (C-F1) — the tail read fixes both directions.
+_PDF_TAIL_BYTES = 1024
+
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 _ZIP_LOCAL_MAGIC = b"PK\x03\x04"
-#: spec §10.1: PDF's head magic; the %%EOF trailer check completes the
-#: identification inside the bounded prefix read.
+#: spec §10.1: PDF's head magic; the %%EOF tail check completes the
+#: identification inside the bounded tail read.
 _PDF_MAGIC = b"%PDF-"
 _OOXML_MANIFEST = "[Content_Types].xml"
 
@@ -91,7 +100,6 @@ def detect_file_type(path: Source) -> FileType | None:
             handle.seek(0)
             return _detect_zip(handle)
         if head.startswith(_PDF_MAGIC):
-            handle.seek(0)
             return _detect_pdf(handle)
         return _detect_text(head)
 
@@ -123,11 +131,14 @@ def _detect_zip(handle: BinaryIO) -> FileType | None:
 
 
 def _detect_pdf(handle: BinaryIO) -> FileType | None:
-    """``%PDF-`` file: PDF iff the ``%%EOF`` trailer appears in the
-    bounded prefix (spec §10.1's head+tail rule; a header without a
-    trailer in the first pages' bytes is not a usable PDF)."""
-    body = handle.read(_SNIFF_BYTES)
-    return FileType.PDF if b"%%EOF" in body else None
+    """``%PDF-`` file: PDF iff the ``%%EOF`` trailer sits within the
+    bounded tail (spec §10.1's head+tail rule; ISO 32000 §7.5.5 places
+    the trailer within the last 1024 bytes, so the tail window is
+    where a real one lives and an early fake one does not)."""
+    size = handle.seek(0, SEEK_END)
+    handle.seek(max(0, size - _PDF_TAIL_BYTES))
+    tail = handle.read(_PDF_TAIL_BYTES)
+    return FileType.PDF if b"%%EOF" in tail else None
 
 
 def _detect_text(head: bytes) -> FileType | None:
