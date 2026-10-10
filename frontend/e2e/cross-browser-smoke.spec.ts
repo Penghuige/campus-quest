@@ -90,6 +90,19 @@ async function studentLoginTyped(
 }
 
 test.describe("cross-browser smoke (firefox + webkit subset)", () => {
+  test("R1 innovation navigation and real logout fence browser back", async ({ page }) => {
+    await studentLoginTyped(page, process.env.CQ_E2E_STUDENT ?? "");
+    await page.getByRole("navigation", { name: "主导航", exact: true }).filter({ visible: true }).getByRole("link", { name: "创新创业", exact: true }).click();
+    await expect(page.getByRole("region", { name: "校内已核实成果" })).toBeVisible();
+    await page.goto(`${BASE}/profile/project-drafts`);
+    await expect(page.getByRole("button", { name: "新建项目草稿", exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "退出登录", exact: true }).filter({ visible: true }).click();
+    await page.getByRole("button", { name: "确认退出登录", exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.goBack();
+    await expect(page.getByRole("button", { name: "新建项目草稿", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "去登录", exact: true })).toBeVisible();
+  });
   test("login → task square renders cards → one task detail loads", async ({ page }) => {
     await studentLoginTyped(page, process.env.CQ_E2E_STUDENT ?? "");
     await page.goto(`${BASE}/tasks`);

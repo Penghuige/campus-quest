@@ -12,7 +12,7 @@ test("private owner profile: validate, save, reload and edit on mobile", async (
   await ensureStudentLogin(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/profile`);
-  await page.getByRole("link", { name: "负责人资料", exact: true }).click();
+  await page.getByRole("link", { name: "负责人资料与资格", exact: true }).click();
   await expect(page.getByRole("heading", { name: "负责人资料", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "负责人资料编辑器" })).toContainText("保存不会自动开通负责人资格");
   await page.getByLabel("姓名", { exact: true }).fill("");

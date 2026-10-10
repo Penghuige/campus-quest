@@ -38,6 +38,8 @@ import {
 } from "react";
 
 import { BrandMark } from "./BrandMark";
+import { navItemActive } from "./navigationMatch";
+export { navItemActive } from "./navigationMatch";
 import { PanelCollapseIcon, PanelExpandIcon } from "./navIcons";
 import {
   clampRailWidth,
@@ -54,17 +56,14 @@ export interface SideNavItem {
   href: string;
   label: string;
   icon?: ReactNode;
+  /** A separate workspace may live below this item's URL prefix. */
+  exclude?: readonly string[];
 }
 
 export interface SideNavGroup {
   /** Landmark name for assistive tech; also groups the links visually. */
   label: string;
   items: readonly SideNavItem[];
-}
-
-/** Shared prefix-active rule ("/" is exact so it cannot win subroutes). */
-export function navItemActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
 /** Keyboard step for the resizer (a deliberate nudge, not a pixel). */
@@ -266,7 +265,7 @@ export function WorkspaceSidebar({
             <Link
               key={item.href}
               href={item.href}
-              aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
+              aria-current={navItemActive(pathname, item.href, item.exclude) ? "page" : undefined}
               title={pref.collapsed ? item.label : undefined}
             >
               {item.icon}

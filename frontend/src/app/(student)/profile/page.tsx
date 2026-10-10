@@ -4,7 +4,6 @@ import Link from "next/link";
 import { AvatarSection } from "@/features/auth/AvatarSection";
 import { AccountSettings } from "@/features/auth/AccountSettings";
 import { GrowthView } from "@/features/rankings/GrowthView";
-import { InnovationCapabilities } from "@/features/innovation/InnovationCapabilities";
 import {
   DEFAULT_PROFILE_TAB,
   parseProfileTab,
@@ -39,9 +38,10 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       <div className="page-head">
         <h1 className="page-title">我的档案</h1>
         <p className="page-subtitle">成长数据、获得的荣誉与个人信息</p>
-        <Link className="section-link" href="/profile/project-drafts">我的项目草稿</Link>
-        <Link className="section-link" href="/profile/owner-profile">负责人资料</Link>
-        <Link className="section-link" href="/innovation/achievements">浏览校内成果</Link>
+        <nav className="ie-draft-actions" aria-label="本人双创管理">
+          <Link className="section-link" href="/profile/project-drafts">我的项目</Link>
+          <Link className="section-link" href="/profile/owner-profile">负责人资料与资格</Link>
+        </nav>
       </div>
       <nav className="tab-bar" aria-label="个人主页分区">
         {PROFILE_TABS.map((item) => (
@@ -56,7 +56,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         ))}
       </nav>
       {tab === "growth" ? (
-        <><InnovationCapabilities /><GrowthView /></>
+        <GrowthView />
       ) : (
         <>
           <AvatarSection />

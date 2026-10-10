@@ -26,6 +26,7 @@ import { ReviewIcon, TasksIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { teacherWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
+import { INNOVATION_NAV } from "@/features/innovation/InnovationNavigation";
 
 /* Plan 11 Task 3: the shared sidebar geometry (frozen contract);
  * per-task surfaces (import, statistics, community moderation) hang
@@ -33,6 +34,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/teacher/reviews", label: "审核队列", icon: <ReviewIcon /> },
   { href: "/teacher/tasks", label: "任务管理", icon: <TasksIcon /> },
+  INNOVATION_NAV,
 ] as const;
 
 const SIDEBAR_GROUPS = [{ label: "教师工作台", items: NAV_ITEMS }] as const;
@@ -155,6 +157,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
                 </span>
               </span>
               <StaffMenuSheet label="教师工作台菜单" items={NAV_ITEMS} />
+              <Link className="btn btn-ghost" href="/logout" prefetch={false}>退出登录</Link>
             </div>
           </div>
         </header>

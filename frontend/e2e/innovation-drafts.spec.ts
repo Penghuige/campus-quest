@@ -15,7 +15,7 @@ test("private draft: create, reload, edit and keyboard-save on mobile", async ({
   await ensureStudentLogin(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/profile`);
-  await page.getByRole("link", { name: "我的项目草稿", exact: true }).click();
+  await page.getByRole("link", { name: "我的项目", exact: true }).click();
   await expect(page.getByRole("heading", { name: "我的项目草稿", exact: true })).toBeVisible();
   const title = `校园环保草稿 ${Date.now()}`;
   await page.getByRole("button", { name: "新建项目草稿", exact: true }).click();

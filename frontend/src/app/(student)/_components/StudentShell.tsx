@@ -16,11 +16,16 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { BottomNav } from "@/components/shell/BottomNav";
-import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
+import { WorkspaceSidebar, navItemActive, type SideNavItem } from "@/components/shell/WorkspaceSidebar";
 import { GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
+import { useSection } from "@/components/ui/useSection";
+import { getInnovationCapabilities } from "@/features/innovation/operationsApi";
+import { INNOVATION_NAV, OPERATIONS_NAV } from "@/features/innovation/InnovationNavigation";
+import { getAuthEpoch } from "@/lib/accessToken";
 
 /* Plan 11 Task 3 — the frozen navigation contract (route-true
  * amendment): desktop sidebar primary + secondary, narrow bottom nav.
@@ -29,6 +34,7 @@ import { NotificationBell } from "@/features/notifications/NotificationBell";
 const SIDEBAR_PRIMARY = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  INNOVATION_NAV,
   { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
   { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
 ] as const;
@@ -38,27 +44,15 @@ const SIDEBAR_SECONDARY = [
   { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
 
-const SIDEBAR_GROUPS = [
-  { label: "主导航", items: SIDEBAR_PRIMARY },
-  { label: "个人", items: SIDEBAR_SECONDARY },
-] as const;
-
 /* Medium band (40–64rem): the horizontal top nav keeps every
  * destination — no reachability is lost between sidebar and bottom. */
-const MEDIUM_NAV = [
-  { href: "/", label: "首页" },
-  { href: "/tasks", label: "任务" },
-  { href: "/rankings", label: "排行榜" },
-  { href: "/rewards", label: "奖励" },
-  { href: "/notifications", label: "通知" },
-  { href: "/profile", label: "我的" },
-] as const;
+const MEDIUM_NAV = [...SIDEBAR_PRIMARY, ...SIDEBAR_SECONDARY];
 
 const BOTTOM_NAV = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  INNOVATION_NAV,
   { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
-  { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
   { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
 
@@ -72,7 +66,6 @@ function nicknameInitial(nickname: string): string {
 
 export function StudentShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
-  const pathname = usePathname();
 
   if (state.status === "loading") {
     return (
@@ -163,20 +156,33 @@ export function StudentShell({ children }: { children: ReactNode }) {
     );
   }
 
+  return <StudentNavigationShell key={`${state.me.id}:${getAuthEpoch()}`} nickname={state.me.nickname} active={state.me.status === "ACTIVE"}>{children}</StudentNavigationShell>;
+}
+
+function StudentNavigationShell({ children, nickname, active }: { children: ReactNode; nickname: string; active: boolean }) {
+  const pathname = usePathname();
+  const { state: capabilities, retry } = useSection(() => active ? getInnovationCapabilities().then((data) => data.operations_enabled) : Promise.resolve(false));
+  const operationsEnabled = capabilities.status === "ready" && capabilities.data;
+  const groups = [
+    { label: "主导航", items: SIDEBAR_PRIMARY },
+    { label: "个人", items: SIDEBAR_SECONDARY },
+    ...(operationsEnabled ? [{ label: "双创运营", items: [OPERATIONS_NAV] }] : []),
+  ];
+  const nav: SideNavItem[] = [...MEDIUM_NAV, ...(operationsEnabled ? [OPERATIONS_NAV] : [])];
   return (
     <div className="app-shell">
       <WorkspaceSidebar
         brand={{ href: "/", label: "CampusQuest" }}
-        groups={SIDEBAR_GROUPS}
+        groups={groups}
         footer={
           // Review round 2: the account lives in the rail footer — a
           // purposeful bottom anchor for the dark rail, and one less
           // floating generic-admin element at the top.
           <Link className="rail-account" href="/profile" title="我的账户">
             <span className="rail-avatar" aria-hidden="true">
-              {nicknameInitial(state.me.nickname)}
+              {nicknameInitial(nickname)}
             </span>
-            <span className="rail-account-name">{state.me.nickname}</span>
+            <span className="rail-account-name">{nickname}</span>
           </Link>
         }
       />
@@ -185,11 +191,11 @@ export function StudentShell({ children }: { children: ReactNode }) {
           <div className="app-topbar-inner">
             <span className="app-brand">CampusQuest</span>
             <nav className="app-nav" aria-label="主导航">
-              {MEDIUM_NAV.map((item) => (
+              {nav.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
+                  aria-current={navItemActive(pathname, item.href, item.exclude) ? "page" : undefined}
                 >
                   {item.label}
                 </Link>
@@ -203,12 +209,17 @@ export function StudentShell({ children }: { children: ReactNode }) {
                 aria-label="我的账户"
                 title="我的账户"
               >
-                <span aria-hidden="true">{nicknameInitial(state.me.nickname)}</span>
+                <span aria-hidden="true">{nicknameInitial(nickname)}</span>
               </Link>
+              <StaffMenuSheet label="全部导航" items={nav} />
+              <Link className="btn btn-ghost" href="/logout" prefetch={false}>退出登录</Link>
             </div>
           </div>
         </header>
-        <main className="app-main">{children}</main>
+        <main className="app-main">
+          {capabilities.status === "error" ? <SectionError error={capabilities.error} onRetry={retry} retryLabel="重新读取运营入口" /> : null}
+          {children}
+        </main>
       </div>
       <BottomNav items={BOTTOM_NAV} />
     </div>

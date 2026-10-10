@@ -37,6 +37,7 @@ export function StaffMenuSheet({
         type="button"
         className="app-menubtn"
         aria-haspopup="dialog"
+        aria-label={label}
         onClick={() => dialogRef.current?.showModal()}
       >
         <MenuIcon />
@@ -58,7 +59,7 @@ export function StaffMenuSheet({
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
+                aria-current={navItemActive(pathname, item.href, item.exclude) ? "page" : undefined}
               >
                 {item.icon}
                 <span>{item.label}</span>

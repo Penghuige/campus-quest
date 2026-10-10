@@ -9,12 +9,14 @@ import { getAuthEpoch } from "@/lib/accessToken";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 import { validWorkLink } from "./achievementForm";
 import { getPublicAchievement, listPublicAchievements, type PublicAchievementDto } from "./reviewApi";
+import { StudentShell } from "@/app/(student)/_components/StudentShell";
 
 /** Campus reads accept every active school role, unlike the student workspace. */
 export function CampusAchievementShell({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
-  const workspace = state.status === "authenticated" && state.me.role === "ADMIN" ? "/admin" : state.status === "authenticated" && state.me.role === "TEACHER" ? "/teacher/reviews" : "/";
-  return <div className="app-shell"><header className="app-topbar"><div className="app-topbar-inner"><span className="app-brand">CampusQuest · 校内成果</span><Link href={workspace}>返回工作台</Link></div></header><main className="app-main task-detail">
+  if (state.status === "authenticated" && state.me.role === "STUDENT" && state.me.status === "ACTIVE") return <StudentShell>{children}</StudentShell>;
+  const workspace = state.status === "authenticated" && state.me.role === "ADMIN" ? "/admin/users" : state.status === "authenticated" && state.me.role === "TEACHER" ? "/teacher/reviews" : "/";
+  return <div className="app-shell"><header className="app-topbar"><div className="app-topbar-inner"><span className="app-brand">CampusQuest</span><nav className="ie-draft-actions" aria-label="校内浏览导航"><Link href="/innovation">创新创业</Link><Link href={workspace}>返回工作台</Link>{state.status === "authenticated" ? <Link href="/logout" prefetch={false}>退出登录</Link> : null}</nav></div></header><main className="app-main task-detail">
     {state.status === "loading" ? <SectionSkeleton /> : state.status === "error" ? <SectionError error={state.error} onRetry={refresh} /> : state.status === "anonymous" ? <p className="alert">请先<Link href="/login">登录校内账号</Link>后浏览成果。</p> : state.me.status !== "ACTIVE" ? <p className="alert alert-warning" role="alert">当前账号状态不允许浏览校内成果。</p> : <div key={`${state.me.id}:${getAuthEpoch()}`}>{children}</div>}
   </main></div>;
 }

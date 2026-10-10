@@ -23,6 +23,8 @@ export function AchievementReviewPanel({ projectId, record, dirty, saving, onLoc
   return <QualifiedReviewPanel projectId={projectId} record={record} dirty={dirty} saving={saving} onLocked={onLocked} />;
 }
 function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { projectId: string; record: AchievementDraftDto; dirty: boolean; saving: boolean; onLocked: (locked: boolean) => void }) {
+  const focusRef = useRef<HTMLElement>(null);
+  const retryFocusRef = useRef<HTMLButtonElement>(null);
   const { state, retry } = useSection(async () => {
     const [workflow, evidence] = await Promise.all([getWorkflow(projectId, record.id), listEvidence(projectId, record.id)]);
     return { workflow, evidence: evidence.items };
@@ -49,15 +51,16 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
     finally { if (current()) { setBusy(false); retry(); } }
   }
   async function send(action: Action) {
-    if (state.status !== "ready") return;
-    const wf = state.data.workflow;
+    if (state.status !== "ready" && !pending.current) return;
+    const wf = state.status === "ready" ? state.data.workflow : null;
     await run(async () => {
       try {
         if (action === "withdraw") {
-          if (!wf.review_case) return;
+          if (!wf?.review_case) return;
           await withdrawReview(projectId, record.id, { workflow_version: wf.version, case_id: wf.review_case.id, case_version: wf.review_case.version });
         } else {
           if (!pending.current) {
+            if (!wf) return;
             const project = await getProjectDraft(projectId);
             if (!current()) return;
             pending.current = { action, body: { request_id: crypto.randomUUID(), workflow_version: wf.version, project_version: project.version, achievement_version: record.version, evidence_ids: [...selected] } };
@@ -88,7 +91,7 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
     });
   }
   const disabled = busy || saving || uncertain;
-  return <section className="section" aria-label="成果核实与证明">
+  return <section className="section" aria-label="成果核实与证明" ref={focusRef} tabIndex={-1}>
     <h3 className="section-title">核实与公开状态</h3>
     {state.status === "loading" ? <SectionSkeleton /> : state.status === "error" ? <SectionError error={state.error} onRetry={retry} /> : <>
       <p className="alert">{reviewStatusText(state.data.workflow.first_review_state)} · {state.data.workflow.moderation_state === "TAKEN_DOWN" ? "已下架，更新不会恢复公开" : state.data.workflow.first_review_state === "APPROVED" ? "校内登录用户可浏览已发布版本" : "尚未公开"}</p>
@@ -111,12 +114,13 @@ function QualifiedReviewPanel({ projectId, record, dirty, saving, onLocked }: { 
       <div className="ie-draft-actions">
         {pendingReview ? <Button variant="secondary" disabled={disabled} onClick={() => setConfirm("withdraw")}>撤回首次核实</Button> : <Button disabled={disabled || dirty || selected.length < 1 || selected.length > 5} onClick={() => setConfirm(state.data.workflow.first_review_state === "APPROVED" ? "publish" : "submit")}>{state.data.workflow.first_review_state === "APPROVED" ? "发布更新（免复审）" : "提交首次核实"}</Button>}
         <Button variant="secondary" disabled={busy || saving} onClick={retry}>重新读取核实与材料状态</Button>
-        {uncertain ? <Button disabled={busy || saving} onClick={() => void send(pending.current!.action)}>确认上次提交结果（沿用原请求）</Button> : null}
+
       </div>
     </>}
     {error ? <p className="alert alert-error" role="alert">{error}</p> : null}
     {message ? <p className="alert alert-success" role="status">{message}</p> : null}
+    {uncertain ? <Button ref={retryFocusRef} disabled={busy || saving} onClick={() => void send(pending.current!.action)}>确认上次提交结果（沿用原请求）</Button> : null}
     {busy ? <p className="field-hint" aria-live="polite">正在处理，请稍候…</p> : null}
-    <ReviewConfirm open={confirm !== null} busy={busy} title={confirm === "withdraw" ? "撤回首次核实" : confirm === "publish" ? "发布更新" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。" : confirm === "publish" ? "校内用户将看到已保存的更新内容。本次更新不会逐项复审，也不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
+    <ReviewConfirm fallbackFocus={() => retryFocusRef.current ?? focusRef.current} open={confirm !== null} busy={busy} title={confirm === "withdraw" ? "撤回首次核实" : confirm === "publish" ? "发布更新" : "提交首次核实"} description={confirm === "withdraw" ? "这次审核单将关闭。若运营已先作出决定，撤回会被拒绝，请重新读取结果。" : confirm === "publish" ? "校内用户将看到已保存的更新内容。本次更新不会逐项复审，也不会恢复已下架成果。" : "核实针对已保存内容与所选证明；提交后请先撤回再修改。通过核实后该版本向校内登录用户公开。"} onClose={() => setConfirm(null)} onConfirm={() => { if (confirm) void send(confirm); }} />
   </section>;
 }

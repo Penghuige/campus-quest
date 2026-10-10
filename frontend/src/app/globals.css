@@ -3647,6 +3647,20 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* R1: the account, logout and full-menu controls stay reachable on phones. */
+@media (max-width: 40rem) {
+  .app-topbar-inner {
+    flex-wrap: wrap;
+  }
+
+  .app-user {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
 .topbar-bell {

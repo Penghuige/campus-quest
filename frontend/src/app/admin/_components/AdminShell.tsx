@@ -34,6 +34,7 @@ import {
 import { useSession } from "@/features/auth/session";
 import { adminWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
+import { INNOVATION_NAV } from "@/features/innovation/InnovationNavigation";
 
 const NAV_ITEMS = [
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
@@ -44,6 +45,7 @@ const NAV_ITEMS = [
   { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },
   { href: "/admin/audit", label: "审计日志", icon: <InboxIcon /> },
   { href: "/admin/system", label: "系统设置", icon: <TasksIcon /> },
+  INNOVATION_NAV,
 ] as const;
 
 const SIDEBAR_GROUPS = [{ label: "管理后台", items: NAV_ITEMS }] as const;
@@ -164,6 +166,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <span className="staff-role-tag">管理员</span>
               </span>
               <StaffMenuSheet label="管理后台菜单" items={NAV_ITEMS} />
+              <Link className="btn btn-ghost" href="/logout" prefetch={false}>退出登录</Link>
             </div>
           </div>
         </header>

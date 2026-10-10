@@ -94,16 +94,29 @@ test("achievement review: real private upload, withdrawal, return, approval and 
     await owner.keyboard.press("Escape");
     await expect(owner.getByRole("button", { name: "提交首次核实", exact: true })).toBeFocused();
     const submissions: unknown[] = [];
+    let releaseWorkflow!: () => void;
+    const rereadGate = new Promise<void>((resolve) => { releaseWorkflow = resolve; });
+    await owner.route("**/api/v1/ie/me/project-drafts/*/achievements/*/workflow", async (route) => {
+      if (submissions.length === 1) await rereadGate;
+      await route.continue();
+    });
     await owner.route("**/api/v1/ie/me/project-drafts/*/achievements/*/submit", async (route) => {
       submissions.push(route.request().postDataJSON());
       if (submissions.length === 1) { const committed = await route.fetch(); expect(committed.status()).toBe(200); await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "SERVICE_UNAVAILABLE", message: "upstream response lost", request_id: "review-lost-ack" }) }); }
       else await route.continue();
     });
     await owner.keyboard.press("Enter"); await confirm(owner, "提交首次核实");
+    await expect(panel(owner).getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true })).toBeFocused();
     await expect(owner.getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true })).toBeVisible();
-    await owner.getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true }).click();
+    try {
+      // Retry must replay the frozen command even while the background read
+      // is waiting. A visible, enabled retry must never silently discard a click.
+      await owner.getByRole("button", { name: "确认上次提交结果（沿用原请求）", exact: true }).click();
+      await expect.poll(() => submissions.length).toBe(2);
+      expect(submissions[1]).toEqual(submissions[0]);
+    } finally { releaseWorkflow(); }
     await expect(panel(owner)).toContainText("等待首次核实");
-    await expect.poll(() => submissions.length).toBe(2); expect(submissions[1]).toEqual(submissions[0]);
+    await owner.unroute("**/api/v1/ie/me/project-drafts/*/achievements/*/workflow");
     await owner.unroute("**/api/v1/ie/me/project-drafts/*/achievements/*/submit");
     await expect(owner.getByLabel("成果名称", { exact: true })).toBeDisabled();
     await owner.getByRole("button", { name: "撤回首次核实", exact: true }).click(); await confirm(owner, "撤回首次核实");
@@ -140,6 +153,7 @@ test("achievement review: real private upload, withdrawal, return, approval and 
     await auditAxe(page); await auditAxe(owner);
     await page.getByLabel("核实备注／退回原因", { exact: true }).fill("请补充原型验证结果。");
     await page.getByRole("button", { name: "退回修改", exact: true }).click(); await confirm(page, "退回成果修改");
+    await expect(page.getByRole("region", { name: "核实处理结果" })).toBeFocused();
     await expect(page.getByRole("status")).toContainText("已退回");
     await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
     await expect(panel(owner)).toContainText("退回原因：请补充原型验证结果。");

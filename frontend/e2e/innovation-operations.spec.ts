@@ -41,8 +41,8 @@ async function grant(page: Page, reason = "演示授权运营") {
 test("operations identity: genuine admin grant, student visibility and confirmed revoke on mobile", async ({ page, browser }, testInfo) => {
   await ensureStudentLogin(page);
   await page.goto(`${BASE_URL}/profile`);
-  const identity = page.getByRole("region", { name: "我的双创身份" });
-  await expect(identity).toContainText("尚未获双创运营授权");
+  const identity = page.getByRole("link", { name: "双创运营工作台", exact: true });
+  await expect(identity).toHaveCount(0);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, ignoreHTTPSErrors: true });
   try {
     const admin = await context.newPage();
@@ -50,18 +50,16 @@ test("operations identity: genuine admin grant, student visibility and confirmed
     await admin.getByRole("button", { name: "授予运营身份", exact: true }).click();
     await expect(admin.getByLabel("操作原因", { exact: true })).toBeFocused();
     await grant(admin);
-    await page.getByRole("button", { name: "重新读取身份", exact: true }).click();
-    await expect(identity).toContainText("已获双创运营授权");
-    await expect(identity).toContainText("不包含积分调整权限");
+    await page.reload();
+    await expect(identity).toBeVisible();
     // A mounted page must switch from A's granted identity to B's ungranted
     // identity without reloading; restore A for the remaining revoke flow.
     const sibling = await page.context().newPage();
     try {
       await loginThroughUi(sibling, parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT, "CQ_E2E_AUTHOR_STUDENT"));
-      await expect(identity).toContainText("尚未获双创运营授权");
-      await expect(identity).not.toContainText("已获双创运营授权");
+      await expect(identity).toHaveCount(0);
       await loginThroughUi(sibling, parseSeededAccount(process.env.CQ_E2E_STUDENT, "CQ_E2E_STUDENT"));
-      await expect(identity).toContainText("已获双创运营授权");
+      await expect(identity).toBeVisible();
     } finally { await sibling.close(); }
     await admin.screenshot({ path: testInfo.outputPath("operations-mobile.png"), fullPage: true });
     expect(await admin.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -81,8 +79,8 @@ test("operations identity: genuine admin grant, student visibility and confirmed
     await dialog.getByRole("button", { name: "确认撤回", exact: true }).click();
     await expect(admin.getByText("已撤回双创运营身份。", { exact: true })).toBeVisible();
     await expect(admin.getByRole("button", { name: "授予运营身份", exact: true })).toBeFocused();
-    await page.getByRole("button", { name: "重新读取身份", exact: true }).click();
-    await expect(identity).toContainText("尚未获双创运营授权");
+    await page.reload();
+    await expect(identity).toHaveCount(0);
   } finally { await context.close(); }
 });
 
