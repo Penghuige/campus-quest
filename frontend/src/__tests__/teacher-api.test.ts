@@ -5,7 +5,7 @@
  * (`tasks/router.py`, `submissions/router.py`, the S2
  * `community/router.py`).
  *
- * Pins (the merge-time drift guards for the hand-written S2 part):
+ * Pins (the wire-shape drift guards, paired with the generated types):
  * - paths + methods + exact field names for list/detail/create/lifecycle/
  *   import preview+confirm/collaborators/statistics/review-queue/approve/
  *   revision/invalidate/download-mint;

@@ -2,16 +2,10 @@
  * Typed wrappers for the notifications endpoints (spec §25/§28; backend
  * `app/modules/notifications/router.py`, Stream S3).
  *
- * HAND-WRITTEN CONTRACT, NOT GENERATED: `openapi.snapshot.json` on this
- * branch predates the notifications module (it ends at the S1/S2
- * surface), so these DTOs are transcribed field-by-field from the S3
- * router's Pydantic models. MERGE-TIME STEP: when the S3 stream merges,
- * point `npm run api:types` at the combined backend and replace these
- * local shapes with `components["schemas"]["NotificationItemResponse"]`
- * etc. (`git grep NotificationItemResponse src/features/notifications`
- * finds every seam). The unit tests in `__tests__/notifications-api.test.ts`
- * pin the wire paths/methods against the S3 router so drift is caught at
- * that boundary.
+ * DTOs come from the GENERATED OpenAPI types in `lib/api/schema`
+ * (the snapshot carries the S3 surface); the unit tests in
+ * `__tests__/notifications-api.test.ts` pin the wire paths/methods
+ * as a second drift boundary.
  *
  * PRIVACY BY CONSTRUCTION (router docstring): the inbox DTO carries the
  * caller's OWN rows only — id/event_type/title/body/read_at/created_at.
@@ -21,29 +15,18 @@
  * exists.
  */
 import { apiRequest } from "@/lib/api";
+import type { components } from "@/lib/api/schema";
+
+type Schemas = components["schemas"];
 
 /**
  * `NotificationItemResponse` — one inbox message: the logical
  * Notification's own fields only.
  */
-export interface NotificationItemDto {
-  id: string;
-  /** One of the frozen `NotificationEventType` values (see inboxView). */
-  event_type: string;
-  title: string;
-  body: string;
-  /** null exactly while unread (the mark-read endpoint fills it). */
-  read_at: string | null;
-  created_at: string;
-}
+export type NotificationItemDto = Schemas["NotificationItemResponse"];
 
 /** `NotificationInboxResponse` — one offset page, newest first. */
-export interface NotificationInboxDto {
-  items: NotificationItemDto[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+export type NotificationInboxDto = Schemas["NotificationInboxResponse"];
 
 /** Backend default page size (router `DEFAULT_PAGE_LIMIT`). */
 export const NOTIFICATION_PAGE_LIMIT = 20;

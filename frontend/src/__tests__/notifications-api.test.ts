@@ -1,7 +1,7 @@
 /**
  * Task 7 (Plan 09): notifications API wrappers against the fetch stub —
- * wire-shape pins for the S3 notifications surface (hand-written contract
- * until the merged snapshot regenerates `lib/api/schema`): the unread
+ * wire-shape pins for the S3 notifications surface (generated-from-snapshot
+ * DTOs; these pins are the second drift boundary): the unread
  * filter's presence semantics, the bell's count poll (unread first page
  * -> total), and the bodyless per-item mark-read POST the router defines
  * (backend `app/modules/notifications/router.py`).
