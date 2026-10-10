@@ -50,6 +50,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.integrations.zip_safety import (
+    MAX_ARCHIVE_ENTRIES,
+    MAX_COMPRESSION_RATIO,
+    MAX_TOTAL_UNCOMPRESSED,
+    MAX_WHOLE_READ_PART,
     ZipSafetyKind,
     ZipSafetyViolation,
     preflight,
@@ -240,30 +244,31 @@ def _zip_safety_rejection(
     """Map one shared ZIP-safety violation onto the import vocabulary.
 
     One MALFORMED_XLSX verdict whose message names the exact rule and
-    numbers (the import surface has no per-rule codes; the message is
-    the teacher-facing explanation, same posture as the submission
-    validator's findings).
+    numbers, interpolated from the shared constants so a cap change
+    updates both consumers' messages together (the submission
+    validator's ``_zip_safety_finding`` interpolates the same names).
     """
     if violation.kind is ZipSafetyKind.TOO_MANY_ENTRIES:
-        text = f"归档条目数 {violation.entries} 超过上限 4096"
+        text = f"归档条目数 {violation.entries} 超过上限 {MAX_ARCHIVE_ENTRIES}"
     elif violation.kind is ZipSafetyKind.SUSPICIOUS_NAME:
         text = f"归档内条目路径可疑: {violation.name!r}"
     elif violation.kind is ZipSafetyKind.PART_TOO_LARGE:
         text = (
             f"归档部件 {violation.name} 声明解压后 {violation.file_size} 字节"
-            "超过单部件上限 16 MiB"
+            f"超过单部件上限 {MAX_WHOLE_READ_PART}"
         )
     elif violation.kind is ZipSafetyKind.COMPRESSION_RATIO:
         text = (
-            f"条目 {violation.name} 的压缩比超过 100:1"
+            f"条目 {violation.name} 的压缩比超过 {MAX_COMPRESSION_RATIO}:1"
             f"（声明解压后 {violation.file_size} 字节）"
         )
     elif violation.kind is ZipSafetyKind.TOTAL_TOO_LARGE:
         text = (
-            f"归档声明解压后总大小 {violation.total_uncompressed} 字节超过上限 512 MiB"
+            f"归档声明解压后总大小 {violation.total_uncompressed} 字节"
+            f"超过上限 {MAX_TOTAL_UNCOMPRESSED}"
         )
     else:
-        text = "归档整体压缩比超过 100:1"
+        text = f"归档整体压缩比超过 {MAX_COMPRESSION_RATIO}:1"
     return AssignmentImportError(ImportErrorCode.MALFORMED_XLSX, text)
 
 
