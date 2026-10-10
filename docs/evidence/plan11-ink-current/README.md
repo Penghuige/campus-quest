@@ -1,6 +1,6 @@
-# Plan 11 ink — CURRENT head evidence (review round 2, P1-1)
+# Plan 11 ink — CURRENT head evidence (as of 2026-09-25, head 6cbc705) — superseded by later merges; historical snapshot
 
-Fresh captures of the actual PR head (`6cbc705`: ink identity + the
+Fresh captures of the actual PR head (`6cbc705`, committed 2026-09-25: ink identity + the
 owner's modern-grammar prototype + the in-flow action-pill fix).
 Supersedes `plan11-ink/` as the review artifact — that older set was
 captured at `b807ec0`, BEFORE the prototype, and no longer represents

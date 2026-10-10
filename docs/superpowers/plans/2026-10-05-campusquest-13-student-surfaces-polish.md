@@ -1,5 +1,8 @@
 # CampusQuest 13 Student Secondary Surfaces Polish Implementation Plan
 
+> Status: Completed & merged (PR #23, 2026-10-06) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > Numbering note: plan-12 reserved "plan-13" for the Tailwind/Radix migration; that migration is renumbered to **plan-14** so this visible-polish workstream lands first (owner direction 2026-10-05: "进行下一步" after asking why the UI looked unchanged).

@@ -1,5 +1,8 @@
 # CampusQuest 09 Frontend Product Flows Implementation Plan
 
+> Status: Completed & merged (PR #9, 2026-09) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the responsive Next.js/PWA user, Teacher, and Admin interfaces for all CampusQuest V1 flows without duplicating backend business logic.

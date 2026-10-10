@@ -1,5 +1,8 @@
 # CampusQuest 03 Task, Assignment & Deadline Implementation Plan
 
+> Status: Completed & merged (PR #3, 2026-09-22) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement Task lifecycle, Assignment import, random concurrency-safe claiming, claim quotas, abandon/release behavior, FIXED/RELATIVE deadlines, and the exact 100/80/50/20 reward-tier boundary calculator.

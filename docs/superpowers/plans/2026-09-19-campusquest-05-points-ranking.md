@@ -1,5 +1,8 @@
 # CampusQuest 05 Points, Rewards, Rankings & Honors Implementation Plan
 
+> Status: Completed & merged (PR #5, 2026-09-23) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement immutable points accounting, spendable balance projection, atomic reward reservations/redemptions, ranking projection/rebuild, reward reversal into original ranking periods, honors, and personal growth metrics.

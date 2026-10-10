@@ -1,5 +1,8 @@
 # CampusQuest 01 Foundation & Contracts Implementation Plan
 
+> Status: Completed & merged (PR #1, 2026-09-20) — historical record, not an execution authorization.
+> File/numbering drift: migration numbers and file names in task text may differ from what actually landed — the migration chain in backend/alembic/versions/ is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish a runnable CampusQuest monorepo foundation with deterministic configuration, injectable time, PostgreSQL/Redis/S3 development services, FastAPI error contracts, SQLAlchemy/Alembic, Celery wiring, and a real integration-test harness.
