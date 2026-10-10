@@ -3691,17 +3691,27 @@ body {
 
 .topbar-bell {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--control-height);
-  min-width: var(--control-height);
-  border-radius: var(--radius-sm);
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 50%;
   text-decoration: none;
 }
 
+/* Owner feedback (2026-10-10 batch): the bell's hover used to be a
+ * SQUARE surface-2 block — shape-language mismatch beside the round
+ * avatar chip (and the "shadow" read as a clumsy square tint). The
+ * treatment is now the chip's own geometry: a 2rem circle, same
+ * token family for the hover fill. The adjacent chip gets its
+ * missing hover deepen so the pill's two interactive slots agree. */
 .topbar-bell:hover {
   background: var(--surface-2);
+}
+
+.avatar-chip:hover {
+  background: color-mix(in oklab, var(--primary) 20%, var(--surface-1));
 }
 
 .bell-glyph {
@@ -3710,12 +3720,14 @@ body {
   line-height: 1;
 }
 
-/* Count pill: primary fill + inverse text, pinned to the bell's corner;
-   digits stay tabular (§5). Hidden entirely when there is nothing to say. */
+/* Count pill: primary fill + inverse text, pinned to the bell's
+   top-right arc (the bell is a 2rem circle now — the badge centers on
+   the edge and may overlap the pill's rim by design); digits stay
+   tabular (§5). Hidden entirely when there is nothing to say. */
 .bell-badge {
   position: absolute;
-  top: 0.25rem;
-  right: 0;
+  top: -0.125rem;
+  right: -0.25rem;
   min-width: 1.1rem;
   padding: 0 0.25rem;
   border-radius: 999px;
