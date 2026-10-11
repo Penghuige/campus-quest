@@ -94,10 +94,10 @@
 - 真任务 `workers.schedule_recruitments` 与 Beat 默认 60 秒、batch 默认 100、typed 可配置值；共享 worker session_source。`collect_due_deliveries(..., event_types: tuple[str, ...] | None = None)` 增加可选过滤，None 保持原全量；dispatcher 增加 event_types/queue 可选参数用于本地 R3 profile。
 - `innovation_dev.py` 暴露仅本轮 schedule + 本事件 dispatch 的 Celery/Beat profile，专用 `innovation-dev` queue。启动器 Worker/Beat 组件用 WSL/既有 Linux 运行时、隐藏宿主启动、归属 pid/命令检查/退出和完整日志；不带起原 Claim 到期/文件清理扫描。正常生产 app 保留全套 schedule、默认 queue 和全部原事件投递。
 
-- [ ] 写时间失败测试：发布 now+30天，due−1ms 无提醒/正好 due 一条；普通编辑/发布更新不重置；确认继续重置；60/90天未确认保持 OPEN；跨多周期停机仅补一条并推进到下一 future due；日期切换/旧cycle重放无影响。`uv run pytest tests/unit/innovation/test_recruitment_schedule.py tests/integration/innovation/test_recruitment_reminders.py -q` Expected: missing scheduler/event 或通知断言 RED。
-- [ ] 实现调度、事件 contract/Check migration、IN_APP-only 模板与渠道、真实发送 resolver；通知 intent 与周期推进同事务。重复 Worker、通知持久化故障/事务回滚、关闭/confirm-active/截止切换竞争均加入 PG 用例；旧已创建但未投递通知 policy skip，不能伪造 SENT。
-- [ ] 写并执行 production composition smoke：实际 PG/Redis、真实注册/Beat、调用 job→intent→send_notification_delivery→InboxService.list，只有 IN_APP、只一条可读、不含联系；缺 resolver fail closed。`uv run pytest tests/workers/test_recruitment_jobs.py tests/integration/innovation/test_recruitment_composition_smoke.py -q` Expected: 0 failures；原 `tests/workers/test_notification_delivery.py`、`test_due_notification_dispatch.py` 全通过。
-- [ ] 完成真实启动/停止和 health 确认；本机脚本的 WSL 路径/队列与 production profile 写 `docs/operations/innovation-recruitment-runtime.md`，包含停止归属检查及无开发时钟修改的体验方法。测试启动只消费自有 R3 test queue，生产数据只运行真实时钟的配置；补 CI composition-gated 用例/注册证明，静态/矩阵全部退出 0，commit 调度与通知契约。
+- [x] 写时间失败测试：发布 now+30天，due−1ms 无提醒/正好 due 一条；普通编辑/发布更新不重置；确认继续重置；60/90天未确认保持 OPEN；跨多周期停机仅补一条并推进到下一 future due；日期切换/旧cycle重放无影响。`uv run pytest tests/unit/innovation/test_recruitment_schedule.py tests/integration/innovation/test_recruitment_reminders.py -q` Expected: missing scheduler/event 或通知断言 RED。
+- [x] 实现调度、事件 contract/Check migration、IN_APP-only 模板与渠道、真实发送 resolver；通知 intent 与周期推进同事务。重复 Worker、通知持久化故障/事务回滚、关闭/confirm-active/截止切换竞争均加入 PG 用例；旧已创建但未投递通知 policy skip，不能伪造 SENT。
+- [x] 写并执行 production composition smoke：实际 PG/Redis、真实注册/Beat、调用 job→intent→send_notification_delivery→InboxService.list，只有 IN_APP、只一条可读、不含联系；缺 resolver fail closed。`uv run pytest tests/workers/test_recruitment_jobs.py tests/integration/innovation/test_recruitment_composition_smoke.py -q` Expected: 0 failures；原 `tests/workers/test_notification_delivery.py`、`test_due_notification_dispatch.py` 全通过。
+- [x] 完成真实启动/停止和 health 确认；本机脚本的 WSL 路径/队列与 production profile 写 `docs/operations/innovation-recruitment-runtime.md`，包含停止归属检查及无开发时钟修改的体验方法。测试启动只消费自有 R3 test queue，生产数据只运行真实时钟的配置；补 CI composition-gated 用例/注册证明，静态/矩阵全部退出 0，commit 调度与通知契约。
 
 ### Task 4: 手机/桌面前端闭环
 

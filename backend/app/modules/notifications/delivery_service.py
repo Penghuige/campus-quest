@@ -208,6 +208,7 @@ _CLAIM_EVENT_KEY_RE = re.compile(
 #: id -> AssignmentClaim.status as the raw column string, or None when
 #: the claim row no longer exists).
 ClaimStatusResolver = Callable[[UUID], Awaitable[str | None]]
+RecruitmentReminderResolver = Callable[[UUID, UUID], Awaitable[bool]]
 
 
 def provider_idempotency_key(
@@ -297,6 +298,7 @@ class DeliveryService:
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         stale_claim_threshold: timedelta = DEFAULT_STALE_CLAIM_THRESHOLD,
         claim_status_resolver: ClaimStatusResolver | None = None,
+        recruitment_reminder_resolver: RecruitmentReminderResolver | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
@@ -312,6 +314,7 @@ class DeliveryService:
         self._max_attempts = max_attempts
         self._stale_claim_threshold = stale_claim_threshold
         self._claim_status_resolver = claim_status_resolver
+        self._recruitment_reminder_resolver = recruitment_reminder_resolver
 
     async def send(self, delivery_id: UUID, request_id: str) -> SendResult:
         """Deliver `delivery_id` once; duplicate calls are no-ops.
@@ -468,6 +471,19 @@ class DeliveryService:
 
         if claimed.channel_skip_reason is not None:
             return f"{SKIPPED_LAST_ERROR_PREFIX}{claimed.channel_skip_reason}"
+
+        if claimed.event_type.value == "IE_RECRUITMENT_CONFIRMATION_DUE":
+            if self._recruitment_reminder_resolver is None:
+                raise RuntimeError("recruitment reminder resolver is required")
+            parts = claimed.event_key.split(":", 3)
+            if len(parts) != 4 or parts[0] != "ie-recruitment":
+                raise ValueError("invalid recruitment reminder event key")
+            recruitment_id, cycle_id = UUID(parts[1]), UUID(parts[2])
+            due = datetime.fromisoformat(parts[3])
+            if due.tzinfo is None:
+                raise ValueError("recruitment reminder due must be timezone aware")
+            if not await self._recruitment_reminder_resolver(recruitment_id, cycle_id):
+                return f"{SKIPPED_LAST_ERROR_PREFIX}recruitment_obsolete"
 
         if (
             claimed.event_type in DEADLINE_REMINDER_EVENTS

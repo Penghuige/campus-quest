@@ -1,7 +1,7 @@
 """Private editor DTOs and explicit, contact-free public recruitment shapes."""
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -12,6 +12,7 @@ from pydantic import (
     Field,
     StrictBool,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -81,6 +82,11 @@ class RecruitmentFields(BaseModel):
     beginner_friendly: StrictBool | None = None
     deadline_at: AwareDatetime | None = None
     contacts: list[ContactInput] = Field(default_factory=list, max_length=4)
+
+    @field_validator("deadline_at")
+    @classmethod
+    def utc_deadline(cls, value: datetime | None) -> datetime | None:
+        return value.astimezone(UTC) if value is not None else None
 
     @model_validator(mode="after")
     def unique_channels(self) -> "RecruitmentFields":

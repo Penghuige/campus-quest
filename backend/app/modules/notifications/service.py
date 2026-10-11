@@ -208,6 +208,12 @@ def _skip_reason(
     if status == UserStatus.PENDING_PHONE:
         return REASON_ACCOUNT_PENDING_PHONE
 
+    if event_type == NotificationEventType.IE_RECRUITMENT_CONFIRMATION_DUE:
+        if status != UserStatus.ACTIVE:
+            return "recruitment_account_inactive"
+        if channel != NotificationChannel.IN_APP:
+            return "recruitment_in_app_only"
+
     if event_type in DEADLINE_REMINDER_EVENTS:
         assert task_policy is not None  # guarded by eligible_channels
         if (

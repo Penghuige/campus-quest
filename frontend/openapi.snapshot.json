@@ -10875,7 +10875,8 @@
           "REWARD_REDEMPTION_REJECTED",
           "ACCOUNT_SECURITY",
           "IE_ACHIEVEMENT_APPROVED",
-          "IE_ACHIEVEMENT_RETURNED"
+          "IE_ACHIEVEMENT_RETURNED",
+          "IE_RECRUITMENT_CONFIRMATION_DUE"
         ],
         "title": "NotificationEventType",
         "description": "Canonical domain event names (spec §25 list plus the\nSUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md)."

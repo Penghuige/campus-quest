@@ -237,6 +237,7 @@ Business logic emits events; the Notification module owns delivery (spec §25). 
 - `ACCOUNT_SECURITY`
 - `IE_ACHIEVEMENT_APPROVED`
 - `IE_ACHIEVEMENT_RETURNED`
+- `IE_RECRUITMENT_CONFIRMATION_DUE` — IN_APP only; role_name/manage_path render variables. Recruitment/cycle/due form the durable event key; current-cycle resolver suppresses closed, expired, invalid-owner and obsolete-cycle reminders before delivery.
 
 Innovation achievement decisions use `ie_review:<case_id>:decision`, recorded with
 the decision transaction. Variables are `achievement_title` (both events) and

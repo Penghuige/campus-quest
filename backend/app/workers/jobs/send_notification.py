@@ -109,6 +109,15 @@ def build_delivery_service(
             )
 
     settings = get_settings()
+
+    async def _recruitment_current(recruitment_id: UUID, cycle_id: UUID) -> bool:
+        from app.modules.innovation.recruitment_scheduler import RecruitmentScheduler
+
+        async with session_maker() as session:
+            return await RecruitmentScheduler(clock=SystemClock()).is_current_reminder(
+                session, recruitment_id=recruitment_id, cycle_id=cycle_id
+            )
+
     return DeliveryService(
         session_maker=session_maker,
         sms_sender=build_sms_sender(settings.sms_provider),
@@ -121,6 +130,7 @@ def build_delivery_service(
             seconds=settings.notification_dispatch_stale_sending_seconds
         ),
         claim_status_resolver=_claim_status,
+        recruitment_reminder_resolver=_recruitment_current,
     )
 
 

@@ -211,6 +211,9 @@ EVENT_VARIABLES: dict[NotificationEventType, frozenset[str]] = {
     ),
     NotificationEventType.ACCOUNT_SECURITY: frozenset({"event_summary", "event_time"}),
     NotificationEventType.IE_ACHIEVEMENT_APPROVED: frozenset({"achievement_title"}),
+    NotificationEventType.IE_RECRUITMENT_CONFIRMATION_DUE: frozenset(
+        {"role_name", "manage_path"}
+    ),
     NotificationEventType.IE_ACHIEVEMENT_RETURNED: frozenset(
         {"achievement_title", "review_reason"}
     ),
@@ -452,6 +455,15 @@ DEFAULT_TEMPLATES: dict[
 
 
 for _channel in NotificationChannel:
+    DEFAULT_TEMPLATES[
+        (NotificationEventType.IE_RECRUITMENT_CONFIRMATION_DUE, _channel)
+    ] = TemplateText(
+        title="请确认招募是否继续",
+        body=(
+            "岗位《{role_name}》已到确认时间。若仍在招募，"
+            "请前往 {manage_path} 确认继续；未回复会保持开放。"
+        ),
+    )
     DEFAULT_TEMPLATES[(NotificationEventType.IE_ACHIEVEMENT_APPROVED, _channel)] = (
         TemplateText(
             title="成果核实通过",

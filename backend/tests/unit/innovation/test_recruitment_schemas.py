@@ -75,3 +75,10 @@ def test_deadline_boundary():
     model.validate_publication(now)
     with pytest.raises(ValueError):
         model.validate_publication(now + timedelta(milliseconds=1))
+
+
+def test_deadline_normalizes_offset_to_utc():
+    model = schemas().RecruitmentFields(
+        **(fields() | {"deadline_at": "2027-01-01T08:00:00+08:00"})
+    )
+    assert model.deadline_at.isoformat() == "2027-01-01T00:00:00+00:00"
