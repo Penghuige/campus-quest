@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-11-innovation-recruitment-design.md`，2026-10-11 用户已审阅并指示执行。
 
-**Execution proposal:** 我在当前会话原生实施五项任务，最终一次独立评审；不派多个实现代理。保持当前模型设置，独立评审任务开始前说明实际模型。此计划待用户审阅，产品尚未修改。
+**Execution:** 用户 2026-10-11 回复“可以”，已批准本会话原生实施五项任务、最终一次独立评审；不派多个实现代理。保持当前模型设置，独立评审任务开始前说明实际模型。当前执行 Task 1。
 
 ## Global Constraints
 
@@ -59,12 +59,12 @@
 - 表：`RecruitmentDraft` 保存私有 fields、版本、状态/治理、公开指针、cycle_id、deadline/confirmed/remind 时间及创建 fingerprint；`RecruitmentRevision` 保存不可变公开 content，独立联系授权行引用该版本；`RecruitmentContactAuthorization` 保存 channel/value/authorized_at/revoked_at；`RecruitmentActionReceipt` 保存请求摘要/动作/生效版本。关系使用外键与岗位/版本归属约束，公开 JSON 不含联系值。
 - 状态/正版本/人数/JSON 内容边界/渠道集合、创建及动作唯一键落 PG；migration 创建扫描索引并支持干净 upgrade/downgrade/re-upgrade；不回填开发项目内容。异步域函数不得从 helper 独立 commit。
 
-- [ ] 从 spec 写矩阵预期；测试 schema：空草稿可保存、发布要求显式 bool 与字段、创意起步目标/方案、人数 0/1/999/1000、重复渠道、非法邮箱/手机号/URL、naive 时间/额外字段；helper 创建真实测试账号、已开通资格、项目、可注入 Clock，不默认绕过权限。
-- [ ] 写 PG 失败测试：`test_publish_requires_qualification_and_owned_project`、`test_saved_changes_do_not_change_published_revision`、`test_close_reopen_and_replay_cannot_change_new_cycle`、`test_revoke_last_contact_requires_explicit_close`、`test_revoked_contact_requires_fresh_authorization`、`test_audit_failure_rolls_back_publication`。断言一个 revision/receipt、同 key 改载荷 409、旧请求返回原回执和当前 CLOSED/新 OPEN、不修改成果公开指针。
-- [ ] 运行 `uv run pytest tests/unit/innovation/test_recruitment_schemas.py tests/integration/innovation/test_recruitment_lifecycle.py -q`。Expected: 新 schema 缺失或新接口 404 的业务 RED，记录原输出；不把连接失败当 RED。
-- [ ] 实现模型/迁移/DTO/本人薄路由和服务；所有动作锁后重新验证账号/资格/归属。普通 draft update 也带 request_id，稳定处理未知结果。revoke 操作影响当前授权，并阻止旧草稿以普通保存自动复活授权；重新选择并通过完整预览发布才可授权。发布不得从成果 DTO 取内容。
-- [ ] 追加真实独立连接竞争：create 同 key、publish 同版本、close/reopen、revoke/publish、截止延长/到期、账号暂停/发布；Expected: 单次有效变化、另一方稳定 409/403、无孤立授权/回执。锁顺序 user/资格→project→recruitment→授权/回执；Worker 后续使用相同 scope。
-- [ ] `uv run alembic upgrade head`；运行上述 schema/lifecycle/races 和现有 `tests/integration/innovation`，再 `uv run ruff format --check app tests alembic`、`uv run ruff check app tests alembic`、`uv run mypy`。Expected: 全部退出 0，无已有成果回归。运行 `uv run python scripts/dump_openapi.py ../frontend/openapi.snapshot.json`，frontend `npm run api:types:snapshot` 并检查生成内容；commit 生命周期/矩阵/契约。
+- [x] 从 spec 写矩阵预期；测试 schema：空草稿可保存、发布要求显式 bool 与字段、创意起步目标/方案、人数 0/1/999/1000、重复渠道、非法邮箱/手机号/URL、naive 时间/额外字段；helper 创建真实测试账号、已开通资格、项目、可注入 Clock，不默认绕过权限。
+- [x] 写 PG 失败测试：`test_publish_requires_qualification_and_owned_project`、`test_saved_changes_do_not_change_published_revision`、`test_close_reopen_and_replay_cannot_change_new_cycle`、`test_revoke_last_contact_requires_explicit_close`、`test_revoked_contact_requires_fresh_authorization`、`test_audit_failure_rolls_back_publication`。断言一个 revision/receipt、同 key 改载荷 409、旧请求返回原回执和当前 CLOSED/新 OPEN、不修改成果公开指针。
+- [x] 运行 `uv run pytest tests/unit/innovation/test_recruitment_schemas.py tests/integration/innovation/test_recruitment_lifecycle.py -q`。Expected: 新 schema 缺失或新接口 404 的业务 RED，记录原输出；不把连接失败当 RED。
+- [x] 实现模型/迁移/DTO/本人薄路由和服务；所有动作锁后重新验证账号/资格/归属。普通 draft update 也带 request_id，稳定处理未知结果。revoke 操作影响当前授权，并阻止旧草稿以普通保存自动复活授权；重新选择并通过完整预览发布才可授权。发布不得从成果 DTO 取内容。
+- [x] 追加真实独立连接竞争：create 同 key、publish 同版本、close/reopen、revoke/publish、截止延长/到期、账号暂停/发布；Expected: 单次有效变化、另一方稳定 409/403、无孤立授权/回执。锁顺序 user/资格→project→recruitment→授权/回执；Worker 后续使用相同 scope。
+- [x] `uv run alembic upgrade head`；运行上述 schema/lifecycle/races 和现有 `tests/integration/innovation`，再 `uv run ruff format --check app tests alembic`、`uv run ruff check app tests alembic`、`uv run mypy`。Expected: 全部退出 0，无已有成果回归。运行 `uv run python scripts/dump_openapi.py ../frontend/openapi.snapshot.json`，frontend `npm run api:types:snapshot` 并检查生成内容；commit 生命周期/矩阵/契约。
 
 ### Task 2: 校内项目/招募投影与按需联系
 

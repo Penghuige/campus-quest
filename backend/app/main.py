@@ -39,6 +39,7 @@ from app.modules.innovation import (
 from app.modules.innovation import (
     qualification_router as innovation_qualification_router,
 )
+from app.modules.innovation import recruitment_router as innovation_recruitment_router
 from app.modules.innovation import (
     review_operations_router as innovation_review_operations_router,
 )
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(identity_users_router.router, prefix="/api/v1")
     app.include_router(identity_staff_router.router, prefix="/api/v1")
     app.include_router(innovation_router.router, prefix="/api/v1")
+    app.include_router(innovation_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_owner_router.router, prefix="/api/v1")
     app.include_router(innovation_qualification_router.self_router, prefix="/api/v1")
     app.include_router(innovation_qualification_router.admin_router, prefix="/api/v1")
