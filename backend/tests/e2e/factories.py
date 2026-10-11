@@ -666,6 +666,41 @@ async def clean_world(
         )
         await db.execute(delete(Notification).where(Notification.user_id.in_(users)))
 
+        from app.modules.innovation.recruitment_models import (
+            RecruitmentActionReceipt,
+            RecruitmentContactAuthorization,
+            RecruitmentDraft,
+            RecruitmentRevision,
+        )
+
+        recruitments = select(RecruitmentDraft.id).where(
+            RecruitmentDraft.project_id.in_(projects)
+        )
+        await db.execute(
+            delete(RecruitmentActionReceipt).where(
+                RecruitmentActionReceipt.recruitment_id.in_(recruitments)
+            )
+        )
+        await db.execute(
+            delete(RecruitmentContactAuthorization).where(
+                RecruitmentContactAuthorization.recruitment_id.in_(recruitments)
+            )
+        )
+        # Release the non-cascading public pointer within this owned test world.
+        await db.execute(
+            update(RecruitmentDraft)
+            .where(RecruitmentDraft.id.in_(recruitments))
+            .values(status="DRAFT", public_revision_id=None)
+        )
+        await db.execute(
+            delete(RecruitmentRevision).where(
+                RecruitmentRevision.recruitment_id.in_(recruitments)
+            )
+        )
+        await db.execute(
+            delete(RecruitmentDraft).where(RecruitmentDraft.id.in_(recruitments))
+        )
+
         # Private project preparation belongs to this world's users. Its
         # non-cascading owner FK must be released before deleting accounts.
         await db.execute(

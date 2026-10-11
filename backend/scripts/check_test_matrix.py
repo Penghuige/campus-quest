@@ -37,7 +37,9 @@ _GAP = ("缺口", "gap")
 _MISMATCH = ("不匹配", "mismatch")
 _PROCESS = ("流程行", "process")
 
-_TEST_CITE = re.compile(r"`(tests/[^`:]+)(?:::[\w.]+)?`")
+_TEST_CITE = re.compile(
+    r"`((?:tests/|frontend/(?:e2e/|src/__tests__/))[^`:]+)(?:::[\w.]+)?`"
+)
 _GAP_ID = re.compile(r"G-\d+")
 
 
@@ -62,9 +64,7 @@ def check_matrix(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
 
     gap_section = text.split("缺口明细", 1)[-1] if "缺口明细" in text else ""
-    mismatch_section = (
-        text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
-    )
+    mismatch_section = text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
 
     row_id = 0
     for line in text.splitlines():
@@ -92,16 +92,24 @@ def check_matrix(path: Path) -> list[str]:
                 )
                 continue
             for cited_file in citations:
-                if not (_BACKEND_ROOT / cited_file).exists():
+                # Existing matrices used backend-relative paths to frontend.
+                # Preserve that exact legacy spelling while checking its
+                # canonical frontend location and rejecting further escapes.
+                normalized = cited_file.removeprefix("tests/../../")
+                if not normalized.startswith("frontend/"):
+                    normalized = cited_file
+                frontend = normalized.startswith("frontend/")
+                base = _BACKEND_ROOT.parent if frontend else _BACKEND_ROOT
+                allowed = base / ("frontend" if frontend else "tests")
+                target = (base / normalized).resolve()
+                if not target.is_relative_to(allowed.resolve()) or not target.is_file():
                     violations.append(
                         f"{path.name}: row {row} cites missing file {cited_file}"
                     )
         elif status == "gap":
             ids = _GAP_ID.findall(" ".join(cells))
             if not ids:
-                violations.append(
-                    f"{path.name}: gap row {row} carries no gap id (G-N)"
-                )
+                violations.append(f"{path.name}: gap row {row} carries no gap id (G-N)")
             for gap_id in ids:
                 if gap_id not in gap_section:
                     violations.append(

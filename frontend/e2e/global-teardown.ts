@@ -17,6 +17,7 @@ import { existsSync, rmSync } from "node:fs";
 import { runWorldAction } from "./global-setup";
 
 export default function globalTeardown(): void {
+  let cleanupError: unknown;
   const worldFile = process.env.CQ_E2E_WORLD_FILE;
   if (worldFile !== undefined && existsSync(worldFile)) {
     try {
@@ -26,7 +27,7 @@ export default function globalTeardown(): void {
       // either: an orphaned world pollutes every later suite against the
       // shared test stack.
       console.error("[global-teardown] world cleanup FAILED:", error);
-      process.exitCode = process.exitCode ?? 1;
+      cleanupError = error;
     }
   }
   if (process.env.CQ_E2E_RUN !== undefined) {
@@ -34,4 +35,5 @@ export default function globalTeardown(): void {
       force: true,
     });
   }
+  if (cleanupError) throw cleanupError;
 }

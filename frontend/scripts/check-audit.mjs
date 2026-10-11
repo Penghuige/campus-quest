@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { AUDIT_EXEMPTIONS } from "./npm-audit-exemptions.mjs";
+import { validateAuditReport } from "./audit-report.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -20,9 +21,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 function auditJson() {
   try {
     return JSON.parse(
-      execFileSync("npm", ["audit", "--json", "--audit-level=high"], {
+      execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["audit", "--json", "--audit-level=high"], {
         cwd: join(here, ".."),
         encoding: "utf8",
+        shell: process.platform === "win32",
       }),
     );
   } catch (error) {
@@ -37,7 +39,7 @@ function auditJson() {
 const GATING = new Set(["high", "critical"]);
 const today = new Date().toISOString().slice(0, 10);
 
-const report = auditJson();
+const report = validateAuditReport(auditJson());
 const vulnerabilities = Object.values(report?.vulnerabilities ?? {});
 const gating = vulnerabilities.filter((v) => GATING.has(v.severity));
 

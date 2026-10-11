@@ -46,8 +46,8 @@ const backendPort = new URL(API_URL).port || "8000";
  */
 const backendEnv: Record<string, string> = {
   ...process.env,
-  DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
-  REDIS_URL: "redis://127.0.0.1:6379/0",
+  DATABASE_URL: process.env.CQ_E2E_DATABASE_URL ?? "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
+  REDIS_URL: process.env.CQ_E2E_REDIS_URL ?? "redis://127.0.0.1:6379/0",
   // e2e-only https MinIO (compose profile "e2e", :9002): the pages are
   // https (P3-B), so an http presigned URL would be mixed content the
   // browser blocks. The shared :9000 instance stays http for everything

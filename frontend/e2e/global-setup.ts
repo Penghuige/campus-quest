@@ -25,8 +25,8 @@ export const BACKEND_DIR = join(here, "..", "..", "backend");
 /** The pinned test-stack env (the webServer's backendEnv contract). */
 export const backendEnv: NodeJS.ProcessEnv = {
   ...process.env,
-  DATABASE_URL: "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
-  REDIS_URL: "redis://127.0.0.1:6379/0",
+  DATABASE_URL: process.env.CQ_E2E_DATABASE_URL ?? "postgresql+asyncpg://test:test@127.0.0.1:15432/campusquest_test",
+  REDIS_URL: process.env.CQ_E2E_REDIS_URL ?? "redis://127.0.0.1:6379/0",
   // Mirror playwright.config.ts's backendEnv: the e2e-only https MinIO
   // on :9002 (mixed content is blocked from https pages) + the CA
   // bundle that lets boto3 trust its self-signed certificate (resolved

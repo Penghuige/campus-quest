@@ -55,6 +55,7 @@ import {
 import {
   canLoadMore,
   inboxItemView,
+  recruitmentNotificationLink,
   INBOX_FILTERS,
   type InboxFilterKey,
 } from "./inboxView";
@@ -324,6 +325,7 @@ interface NotificationRowProps {
  * gallery's fixture rows (the thin e2e world seeds zero notifications).
  */
 export function NotificationRow({ view, item, markError, onMarkRead }: NotificationRowProps) {
+  const managePath = recruitmentNotificationLink(view.eventType, view.body);
   return (
     <li
       className="notif-item"
@@ -347,7 +349,8 @@ export function NotificationRow({ view, item, markError, onMarkRead }: Notificat
           </time>
         </div>
         <p className="notif-title">{view.title}</p>
-        <p className="notif-body">{view.body}</p>
+        <p className="notif-body">{managePath ? view.body.replace(managePath, "招募管理页") : view.body}</p>
+        {managePath ? <Link href={managePath}>管理招募</Link> : null}
         {!view.isRead ? (
           <div className="notif-actions">
             <Button

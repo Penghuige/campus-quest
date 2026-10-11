@@ -49,6 +49,7 @@ export const BUSINESS_ERROR_CODES = [
   "OTP_TOKEN_INVALID",
   "OTP_RESEND_COOLDOWN",
   "RATE_LIMITED",
+  "RECRUITMENT_CONTACTS_UNAVAILABLE",
   // Registered in interfaces.md by Plan 08 T9 ("the generic business
   // code for 409 state/conflict refusals" — concurrent ownership,
   // replay-integrity failures, illegal state transitions). The mirror

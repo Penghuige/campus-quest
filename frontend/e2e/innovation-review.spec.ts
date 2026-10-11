@@ -92,12 +92,15 @@ test("achievement review: private proof and every update reviewed across three a
     await owner.getByRole("button", { name: "保存草稿", exact: true }).click();
     await expect(owner.getByRole("status")).toHaveText("草稿已保存，仅自己可见。");
     await owner.getByRole("link", { name: "管理成果草稿", exact: true }).click();
+    await expect(owner).toHaveURL(/\/project-drafts\/[0-9a-f-]+\/achievements$/);
+    const projectId = new URL(owner.url()).pathname.match(/\/project-drafts\/([0-9a-f-]+)\/achievements$/)![1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
     await owner.getByRole("button", { name: "新建成果草稿", exact: true }).click();
     await owner.getByLabel("成果名称", { exact: true }).fill("校园回收核实原型");
     await owner.getByLabel("作品与阶段成果说明", { exact: true }).fill("首次提交的可操作原型。");
     const created = owner.waitForResponse((response) => response.request().method() === "POST" && /\/achievements$/.test(new URL(response.url()).pathname));
     await owner.getByRole("button", { name: "保存成果草稿", exact: true }).click();
-    const achievement = await (await created).json() as { id: string; project_id: string };
+    const achievement = await (await created).json() as { id: string };
     await expect(panel(owner)).toContainText("尚未提交首次核实");
     // A failed signed PUT keeps its original retry key, but must not trap the
     // author after the upload intent is explicitly removed.
@@ -166,7 +169,7 @@ test("achievement review: private proof and every update reviewed across three a
     await viewer.goto(`${BASE_URL}/innovation/achievements`);
     await expect(viewer.getByRole("region", { name: "校内已核实成果" })).not.toContainText("校园回收核实原型");
     const token = mintToken(process.env.CQ_E2E_STAFF_ID ?? process.env.CQ_E2E_TEACHER_ID!);
-    const denied = await viewer.request.get(`${API_URL}/ie/me/project-drafts/${achievement.project_id}/achievements/${achievement.id}/evidence/${proof.id}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    const denied = await viewer.request.get(`${API_URL}/ie/me/project-drafts/${projectId}/achievements/${achievement.id}/evidence/${proof.id}/content`, { headers: { Authorization: `Bearer ${token}` } });
     expect(denied.status()).toBe(403);
     await page.goto(`${BASE_URL}/innovation/reviews`);
     const queue = page.getByRole("region", { name: "成果核实待办" });
@@ -280,6 +283,25 @@ test("achievement review: private proof and every update reviewed across three a
     expect(await owner.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await owner.screenshot({ path: testInfo.outputPath("achievement-review-owner-mobile.png"), fullPage: true });
     await viewer.screenshot({ path: testInfo.outputPath("achievement-public-desktop.png"), fullPage: true });
+    // R3 closing an independently published role must preserve R2's approved
+    // achievement and project visibility. Setup uses real APIs; close uses UI.
+    const proofUrl = owner.url(); const publicAchievementUrl = viewer.url();
+    const ownerHeaders = { Authorization: `Bearer ${mintToken(ownerId)}` };
+    const recruitPath = `${API_URL}/ie/me/project-drafts/${projectId}/recruitments`;
+    const recruited = await owner.request.post(recruitPath, { headers: ownerHeaders, data: { request_id: crypto.randomUUID(), fields: { project_title: "模拟招募介绍", direction: "模拟方向", stage: "实践", introduction: "模拟资料：继续访谈", idea_stage: false, role_name: "模拟实践伙伴", headcount: 1, duties: "访谈", requirements: "愿意学习", time_commitment: "每周一小时", beginner_friendly: true, contacts: [{ channel: "WECHAT", value: "demo_partner" }] } } });
+    expect(recruited.status(), await recruited.text()).toBe(201); const role = await recruited.json();
+    expect((await owner.request.post(`${recruitPath}/${role.id}/publish`, { headers: ownerHeaders, data: { version: role.version, request_id: crypto.randomUUID() } })).status()).toBe(200);
+    await owner.goto(`${BASE_URL}/profile/project-drafts/${projectId}/recruitments`);
+    await owner.getByRole("button", { name: "编辑招募：模拟实践伙伴", exact: true }).click();
+    await owner.getByRole("button", { name: "关闭招募", exact: true }).click(); await confirm(owner, "关闭招募");
+    await expect(owner.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
+    await viewer.goto(`${BASE_URL}/innovation/projects/${projectId}`);
+    await expect(viewer.getByRole("region", { name: "项目已核实成果" }).getByRole("link")).toHaveAttribute("href", `/innovation/achievements/${achievement.id}`);
+    await expect(viewer.getByRole("region", { name: "项目正在招募" })).toContainText("暂无有效招募");
+    await viewer.goto(publicAchievementUrl); await expect(publicDetail).toContainText("第二版公开进展。");
+    await owner.goto(proofUrl);
+    await owner.getByRole("button", { name: "编辑成果：校园回收核实原型", exact: true }).click();
+    await expect(panel(owner)).toBeVisible();
     prepareTakenDownAchievement(achievement.id);
     await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
     await expect(panel(owner)).toContainText("已下架，更新不会恢复公开");

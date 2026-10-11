@@ -16,9 +16,9 @@ Expectations recorded from approved R3 spec before locating implementation tests
 | R10 | §6 | Deliberate contact read, 30/60 cap, Redis/audit failure safe; revocation/suspension serialize both orders | `tests/integration/innovation/test_recruitment_contacts.py` + `tests/integration/innovation/test_recruitment_contact_races.py` | covered |
 | R11 | §5/7 | 30-day reminders stay OPEN, catch up once, edits preserve schedule, old-cycle fenced; duplicate scans and expiry/extension races serialize | `tests/unit/innovation/test_recruitment_schedule.py` + `tests/integration/innovation/test_recruitment_reminders.py` + `tests/integration/innovation/test_recruitment_scheduler_races.py` | covered |
 | R12 | §7 | Real Celery/Beat/IN_APP wiring; stale suppression, original events preserved | `tests/workers/test_recruitment_jobs.py` + `tests/integration/innovation/test_recruitment_composition_smoke.py` + `tests/workers/test_due_notification_dispatch.py` | covered |
-| R13 | §8 | Save/publish UI separation; unknown request retained; auth clears private data | pending | gap G-3 |
-| R14 | §8/9 | Mobile, keyboard, focus, axe, pinned-font pixels | pending | gap G-3 |
+| R13 | §8 | Save/publish UI separation; unknown request retained; auth clears private data | `frontend/src/__tests__/innovation-recruitment-api.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` + `frontend/e2e/innovation-review.spec.ts` | covered |
+| R14 | §8/9 | Mobile, keyboard, focus, axe, pinned-font pixels | `frontend/e2e/innovation-recruitment.spec.ts` + `frontend/e2e/innovation-recruitment-visual.spec.ts` | covered |
 
 ## 缺口明细
 
-- G-3: Task 4 UI/browser/accessibility/visual pending.
+- No remaining spec coverage gaps. Covered means an executable assertion exists; actual gate results are recorded separately for the current source.

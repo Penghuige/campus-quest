@@ -61,6 +61,7 @@ FROZEN_BUSINESS_CODES = (
     "OTP_TOKEN_INVALID",
     "OTP_RESEND_COOLDOWN",
     "RATE_LIMITED",
+    "RECRUITMENT_CONTACTS_UNAVAILABLE",
     # Plan 08 T9 addition (registered in interfaces.md before this enum
     # grew): the generic 409 state/conflict business code.
     "CONFLICT",
