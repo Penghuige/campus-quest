@@ -109,11 +109,11 @@
 - 管理区名“招募岗位列表／招募岗位编辑器”；按钮“新建招募岗位／保存招募草稿／预览发布招募／发布招募更新／关闭招募／重新开放招募／确认继续招募／撤销联系授权”；Public 区“正在招募”，联系按钮“查看联系方式”。结果区作为异步成功后焦点回退，不跨 auth epoch 恢复。
 - URL filter/page 状态、服务端真实状态、局部表单状态分开；current action + key/payload 保留直到确定结果，重放结果同时呈现 current，不把旧 applied_version 当现在已发布。
 
-- [ ] 先阅读安装版 Next `05-server-and-client-components.md` 和 `08-caching.md`；按实际组件读取前端技能。写 form/view/API 单测，覆盖明确 bool、1/999/0/1000、四渠道、时间、保存与公开差异、回执/真实状态、撤销后 fresh consent；`npx.cmd tsx --test src/__tests__/innovation-recruitment-*.test.ts` Expected: 新纯函数缺失/断言 RED。
-- [ ] 写真实三账号 Playwright：无审核成果发布、未选联系 422、越权 403/404、待审 sentinel 不出现、草稿保存旧公开内容/更新后新内容、联系主动读取/撤销、最后渠道同时关闭/成果仍存在、重新开放、两个 tab 版本冲突、503/ACK 丢失同 key 重试、换账号无残留、键盘确认/稳定焦点。使用下文 focused browser 命令，Expected: 新 UI 实现前的新增流程断言 RED；后端真实运行，只故障注入网络结果，不 stub 业务成功。
-- [ ] 实现薄页面与独立展示/表单/对话组件，首页先成果后招募，项目库改入口但原成果 URL 不改；我的项目增加招募管理且保留成果与私有草稿说明。联系值只在按钮动作后局部获取，跨账号 remount 清除，任何迟到响应不能覆盖新账号。重跑上述相同纯测试与浏览器命令，Expected: GREEN。
-- [ ] `npm run test:unit`、`typecheck`、`lint`、`check:css`、`test:coverage`、`coverage:ratchet`、`audit:gate`、`build` 全出口 0；focused `CQ_E2E=1 npx playwright test innovation-recruitment.spec.ts --project=chromium` 使用专用 test stack。提交 UI/功能测试和选择器，不把未跑的验证数字写完成。
-- [ ] 在固定字体 Linux 自有 visual world 首次保存新稳定屏：无成果的公开项目/岗位详情、本人编辑预览、授权联系展开/关闭、手机长文本；用真实组件。现有首页/项目页产品变动旧新走查，独立基线 commit，原 R1/R2及其他视觉默认比较不重拍。axe/keyboard/mobile/long/error/empty 全验证，新增 no-skip entry 只豁免专门视觉 gate。
+- [x] 先阅读安装版 Next `05-server-and-client-components.md` 和 `08-caching.md`；按实际组件读取前端技能。写 form/view/API 单测，覆盖明确 bool、1/999/0/1000、四渠道、时间、保存与公开差异、回执/真实状态、撤销后 fresh consent；`npx.cmd tsx --test src/__tests__/innovation-recruitment-*.test.ts` Expected: 新纯函数缺失/断言 RED。
+- [x] 写真实三账号 Playwright：无审核成果发布、未选联系 422、越权 403/404、待审 sentinel 不出现、草稿保存旧公开内容/更新后新内容、联系主动读取/撤销、最后渠道同时关闭/成果仍存在、重新开放、两个 tab 版本冲突、503/ACK 丢失同 key 重试、换账号无残留、键盘确认/稳定焦点。使用下文 focused browser 命令，Expected: 新 UI 实现前的新增流程断言 RED；后端真实运行，只故障注入网络结果，不 stub 业务成功。
+- [x] 实现薄页面与独立展示/表单/对话组件，首页先成果后招募，项目库改入口但原成果 URL 不改；我的项目增加招募管理且保留成果与私有草稿说明。联系值只在按钮动作后局部获取，跨账号 remount 清除，任何迟到响应不能覆盖新账号。重跑上述相同纯测试与浏览器命令，Expected: GREEN。
+- [x] `npm run test:unit`、`typecheck`、`lint`、`check:css`、`test:coverage`、`coverage:ratchet`、`audit:gate`、`build` 全出口 0；focused `CQ_E2E=1 npx playwright test innovation-recruitment.spec.ts --project=chromium` 使用专用 test stack。提交 UI/功能测试和选择器，不把未跑的验证数字写完成。
+- [x] 在固定字体 Linux 自有 visual world 首次保存新稳定屏：无成果的公开项目/岗位详情、本人编辑预览、授权联系展开/关闭、手机长文本；用真实组件。现有首页/项目页产品变动旧新走查，独立基线 commit，原 R1/R2及其他视觉默认比较不重拍。axe/keyboard/mobile/long/error/empty 全验证，新增 no-skip entry 只豁免专门视觉 gate。
 
 ### Task 5: 完整门禁、一次评审、Git 保存与体验交付
 
@@ -121,12 +121,12 @@
 
 **Interfaces:** 消费 Tasks 1–4 的全部功能；产出对准最后产品源码的完整本地验证回执、一次独立评审裁决/修复、最终 Git/PR 精确 head 和用户六步验收卡。不产出合并或正式上线批准。
 
-- [ ] 从新空覆盖文件跑 Linux 后端 `uv run pytest tests/unit tests/workers --cov=app --cov-branch --cov-report= -q`，同 collector `uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q`，`uv run python scripts/coverage_ratchet.py --json`；启用真实 S3/composition/scanner smokes。再 `CQ_E2E=1 uv run pytest tests/e2e -q`、mypy/Ruff/matrix/pip_audit/OpenAPI freshness；Expected: 每件退出 0，真实 PG 边界/竞争有完整结果，不混覆盖配置。
-- [ ] 独占迁移库执行 upgrade head→schema断言→downgrade base→re-upgrade；验证外键/人数/版本/唯一键/扫描索引，无开发库清理。前端最终 Windows及Linux适用完整静态/单测/覆盖/依赖审计/构建；现有 ratchet floors 不降低。
-- [ ] 固定 Linux stack 完整 `CQ_E2E=1 npx playwright test`，再 `node scripts/assert-e2e-no-skips.mjs test-results/report.json`；新旧全部现存视觉 gate 使用各自 world、原字体和门槛，保存 PNG/axe结果。Expected: 0 failed/flaky/unexpected skips，合法豁免逐项有名；源码/测试树 hash 与本轮产品 HEAD 一致。
-- [ ] 独立评审开始前说明实际模型，按 requesting-code-review 发一次全分支新范围 `206b766..当前HEAD`，重点权限/联系/时间/重放/生产 wiring；不额外开任务实现代理。接受的问题先真实失败回归再修复，重跑受影响门禁；若改动让原全套证据失效，重新取得相同源码的完整收口证据。保存每项接受/拒绝/延期的理由、成本，不把旧 review APPROVE当新 head批准。
-- [ ] 恢复真实体验栈并验证 API/Web/Worker/Beat 及三个预置账号；更新六步手动验收卡，30天在隔离测试证明、开发页面显示真实下一提醒时间。仅对开发 DB 执行正常 additive Alembic upgrade，不填造/重置原项目或强行发布演示岗位。
-- [ ] `git diff --check`、秘密/临时工件检查；阶段源码/视觉/文档 commit 后推送已授权 fork，检查本地/fork/PR head相同与 `isDraft=true`。核查完整 CI 的实际最终 head，GitGuardian 单项不说成完整 CI；未跑/失败如实报告。交付可体验 R3 后停止本工作包，不自动开始 R4。
+- [x] 从新空覆盖文件跑 Linux 后端 `uv run pytest tests/unit tests/workers --cov=app --cov-branch --cov-report= -q`，同 collector `uv run pytest tests/integration -m integration --cov=app --cov-branch --cov-report= --cov-append -q`，`uv run python scripts/coverage_ratchet.py --json`；启用真实 S3/composition/scanner smokes。再 `CQ_E2E=1 uv run pytest tests/e2e -q`、mypy/Ruff/matrix/pip_audit/OpenAPI freshness；Expected: 每件退出 0，真实 PG 边界/竞争有完整结果，不混覆盖配置。
+- [x] 独占迁移库执行 upgrade head→schema断言→downgrade base→re-upgrade；验证外键/人数/版本/唯一键/扫描索引，无开发库清理。前端最终 Windows及Linux适用完整静态/单测/覆盖/依赖审计/构建；现有 ratchet floors 不降低。
+- [x] 固定 Linux stack 完整 `CQ_E2E=1 npx playwright test`，再 `node scripts/assert-e2e-no-skips.mjs test-results/report.json`；新旧全部现存视觉 gate 使用各自 world、原字体和门槛，保存 PNG/axe结果。Expected: 0 failed/flaky/unexpected skips，合法豁免逐项有名；源码/测试树 hash 与本轮产品 HEAD 一致。
+- [x] 独立评审开始前说明实际模型，按 requesting-code-review 发一次全分支新范围 `206b766..当前HEAD`，重点权限/联系/时间/重放/生产 wiring；不额外开任务实现代理。接受的问题先真实失败回归再修复，重跑受影响门禁；若改动让原全套证据失效，重新取得相同源码的完整收口证据。保存每项接受/拒绝/延期的理由、成本，不把旧 review APPROVE当新 head批准。
+- [x] 恢复真实体验栈并验证 API/Web/Worker/Beat 及三个预置账号；更新六步手动验收卡，30天在隔离测试证明、开发页面显示真实下一提醒时间。仅对开发 DB 执行正常 additive Alembic upgrade，不填造/重置原项目或强行发布演示岗位。
+- [x] `git diff --check`、秘密/临时工件检查；阶段源码/视觉/文档 commit 后推送已授权 fork，检查本地/fork/PR head相同与 `isDraft=true`。核查完整 CI 的实际最终 head，GitGuardian 单项不说成完整 CI；未跑/失败如实报告。交付可体验 R3 后停止本工作包，不自动开始 R4。
 
 ## Plan Self-Review and Handoff
 
