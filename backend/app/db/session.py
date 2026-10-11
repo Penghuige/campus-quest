@@ -31,7 +31,9 @@ def create_db_engine(settings: Settings) -> AsyncEngine:
     `pool_pre_ping=True` discards pooled connections that were dropped by a
     database restart instead of failing the request.
     """
-    return create_async_engine(settings.database_url, pool_pre_ping=True)
+    return create_async_engine(
+        settings.database_url, pool_pre_ping=True, hide_parameters=True
+    )
 
 
 @lru_cache

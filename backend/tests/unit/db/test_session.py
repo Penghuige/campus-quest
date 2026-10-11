@@ -58,6 +58,7 @@ async def test_create_db_engine_reads_settings_url_and_enables_pre_ping(
         engine = create_db_engine(get_settings())
         assert engine.url.render_as_string(hide_password=False) == database_url
         assert engine.sync_engine.pool._pre_ping is True
+        assert engine.sync_engine.hide_parameters is True
         await engine.dispose()
     finally:
         _reset_caches()

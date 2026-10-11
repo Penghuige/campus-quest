@@ -48,6 +48,17 @@ let transitionActive = false;
 // login B) — replaying that request with the new account's token would
 // execute A's intent against B's account, so it must never happen.
 let authEpoch = 0;
+const epochListeners = new Set<() => void>();
+
+/** Forget private transient work synchronously on every account transition. */
+export function onAuthEpochChange(listener: () => void): () => void {
+  epochListeners.add(listener);
+  return () => { epochListeners.delete(listener); };
+}
+function advanceAuthEpoch(): void {
+  authEpoch += 1;
+  for (const listener of epochListeners) listener();
+}
 
 /**
  * Record an explicit login: remember the token AND open a new auth
@@ -56,7 +67,7 @@ let authEpoch = 0;
  */
 export function recordLogin(token: string): void {
   accessToken = token;
-  authEpoch += 1;
+  advanceAuthEpoch();
 }
 
 /**
@@ -66,7 +77,7 @@ export function recordLogin(token: string): void {
  */
 export function recordLogout(): void {
   accessToken = null;
-  authEpoch += 1;
+  advanceAuthEpoch();
 }
 
 /** The auth-context epoch the caller's requests are running under. */
@@ -638,7 +649,7 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
       return; // our OWN transition already fenced us locally
     }
     accessToken = null;
-    authEpoch += 1;
+    advanceAuthEpoch();
     lastAdoption = null;
     heldMint = null;
     notifyCrossTabReset();
@@ -962,7 +973,7 @@ async function performRotation(epochAtStart: number): Promise<boolean> {
  */
 export async function beginAuthTransition(signal?: AbortSignal): Promise<void> {
   transitionActive = true;
-  authEpoch += 1;
+  advanceAuthEpoch();
   if (refreshInFlight !== null) {
     const drain = refreshInFlight.catch(() => {
       // The drained rotation's own outcome is irrelevant here — what
@@ -992,6 +1003,7 @@ export function resetAccessTokenManagerForTests(): void {
   accessToken = null;
   refreshInFlight = null;
   authEpoch = 0;
+  for (const listener of epochListeners) listener();
   transitionActive = false;
   lastAdoption = null;
   heldMint = null;
@@ -1016,7 +1028,7 @@ export function receiveAdoptionForTests(message: AdoptionMessage): void {
  */
 export function receiveCrossTabResetForTests(): void {
   accessToken = null;
-  authEpoch += 1;
+  advanceAuthEpoch();
   lastAdoption = null;
   heldMint = null;
   notifyCrossTabReset();

@@ -133,6 +133,12 @@ test("R3: successful response loss retries the exact command and two tabs reconc
   await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
   await expect(editor.getByRole("alert")).toContainText("结果尚未确认");
   await expect(editor.getByLabel("岗位名称", { exact: true })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "返回招募列表", exact: true })).toBeDisabled();
+  await page.locator('a[href="/innovation"]:visible').first().click();
+  await expect(page).toHaveURL(/\/innovation$/);
+  await page.goBack();
+  await expect(editor.getByRole("alert")).toContainText("结果尚未确认");
+  await expect(editor.getByLabel("微信", { exact: true })).toHaveValue("demo_partner");
   await editor.getByRole("button", { name: "重试原请求", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
   expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]);
@@ -155,6 +161,35 @@ test("R3: successful response loss retries the exact command and two tabs reconc
     await editor.getByRole("button", { name: "载入最新版本", exact: true }).click();
     await expect(editor.getByLabel("岗位名称", { exact: true })).toHaveValue("另一标签页的内容");
   } finally { await sibling.close(); }
+});
+
+test("R3: unknown OPEN update survives route changes with the same request", async ({ page }) => {
+  test.setTimeout(120_000);
+  const project = await prepare(page); const editor = await fillRole(page);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await publish(page);
+  await editor.getByLabel("项目介绍", { exact: true }).fill("PRIVATE_PENDING_UPDATE_SENTINEL");
+  const bodies: string[] = []; let lost = false;
+  await page.route(`**/api/v1/ie/me/project-drafts/${project}/recruitments/*`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    bodies.push(route.request().postData()!); const response = await route.fetch();
+    if (!lost) { lost = true; expect(response.status()).toBe(200); await route.abort("failed"); }
+    else await route.fulfill({ response });
+  });
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("alert")).toContainText("结果尚未确认");
+  await expect(editor.getByRole("link", { name: "查看校内岗位", exact: true })).toHaveCount(0);
+  await page.locator('a[href="/innovation"]:visible').first().click();
+  await expect(page).toHaveURL(/\/innovation$/);
+  await page.goBack();
+  await expect(editor.getByRole("alert")).toContainText("结果尚未确认");
+  await expect(editor.getByLabel("项目介绍", { exact: true })).toHaveValue("PRIVATE_PENDING_UPDATE_SENTINEL");
+  await editor.getByRole("button", { name: "重试原请求", exact: true }).click();
+  await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]);
+  const current = await (await page.request.get(`${API_URL}/ie/me/project-drafts/${project}/recruitments`, { headers: { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_STUDENT_ID!)}` } })).json();
+  expect(current.total).toBe(1);
 });
 
 test("R3: publication ACK loss, update, close/reopen and deliberate fresh consent", async ({ page }) => {

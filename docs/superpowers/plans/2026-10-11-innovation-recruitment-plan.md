@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-11-innovation-recruitment-design.md`，2026-10-11 用户已审阅并指示执行。
 
-**Execution:** 用户 2026-10-11 回复“可以”，已批准本会话原生实施五项任务、最终一次独立评审；不派多个实现代理。保持当前模型设置，独立评审任务开始前说明实际模型。当前执行 Task 1。
+**Execution:** 用户 2026-10-11 回复“可以”，已批准本会话原生实施五项任务、最终一次独立评审；不派多个实现代理。保持当前模型设置，独立评审任务开始前说明实际模型。Tasks 1–3 已提交；当前执行 Task 4，并准备 Task 5 的完整证据。
 
 ## Global Constraints
 
@@ -90,7 +90,7 @@
 
 - `RecruitmentScheduler(clock, notifications)`：`scan_due(db, limit: int, request_id: str) -> RecruitmentScanResult`、`expire_if_due(db, recruitment_id: UUID) -> bool`、`remind_if_due(db, recruitment_id: UUID) -> bool`；ScanResult 为 expired/reminded/skipped 三个整数计数，bool 表示本次真正产生变化。共享 Task 1 的锁序与版本条件，不复制命令状态规则到 job。
 - 新事件 `IE_RECRUITMENT_CONFIRMATION_DUE`，模板变量 role_name、manage_path；payload 还带 recruitment_id/cycle_id/reminder_due_at 作抑制判断，禁止联系值。key 为岗位+cycle+UTC due；IN_APP-only。
-- `RecruitmentReminderResolver = Callable[[UUID, UUID], Awaitable[bool]]` 注入 DeliveryService，role/event payload 解析验证后判断当期有效状态；生产 build_delivery_service 绑定真实查询，缺绑定抛明确错误；非本事件路径原行为不变。
+- `RecruitmentReminderResolver = Callable[[AsyncSession, UUID, UUID], Awaitable[bool]]` 注入 DeliveryService；最终评审修订为由投递事务提供 session，role/event payload 解析验证后按 domain→notification 锁序判断当期有效状态，并与可读 SENT 写入同一事务提交。生产 build_delivery_service 绑定不独立 commit 的真实查询，缺绑定抛明确错误；非本事件路径原行为不变。
 - 真任务 `workers.schedule_recruitments` 与 Beat 默认 60 秒、batch 默认 100、typed 可配置值；共享 worker session_source。`collect_due_deliveries(..., event_types: tuple[str, ...] | None = None)` 增加可选过滤，None 保持原全量；dispatcher 增加 event_types/queue 可选参数用于本地 R3 profile。
 - `innovation_dev.py` 暴露仅本轮 schedule + 本事件 dispatch 的 Celery/Beat profile，专用 `innovation-dev` queue。启动器 Worker/Beat 组件用 WSL/既有 Linux 运行时、隐藏宿主启动、归属 pid/命令检查/退出和完整日志；不带起原 Claim 到期/文件清理扫描。正常生产 app 保留全套 schedule、默认 queue 和全部原事件投递。
 

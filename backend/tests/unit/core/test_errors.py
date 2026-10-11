@@ -5,16 +5,57 @@ propagation (spec §29, interfaces.md error-code registry)."""
 import logging
 import re
 
+import pytest
 from fastapi import FastAPI
 from fastapi import HTTPException as FastAPIHTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.main import create_app
 
 _GENERATED_REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
+
+
+@pytest.mark.parametrize("sqlstate", [None, "23514", "private_r3@example.test"])
+def test_database_errors_redact_parameters_and_original_details(caplog, sqlstate):
+    app = create_app()
+    original = RuntimeError("private_r3@example.test PRIVATE_BODY_SENTINEL")
+    original.sqlstate = sqlstate
+
+    @app.get("/db-failure")
+    async def failure():
+        raise DBAPIError("INSERT ...", {"value": "PRIVATE_BODY_SENTINEL"}, original)
+
+    with caplog.at_level(logging.ERROR, logger="app.core.errors"):
+        response = TestClient(app, raise_server_exceptions=False).get(
+            "/db-failure", headers={"X-Request-ID": "safe-db-request"}
+        )
+    assert response.status_code == 500
+    assert "PRIVATE_BODY_SENTINEL" not in caplog.text
+    assert "private_r3@example.test" not in caplog.text
+    assert "safe-db-request" in caplog.text
+    assert (
+        "sqlstate=23514" in caplog.text
+        if sqlstate == "23514"
+        else "sqlstate=unknown" in caplog.text
+    )
+
+
+def test_non_dbapi_sqlalchemy_error_also_has_safe_diagnostics(caplog):
+    app = create_app()
+
+    @app.get("/sql-failure")
+    async def failure():
+        raise SQLAlchemyError("PRIVATE_BODY_SENTINEL")
+
+    with caplog.at_level(logging.ERROR, logger="app.core.errors"):
+        response = TestClient(app, raise_server_exceptions=False).get("/sql-failure")
+    assert response.status_code == 500
+    assert "PRIVATE_BODY_SENTINEL" not in caplog.text
+    assert "sqlstate=unknown" in caplog.text
 
 
 def _boom_app() -> FastAPI:

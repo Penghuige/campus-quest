@@ -306,6 +306,10 @@ test("achievement review: private proof and every update reviewed across three a
     await owner.getByRole("button", { name: "重新读取核实与材料状态", exact: true }).click();
     await expect(panel(owner)).toContainText("已下架，更新不会恢复公开");
     await viewer.reload(); await expect(publicDetail).toHaveCount(0);
+    // Returning to the editor clears its local proof selection; consent is
+    // explicit again before resubmission, just as for a real fresh page.
+    await owner.getByRole("checkbox", { name: "选择证明 1", exact: true }).check();
+    await expect(owner.getByRole("button", { name: "提交更新复审", exact: true })).toBeEnabled();
     await owner.getByRole("button", { name: "提交更新复审", exact: true }).click();
     await confirm(owner, "提交更新复审");
     await expect(panel(owner)).toContainText("等待更新复审");

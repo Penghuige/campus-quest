@@ -173,13 +173,25 @@ class RecruitmentScheduler:
         self, db: AsyncSession, *, recruitment_id: UUID, cycle_id: UUID
     ) -> bool:
         async with mutation(db):
-            row = await self._lock(db, recruitment_id)
-            return bool(
-                row is not None
-                and row.cycle_id == cycle_id
-                and row.deadline_at is None
-                and await self._effective(db, recruitment_id)
+            return await self.lock_current_reminder(
+                db, recruitment_id=recruitment_id, cycle_id=cycle_id
             )
+
+    async def lock_current_reminder(
+        self, db: AsyncSession, *, recruitment_id: UUID, cycle_id: UUID
+    ) -> bool:
+        """Hold scope locks until the caller commits the visibility decision.
+
+        Dispatch owns this transaction; checking must not commit independently.
+        Acquire domain locks before notification locks, as intent creation does.
+        """
+        row = await self._lock(db, recruitment_id)
+        return bool(
+            row is not None
+            and row.cycle_id == cycle_id
+            and row.deadline_at is None
+            and await self._effective(db, recruitment_id)
+        )
 
     async def scan_due(
         self, db: AsyncSession, *, limit: int, request_id: str

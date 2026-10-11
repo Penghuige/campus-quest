@@ -208,7 +208,7 @@ _CLAIM_EVENT_KEY_RE = re.compile(
 #: id -> AssignmentClaim.status as the raw column string, or None when
 #: the claim row no longer exists).
 ClaimStatusResolver = Callable[[UUID], Awaitable[str | None]]
-RecruitmentReminderResolver = Callable[[UUID, UUID], Awaitable[bool]]
+RecruitmentReminderResolver = Callable[[AsyncSession, UUID, UUID], Awaitable[bool]]
 
 
 def provider_idempotency_key(
@@ -347,6 +347,11 @@ class DeliveryService:
                 status=DeliveryStatus.SENT,
                 last_error=None,
                 clear_notification_read_at=True,
+                recruitment_reminder=(
+                    _recruitment_reminder_ids(claimed.event_key)
+                    if claimed.event_type.value == "IE_RECRUITMENT_CONFIRMATION_DUE"
+                    else None
+                ),
             )
 
         return await self._send_via_provider(claimed, now)
@@ -475,15 +480,11 @@ class DeliveryService:
         if claimed.event_type.value == "IE_RECRUITMENT_CONFIRMATION_DUE":
             if self._recruitment_reminder_resolver is None:
                 raise RuntimeError("recruitment reminder resolver is required")
-            parts = claimed.event_key.split(":", 3)
-            if len(parts) != 4 or parts[0] != "ie-recruitment":
-                raise ValueError("invalid recruitment reminder event key")
-            recruitment_id, cycle_id = UUID(parts[1]), UUID(parts[2])
-            due = datetime.fromisoformat(parts[3])
-            if due.tzinfo is None:
-                raise ValueError("recruitment reminder due must be timezone aware")
-            if not await self._recruitment_reminder_resolver(recruitment_id, cycle_id):
-                return f"{SKIPPED_LAST_ERROR_PREFIX}recruitment_obsolete"
+            _recruitment_reminder_ids(claimed.event_key)
+            if claimed.channel is not NotificationChannel.IN_APP:
+                raise ValueError("recruitment reminders require IN_APP")
+            # Current-cycle policy is evaluated under locks in tx2, together
+            # with the SENT write that makes an IN_APP message readable.
 
         if (
             claimed.event_type in DEADLINE_REMINDER_EVENTS
@@ -605,6 +606,7 @@ class DeliveryService:
         retry_due_at: datetime | None = None,
         clear_notification_read_at: bool = False,
         provider_message_id: str | None = None,
+        recruitment_reminder: tuple[UUID, UUID] | None = None,
     ) -> SendResult:
         """Apply the dispatch outcome to the row (tx2, row re-locked).
 
@@ -613,6 +615,14 @@ class DeliveryService:
         the observed outcome instead.
         """
         async with self._session_maker() as session, session.begin():
+            if recruitment_reminder is not None:
+                resolver = self._recruitment_reminder_resolver
+                if resolver is None:
+                    raise RuntimeError("recruitment reminder resolver is required")
+                if not await resolver(session, *recruitment_reminder):
+                    outcome = SendOutcome.SKIPPED
+                    last_error = f"{SKIPPED_LAST_ERROR_PREFIX}recruitment_obsolete"
+                    clear_notification_read_at = False
             delivery = (
                 await session.execute(
                     select(NotificationDelivery)
@@ -661,6 +671,16 @@ class DeliveryService:
                 scheduled_at=retry_due_at or delivery.scheduled_at,
                 skip_reason=(last_error if outcome is SendOutcome.SKIPPED else None),
             )
+
+
+def _recruitment_reminder_ids(event_key: str) -> tuple[UUID, UUID]:
+    parts = event_key.split(":", 3)
+    if len(parts) != 4 or parts[0] != "ie-recruitment":
+        raise ValueError("invalid recruitment reminder event key")
+    recruitment_id, cycle_id = UUID(parts[1]), UUID(parts[2])
+    if datetime.fromisoformat(parts[3]).tzinfo is None:
+        raise ValueError("recruitment reminder due must be timezone aware")
+    return recruitment_id, cycle_id
 
 
 def _channel_decision(

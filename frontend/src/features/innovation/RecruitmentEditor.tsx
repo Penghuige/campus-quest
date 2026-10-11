@@ -5,26 +5,24 @@ import { Button } from "@/components/ui/button";
 import { AuthField } from "@/features/auth/AuthField";
 import { getAuthEpoch } from "@/lib/accessToken";
 import { BUSINESS_TIME_CONFIG } from "@/lib/time";
-import { createRecruitment, updateRecruitment, getRecruitment, publishRecruitment, closeRecruitment, reopenRecruitment, confirmActiveRecruitment, revokeRecruitmentContact, type RecruitmentDto, type ContactChannel, type RecruitmentFieldsDto, type VersionCommand, type RevokeCommand } from "./recruitmentApi";
+import { createRecruitment, updateRecruitment, getRecruitment, publishRecruitment, closeRecruitment, reopenRecruitment, confirmActiveRecruitment, revokeRecruitmentContact, type RecruitmentDto, type ContactChannel, type RevokeCommand } from "./recruitmentApi";
 import { emptyRecruitmentForm, normalizeRecruitmentForm, toRecruitmentForm, validateRecruitmentForm, RECRUITMENT_TEXT_FIELDS, type RecruitmentFormErrors } from "./recruitmentForm";
 import { recruitmentError, recruitmentReceiptText, recruitmentStatusText, CONTACT_LABELS, recruitmentDateTime } from "./recruitmentPresentation";
 import { RecruitmentConfirm } from "./RecruitmentConfirm";
 import { codePointCount } from "./draftForm";
-
-type Action = "publish" | "close" | "reopen" | "confirm" | "revoke";
-type Pending = { kind: "save"; id: string | null; body: { request_id: string; version?: number; fields: RecruitmentFieldsDto } } | { kind: Action; id: string; body: VersionCommand | RevokeCommand };
-type Confirmation = { kind: Action; channel?: ContactChannel; completed: boolean };
+import { getPendingRecruitment, rememberPendingRecruitment, clearPendingRecruitment, type RecruitmentAction as Action, type PendingRecruitmentCommand as Pending, type RecruitmentConfirmation as Confirmation } from "./recruitmentPending";
 
 export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: string; initial?: RecruitmentDto; onBack: () => void }) {
-  const [record, setRecord] = useState(initial ?? null);
-  const [form, setForm] = useState(initial ? toRecruitmentForm(initial.fields) : emptyRecruitmentForm());
+  const [resumed] = useState(() => getPendingRecruitment(projectId));
+  const [record, setRecord] = useState(resumed?.record ?? initial ?? null);
+  const [form, setForm] = useState(resumed?.form ?? (initial ? toRecruitmentForm(initial.fields) : emptyRecruitmentForm()));
   const [errors, setErrors] = useState<RecruitmentFormErrors>({});
-  const [error, setError] = useState<ReturnType<typeof recruitmentError> | null>(null);
+  const [error, setError] = useState<ReturnType<typeof recruitmentError> | null>(resumed ? recruitmentError(null) : null);
   const [remote, setRemote] = useState<RecruitmentDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const pending = useRef<Pending | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(resumed?.confirmation ?? null);
+  const pending = useRef<Pending | null>(resumed?.command ?? null);
   const active = useRef(false); const epoch = useRef(getAuthEpoch());
   const resultRef = useRef<HTMLParagraphElement>(null); const formRef = useRef<HTMLFormElement>(null);
   const original = record ? toRecruitmentForm(record.fields) : emptyRecruitmentForm();
@@ -37,7 +35,7 @@ export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: s
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, error?.unknown]);
   function current() { return active.current && epoch.current === getAuthEpoch(); }
-  function back() { if (!busy && (!dirty && !error?.unknown || window.confirm("有未保存内容或尚未确认的请求，确定返回吗？"))) onBack(); }
+  function back() { if (!locked && (!dirty || window.confirm("有未保存内容，确定返回吗？"))) onBack(); }
   function validate(publication: boolean) {
     const next = validateRecruitmentForm(form, publication, Date.now()); setErrors(next);
     const key = Object.keys(next)[0];
@@ -47,15 +45,18 @@ export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: s
   async function run(command: Pending) {
     if (busy || !current()) return;
     pending.current = command; setBusy(true); setError(null);
+    rememberPendingRecruitment(projectId, { epoch: epoch.current, command, record, form, confirmation });
     try {
       let next: RecruitmentDto;
       if (command.kind === "save") {
         next = command.id ? await updateRecruitment(projectId, command.id, { ...command.body, version: command.body.version! }) : await createRecruitment(projectId, command.body);
+        clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
         if (!current()) return;
         setMessage("招募草稿已保存，仅自己可见；公开版本保持原内容。");
       } else {
         const operation = { publish: publishRecruitment, close: closeRecruitment, reopen: reopenRecruitment, confirm: confirmActiveRecruitment, revoke: revokeRecruitmentContact }[command.kind];
         const receipt = command.kind === "revoke" ? await revokeRecruitmentContact(projectId, command.id, command.body as RevokeCommand) : await operation(projectId, command.id, command.body as RevokeCommand);
+        clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
         if (!current()) return;
         next = receipt.current; setMessage(recruitmentReceiptText(receipt));
         setConfirmation((value) => value ? { ...value, completed: true } : null);
@@ -65,7 +66,9 @@ export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: s
       else if (command.kind === "save" || command.kind === "publish" || command.kind === "reopen") setForm(toRecruitmentForm(next.fields));
       setRemote(null); pending.current = null;
     } catch (cause) {
-      if (current()) { const view = recruitmentError(cause); setError(view); if (!view.unknown) pending.current = null; }
+      const view = recruitmentError(cause);
+      if (!view.unknown) clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
+      if (current()) { setError(view); if (!view.unknown) pending.current = null; }
     } finally { if (current()) setBusy(false); }
   }
   function save(event: FormEvent) {
@@ -93,7 +96,7 @@ export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: s
   const title = confirmation?.kind === "publish" ? "发布招募" : confirmation?.kind === "reopen" ? "重新开放招募" : confirmation?.kind === "close" ? "关闭招募" : confirmation?.kind === "confirm" ? "确认继续招募" : lastContact ? "撤销最后一项联系授权" : "撤销联系授权";
   const description = confirmation?.kind === "publish" || confirmation?.kind === "reopen" ? "招募独立免审。确认后以下内容和所选联系渠道向校内用户开放；联系值仅在对方主动查看后提供。请确认你有权公开这些联系方式。" : confirmation?.kind === "close" ? "确认后岗位立即停止校内展示。已通过成果继续保留。" : confirmation?.kind === "confirm" ? "确认仍在招募。下一次提醒将在本次确认 30 天后；不回复提醒也不会自动关闭。" : lastContact ? "撤销后将同时关闭招募，校内用户不能再读取此联系值。重新授权须重新选择渠道并预览发布。" : "撤销后校内用户不能再读取此联系值。重新授权须重新选择渠道并预览发布。";
   return <section className="section" aria-label="招募岗位编辑器">
-    <div className="section-head"><h2 className="section-title">{record ? "编辑招募岗位" : "新建招募岗位"}</h2><Button variant="ghost" disabled={busy} onClick={back}>返回招募列表</Button></div>
+    <div className="section-head"><h2 className="section-title">{record ? "编辑招募岗位" : "新建招募岗位"}</h2><Button variant="ghost" disabled={locked} onClick={back}>返回招募列表</Button></div>
     <p className="field-hint">草稿仅自己可见。发布招募须具备负责人资格及当前项目权限；无需先有通过审核的成果。</p>
     {record ? <p className="field-hint">当前{recruitmentStatusText(record.status, record.moderation_state)}{record.has_unpublished_changes ? " · 有未发布改动" : ""}{record.next_remind_at ? ` · 下次提醒 ${recruitmentDateTime(record.next_remind_at)}` : ""}</p> : null}
     <p role="status" aria-label="招募操作结果" tabIndex={-1} ref={resultRef} className="field-hint">{busy ? "正在处理，请稍候…" : message || (dirty ? "有未保存的修改。" : "可以准备招募内容。")}</p>
@@ -114,7 +117,7 @@ export function RecruitmentEditor({ projectId, initial, onBack }: { projectId: s
         {record.status === "DRAFT" || record.status === "OPEN" ? <Button type="button" disabled={locked || error?.reload === true} onClick={() => preview("publish")}>{record.status === "OPEN" ? "发布招募更新" : "预览发布招募"}</Button> : <Button type="button" disabled={locked || error?.reload === true} onClick={() => preview("reopen")}>重新开放招募</Button>}
         {record.status === "OPEN" ? <><Button type="button" variant="secondary" disabled={locked || error?.reload === true} onClick={() => preview("close")}>关闭招募</Button>{!record.deadline_at ? <Button type="button" variant="secondary" disabled={locked || error?.reload === true} onClick={() => preview("confirm")}>确认继续招募</Button> : null}</> : null}
         {record.public_contact_channels.map((channel) => <Button type="button" key={channel} variant="secondary" disabled={locked || error?.reload === true} onClick={() => preview("revoke", channel)} aria-label={`撤销联系授权：${CONTACT_LABELS[channel]}`}>撤销联系授权：{CONTACT_LABELS[channel]}</Button>)}
-      </> : null}{record?.status === "OPEN" ? <Link href={`/innovation/recruitments/${record.id}`}>查看校内岗位</Link> : null}</div>
+      </> : null}{record?.status === "OPEN" ? locked ? <span className="field-hint">请求结果确认后可查看校内岗位</span> : <Link href={`/innovation/recruitments/${record.id}`}>查看校内岗位</Link> : null}</div>
     </form>
     {remote ? <section className="panel ie-draft-remote" aria-label="最新招募版本"><h3 className="section-title">最新已保存版本</h3><p>{recruitmentStatusText(remote.status, remote.moderation_state)} · {remote.fields.role_name || "未命名岗位"}</p><p className="field-hint">上方输入仍保留；载入前请复制需要保留的内容。</p><pre className="ie-review-prose">{RECRUITMENT_TEXT_FIELDS.map(({ key, label }) => `${label}：${remote.fields[key] || "未填写"}`).join("\n")}</pre><Button variant="secondary" disabled={busy} onClick={() => { setRecord(remote); setForm(toRecruitmentForm(remote.fields)); setRemote(null); setError(null); setErrors({}); setMessage("已载入最新版本。"); }}>载入最新版本</Button></section> : null}
     {confirmation ? <RecruitmentConfirm title={title} description={description} busy={locked} completed={confirmation.completed} onClose={() => setConfirmation(null)} onConfirm={confirm} resultFocus={() => resultRef.current}>
