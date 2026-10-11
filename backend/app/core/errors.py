@@ -18,7 +18,6 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.error_codes import ErrorCode
@@ -154,6 +153,10 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # BusinessError is also imported by lazy worker entrypoints. Database
+        # dependencies must only load when an unexpected error is handled.
+        from sqlalchemy.exc import SQLAlchemyError
+
         request_id = getattr(request.state, "request_id", None)
         if isinstance(exc, SQLAlchemyError):
             # Parameter hiding does not redact a PostgreSQL failing-row DETAIL.
