@@ -55,7 +55,9 @@ for (const shot of SHOTS) {
       waitUntil: "domcontentloaded",
     });
     await shot.prepare?.(page);
-    await expect(page.locator(".page-head, main").first()).toBeVisible({
+    // The authenticated shell's main appears before streamed page content.
+    // Axe must measure the actual page, including its required h1 landmark.
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
       timeout: 15_000,
     });
     // Match the pixel harness's settle beat so lazy sections render.
