@@ -8,10 +8,11 @@ centralized template rendering. Free-form subject/body composition would
 scatter rendering across callers. Tests assert exact deliveries via
 `FakeEmailSender.messages`.
 
-`LoggingEmailSender` is the development-only adapter: the real provider
-project owns actual delivery, so until it lands the composition root
-(`build_email_sender`, wired from `Settings.email_provider`) resolves the
-sender that logs the masked recipient and template only — NEVER
+`LoggingEmailSender` is the development-only adapter: the real adapter
+lives in `integrations/email_smtp.py` ("smtp", security round batch 4
+item 4), and the composition root (`build_email_sender`, wired from
+`Settings.email_provider`) resolves it when the SMTP_* group is set.
+The logging sender logs the masked recipient and template only — NEVER
 `variables` (the verification token travels there) — instead of silently
 dropping the send. Its receipt carries the "logging:" prefix so recorded
 deliveries distinguish simulated sends from real provider receipts;
@@ -90,18 +91,55 @@ class EmailSender(Protocol):
         ...
 
 
-def build_email_sender(provider: str) -> EmailSender:
+def build_email_sender(provider: str, settings: Any = None) -> EmailSender:
     """The `EmailSender` adapter a configured provider value wires.
 
     The fail-closed chain (PR #2 hardening P0-2): config.py's production
     guard refuses provider="logging" when environment=production, so the
     logging branch below is development-only by construction — there is
-    no silent fallback onto a sender that fakes success. When real
-    adapters land (the provider project), extend the `email_provider`
-    Literal in app/core/config.py and this factory together.
+    no silent fallback onto a sender that fakes success. "smtp" is the
+    real adapter (security round batch 4 item 4, integrations/
+    email_smtp.py): selecting it requires the SMTP_* settings group —
+    incomplete credentials fail at composition in EVERY environment
+    (the aliyun_dypns discipline: a half-configured provider never
+    reaches a first send).
     """
     if provider == "logging":
         return LoggingEmailSender()
+    if provider == "smtp" and settings is not None:
+        from app.integrations.email_smtp import SmtpEmailSender
+
+        missing = [
+            field_name
+            for field_name in (
+                "smtp_host",
+                "smtp_username",
+                "smtp_password",
+                "smtp_from_address",
+            )
+            if not getattr(settings, field_name, "")
+        ]
+        if missing:
+            # Every environment, not just production: a half-configured
+            # real provider fails HERE, at composition, instead of at
+            # the first send.
+            raise LookupError(
+                f"email_provider=smtp is missing configuration: "
+                f"{', '.join(missing)} (set the SMTP_* env)"
+            )
+        return SmtpEmailSender(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_username,
+            password=settings.smtp_password,
+            from_address=settings.smtp_from_address,
+            use_tls=settings.smtp_use_tls,
+        )
+    if provider == "smtp":
+        raise LookupError(
+            "email_provider=smtp needs the deployment settings "
+            "(wired from the composition root, not constructed bare)"
+        )
     raise LookupError(
         f"unknown email_provider {provider!r}: extend the email_provider "
         "Literal in app/core/config.py together with this factory"

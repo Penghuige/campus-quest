@@ -191,16 +191,16 @@ def test_production_rejects_logging_email_provider(monkeypatch) -> None:
 
 
 def test_real_provider_values_are_not_yet_selectable(monkeypatch) -> None:
-    # Boundary: real adapters ("twilio"/"smtp") arrive with the provider
-    # project; until the Literals grow, pydantic rejects the values at
-    # settings load — fail closed rather than accepting a value that no
-    # composition point wires.
+    # Boundary: values no composition point wires stay rejected at
+    # settings load — fail closed rather than accepting an unwired
+    # provider. "smtp" LEFT this set with the real EMAIL adapter
+    # (batch 4); an unwired value like "sendgrid" keeps the posture.
     _set_required_env(monkeypatch)
     monkeypatch.setenv("SMS_PROVIDER", "twilio")
     with pytest.raises(ValidationError):
         Settings()
     monkeypatch.setenv("SMS_PROVIDER", "logging")
-    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.setenv("EMAIL_PROVIDER", "sendgrid")
     with pytest.raises(ValidationError):
         Settings()
 
@@ -309,11 +309,50 @@ def test_production_rejects_aliyun_dypns_with_incomplete_config(
         Settings()
 
     # Complete config clears this gate; production then still fails on
-    # the EMAIL logging provider (no real email adapter exists yet —
-    # the correct V1 posture), proving the gates layer independently.
+    # the EMAIL logging provider until it too selects a real adapter,
+    # proving the gates layer independently.
     _set_aliyun_sms_config(monkeypatch)
     with pytest.raises(ValidationError, match="EMAIL_PROVIDER"):
         Settings()
+
+
+def _set_smtp_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.edu.cn")
+    monkeypatch.setenv("SMTP_USERNAME", "campus@example.edu.cn")
+    monkeypatch.setenv("SMTP_PASSWORD", "relay-pass")
+    monkeypatch.setenv("SMTP_FROM_ADDRESS", "campus@example.edu.cn")
+
+
+def test_smtp_is_selectable_in_development(monkeypatch) -> None:
+    # The first real EMAIL adapter (security round batch 4): selectable
+    # with the SMTP_* group set; port/use_tls carry deployment defaults.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    _set_smtp_config(monkeypatch)
+    settings = Settings()
+    assert settings.email_provider == "smtp"
+    assert settings.smtp_port == 587
+    assert settings.smtp_use_tls is True
+
+
+def test_production_rejects_smtp_with_incomplete_config(monkeypatch) -> None:
+    # The aliyun discipline, email side: a REAL provider selection with
+    # missing config fails at startup, naming exactly what to set.
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    _set_production_secrets(monkeypatch)
+    monkeypatch.setenv("SMS_PROVIDER", "aliyun_dypns")
+    _set_aliyun_sms_config(monkeypatch)
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    with pytest.raises(ValidationError, match="SMTP_HOST"):
+        Settings()
+
+    # Complete config clears every provider gate: production with BOTH
+    # real adapters constructs.
+    _set_smtp_config(monkeypatch)
+    settings = Settings()
+    assert settings.email_provider == "smtp"
 
 
 def test_sms_factory_refuses_aliyun_with_incomplete_config(monkeypatch) -> None:

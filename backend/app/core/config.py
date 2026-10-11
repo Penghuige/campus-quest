@@ -45,9 +45,9 @@ _INSECURE_PRODUCTION_SENTINELS: tuple[tuple[str, str], ...] = (
 # (field, env var) pairs the SAME production guard refuses on the logging
 # provider: "logging" records the send and delivers nothing, so running it
 # in production would mark deliveries SENT that were never sent (G4
-# external side effects must not fake success). The EMAIL side has no
-# real adapter yet, so its only refusal value stays "logging"; the SMS
-# side gains "aliyun_dypns" with its own credential-completeness guard.
+# external side effects must not fake success). Both providers now have a
+# real adapter (SMS: aliyun_dypns; EMAIL: smtp), so each side's only
+# refusal value stays "logging".
 _LOGGING_ONLY_PROVIDER_FIELDS: tuple[tuple[str, str], ...] = (
     ("sms_provider", "SMS_PROVIDER"),
     ("email_provider", "EMAIL_PROVIDER"),
@@ -61,6 +61,17 @@ _ALIYUN_SMS_CREDENTIAL_FIELDS: tuple[tuple[str, str], ...] = (
     ("aliyun_sms_access_key_secret", "ALIYUN_SMS_ACCESS_KEY_SECRET"),
     ("aliyun_sms_sign_name", "ALIYUN_SMS_SIGN_NAME"),
     ("aliyun_sms_otp_template_code", "ALIYUN_SMS_OTP_TEMPLATE_CODE"),
+)
+
+# (field, env var) pairs an email_provider=smtp selection must carry
+# non-empty (port and use_tls have safe defaults): the guard
+# (production) and the adapter factory (every environment) both walk
+# this table.
+_SMTP_CREDENTIAL_FIELDS: tuple[tuple[str, str], ...] = (
+    ("smtp_host", "SMTP_HOST"),
+    ("smtp_username", "SMTP_USERNAME"),
+    ("smtp_password", "SMTP_PASSWORD"),
+    ("smtp_from_address", "SMTP_FROM_ADDRESS"),
 )
 
 
@@ -160,7 +171,7 @@ class Settings(BaseSettings):
     # chain unbroken: a deployment must never mark deliveries SENT that
     # were never actually sent.
     sms_provider: Literal["logging", "aliyun_dypns"] = "logging"
-    email_provider: Literal["logging"] = "logging"
+    email_provider: Literal["logging", "smtp"] = "logging"
 
     # Aliyun DYPNS SMS credentials (owner-approved 2026-10-05; local
     # stack scope first). Secrets live in deployment env, never in the
@@ -172,6 +183,20 @@ class Settings(BaseSettings):
     aliyun_sms_otp_template_code: str = ""
     aliyun_sms_endpoint: str = "dypnsapi.aliyuncs.com"
     aliyun_sms_region: str = "ap-southeast-1"
+
+    # SMTP relay credentials (security round batch 4 item 4,
+    # owner-approved 2026-10-11: email carries two real product flows —
+    # identity email verification and the §25 EMAIL channel for
+    # verified addresses — so a real adapter beats disabling). Same
+    # discipline as the SMS group: secrets live in deployment env; the
+    # factory (every environment) and the production guard both refuse
+    # an "smtp" selection with any required field left empty.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = ""
+    smtp_use_tls: bool = True
 
     # Phone OTP challenge lifecycle (spec §33.2 recommended defaults:
     # 5-minute TTL, 5 verification attempts, resend cooldown, per-phone and
@@ -576,6 +601,19 @@ class Settings(BaseSettings):
                     f"{' and '.join(missing)} (a half-configured provider "
                     "fails at startup, never at the first send)"
                 )
+        if self.environment == "production" and self.email_provider == "smtp":
+            missing = [
+                env_name
+                for field_name, env_name in _SMTP_CREDENTIAL_FIELDS
+                if not getattr(self, field_name)
+            ]
+            if missing:
+                raise ValueError(
+                    "environment=production refuses email_provider=smtp "
+                    f"with incomplete credentials: set {' and '.join(missing)} "
+                    "(a half-configured provider fails at startup, never "
+                    "at the first send)"
+                )
         logging_providers = [
             env_name
             for field_name, env_name in _LOGGING_ONLY_PROVIDER_FIELDS
@@ -586,9 +624,8 @@ class Settings(BaseSettings):
                 "environment=production refuses the logging provider: "
                 f"set {' and '.join(logging_providers)} to a real sending "
                 "provider (the logging adapter delivers nothing while "
-                "deliveries are recorded SENT; the SMS side now has "
-                "aliyun_dypns — the EMAIL side still has no real adapter, "
-                "so V1 email channels cannot run in production)"
+                "deliveries are recorded SENT; the SMS side has "
+                "aliyun_dypns and the EMAIL side smtp)"
             )
         return self
 
