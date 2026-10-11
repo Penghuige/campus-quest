@@ -77,10 +77,10 @@
 - `PublicProjectFilters`：q≤120、direction≤120、stage≤80、recruiting_only、beginner_friendly；limit 1～50 默认 20，offset≥0；SQL 过滤白名单投影且 escape LIKE 通配，不搜索未发布字段。
 - `/ie/projects`、`/ie/recruitments` 及其详情/contacts API，ACTIVE 校内演示角色可浏览；敏感读取用 RedisFixedWindowLimiter 新桶 `ie:recruitment-contacts`=30/60，错误稳定 RATE_LIMITED，Redis 故障安全 503。所有响应 `private, no-store`。
 
-- [ ] 写失败测试：仅招募项目可见、draft/pending sentinel 在列表/搜索/详情/网络白名单全不存在；有多个成果和岗位时摘要优先最近通过成果，但各区保留原快照；关闭最后岗位仍保留公开成果；分页 total/过滤/排序稳定。
-- [ ] 写联系测试：未点击对应接口时所有 Public DTO 无值、仅返回授权渠道；不存在/关闭/到期/下架/账号失效 404；第 30 次成功/31 次 429、下个窗口恢复；Redis 或 AuditLogWriter 故障无值响应；暂停/撤销与敏感读取两个锁顺序真实竞争，不死锁或取旧值。
-- [ ] 运行 `uv run pytest tests/integration/innovation/test_public_recruitments.py tests/integration/innovation/test_public_projects.py tests/integration/innovation/test_recruitment_contacts.py -q`。Expected: 新路由 404/公开 shape 断言 RED；再实现投影、薄 route/限流 wiring 和持久访问审计。摘要来源 DTO 使用明确 kind，不改 R2 原查询语义。
-- [ ] 重跑 Task 2 三文件及现有 PublicAchievement/R2 用例。Expected: GREEN、contact audit 不含文字/值、当前权限一致；执行同 Task 1 静态和 OpenAPI/type 生成，commit 公开查询与联系。
+- [x] 写失败测试：仅招募项目可见、draft/pending sentinel 在列表/搜索/详情/网络白名单全不存在；有多个成果和岗位时摘要优先最近通过成果，但各区保留原快照；关闭最后岗位仍保留公开成果；分页 total/过滤/排序稳定。
+- [x] 写联系测试：未点击对应接口时所有 Public DTO 无值、仅返回授权渠道；不存在/关闭/到期/下架/账号失效 404；第 30 次成功/31 次 429、下个窗口恢复；Redis 或 AuditLogWriter 故障无值响应；暂停/撤销与敏感读取两个锁顺序真实竞争，不死锁或取旧值。
+- [x] 运行 `uv run pytest tests/integration/innovation/test_public_recruitments.py tests/integration/innovation/test_public_projects.py tests/integration/innovation/test_recruitment_contacts.py -q`。Expected: 新路由 404/公开 shape 断言 RED；再实现投影、薄 route/限流 wiring 和持久访问审计。摘要来源 DTO 使用明确 kind，不改 R2 原查询语义。
+- [x] 重跑 Task 2 三文件及现有 PublicAchievement/R2 用例。Expected: GREEN、contact audit 不含文字/值、当前权限一致；执行同 Task 1 静态和 OpenAPI/type 生成，commit 公开查询与联系。
 
 ### Task 3: 截止、30 天提醒、通知及真实运行入口
 

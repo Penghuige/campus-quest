@@ -157,6 +157,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception(
             "Unhandled exception request_id=%s path=%s", request_id, request.url.path
         )
-        return _envelope_response(
+        response = _envelope_response(
             500, ErrorCode.INTERNAL_ERROR, INTERNAL_ERROR_MESSAGE, None, request_id
         )
+        # ServerErrorMiddleware renders outside user middleware. Preserve the
+        # innovation privacy boundary on unexpected errors too.
+        if request.url.path.startswith("/api/v1/ie/"):
+            response.headers["Cache-Control"] = "private, no-store"
+        return response

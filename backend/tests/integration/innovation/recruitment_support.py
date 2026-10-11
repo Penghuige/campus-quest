@@ -29,7 +29,8 @@ async def client(db_session, clock):
     app.dependency_overrides[get_db_session] = db
     app.dependency_overrides[get_business_clock] = lambda: clock
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
     ) as http:
         yield http
 

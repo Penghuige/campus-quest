@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.errors import BusinessError
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.otp import InvalidPhoneError, normalize_phone
+from app.modules.innovation.review_schemas import PublicAchievementListResponse
 from app.modules.innovation.schemas import Version
 
 ContactChannel = Literal["WECHAT", "QQ", "EMAIL", "PHONE"]
@@ -165,3 +166,81 @@ class RecruitmentActionResult(BaseModel):
     replayed: bool
     applied_version: int
     current: RecruitmentDraftResponse
+
+
+class PublicRecruitmentContent(BaseModel):
+    """No contact values or private persistence fields are representable."""
+
+    model_config = ConfigDict(extra="forbid")
+    project_title: str
+    direction: str
+    stage: str
+    introduction: str
+    idea_stage: bool
+    goal: str
+    initial_plan: str
+    role_name: str
+    headcount: int
+    duties: str
+    requirements: str
+    time_commitment: str
+    beginner_friendly: bool
+    deadline_at: datetime | None
+
+
+class PublicRecruitmentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    project_id: UUID
+    revision_number: int
+    content: PublicRecruitmentContent
+    contact_channels: list[ContactChannel]
+    published_at: datetime
+
+
+class PublicRecruitmentListResponse(BaseModel):
+    items: list[PublicRecruitmentResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class RecruitmentContactsResponse(BaseModel):
+    id: UUID
+    revision_number: int
+    contacts: list[ContactInput]
+
+
+class PublicProjectFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    q: Annotated[str, Field(max_length=120)] = ""
+    direction: Annotated[str, Field(max_length=120)] = ""
+    stage: Annotated[str, Field(max_length=80)] = ""
+    recruiting_only: bool = False
+    beginner_friendly: bool | None = None
+    limit: Annotated[int, Field(ge=1, le=50)] = 20
+    offset: Annotated[int, Field(ge=0)] = 0
+
+
+class PublicProjectSummary(BaseModel):
+    id: UUID
+    title: str
+    summary: str
+    direction: str
+    stage: str
+    source_kind: Literal["ACHIEVEMENT", "RECRUITMENT"]
+    achievement_count: int
+    recruitment_count: int
+
+
+class PublicProjectListResponse(BaseModel):
+    items: list[PublicProjectSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+class PublicProjectDetailResponse(BaseModel):
+    project: PublicProjectSummary
+    achievements: PublicAchievementListResponse
+    recruitments: PublicRecruitmentListResponse

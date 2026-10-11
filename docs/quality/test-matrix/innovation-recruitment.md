@@ -11,9 +11,9 @@ Expectations recorded from approved R3 spec before locating implementation tests
 | R5 | §6 | Last revoke requires close; revoked draft needs fresh selection/publication | `tests/integration/innovation/test_recruitment_lifecycle.py::test_revoke_last_contact_requires_explicit_close` + `tests/integration/innovation/test_recruitment_lifecycle.py::test_revoked_contact_requires_fresh_authorization` | covered |
 | R6 | §7 | Audit failure rolls back publication and contact grants | `tests/integration/innovation/test_recruitment_lifecycle.py::test_audit_failure_rolls_back_publication` | covered |
 | R7 | §7 | Independent PG create/version races have one winner; suspension forbids publish | `tests/integration/innovation/test_recruitment_races.py` | covered |
-| R8 | §5/8 | Public surfaces exclude expired, closed, down and invalid owner | pending | gap G-1 |
-| R9 | §8 | Summary prefers approved snapshot; no private draft leakage | pending | gap G-1 |
-| R10 | §6 | Deliberate contact read, 30/60 cap, Redis/audit failure safe | pending | gap G-1 |
+| R8 | §5/8 | Public surfaces exclude expired, closed, down and invalid owner | `tests/integration/innovation/test_public_recruitments.py` | covered |
+| R9 | §8 | Summary prefers approved snapshot; no private draft leakage | `tests/integration/innovation/test_public_projects.py` | covered |
+| R10 | §6 | Deliberate contact read, 30/60 cap, Redis/audit failure safe; revocation/suspension serialize both orders | `tests/integration/innovation/test_recruitment_contacts.py` + `tests/integration/innovation/test_recruitment_contact_races.py` | covered |
 | R11 | §5/7 | 30-day reminders stay OPEN, catch up once, edits preserve schedule, old-cycle fenced | pending | gap G-2 |
 | R12 | §7 | Real Celery/Beat/IN_APP wiring; stale suppression, original events preserved | pending | gap G-2 |
 | R13 | §8 | Save/publish UI separation; unknown request retained; auth clears private data | pending | gap G-3 |
@@ -21,6 +21,5 @@ Expectations recorded from approved R3 spec before locating implementation tests
 
 ## 缺口明细
 
-- G-1: Task 2 public projection/contact tests and implementation pending.
 - G-2: Task 3 reminder/production composition pending.
 - G-3: Task 4 UI/browser/accessibility/visual pending.

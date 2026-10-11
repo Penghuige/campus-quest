@@ -37,6 +37,9 @@ from app.modules.innovation import (
     public_achievement_router as innovation_public_achievement_router,
 )
 from app.modules.innovation import (
+    public_recruitment_router as innovation_public_recruitment_router,
+)
+from app.modules.innovation import (
     qualification_router as innovation_qualification_router,
 )
 from app.modules.innovation import recruitment_router as innovation_recruitment_router
@@ -45,6 +48,7 @@ from app.modules.innovation import (
 )
 from app.modules.innovation import review_router as innovation_review_router
 from app.modules.innovation import router as innovation_router
+from app.modules.innovation.privacy import InnovationPrivacyMiddleware
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
 from app.modules.points import router as points_router
@@ -71,6 +75,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(title="CampusQuest API", lifespan=_lifespan)
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(InnovationPrivacyMiddleware)
     register_exception_handlers(app)
 
     # Identity API: typed-exception envelope handlers first, then the
@@ -83,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(identity_staff_router.router, prefix="/api/v1")
     app.include_router(innovation_router.router, prefix="/api/v1")
     app.include_router(innovation_recruitment_router.router, prefix="/api/v1")
+    app.include_router(innovation_public_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_owner_router.router, prefix="/api/v1")
     app.include_router(innovation_qualification_router.self_router, prefix="/api/v1")
     app.include_router(innovation_qualification_router.admin_router, prefix="/api/v1")

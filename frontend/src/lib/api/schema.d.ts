@@ -615,6 +615,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ie/recruitments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recruitments */
+        get: operations["list_recruitments_api_v1_ie_recruitments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/recruitments/{recruitment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recruitment */
+        get: operations["get_recruitment_api_v1_ie_recruitments__recruitment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/recruitments/{recruitment_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Contacts */
+        get: operations["get_contacts_api_v1_ie_recruitments__recruitment_id__contacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Projects */
+        get: operations["list_projects_api_v1_ie_projects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project */
+        get: operations["get_project_api_v1_ie_projects__project_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ie/me/owner-profile": {
         parameters: {
             query?: never;
@@ -4457,6 +4542,116 @@ export interface components {
             /** Team Status */
             team_status: string;
         };
+        /** PublicProjectDetailResponse */
+        PublicProjectDetailResponse: {
+            project: components["schemas"]["PublicProjectSummary"];
+            achievements: components["schemas"]["PublicAchievementListResponse"];
+            recruitments: components["schemas"]["PublicRecruitmentListResponse"];
+        };
+        /** PublicProjectListResponse */
+        PublicProjectListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicProjectSummary"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** PublicProjectSummary */
+        PublicProjectSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Direction */
+            direction: string;
+            /** Stage */
+            stage: string;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "ACHIEVEMENT" | "RECRUITMENT";
+            /** Achievement Count */
+            achievement_count: number;
+            /** Recruitment Count */
+            recruitment_count: number;
+        };
+        /**
+         * PublicRecruitmentContent
+         * @description No contact values or private persistence fields are representable.
+         */
+        PublicRecruitmentContent: {
+            /** Project Title */
+            project_title: string;
+            /** Direction */
+            direction: string;
+            /** Stage */
+            stage: string;
+            /** Introduction */
+            introduction: string;
+            /** Idea Stage */
+            idea_stage: boolean;
+            /** Goal */
+            goal: string;
+            /** Initial Plan */
+            initial_plan: string;
+            /** Role Name */
+            role_name: string;
+            /** Headcount */
+            headcount: number;
+            /** Duties */
+            duties: string;
+            /** Requirements */
+            requirements: string;
+            /** Time Commitment */
+            time_commitment: string;
+            /** Beginner Friendly */
+            beginner_friendly: boolean;
+            /** Deadline At */
+            deadline_at: string | null;
+        };
+        /** PublicRecruitmentListResponse */
+        PublicRecruitmentListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicRecruitmentResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** PublicRecruitmentResponse */
+        PublicRecruitmentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Revision Number */
+            revision_number: number;
+            content: components["schemas"]["PublicRecruitmentContent"];
+            /** Contact Channels */
+            contact_channels: ("WECHAT" | "QQ" | "EMAIL" | "PHONE")[];
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+        };
         /** QualificationApply */
         QualificationApply: {
             /** Version */
@@ -4625,6 +4820,18 @@ export interface components {
             /** Applied Version */
             applied_version: number;
             current: components["schemas"]["RecruitmentDraftResponse"];
+        };
+        /** RecruitmentContactsResponse */
+        RecruitmentContactsResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Revision Number */
+            revision_number: number;
+            /** Contacts */
+            contacts: components["schemas"]["ContactInput"][];
         };
         /** RecruitmentDraftCreate */
         RecruitmentDraftCreate: {
@@ -7511,6 +7718,178 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecruitmentActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recruitments_api_v1_ie_recruitments_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                direction?: string;
+                stage?: string;
+                recruiting_only?: boolean;
+                beginner_friendly?: boolean | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRecruitmentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recruitment_api_v1_ie_recruitments__recruitment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recruitment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRecruitmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_contacts_api_v1_ie_recruitments__recruitment_id__contacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recruitment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecruitmentContactsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_projects_api_v1_ie_projects_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                direction?: string;
+                stage?: string;
+                recruiting_only?: boolean;
+                beginner_friendly?: boolean | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProjectListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_api_v1_ie_projects__project_id__get: {
+        parameters: {
+            query?: {
+                achievement_limit?: number;
+                achievement_offset?: number;
+                recruitment_limit?: number;
+                recruitment_offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProjectDetailResponse"];
                 };
             };
             /** @description Validation Error */
