@@ -1710,6 +1710,10 @@ Teacher 不允许任意修改全局短信模板。
 - StudentWhitelist 重要变更。
 - 系统配置变更。
 - 手工修复 Claim/Assignment 状态。
+- Task 生命周期动作：publish / pause / resume / close / archive（owner 裁定
+  2026-10-11 扩列——状态流转即治理事件，行携带 before/after status 快照）。
+- Task 协作者授予/移除（同上裁定）。
+- Task Assignment 批量导入确认（同上裁定；行携带 inserted 计数）。
 
 AuditLog 不允许通过普通管理后台删除。
 

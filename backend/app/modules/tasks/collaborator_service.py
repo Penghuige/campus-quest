@@ -54,11 +54,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.directory import UserDirectory
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.tasks.models import Task, TaskCollaborator
 from app.modules.tasks.service import TaskNotFoundError
+
+# Audit actions (spec §30, batch 4 item 5; owner ruling 2026-10-11).
+AUDIT_TASK_COLLABORATOR_ADDED = "TASK_COLLABORATOR_ADDED"
+AUDIT_TASK_COLLABORATOR_REMOVED = "TASK_COLLABORATOR_REMOVED"
 
 __all__ = [
     "SUPPORTED_COLLABORATOR_PERMISSIONS",
@@ -203,8 +208,13 @@ class TaskCollaboratorService:
     PostgreSQL-backed adapter or a stub.
     """
 
-    def __init__(self, *, user_directory: UserDirectory) -> None:
+    def __init__(
+        self, *, user_directory: UserDirectory, audit: AuditLogWriter | None = None
+    ) -> None:
         self._directory = user_directory
+        # Flush-only audit writer (spec §30, batch 4 item 5) — default
+        # construction is free (the comment_service precedent).
+        self._audit = audit if audit is not None else AuditLogWriter()
 
     async def add_collaborator(
         self,
@@ -290,6 +300,17 @@ class TaskCollaboratorService:
             if _DUPLICATE_CONSTRAINT_NAME in str(exc):
                 raise DuplicateCollaboratorError(task_id, teacher_id) from exc
             raise
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_TASK_COLLABORATOR_ADDED,
+            target_type="task",
+            target_id=str(task_id),
+            details={
+                "collaborator_teacher_id": str(teacher_id),
+                "permissions": sorted(granted),
+            },
+        )
         await db.commit()
         return row
 
@@ -320,5 +341,17 @@ class TaskCollaboratorService:
         if row is None:
             raise CollaboratorNotFoundError(task_id, teacher_id)
 
+        removed_permissions = sorted(row.permissions)
         await db.delete(row)
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_TASK_COLLABORATOR_REMOVED,
+            target_type="task",
+            target_id=str(task_id),
+            details={
+                "collaborator_teacher_id": str(teacher_id),
+                "permissions": removed_permissions,
+            },
+        )
         await db.commit()

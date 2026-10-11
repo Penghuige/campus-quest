@@ -34,6 +34,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.audit.models import AuditLog
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.tasks.importer import (
@@ -108,6 +109,10 @@ class FakeSession:
 
     def fail_flush_with(self, error: Exception) -> None:
         self.flush_error = error
+
+    def add(self, obj: Any) -> None:
+        # The audit writer's flush-only append rides the same fake.
+        self.added.append(obj)
 
     def add_all(self, objects: list[Any]) -> None:
         self.added.extend(objects)
@@ -752,12 +757,16 @@ async def test_confirm_imports_previewed_rows_in_one_commit() -> None:
         ("zhihu", "留学"),
     ]
     # Rows land with the canonical platform, the trimmed keyword, AVAILABLE
-    # status, exactly one commit — and the token is consumed.
-    assert len(db.added) == 2
-    for assignment in db.added:
-        assert isinstance(assignment, Assignment)
+    # status, exactly one commit — the §30 audit row rides the SAME
+    # commit — and the token is consumed.
+    assignments = [row for row in db.added if isinstance(row, Assignment)]
+    audit_rows = [row for row in db.added if isinstance(row, AuditLog)]
+    assert len(assignments) == 2
+    for assignment in assignments:
         assert assignment.task_id == task.id
         assert assignment.availability_status == "AVAILABLE"
+    assert [row.action for row in audit_rows] == ["TASK_ASSIGNMENTS_IMPORTED"]
+    assert audit_rows[0].details == {"inserted": 2}
     assert db.commits == 1
     assert redis.strings == {}
 

@@ -50,6 +50,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.tasks.collaborator_service import CollaboratorPermission
 from app.modules.tasks.import_confirm import (
@@ -92,6 +93,10 @@ logger = logging.getLogger(__name__)
 _DENIED_MESSAGE = (
     "只有任务所有者、拥有 MANAGE_ASSIGNMENTS 权限的协作者或管理员可以导入 Assignment"
 )
+
+# Audit action (spec §30, batch 4 item 5; owner ruling 2026-10-11):
+# the confirm leg — the one that writes rows — is the audited verb.
+AUDIT_TASK_ASSIGNMENTS_IMPORTED = "TASK_ASSIGNMENTS_IMPORTED"
 
 
 # --- authorization -----------------------------------------------------------------
@@ -182,6 +187,7 @@ class AssignmentImportService:
         max_rows: int,
         keyword_max_length: int,
         preview_ttl_seconds: int,
+        audit: AuditLogWriter | None = None,
     ) -> None:
         self._redis = redis
         self._clock = clock
@@ -189,6 +195,9 @@ class AssignmentImportService:
         self._max_rows = max_rows
         self._keyword_max_length = keyword_max_length
         self._preview_ttl_seconds = preview_ttl_seconds
+        # Flush-only audit writer (spec §30, batch 4 item 5) — default
+        # construction is free (the comment_service precedent).
+        self._audit = audit if audit is not None else AuditLogWriter()
         # Bounded cell length (engineering §14): raise csv's field limit
         # above the byte cap BEFORE any parsing can happen (see
         # import_parsing.ensure_field_size_limit).
@@ -320,6 +329,14 @@ class AssignmentImportService:
             raise DuplicateAssignmentsError(sorted(conflicts))
 
         ordered_rows = await insert_previewed_rows(db, task_id=task_id, rows=rows)
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_TASK_ASSIGNMENTS_IMPORTED,
+            target_type="task",
+            target_id=str(task_id),
+            details={"inserted": len(rows)},
+        )
         await db.commit()
 
         logger.info(
