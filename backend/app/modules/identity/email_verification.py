@@ -54,6 +54,7 @@ identity typed-exception table, following `otp.py` /
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -199,7 +200,11 @@ class EmailVerificationService:
             ),
             ex=int(self._ttl.total_seconds()) + _REDIS_TTL_GRACE_SECONDS,
         )
-        self._email_sender.send(
+        # The SMTP adapter's socket work is synchronous (stdlib
+        # smtplib): ride a worker thread so the request handler's event
+        # loop never blocks on the relay (the otp.py to_thread seam).
+        await asyncio.to_thread(
+            self._email_sender.send,
             to=email,
             template=_EMAIL_TEMPLATE,
             variables={

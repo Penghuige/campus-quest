@@ -112,7 +112,7 @@ def build_delivery_service(
     return DeliveryService(
         session_maker=session_maker,
         sms_sender=build_sms_sender(settings.sms_provider, settings),
-        email_sender=build_email_sender(settings.email_provider),
+        email_sender=build_email_sender(settings.email_provider, settings),
         clock=SystemClock(),
         # The claim gate's lease threshold comes from the SAME setting
         # the T8 due scan reads, so the rows the scanner re-enqueues as

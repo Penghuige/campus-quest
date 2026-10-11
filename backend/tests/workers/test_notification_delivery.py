@@ -701,6 +701,43 @@ def test_build_delivery_service_wires_aliyun_sender_under_real_provider(
     assert isinstance(service._sms_sender, AliyunDypnsSmsSender)
 
 
+def test_build_delivery_service_wires_smtp_sender_under_real_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The email twin of the aliyun wiring test (#69's same disease,
+    # security round batch 4): the worker must hand the FULL settings
+    # to build_email_sender too — under email_provider=smtp with the
+    # SMTP_* group complete the built service carries the real SMTP
+    # adapter. Red before the fix: build_email_sender(provider) without
+    # settings died with the factory's fail-closed LookupError.
+    from app.integrations.email_smtp import SmtpEmailSender
+
+    for name, value in {
+        "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:15433/"
+        "campusquest_test",
+        "REDIS_URL": "redis://localhost:6379/0",
+        "S3_ENDPOINT_URL": "http://localhost:9000",
+        "S3_BUCKET": "campusquest-test",
+        "S3_ACCESS_KEY": "campusquest",
+        "S3_SECRET_KEY": "campusquest-dev",
+        "BUSINESS_TIMEZONE": "Asia/Shanghai",
+        "EMAIL_PROVIDER": "smtp",
+        "SMTP_HOST": "smtp.example.edu.cn",
+        "SMTP_USERNAME": "campus-quest@example.edu.cn",
+        "SMTP_PASSWORD": "test-relay-password",
+        "SMTP_FROM_ADDRESS": "campus-quest@example.edu.cn",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        service = send_notification_job.build_delivery_service(
+            session_maker=cast("Any", object())  # never used at construction
+        )
+    finally:
+        get_settings.cache_clear()
+    assert isinstance(service._email_sender, SmtpEmailSender)
+
+
 # --- bounded retry ladder (spec §25.4) ---------------------------------------------
 
 
