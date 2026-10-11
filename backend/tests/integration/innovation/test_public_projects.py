@@ -15,6 +15,29 @@ pytestmark = pytest.mark.integration
 PROJECTS = "/api/v1/ie/projects"
 
 
+async def test_project_filters_match_only_effective_public_sources(
+    client, db_session, clock
+):
+    _, project, headers, _, _ = await published(client, db_session, clock)
+    for params, count in [
+        ({"q": "研究伙伴", "direction": "学习", "stage": "构想"}, 1),
+        ({"recruiting_only": True, "beginner_friendly": True}, 1),
+        ({"beginner_friendly": False}, 0),
+        ({"direction": "PRIVATE_PROJECT_SENTINEL"}, 0),
+        ({"stage": "%"}, 0),
+    ]:
+        response = await client.get(PROJECTS, headers=headers, params=params)
+        assert response.status_code == 200, response.text
+        assert response.json()["total"] == count
+        if count:
+            assert response.json()["items"][0]["id"] == str(project.id)
+    from uuid import uuid4
+
+    assert (
+        await client.get(f"{PROJECTS}/{uuid4()}", headers=headers)
+    ).status_code == 404
+
+
 async def test_project_with_only_recruitment_is_visible_until_closed(
     client, db_session, clock
 ):

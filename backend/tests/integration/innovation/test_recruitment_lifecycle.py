@@ -21,6 +21,103 @@ from tests.integration.innovation.test_achievement_review_operations import acco
 pytestmark = pytest.mark.integration
 
 
+async def test_create_replay_and_owned_pagination(client, db_session, clock):
+    _, _, headers, collection = await world(db_session, clock)
+    payload = {"request_id": str(uuid4()), "fields": fields()}
+    first = await client.post(collection, headers=headers, json=payload)
+    replay = await client.post(collection, headers=headers, json=payload)
+    assert first.status_code == 201 and replay.status_code == 200
+    assert first.json() == replay.json()
+    response = await client.get(collection, headers=headers, params={"limit": 1})
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"] == [first.json()]
+    page_two = await client.get(
+        collection, headers=headers, params={"limit": 1, "offset": 1}
+    )
+    assert page_two.json()["total"] == 1 and page_two.json()["items"] == []
+    assert (
+        await client.get(f"{collection}/{uuid4()}", headers=headers)
+    ).status_code == 404
+    assert (
+        await client.get(
+            f"/api/v1/ie/me/project-drafts/{uuid4()}/recruitments", headers=headers
+        )
+    ).status_code == 404
+
+
+async def test_wrong_state_actions_preserve_current_version(client, db_session, clock):
+    _, _, headers, base, row = await created(client, db_session, clock)
+    for action in ("close", "reopen", "confirm-active"):
+        denied = await client.post(
+            base + "/" + action, headers=headers, json=command(row)
+        )
+        assert denied.status_code == 409
+    row = (
+        await client.post(base + "/publish", headers=headers, json=command(row))
+    ).json()["current"]
+    assert (
+        await client.post(base + "/reopen", headers=headers, json=command(row))
+    ).status_code == 409
+    row = (
+        await client.post(base + "/close", headers=headers, json=command(row))
+    ).json()["current"]
+    for action in ("close", "publish", "confirm-active"):
+        denied = await client.post(
+            base + "/" + action, headers=headers, json=command(row)
+        )
+        assert denied.status_code == 409
+    current = await client.get(base, headers=headers)
+    assert current.json()["version"] == row["version"]
+    assert current.json()["status"] == "CLOSED"
+
+
+async def test_partial_revoke_keeps_remaining_channel_and_publication(
+    client, db_session, clock
+):
+    _, _, headers, collection = await world(db_session, clock)
+    response = await client.post(
+        collection,
+        headers=headers,
+        json={
+            "request_id": str(uuid4()),
+            "fields": fields()
+            | {
+                "contacts": [
+                    {"channel": "WECHAT", "value": "demo_partner"},
+                    {"channel": "QQ", "value": "12345678"},
+                ]
+            },
+        },
+    )
+    assert response.status_code == 201
+    base = collection + "/" + response.json()["id"]
+    row = (
+        await client.post(
+            base + "/publish", headers=headers, json=command(response.json())
+        )
+    ).json()["current"]
+    missing = await client.post(
+        base + "/revoke-contact",
+        headers=headers,
+        json=command(row) | {"channel": "EMAIL", "close_if_last": False},
+    )
+    assert missing.status_code == 409
+    revoked = await client.post(
+        base + "/revoke-contact",
+        headers=headers,
+        json=command(row) | {"channel": "WECHAT", "close_if_last": False},
+    )
+    assert revoked.status_code == 200, revoked.text
+    current = revoked.json()["current"]
+    assert current["status"] == "OPEN" and current["public_contact_channels"] == ["QQ"]
+    contacts = await client.get(
+        f"/api/v1/ie/recruitments/{row['id']}/contacts", headers=headers
+    )
+    assert contacts.status_code == 200
+    assert "demo_partner" not in contacts.text and "12345678" in contacts.text
+
+
 async def test_publish_requires_qualification_and_owned_project(
     client, db_session, clock
 ):

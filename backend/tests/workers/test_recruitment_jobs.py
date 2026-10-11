@@ -26,3 +26,19 @@ def test_local_profile_only_consumes_recruitment_work():
     assert dispatch["kwargs"]["event_types"] == ("IE_RECRUITMENT_CONFIRMATION_DUE",)
     assert dispatch["kwargs"]["queue"] == "innovation-dev"
     assert app.conf.task_acks_late and app.conf.task_reject_on_worker_lost
+
+
+def test_local_celery_entrypoint_is_cached_and_rejects_unknown_attributes():
+    import pytest
+
+    from app.workers import innovation_dev
+
+    innovation_dev.get_innovation_dev_app.cache_clear()
+    try:
+        app = innovation_dev.__getattr__("celery_app")
+        assert app is innovation_dev.__getattr__("celery_app")
+        assert app.conf.task_default_queue == "innovation-dev"
+        with pytest.raises(AttributeError, match="unknown_entrypoint"):
+            innovation_dev.__getattr__("unknown_entrypoint")
+    finally:
+        innovation_dev.get_innovation_dev_app.cache_clear()

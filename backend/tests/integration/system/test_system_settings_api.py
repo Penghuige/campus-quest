@@ -64,6 +64,9 @@ _SEED_TERM = "2026-fall"
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # Anchor at execution, not collection: PyJWT checks the real wall clock.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 

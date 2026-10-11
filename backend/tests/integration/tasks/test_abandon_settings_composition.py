@@ -77,6 +77,9 @@ _SETTING_PATH = "/api/v1/admin/settings/abandon-daily-limit"
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # Refresh both the seed timestamps and JWT clock after slow collection.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 

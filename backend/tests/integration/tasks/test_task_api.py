@@ -174,6 +174,10 @@ async def api_redis() -> AsyncIterator[aioredis.Redis]:
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # Collection can precede execution by more than the access-token TTL.
+    # Keep seed timestamps and the injected clock on this test's fresh anchor.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 
