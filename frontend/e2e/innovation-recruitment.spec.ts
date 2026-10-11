@@ -1,8 +1,22 @@
 import AxeBuilder from "@axe-core/playwright";
-import { API_URL, BASE_URL, ensureStudentLogin, expect, mintToken, test, loginThroughUi, parseSeededAccount, staffLogin } from "./fixtures";
+import { API_URL, BASE_URL, ensureStudentLogin, expect, mintToken, test, loginThroughUi, parseSeededAccount, staffLogin, persistSharedStudentSession } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.skip(process.env.CQ_E2E !== "1", "CQ_E2E=1 with an owned real browser database");
+
+test("R3: account switching preserves the shared student's resumable session", async ({ page, browser }) => {
+  await ensureStudentLogin(page);
+  await loginThroughUi(page, parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT, "CQ_E2E_AUTHOR_STUDENT"));
+  // Exercise the real after-test persistence boundary, then a fresh context.
+  await persistSharedStudentSession(page);
+  const context = await browser.newContext();
+  try {
+    const next = await context.newPage(); let logins = 0;
+    next.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/auth/login")) logins++; });
+    await ensureStudentLogin(next);
+    expect(logins).toBe(0);
+  } finally { await context.close(); }
+});
 
 async function prepare(page: Page) {
   await ensureStudentLogin(page);

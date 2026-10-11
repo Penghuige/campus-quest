@@ -105,7 +105,7 @@ export async function loginThroughUi(
   page: Page,
   account: SeededAccount,
 ): Promise<void> {
-  await page.goto(`${BASE_URL}/login`);
+  await openLoginForm(page, `${BASE_URL}/login`);
   await page.getByLabel("学号").fill(account.username);
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -193,6 +193,39 @@ export async function ensureStudentLogin(page: Page): Promise<void> {
  */
 let studentSessionContext: BrowserContext | null = null;
 
+/** Persist only the context explicitly verified as the shared student. */
+export async function persistSharedStudentSession(page: Page): Promise<void> {
+  if (
+    process.env.CQ_E2E_RUN !== undefined &&
+    studentSessionContext === page.context() &&
+    page.context().pages().length > 0
+  ) {
+    await page.context().storageState({ path: sessionStatePath() });
+  }
+}
+
+/** Save the last rotation on the login page before replacing its identity. */
+async function openLoginForm(page: Page, url: string): Promise<void> {
+  const shared = studentSessionContext === page.context();
+  const hasRefresh = shared && (await page.context().cookies()).some(
+    (cookie) => cookie.name === "refresh_token",
+  );
+  const bootstrap = hasRefresh ? page.waitForResponse((response) =>
+    (new URL(response.url()).pathname.endsWith("/api/v1/me") && response.status() === 200) ||
+    (new URL(response.url()).pathname.endsWith("/auth/refresh") && [401, 403].includes(response.status())),
+  ) : null;
+  await page.goto(url);
+  if (bootstrap !== null) {
+    const response = await bootstrap;
+    if (response.status() === 200) {
+      const me = await response.json() as { username?: unknown };
+      const account = parseSeededAccount(process.env.CQ_E2E_STUDENT, "CQ_E2E_STUDENT");
+      if (me.username === account.username) await persistSharedStudentSession(page);
+    }
+  }
+  if (shared) studentSessionContext = null;
+}
+
 /** The cookie slice of Playwright's storageState (addCookies' input). */
 type StorageCookie = {
   name: string;
@@ -265,8 +298,7 @@ export async function staffLogin(
   totpSecret: string,
 ): Promise<void> {
   const [email, password] = credentials.split(":");
-  studentSessionContext = null;
-  await page.goto(STAFF_LOGIN_URL);
+  await openLoginForm(page, STAFF_LOGIN_URL);
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -328,16 +360,7 @@ export const test = base.extend<CqFixtures>({
   persistSession: [
     async ({ page }, run) => {
       await run();
-      const statePath = sessionStatePath();
-      if (
-        process.env.CQ_E2E_RUN !== undefined &&
-        studentSessionContext === page.context() &&
-        page.context().pages().length > 0
-      ) {
-        await page.context()
-          .storageState({ path: statePath })
-          .catch(() => {});
-      }
+      await persistSharedStudentSession(page);
     },
     { auto: true },
   ],
