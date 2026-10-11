@@ -66,6 +66,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.core.rbac import is_admin, is_staff
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.tasks.commands import CreateTask, UpdateTask
 from app.modules.tasks.enums import DeadlineMode, TaskRarity, TaskStatus, TaskType
@@ -97,6 +98,25 @@ ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.PAUSED: {TaskStatus.PUBLISHED, TaskStatus.CLOSED},
     TaskStatus.CLOSED: {TaskStatus.ARCHIVED},
     TaskStatus.ARCHIVED: set(),
+}
+
+# Audit action per (entry status -> target status) edge (spec §30,
+# batch 4 item 5; owner ruling 2026-10-11). PUBLISHED-as-target is two
+# verbs — first publish (from DRAFT) and resume (from PAUSED) — so the
+# audit reader can tell a task going live from one coming back.
+AUDIT_TASK_PUBLISHED = "TASK_PUBLISHED"
+AUDIT_TASK_PAUSED = "TASK_PAUSED"
+AUDIT_TASK_RESUMED = "TASK_RESUMED"
+AUDIT_TASK_CLOSED = "TASK_CLOSED"
+AUDIT_TASK_ARCHIVED = "TASK_ARCHIVED"
+
+_TRANSITION_AUDIT_ACTIONS: dict[tuple[TaskStatus, TaskStatus], str] = {
+    (TaskStatus.DRAFT, TaskStatus.PUBLISHED): AUDIT_TASK_PUBLISHED,
+    (TaskStatus.PUBLISHED, TaskStatus.PAUSED): AUDIT_TASK_PAUSED,
+    (TaskStatus.PAUSED, TaskStatus.PUBLISHED): AUDIT_TASK_RESUMED,
+    (TaskStatus.PUBLISHED, TaskStatus.CLOSED): AUDIT_TASK_CLOSED,
+    (TaskStatus.PAUSED, TaskStatus.CLOSED): AUDIT_TASK_CLOSED,
+    (TaskStatus.CLOSED, TaskStatus.ARCHIVED): AUDIT_TASK_ARCHIVED,
 }
 
 # UpdateTask fields frozen from first publish on (the V1 edit rule). Any
@@ -262,9 +282,20 @@ class TaskService:
     environment.
     """
 
-    def __init__(self, *, clock: Clock, max_upload_bytes: int) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Clock,
+        max_upload_bytes: int,
+        audit: AuditLogWriter | None = None,
+    ) -> None:
         self._clock = clock
         self._max_upload_bytes = max_upload_bytes
+        # Flush-only audit writer (spec §30, batch 4 item 5): the default
+        # construction is free, so every composition root and every test
+        # holds the same behavior without explicit wiring (the
+        # comment_service precedent).
+        self._audit = audit if audit is not None else AuditLogWriter()
 
     # -- create ---------------------------------------------------------------
 
@@ -518,9 +549,13 @@ class TaskService:
     async def _transition(
         self, db: AsyncSession, actor: Actor, task_id: UUID, target: TaskStatus
     ) -> Task:
-        """Lock, authorize, validate the table edge, mutate, commit once."""
+        """Lock, authorize, validate the table edge, mutate, audit,
+        commit once — the audit row rides the SAME transaction (spec
+        §30, batch 4 item 5: a failed transition leaves no audit row,
+        and a committed one always carries its row)."""
         task = await self._locked_task(db, task_id)
         self._require_owner_or_admin(task, actor)
+        before_status = _status(task)
         self._require_transition(task, target)
 
         if target is TaskStatus.PUBLISHED:
@@ -532,6 +567,15 @@ class TaskService:
             task.closed_at = self._clock.now()
 
         task.status = target
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=_TRANSITION_AUDIT_ACTIONS[(before_status, target)],
+            target_type="task",
+            target_id=str(task.id),
+            before_snapshot={"status": before_status},
+            after_snapshot={"status": target.value},
+        )
         await db.commit()
         return task
 
