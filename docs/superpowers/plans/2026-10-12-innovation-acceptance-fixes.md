@@ -31,13 +31,13 @@
 
 **Files:** Create `frontend/src/features/innovation/recruitmentRecovery.ts`, `frontend/src/__tests__/innovation-recruitment-recovery.test.ts`; modify RecruitmentEditor.tsx、RecruitmentWorkspace.tsx、现有 `frontend/e2e/innovation-recruitment.spec.ts`。
 
-**Interfaces:** consumes `getAuthEpoch/onAuthEpochChange`、既有未知命令恢复；produces `getRecruitmentRecovery(projectId)`、`rememberRecruitmentRecovery(projectId,snapshot)`、`clearRecruitmentRecovery(projectId,epoch)`。快照含 epoch、record、form、newDefaults，不含额外 API 命令。
+**Interfaces:** consumes `getAuthEpoch/onAuthEpochChange`、既有未知命令恢复；produces `getRecruitmentRecovery(projectId)`、`rememberRecruitmentRecovery(projectId,snapshot)`、`clearRecruitmentRecovery(projectId,epoch,expectedForm?)`。快照含 epoch、record、form、newDefaults，不含额外 API 命令。成功回执只删除其拥有的不可变输入快照，避免迟到原保存清掉后来输入。
 
-- [ ] 写浏览器回归：输入岗位/联系值→站内创新创业→浏览器返回，自动恢复且没有保存请求；显式丢弃后无恢复；账号切换无旧输入。
-- [ ] 独立测试栈运行 `innovation-recruitment.spec.ts --grep 'R3 acceptance: recovery'`，预期旧实现失败于恢复输入断言，保留完整 RED 日志。
-- [ ] 实现内存恢复、认证变化清理、未知请求优先；成功保存清理对应快照，显式返回丢弃清理。表单请求期间锁定输入，避免迟到成功覆盖新输入。
-- [ ] 单测证明项目隔离、同账号刷新令牌保留、四类认证转换清空、旧 epoch 迟到写入不被接纳；定点浏览器和单测 GREEN。
-- [ ] 提交本任务源码/测试并记录 ledger。
+- [x] 写浏览器回归：输入岗位/联系值→站内创新创业→浏览器返回，自动恢复且没有保存请求；显式丢弃后无恢复；账号切换清理由认证 epoch 单测与现有角色切换浏览器用例共同验证。
+- [x] 独立测试栈运行 `innovation-recruitment.spec.ts --grep 'R3 acceptance: recovery'`，旧实现失败于恢复输入断言，保留完整 RED 日志。
+- [x] 实现内存恢复、认证变化清理、未知请求优先；成功保存清理对应快照，显式返回丢弃清理。表单请求期间锁定输入，迟到回执 compare-and-delete 不删除更晚快照。
+- [x] 单测证明项目隔离、同账号刷新令牌保留、四类认证转换清空、旧 epoch 迟到写入不被接纳；定点浏览器和单测 GREEN。
+- [x] 提交本任务源码/测试并记录 ledger。
 
 ## Task 2: F02–F07 提示与可访问交互
 
@@ -45,11 +45,11 @@
 
 **Interfaces:** consumes Task 1 恢复；不改变 RecruitmentFieldsDto。联系错误按渠道返回可操作文案，仍使用原格式验证器；编辑器与预览共享条件字段规则。
 
-- [ ] 浏览器 RED：404 无重试且可返回本人项目；其他阶段不展示目标/方案且切回创意恢复；QQ 错误说明 5–20 位数字/非0开头；email/tel 类型与输入模式；键盘进入编辑器聚焦标题；读取成功 status 不含联系值；公开 false 标签“ 不接受零基础 ”；关闭无“下次提醒”。
-- [ ] 先跑定点回归和联系错误单测，预期当前行为失败，记录具体断言与日志。
-- [ ] 实现管理入口专属 404 提示；目标/方案仅创意起步展示和预览，保留临时值；按渠道错误及帮助/输入类型，移除重复错误；标题焦点与合理列表返回焦点；联系成功只公告“联系方式已读取”；零基础标签直接对应布尔值；仅 OPEN/NORMAL/无日期岗位显示下一次提醒。
-- [ ] 所有定点回归 GREEN；前端 typecheck/lint/check:css/unit/coverage/ratchet/audit/build；真实浏览器全站电池及 no-skip；视觉先比旧基线，逐图解释批准内容变化后仅更新受影响的招募 PNG，独立提交，不改容差/字体。
-- [ ] 独立评审最终修复范围；重要发现再 RED→GREEN，重跑受影响门禁。记录准确源码与最终提交，不引用历史通过数。
+- [x] 浏览器 RED：404 无重试且可返回本人项目；其他阶段不展示目标/方案且切回创意恢复；QQ 错误说明 5–20 位数字/非0开头；email/tel 类型与输入模式；键盘进入编辑器聚焦标题；读取成功 status 不含联系值；公开 false 标签“ 不接受零基础 ”；关闭无“下次提醒”。
+- [x] 先跑定点回归和联系错误单测，当前行为失败，记录具体断言与日志。
+- [x] 实现管理入口专属 404 提示；目标/方案仅创意起步展示和预览，保留临时值；按渠道错误及帮助/输入类型，移除重复错误；标题焦点与合理列表返回焦点；联系成功只公告“联系方式已读取”；零基础标签直接对应布尔值；仅 OPEN/NORMAL/无日期岗位显示下一次提醒。纠错控件保持到成功保存或显式切换阶段，不因第一个按键卸载。
+- [x] 所有定点回归 GREEN；两端前端 typecheck/lint/check:css/unit/coverage/ratchet/audit/build（670单测）；真实浏览器全站139通过及 no-skip退出0；视觉先比旧基线，逐图解释批准内容变化后仅更新受影响的三张招募 PNG，独立提交，不改容差/字体；随后20视觉用例独立比较通过。
+- [x] 独立评审最终修复范围；两项重要发现再 RED→GREEN，重跑受影响门禁。457f09b 定点复审 APPROVE，证据见质量回执，不引用历史通过数。
 - [ ] 浏览器重新按用户流程验收 7 项并保留模拟记录关闭状态、开发服务；写交接/验证回执、提交推送，核对当前提交完整 CI 状态与 Draft。
 
 ## 计划自检与执行记录

@@ -12,4 +12,4 @@
 
 原比较日志 `qa12-visual-original.log`：招募表单因已批准格式提示产生像素差异；该次将四个独立视觉场景合并到一个 seed，R3 写入同一模拟负责人的资料后，R2 初始 version=0 得到409、基础 owner 表单得到已开通状态，属测试世界混用。没有通过改资格行为或重写其他基线掩盖。最终四个 spec 各自 seed/teardown，串行运行。
 
-R3 单独世界的基线采集 `qa12-visual-r3-update.log` 退出0，只重生成上述三张。基线保存后还需不带 update-snapshots 参数进行独立比较；采集本身不称为最终像素门禁通过。
+R3 单独世界的基线采集 `qa12-visual-r3-update.log` 退出0，只重生成上述三张。随后从冻结源码串行执行四个独立世界，不带 update-snapshots：基础16项、R1一项、R2一项、R3两项，共20视觉用例通过，四份完整日志 `qa12-final-{spec文件名}.log` 均 `QA12_BROWSER_EXIT=0`。采集与最终独立像素比较为两次不同执行。
