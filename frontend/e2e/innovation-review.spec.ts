@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test";
 
 test.skip(process.env.CQ_E2E !== "1", "set CQ_E2E=1 with real PG, MinIO and ClamAV");
 const panel = (page: Page) => page.getByRole("region", { name: "成果核实与证明" });
-async function confirm(page: Page, title: string) { await page.getByRole("dialog", { name: title, exact: true }).getByRole("button", { name: "确认", exact: true }).click(); }
+async function confirm(page: Page, title: string, label = "确认") { await page.getByRole("dialog", { name: title, exact: true }).getByRole("button", { name: label, exact: true }).click(); }
 async function auditAxe(page: Page) {
   // Ignore entrance motion, not accessibility rules; the real content stays rendered.
   await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
@@ -293,7 +293,7 @@ test("achievement review: private proof and every update reviewed across three a
     expect((await owner.request.post(`${recruitPath}/${role.id}/publish`, { headers: ownerHeaders, data: { version: role.version, request_id: crypto.randomUUID() } })).status()).toBe(200);
     await owner.goto(`${BASE_URL}/profile/project-drafts/${projectId}/recruitments`);
     await owner.getByRole("button", { name: "编辑招募：模拟实践伙伴", exact: true }).click();
-    await owner.getByRole("button", { name: "关闭招募", exact: true }).click(); await confirm(owner, "关闭招募");
+    await owner.getByRole("button", { name: "关闭招募", exact: true }).click(); await confirm(owner, "关闭招募", "确认关闭");
     await expect(owner.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
     await viewer.goto(`${BASE_URL}/innovation/projects/${projectId}`);
     await expect(viewer.getByRole("region", { name: "项目已核实成果" }).getByRole("link")).toHaveAttribute("href", `/innovation/achievements/${achievement.id}`);
