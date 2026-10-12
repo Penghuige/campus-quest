@@ -59,6 +59,9 @@ from app.modules.innovation import (  # noqa: E402, F401
 from app.modules.innovation import (  # noqa: E402, F401
     review_models as innovation_review_models,
 )
+from app.modules.innovation import (  # noqa: E402, F401
+    talent_models as innovation_talent_models,
+)
 from app.modules.notifications import models as notification_models  # noqa: E402, F401
 from app.modules.points import models as point_models  # noqa: E402, F401
 from app.modules.rankings import (  # noqa: E402, F401

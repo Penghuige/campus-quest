@@ -494,6 +494,109 @@ export interface paths {
         patch: operations["update_draft_api_v1_ie_me_project_drafts__draft_id__patch"];
         trace?: never;
     };
+    "/api/v1/ie/me/talent-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read */
+        get: operations["read_api_v1_ie_me_talent_profile_get"];
+        /** Save */
+        put: operations["save_api_v1_ie_me_talent_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/talent-profile/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish */
+        post: operations["publish_api_v1_ie_me_talent_profile_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/talent-profile/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide */
+        post: operations["hide_api_v1_ie_me_talent_profile_hide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/talent-profile/revoke-contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Contact */
+        post: operations["revoke_contact_api_v1_ie_me_talent_profile_revoke_contact_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/talent-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tags */
+        get: operations["tags_api_v1_ie_talent_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/talent-tag-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest */
+        post: operations["suggest_api_v1_ie_me_talent_tag_suggestions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ie/me/project-drafts/{project_id}/recruitments": {
         parameters: {
             query?: never;
@@ -5797,6 +5900,203 @@ export interface components {
             /** Items */
             items: components["schemas"]["SystemSettingItemResponse"][];
         };
+        /** TalentActionResult */
+        TalentActionResult: {
+            /** Action */
+            action: string;
+            /** Replayed */
+            replayed: boolean;
+            /** Applied Version */
+            applied_version: number;
+            current: components["schemas"]["TalentProfileResponse"];
+        };
+        /** TalentFields */
+        TalentFields: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Faculty
+             * @default
+             */
+            faculty: string;
+            /**
+             * Grade
+             * @default
+             */
+            grade: string;
+            /**
+             * Introduction
+             * @default
+             */
+            introduction: string;
+            /**
+             * Advantages
+             * @default
+             */
+            advantages: string;
+            /** Tag Ids */
+            tag_ids?: string[];
+            /**
+             * Skill Notes
+             * @default
+             */
+            skill_notes: string;
+            /**
+             * Cooperation Direction
+             * @default
+             */
+            cooperation_direction: string;
+            /**
+             * Desired Roles
+             * @default
+             */
+            desired_roles: string;
+            /** Weekly Hours */
+            weekly_hours?: number | null;
+            /**
+             * Work Mode
+             * @default UNSPECIFIED
+             * @enum {string}
+             */
+            work_mode: "UNSPECIFIED" | "ONLINE" | "OFFLINE" | "EITHER";
+            /** Cooperation State */
+            cooperation_state?: ("LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE") | null;
+            /**
+             * Experience
+             * @default
+             */
+            experience: string;
+            /** Links */
+            links?: components["schemas"]["TalentLink"][];
+            /** File Ids */
+            file_ids?: string[];
+            /** Contacts */
+            contacts?: components["schemas"]["ContactInput"][];
+        };
+        /** TalentLink */
+        TalentLink: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** TalentProfileReadResponse */
+        TalentProfileReadResponse: {
+            profile: components["schemas"]["TalentProfileResponse"] | null;
+        };
+        /** TalentProfileResponse */
+        TalentProfileResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            fields: components["schemas"]["TalentFields"];
+            /** Version */
+            version: number;
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "HIDDEN" | "VISIBLE";
+            /** Public Version */
+            public_version: number;
+            /** Public Contact Channels */
+            public_contact_channels: ("WECHAT" | "QQ" | "EMAIL" | "PHONE")[];
+            /** Public File Ids */
+            public_file_ids: string[];
+            /** Has Unpublished Changes */
+            has_unpublished_changes: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** TalentRevokeContactCommand */
+        TalentRevokeContactCommand: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "WECHAT" | "QQ" | "EMAIL" | "PHONE";
+        };
+        /** TalentSaveCommand */
+        TalentSaveCommand: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Version */
+            version: number;
+            fields: components["schemas"]["TalentFields"];
+        };
+        /** TalentSuggestionCommand */
+        TalentSuggestionCommand: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** TalentSuggestionResponse */
+        TalentSuggestionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "PENDING";
+            /** Replayed */
+            replayed: boolean;
+        };
+        /** TalentTagListResponse */
+        TalentTagListResponse: {
+            /** Items */
+            items: components["schemas"]["TalentTagResponse"][];
+        };
+        /** TalentTagResponse */
+        TalentTagResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** TalentVersionCommand */
+        TalentVersionCommand: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Version */
+            version: number;
+        };
         /**
          * TaskCardResponse
          * @description The §42 Task Card wire shape.
@@ -7401,6 +7701,211 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_api_v1_ie_me_talent_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentProfileReadResponse"];
+                };
+            };
+        };
+    };
+    save_api_v1_ie_me_talent_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentSaveCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_api_v1_ie_me_talent_profile_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentVersionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_api_v1_ie_me_talent_profile_hide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentVersionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_contact_api_v1_ie_me_talent_profile_revoke_contact_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentRevokeContactCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tags_api_v1_ie_talent_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentTagListResponse"];
+                };
+            };
+        };
+    };
+    suggest_api_v1_ie_me_talent_tag_suggestions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentSuggestionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentSuggestionResponse"];
                 };
             };
             /** @description Validation Error */
