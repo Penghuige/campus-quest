@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyRecruitmentForm, normalizeRecruitmentForm, validateRecruitmentForm, toRecruitmentForm, localDeadlineToUtc, initialRecruitmentForm, chooseRecruitmentStage } from "../features/innovation/recruitmentForm";
+import { emptyRecruitmentForm, normalizeRecruitmentForm, validateRecruitmentForm, toRecruitmentForm, localDeadlineToUtc, initialRecruitmentForm, chooseRecruitmentStage, hasRecruitmentChanges, invalidRecruitmentContactChannels } from "../features/innovation/recruitmentForm";
 
 const complete = () => ({ ...emptyRecruitmentForm(), project_title: "模拟项目", direction: "学习", stage: "构想", introduction: "模拟资料", idea_stage: true as const, goal: "验证", initial_plan: "访谈", role_name: "研究伙伴", headcount: "1", duties: "访谈", requirements: "愿意参与", time_commitment: "每周两小时", beginner_friendly: false as const, contacts: [{ channel: "WECHAT" as const, value: "demo_partner" }] });
 test("new roles reuse project context without implied stage choice or contact consent", () => {
@@ -15,8 +15,8 @@ test("a unified stage choice writes coherent idea fields and preserves other sta
   const idea = chooseRecruitmentStage({ ...complete(), stage: "调研中", idea_stage: false }, "true");
   assert.equal(idea.stage, "创意起步"); assert.equal(idea.idea_stage, true);
   const other = chooseRecruitmentStage(idea, "false");
-  assert.equal(other.idea_stage, false); assert.equal(other.stage, "");
-  assert.ok(validateRecruitmentForm(other, true, 0).stage);
+  assert.equal(other.idea_stage, false); assert.equal(other.stage, "调研中");
+  assert.equal(validateRecruitmentForm(other, true, 0).stage, undefined);
   assert.equal(chooseRecruitmentStage({ ...other, stage: "原型验证" }, "false").stage, "原型验证");
   const unselected = chooseRecruitmentStage({ ...other, stage: "原型验证" }, "");
   assert.equal(unselected.idea_stage, ""); assert.equal(unselected.stage, "原型验证");
@@ -25,6 +25,31 @@ test("reading a legacy idea role does not rewrite its saved stage description", 
   const form = toRecruitmentForm(normalizeRecruitmentForm(complete()));
   assert.equal(form.stage, "构想"); assert.equal(form.idea_stage, true);
   assert.equal(normalizeRecruitmentForm(form).stage, "构想");
+});
+test("comparing stage categories preserves each description without putting hidden notes in the request", () => {
+  const other = { ...complete(), idea_stage: false as const, stage: "已访谈十二人，正在验证原型" };
+  const idea = chooseRecruitmentStage(other, "true");
+  const restored = chooseRecruitmentStage(idea, "false");
+  assert.equal(restored.stage, "已访谈十二人，正在验证原型");
+  assert.equal(restored.idea_stage, false);
+  assert.ok(!JSON.stringify(normalizeRecruitmentForm(idea)).includes("已访谈十二人"));
+  const legacy = { ...complete(), stage: "原来的构想说明" };
+  assert.equal(chooseRecruitmentStage(chooseRecruitmentStage(legacy, "false"), "true").stage, "原来的构想说明");
+  assert.equal(chooseRecruitmentStage(chooseRecruitmentStage(idea, ""), "false").stage, "已访谈十二人，正在验证原型");
+});
+test("temporary stage notes do not make unchanged visible content dirty", () => {
+  const original = { ...complete(), idea_stage: false as const, stage: "原型验证" };
+  const restored = chooseRecruitmentStage(chooseRecruitmentStage(original, "true"), "false");
+  assert.equal(hasRecruitmentChanges(restored, original), false);
+  assert.equal(hasRecruitmentChanges({ ...restored, role_name: "新岗位" }, original), true);
+});
+test("invalid selected channels are identified without rejecting valid selected values", () => {
+  assert.deepEqual(invalidRecruitmentContactChannels([
+    { channel: "WECHAT", value: "demo_partner" }, { channel: "QQ", value: "not-a-number" },
+    { channel: "EMAIL", value: "invalid-email" }, { channel: "PHONE", value: "13800138000" },
+  ]), ["QQ", "EMAIL"]);
+  assert.deepEqual(invalidRecruitmentContactChannels([]), []);
+  assert.deepEqual(invalidRecruitmentContactChannels([{ channel: "QQ", value: "12345678" }, { channel: "QQ", value: "23456789" }]), ["QQ"]);
 });
 test("publication cannot call the literal idea stage a different stage", () => {
   const errors = validateRecruitmentForm({ ...complete(), stage: "创意起步", idea_stage: false }, true, 0);

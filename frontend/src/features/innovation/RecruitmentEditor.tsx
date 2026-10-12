@@ -6,7 +6,7 @@ import { AuthField } from "@/features/auth/AuthField";
 import { getAuthEpoch } from "@/lib/accessToken";
 import { BUSINESS_TIME_CONFIG } from "@/lib/time";
 import { createRecruitment, updateRecruitment, getRecruitment, publishRecruitment, closeRecruitment, reopenRecruitment, confirmActiveRecruitment, revokeRecruitmentContact, type RecruitmentDto, type ContactChannel, type RevokeCommand } from "./recruitmentApi";
-import { initialRecruitmentForm, normalizeRecruitmentForm, toRecruitmentForm, validateRecruitmentForm, RECRUITMENT_TEXT_FIELDS, type RecruitmentForm, type RecruitmentProjectDefaults, type RecruitmentFormErrors } from "./recruitmentForm";
+import { initialRecruitmentForm, hasRecruitmentChanges, invalidRecruitmentContactChannels, normalizeRecruitmentForm, toRecruitmentForm, validateRecruitmentForm, RECRUITMENT_TEXT_FIELDS, type RecruitmentForm, type RecruitmentProjectDefaults, type RecruitmentFormErrors } from "./recruitmentForm";
 import { recruitmentError, recruitmentReceiptText, recruitmentStatusText, CONTACT_LABELS, recruitmentDateTime } from "./recruitmentPresentation";
 import { RecruitmentConfirm } from "./RecruitmentConfirm";
 import { RecruitmentStageField } from "./RecruitmentStageField";
@@ -28,7 +28,8 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
   const active = useRef(false); const epoch = useRef(getAuthEpoch());
   const resultRef = useRef<HTMLParagraphElement>(null); const formRef = useRef<HTMLFormElement>(null);
   const original = record ? toRecruitmentForm(record.fields) : newDefaults;
-  const dirty = JSON.stringify(form) !== JSON.stringify(original);
+  const dirty = hasRecruitmentChanges(form, original);
+  const invalidContacts = invalidRecruitmentContactChannels(form.contacts);
   const locked = busy || error?.unknown === true;
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => {
@@ -43,7 +44,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
     const next = validateRecruitmentForm(form, publication, Date.now()); setErrors(next);
     const key = Object.keys(next)[0];
     if (key) {
-      const selector = key === "contacts" ? "#recruit-contacts" : key === "stage" && form.idea_stage !== false ? '[name="idea_stage"]' : `[name="${key}"]`;
+      const selector = key === "contacts" ? invalidContacts.length ? `[name="contact-${invalidContacts[0]}"]` : '[name="contacts"]' : key === "stage" && form.idea_stage !== false ? '[name="idea_stage"]' : `[name="${key}"]`;
       const field = formRef.current?.querySelector<HTMLElement>(selector);
       field?.focus(); field?.scrollIntoView({ block: "center" });
       setMessage(`请修正表单中标出的 ${Object.keys(next).length} 项问题。`); return false;
@@ -120,7 +121,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
         <AuthField name="deadline_local" label="截止时间" hint={`按 ${BUSINESS_TIME_CONFIG.timeZone}（北京时间）填写；留空表示无截止日期，每 30 天提醒确认。`} error={errors.deadline_local} inputProps={{ type: "datetime-local", value: form.deadline_local, onChange: (event) => changeForm({ ...form, deadline_local: event.target.value }) }} />
       </fieldset>
       <fieldset disabled={locked} className="ie-recruitment-fields" id="recruit-contacts" tabIndex={-1} aria-describedby={errors.contacts ? "recruit-contacts-error" : undefined}><legend className="section-title">联系授权</legend><p className="field-hint">至少选择一个渠道；不会自动使用账号绑定资料。发布预览会再次确认授权。</p>
-        {(Object.keys(CONTACT_LABELS) as ContactChannel[]).map((channel) => { const contact = form.contacts.find((item) => item.channel === channel); return <div className="field" key={channel}><label className="field-label"><input type="checkbox" name={channel === "WECHAT" ? "contacts" : undefined} checked={!!contact} onChange={(event) => changeForm({ ...form, contacts: event.target.checked ? [...form.contacts, { channel, value: "" }] : form.contacts.filter((item) => item.channel !== channel) })} /> 授权{CONTACT_LABELS[channel]}</label>{contact ? <AuthField name={`contact-${channel}`} label={CONTACT_LABELS[channel]} inputProps={{ type: "text", autoComplete: "off", value: contact.value, onChange: (event) => changeForm({ ...form, contacts: form.contacts.map((item) => item.channel === channel ? { ...item, value: event.target.value } : item) }) }} /> : null}</div>; })}
+        {(Object.keys(CONTACT_LABELS) as ContactChannel[]).map((channel) => { const contact = form.contacts.find((item) => item.channel === channel); return <div className="field" key={channel}><label className="field-label"><input type="checkbox" name={channel === "WECHAT" ? "contacts" : undefined} checked={!!contact} aria-describedby={errors.contacts && !form.contacts.length ? "recruit-contacts-error" : undefined} onChange={(event) => changeForm({ ...form, contacts: event.target.checked ? [...form.contacts, { channel, value: "" }] : form.contacts.filter((item) => item.channel !== channel) })} /> 授权{CONTACT_LABELS[channel]}</label>{contact ? <AuthField name={`contact-${channel}`} label={CONTACT_LABELS[channel]} error={errors.contacts && invalidContacts.includes(channel) ? errors.contacts : undefined} inputProps={{ type: "text", autoComplete: "off", value: contact.value, onChange: (event) => changeForm({ ...form, contacts: form.contacts.map((item) => item.channel === channel ? { ...item, value: event.target.value } : item) }) }} /> : null}</div>; })}
         {errors.contacts ? <p className="field-error" role="alert" id="recruit-contacts-error">{errors.contacts}</p> : null}
       </fieldset>
       {error ? <div className="alert alert-error" role="alert"><p>{error.message}</p>{error.unknown ? <Button variant="secondary" disabled={busy} onClick={() => { if (pending.current) void run(pending.current); }}>重试原请求</Button> : error.reload && record ? <Button variant="secondary" disabled={busy} onClick={() => void readLatest()}>读取最新版本（保留当前输入）</Button> : null}</div> : null}

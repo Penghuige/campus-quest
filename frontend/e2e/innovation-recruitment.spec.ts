@@ -71,9 +71,30 @@ test("R3 UX: new roles reuse project context and have one explicit stage choice"
   await expect(editor.getByLabel("授权微信", { exact: true })).not.toBeChecked();
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
   await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveValue("调研中");
+  await editor.getByLabel("具体阶段", { exact: true }).fill("已经访谈十二人，正在验证原型");
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
   await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveCount(0);
   await expect(editor.getByLabel("创意起步", { exact: true })).toHaveCount(0);
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveValue("已经访谈十二人，正在验证原型");
+});
+
+for (const invalid of ["none", "QQ"] as const) test(`R3 UX: contact validation focuses the editable target (${invalid})`, async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await editor.getByLabel("授权微信", { exact: true }).uncheck();
+  if (invalid === "QQ") {
+    await editor.getByLabel("授权QQ", { exact: true }).check();
+    await editor.getByLabel("QQ", { exact: true }).fill("not-a-number");
+  }
+  await editor.getByRole("button", { name: "预览发布招募", exact: true }).click();
+  if (invalid === "none") await expect(editor.getByLabel("授权微信", { exact: true })).toBeFocused();
+  else {
+    const input = editor.getByLabel("QQ", { exact: true });
+    await expect(input).toBeFocused(); await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription(/有效/);
+  }
 });
 
 test("R3 UX: an unsaved preview explains the next step in the action viewport", async ({ page }) => {

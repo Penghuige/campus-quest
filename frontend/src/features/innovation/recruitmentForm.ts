@@ -22,6 +22,8 @@ export type RecruitmentForm = Record<TextKey, string> & {
   beginner_friendly: boolean | "";
   deadline_local: string;
   contacts: { channel: ContactChannel; value: string }[];
+  /** Temporary alternative descriptions; excluded from API fields and dirty checks. */
+  stage_notes?: Partial<Record<"idea" | "other", string>>;
 };
 export type RecruitmentFormErrors = Partial<Record<keyof RecruitmentForm, string>>;
 export function emptyRecruitmentForm(): RecruitmentForm {
@@ -34,9 +36,27 @@ export function initialRecruitmentForm(project?: RecruitmentProjectDefaults): Re
   return { ...form, project_title: project.title, direction: project.direction, stage: project.stage, introduction: project.summary };
 }
 export function chooseRecruitmentStage(form: RecruitmentForm, choice: string): RecruitmentForm {
-  if (choice === "true") return { ...form, idea_stage: true, stage: "创意起步" };
-  if (choice === "false") return { ...form, idea_stage: false, stage: form.idea_stage === true ? "" : form.stage };
-  return { ...form, idea_stage: "" };
+  const notes = { ...form.stage_notes };
+  if (form.idea_stage === true) notes.idea = form.stage;
+  else if (form.idea_stage === false || !form.stage_notes) notes.other = form.stage;
+  if (choice === "true") return { ...form, idea_stage: true, stage: notes.idea ?? "创意起步", stage_notes: notes };
+  if (choice === "false") return { ...form, idea_stage: false, stage: notes.other ?? "", stage_notes: notes };
+  return { ...form, idea_stage: "", stage_notes: notes };
+}
+export function hasRecruitmentChanges(form: RecruitmentForm, original: RecruitmentForm): boolean {
+  const rawFields = (value: RecruitmentForm) => JSON.stringify(value, (key, field: unknown) => key === "stage_notes" ? undefined : field);
+  return rawFields(form) !== rawFields(original);
+}
+export function invalidRecruitmentContactChannels(contacts: RecruitmentForm["contacts"]): ContactChannel[] {
+  const seen = new Set<ContactChannel>();
+  const invalid = new Set<ContactChannel>();
+  for (const { channel, value } of contacts) {
+    const trimmed = value.trim();
+    const valid = channel === "WECHAT" ? /^[A-Za-z][A-Za-z0-9_-]{5,19}$/.test(trimmed) : channel === "QQ" ? /^[1-9][0-9]{4,19}$/.test(trimmed) : channel === "EMAIL" ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) : /^(?:\+?[0-9][0-9 ()-]{5,24})$/.test(trimmed);
+    if (!valid || codePointCount(trimmed) > 254 || seen.has(channel)) invalid.add(channel);
+    seen.add(channel);
+  }
+  return [...invalid];
 }
 function wallParts(instant: number): number[] {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TIME_CONFIG.timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(instant);
@@ -89,12 +109,6 @@ export function validateRecruitmentForm(form: RecruitmentForm, publication: bool
     catch { errors.deadline_local = "请选择有效的截止时间。"; }
   }
   if (publication && !form.contacts.length) errors.contacts = "请至少选择并授权一个联系方式。";
-  const seen = new Set<ContactChannel>();
-  for (const { channel, value } of form.contacts) {
-    const trimmed = value.trim();
-    const valid = channel === "WECHAT" ? /^[A-Za-z][A-Za-z0-9_-]{5,19}$/.test(trimmed) : channel === "QQ" ? /^[1-9][0-9]{4,19}$/.test(trimmed) : channel === "EMAIL" ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) : /^(?:\+?[0-9][0-9 ()-]{5,24})$/.test(trimmed);
-    if (!valid || codePointCount(trimmed) > 254 || seen.has(channel)) errors.contacts = "请填写有效的授权联系值；每类渠道只选一个。";
-    seen.add(channel);
-  }
+  if (invalidRecruitmentContactChannels(form.contacts).length) errors.contacts = "请填写有效的授权联系值；每类渠道只选一个。";
   return errors;
 }
