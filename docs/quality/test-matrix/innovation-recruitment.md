@@ -26,6 +26,8 @@ Expectations recorded from approved R3 spec before locating implementation tests
 
 | UX5 | 2026-10-12 review fix | No selected channel focuses the first authorization checkbox; invalid selected values focus their own editable control with aria-invalid and associated error | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
 
+| UX6 | Existing §8 first-class error recovery | Failed qualification read shows a recoverable error and the visible Retry restores a usable owner list; one bounded UI retry never bypasses permission assertions or persistent failure | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+
 ## 缺口明细
 
 - No remaining spec coverage gaps. Covered means an executable assertion exists; actual gate results are recorded separately for the current source.

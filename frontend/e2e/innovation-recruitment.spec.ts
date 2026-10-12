@@ -18,6 +18,16 @@ test("R3: account switching preserves the shared student's resumable session", a
   } finally { await context.close(); }
 });
 
+async function waitForRecruitmentList(page: Page) {
+  const create = page.getByRole("button", { name: "新建招募岗位", exact: true });
+  const retry = page.getByRole("alert").filter({ hasText: "服务暂时不可用，请稍后重试" }).getByRole("button", { name: "重试", exact: true });
+  await expect.poll(async () => await create.isVisible() || await retry.isVisible(), { timeout: 15_000, message: "Recruitment setup reaches a usable list or its explicit service-error recovery" }).toBe(true);
+  // One user-visible retry of a failed read, never a bypass of owner permissions
+  // or a blanket test retry. Persistent service failure still fails below.
+  if (await retry.isVisible()) await retry.click();
+  await expect(create).toBeVisible({ timeout: 15_000 });
+}
+
 async function prepare(page: Page, projectFields?: { title: string; summary: string; direction: string; stage: string }) {
   await ensureStudentLogin(page);
   await page.goto(`${BASE_URL}/profile/owner-profile`);
@@ -38,6 +48,7 @@ async function prepare(page: Page, projectFields?: { title: string; summary: str
   expect(project.status()).toBe(201);
   const parent = await project.json();
   await page.goto(`${BASE_URL}/profile/project-drafts/${parent.id}/recruitments`);
+  await waitForRecruitmentList(page);
   return parent.id as string;
 }
 async function fillRole(page: Page) {
@@ -77,6 +88,25 @@ test("R3 UX: new roles reuse project context and have one explicit stage choice"
   await expect(editor.getByLabel("创意起步", { exact: true })).toHaveCount(0);
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
   await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveValue("已经访谈十二人，正在验证原型");
+});
+
+test("R3 UX: a failed qualification read recovers through the visible retry action", async ({ page }) => {
+  await prepare(page);
+  let failures = 0;
+  const qualificationPath = "**/api/v1/ie/me/owner-qualification";
+  await page.route(qualificationPath, async (route) => {
+    if (route.request().method() === "GET") {
+      failures++;
+      await route.fulfill({ status: 503, json: { error: { code: "HTTP_ERROR", message: "服务暂时不可用，请稍后重试" } } });
+    } else await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByRole("alert").filter({ hasText: "服务暂时不可用，请稍后重试" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "新建招募岗位", exact: true })).toHaveCount(0);
+  await page.unroute(qualificationPath);
+  await waitForRecruitmentList(page);
+  expect(failures).toBeGreaterThan(0);
+  await expect(page.getByRole("region", { name: "招募岗位列表" })).toBeVisible();
 });
 
 test("R3 UX: an unfinished legacy idea draft can select and save its phase", async ({ page }) => {
