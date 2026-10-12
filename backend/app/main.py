@@ -48,6 +48,7 @@ from app.modules.innovation import (
 )
 from app.modules.innovation import review_router as innovation_review_router
 from app.modules.innovation import router as innovation_router
+from app.modules.innovation import talent_file_router as innovation_talent_file_router
 from app.modules.innovation import talent_router as innovation_talent_router
 from app.modules.innovation.privacy import InnovationPrivacyMiddleware
 from app.modules.notifications import router as notifications_router
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(identity_staff_router.router, prefix="/api/v1")
     app.include_router(innovation_router.router, prefix="/api/v1")
     app.include_router(innovation_talent_router.router, prefix="/api/v1")
+    app.include_router(innovation_talent_file_router.router, prefix="/api/v1")
     app.include_router(innovation_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_public_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_owner_router.router, prefix="/api/v1")

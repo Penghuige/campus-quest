@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -148,6 +149,9 @@ class TalentFile(Base):
     profile_id: Mapped[UUID] = mapped_column(ForeignKey("ie_talent_profiles.id"))
     creation_request_id: Mapped[UUID]
     creation_fingerprint: Mapped[str] = mapped_column(String(64))
+    upload_url: Mapped[str] = mapped_column(Text)
+    upload_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    client_headers: Mapped[dict[str, str]] = mapped_column(JSONB)
     name: Mapped[str] = mapped_column(String(200))
     object_key: Mapped[str] = mapped_column(String(1024))
     content_type: Mapped[str] = mapped_column(String(100))

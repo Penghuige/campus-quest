@@ -76,28 +76,29 @@
 - `lock_owned(db, *, actor, viewer: Actor | None=None) -> TalentProfile`、`response(db, row) -> TalentProfileResponse`、`replace_public(db, row, *, fields: TalentFields) -> None` 供 Task 2/3 使用。身份排序锁、聚合版本、公开版本与快照全在同一服务事务；文件引用归属/READY/撤回重新锁查。
 - TalentProfileResponse 包含 id/fields/version/visibility/public_version/public_contact_channels/public_file_ids/has_unpublished_changes/updated_at；不把 public_revision_id 传前端。模型提前定义 TalentFile 使发布验证真实引用，无文件扫描占位。
 
-- [ ] Step 1：按 spec 写矩阵预测（R4-A01/02/04/07/09），建立真实普通学生/Clock/客户端 helper，无负责人资格；测试 `test_new_student_can_publish_without_work_or_contact`，assert 未建档 GET=200/profile:null、保存后 HIDDEN、发布后 VISIBLE，无 OwnerQualification。
-- [ ] Step 2：运行 `uv run pytest tests/integration/innovation/test_talent_lifecycle.py -q`。Expected: 人才接口缺失而预期 200 得到 404 的业务 RED，日志记录；连接失败不是 RED。
-- [ ] Step 3：建立上述模型/确定 Alembic 迁移/DTO/服务/薄路由与真实 main 注册；新增标签固定数据不覆盖存量；不修改旧迁移。以 UUID 公开 ID 和唯一 owner_user_id，公开 revision 复合 FK 保证归属。
-- [ ] Step 4：增加 schema 与生命周期 RED→GREEN：单字超长、Unicode、重复/无效标签、links http/https、同 key 改载荷、保存不替换旧版、关闭重放旧发布不复活、暂不接洽仍开、撤回最后联系人仍开、治理限制不被开启清除、审核失败无部分写入。字段断言使用 spec §3 精确边界。
-- [ ] Step 5：真实独立连接并发 `test_one_profile_creation_race`、`test_publish_hide_version_race`、`test_revoke_publish_race`、`test_account_disabled_before_publication`；用屏障和 Clock，无 sleep 猜测；断言一次有效提交或身份拒绝、无孤立快照/命令。
-- [ ] Step 6：隔离库 upgrade→downgrade 0034→re-upgrade→alembic check；运行 `uv run pytest tests/unit tests/integration/innovation/test_talent_lifecycle.py tests/integration/innovation/test_talent_races.py -q` 和后端 ruff format/check、mypy；Expected: 全退出 0；生成双树契约并验证类型，提交 `feat(innovation): add consent-based talent profiles`。
+- [x] Step 1：按 spec 写矩阵预测（R4-A01/02/04/07/09），建立真实普通学生/Clock/客户端 helper，无负责人资格；测试 `test_new_student_can_publish_without_work_or_contact`，assert 未建档 GET=200/profile:null、保存后 HIDDEN、发布后 VISIBLE，无 OwnerQualification。
+- [x] Step 2：运行 `uv run pytest tests/integration/innovation/test_talent_lifecycle.py -q`。Expected: 人才接口缺失而预期 200 得到 404 的业务 RED，日志记录；连接失败不是 RED。
+- [x] Step 3：建立上述模型/确定 Alembic 迁移/DTO/服务/薄路由与真实 main 注册；新增标签固定数据不覆盖存量；不修改旧迁移。以 UUID 公开 ID 和唯一 owner_user_id，公开 revision 复合 FK 保证归属。
+- [x] Step 4：增加 schema 与生命周期 RED→GREEN：单字超长、Unicode、重复/无效标签、links http/https、同 key 改载荷、保存不替换旧版、关闭重放旧发布不复活、暂不接洽仍开、撤回最后联系人仍开、治理限制不被开启清除、审核失败无部分写入。字段断言使用 spec §3 精确边界。
+- [x] Step 5：真实独立连接并发 `test_one_profile_creation_race`、`test_publish_hide_version_race`、`test_revoke_publish_race`、`test_account_disabled_before_publication`；用屏障和 Clock，无 sleep 猜测；断言一次有效提交或身份拒绝、无孤立快照/命令。
+- [x] Step 6：隔离库 upgrade→downgrade 0034→re-upgrade→alembic check；运行 `uv run pytest tests/unit tests/integration/innovation/test_talent_lifecycle.py tests/integration/innovation/test_talent_races.py -q` 和后端 ruff format/check、mypy；Expected: 全退出 0；生成双树契约并验证类型，提交 `feat(innovation): add consent-based talent profiles`。
 
 ### Task 2: 人才作品上传、扫描与本人撤回
 
-**Files:** Create `talent_file_schemas.py`、`talent_file_service.py`、`talent_file_router.py`（innovation module）；Modify `talent_service.py`、`main.py`、`backend/app/integrations/object_storage.py`、`object_storage_s3.py`、`backend/tests/fakes/integrations.py`；Create `backend/tests/integration/innovation/test_talent_files.py`、`test_talent_file_races.py`、`backend/tests/unit/innovation/test_talent_file_schemas.py`；Extend storage adapter tests/matrix/contracts。
+**Files:** Create `talent_file_schemas.py`、`talent_file_service.py`、`talent_file_router.py`（innovation module）；Modify `talent_models.py`、`talent_service.py`、`main.py`、`backend/app/integrations/object_storage.py`、`object_storage_s3.py`、`backend/tests/fakes/integrations.py`；Create `backend/alembic/versions/0036_talent_file_upload_contract.py`、`backend/tests/integration/innovation/test_talent_files.py`、`test_talent_file_races.py`、`backend/tests/unit/innovation/test_talent_file_schemas.py`；Extend storage adapter tests/matrix/contracts。
 
 **Interfaces:**
 
-- `ObjectStorage.create_talent_file_upload_url(*, profile_id: UUID, content_type: str, content_length: int, expires_in: int) -> UploadUrl`；真实 adapter 生成独立 talent/<profile>/<random> key，write-once、长度/MIME pinning；现有 achievement 通道不改语义。
+- `ObjectStorage.create_talent_file_upload_url(*, profile_id: UUID, content_type: str, content_length: int, expires_in: timedelta) -> UploadUrl`；沿用 storage 端口的 timedelta 契约，真实 adapter 生成独立 talent/<profile>/<random> key，write-once、长度/MIME pinning；现有 achievement 通道不改语义。
+- TalentFile 增加私有 upload_url/upload_expires_at/client_headers；同 key 重放原签名契约，不续期、不重新占库存/换 key。过期凭据不阻止检查已上传对象；缺字节且过期时明确移除后重选。0036 加文件固定元数据和永久撤回/移除的 PG 保护，不修改已提交的 0035。
 - `TalentFileService(clock, storage: ObjectStorage, scanner: EvidenceScanner, audit=None)`：`create_intent(db, *, actor, payload: TalentFileIntentCreate, context) -> tuple[TalentFileIntentResponse,bool]`、`list_owned`、`complete(db, *, actor, file_id, context)`、`remove/revoke(db, *, actor, file_id, payload: TalentFileCommand, context) -> TalentActionResult`、`read_owned_content(...) -> StoredObject`。
 - file intent 输入 request_id/name/content_type/size；公开 file metadata 仅 id/name/content_type/size；private file DTO 另有 state/failure_code/version/removed/revoked；签名 URL 仅 intent 响应，日志禁止值。
 
-- [ ] Step 1：`test_unqualified_student_upload_is_private_until_selected` assert 本人真实申请 201、普通档案发布无文件仍成功、PENDING 选中发布 409、READY 后明确发布才引用；先运行 `uv run pytest tests/integration/innovation/test_talent_files.py -q`。Expected: 文件路由 404 的业务 RED。
-- [ ] Step 2：新增独立 storage 端口和两 adapter 实现及生产组合；复用检查 primitive，不引用成果 EvidenceService._owned；有界 I/O 不持锁，token/150s/140s fencing，不使用 presigned GET。
-- [ ] Step 3：追加并逐个 RED→GREEN：10MiB/10MiB+1、空字节、伪类型/病毒/服务不可用、过期上传凭据后完成既有对象、412 检查确认、重复 key 不重复占库存、5 公开+5 替换/11th拒绝、公开文件不能普通 remove、撤回本人仍能读/不能再发布、移除无内容、上传凭据不能复活记录。
-- [ ] Step 4：`test_late_scan_cannot_resurrect_removed_file`、`test_scan_lease_fences_previous_attempt`、`test_owned_read_rechecks_account_after_storage_io` 用屏障/真实 PG；断言旧 token 被丢弃、身份/撤回阻止最终输出、扫描失败不标 READY。
-- [ ] Step 5：header injection 文件名与安全 disposition、审计 failure 回滚/不给内容；测试真实 MinIO write-once/MIME/size 与 ClamAV scanner smoke，检查生产 composition。运行 `uv run pytest tests/unit tests/integration/innovation/test_talent_files.py tests/integration/innovation/test_talent_file_races.py tests/integration/test_evidence_scanner_smoke.py -q`；Expected: 全退出0；ruff/mypy/契约再生成，提交 `feat(innovation): add private checked talent files`。
+- [x] Step 1：`test_unqualified_student_upload_is_private_until_selected` assert 本人真实申请 201、普通档案发布无文件仍成功、PENDING 选中发布 409、READY 后明确发布才引用；先运行 `uv run pytest tests/integration/innovation/test_talent_files.py -q`。Expected: 文件路由 404 的业务 RED。
+- [x] Step 2：新增独立 storage 端口和两 adapter 实现及生产组合；复用检查 primitive，不引用成果 EvidenceService._owned；有界 I/O 不持锁，token/150s/140s fencing，不使用 presigned GET。
+- [x] Step 3：追加并逐个 RED→GREEN：10MiB/10MiB+1、空字节、伪类型/病毒/服务不可用、过期上传凭据后完成既有对象、412 检查确认、重复 key 不重复占库存、5 公开+5 替换/11th拒绝、公开文件不能普通 remove、撤回本人仍能读/不能再发布、移除无内容、上传凭据不能复活记录。
+- [x] Step 4：`test_late_scan_cannot_resurrect_removed_file`、`test_scan_lease_fences_previous_attempt`、`test_owned_read_rechecks_account_after_storage_io` 用屏障/真实 PG；断言旧 token 被丢弃、身份/撤回阻止最终输出、扫描失败不标 READY。
+- [x] Step 5：header injection 文件名与安全 disposition、审计 failure 回滚/不给内容；测试真实 MinIO write-once/MIME/size 与 ClamAV scanner smoke，检查生产 composition。运行 `uv run pytest tests/unit tests/integration/innovation/test_talent_files.py tests/integration/innovation/test_talent_file_races.py tests/integration/test_evidence_scanner_smoke.py -q`；Expected: 全退出0；ruff/mypy/契约再生成，提交 `feat(innovation): add private checked talent files`。
 
 ### Task 3: 校内人才查找、授权联系和文件读取
 

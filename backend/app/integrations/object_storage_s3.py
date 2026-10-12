@@ -271,6 +271,18 @@ class S3ObjectStorage:
             object_key, content_type, expires_in, content_length
         )
 
+    def create_talent_file_upload_url(
+        self,
+        *,
+        profile_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        return self._presign_upload(
+            f"talent/{profile_id}/{uuid4()}", content_type, expires_in, content_length
+        )
+
     def create_evidence_upload_url(
         self,
         *,

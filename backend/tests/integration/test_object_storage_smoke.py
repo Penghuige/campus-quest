@@ -73,6 +73,38 @@ if os.environ.get("CQ_S3_SMOKE") != "1":
 _TTL = timedelta(minutes=5)
 
 
+def test_talent_file_private_namespace_and_signed_write_once_contract() -> None:
+    storage = S3ObjectStorage(get_settings())
+    profile_id = uuid.uuid4()
+    body = b"%PDF-1.4\nMock talent proof.\n%%EOF"
+    upload = storage.create_talent_file_upload_url(
+        profile_id=profile_id,
+        content_type="application/pdf",
+        content_length=len(body),
+        expires_in=_TTL,
+    )
+    prefix = f"talent/{profile_id}/"
+    assert upload.object_key.startswith(prefix)
+    uuid.UUID(upload.object_key[len(prefix) :])
+    assert upload.pinned_content_length == len(body)
+    assert upload.client_headers == {
+        "If-None-Match": "*",
+        "Content-Type": "application/pdf",
+    }
+    assert _rejected_put(upload.url, body, content_type="text/plain") == 403
+    assert _rejected_put(upload.url, body + b"!", content_type="application/pdf") == 403
+    assert storage.head_object(object_key=upload.object_key) is None
+    assert _put(upload, body) == 200
+    try:
+        assert _rejected_put(upload.url, body, content_type="application/pdf") == 412
+        stored = storage.read_bounded_object(
+            object_key=upload.object_key, max_bytes=len(body)
+        )
+        assert stored.content == body and stored.content_type == "application/pdf"
+    finally:
+        storage.delete_object(object_key=upload.object_key)
+
+
 @pytest.fixture
 def storage() -> ObjectStorage:
     return S3ObjectStorage(get_settings())

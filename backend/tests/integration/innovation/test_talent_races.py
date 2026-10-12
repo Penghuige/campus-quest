@@ -18,6 +18,7 @@ from app.modules.identity.events import Actor
 from app.modules.identity.models import User, UserSession
 from app.modules.innovation.talent_models import (
     TalentActionReceipt,
+    TalentFile,
     TalentProfile,
     TalentRevision,
     TalentRevisionFile,
@@ -60,7 +61,12 @@ async def committed(db_engine, clock):
                 .where(TalentProfile.owner_user_id == user_id)
                 .values(visibility="HIDDEN", public_revision_id=None)
             )
-            for model in (TalentRevisionFile, TalentRevision, TalentActionReceipt):
+            for model in (
+                TalentRevisionFile,
+                TalentRevision,
+                TalentFile,
+                TalentActionReceipt,
+            ):
                 table = model.__tablename__
                 await db.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
                 condition = (

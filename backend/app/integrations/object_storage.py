@@ -108,6 +108,17 @@ class ObjectStorage(Protocol):
     """Port for presigned uploads, metadata checks, signed downloads,
     worker-side object reads, and retention deletes."""
 
+    def create_talent_file_upload_url(
+        self,
+        *,
+        profile_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        """Private write-once talent file; adapter-generated independent key."""
+        ...
+
     def create_evidence_upload_url(
         self,
         *,
