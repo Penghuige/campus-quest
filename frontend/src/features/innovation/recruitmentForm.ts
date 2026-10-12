@@ -26,6 +26,13 @@ export type RecruitmentForm = Record<TextKey, string> & {
   stage_notes?: Partial<Record<"idea" | "other", string>>;
 };
 export type RecruitmentFormErrors = Partial<Record<keyof RecruitmentForm, string>>;
+export const RECRUITMENT_CONTACT_INPUTS = {
+  WECHAT: { type: "text", inputMode: "text", hint: "6～20 个字符，须以字母开头，可含字母、数字、下划线和减号。", error: "请输入有效的微信号：6～20 个字符，须以字母开头，可含字母、数字、下划线和减号。" },
+  QQ: { type: "text", inputMode: "numeric", hint: "5～20 位数字，首位不能为 0。", error: "请输入有效的 QQ 号：5～20 位数字，首位不能为 0。" },
+  EMAIL: { type: "email", inputMode: "email", hint: "邮箱格式为名称@域名，例如 qa@example.invalid；最多 254 个字符。", error: "请输入有效的邮箱，格式为名称@域名，例如 qa@example.invalid；最多 254 个字符。" },
+  PHONE: { type: "tel", inputMode: "tel", hint: "手机号以数字开头，可在最前加 +；号码部分共 6～25 个字符，可含数字、空格、括号和减号。", error: "请输入有效的手机号：以数字开头，可在最前加 +；号码部分共 6～25 个字符，可含数字、空格、括号和减号。" },
+} as const;
+export function isRecruitmentIdeaField(key: TextKey): boolean { return key === "goal" || key === "initial_plan"; }
 export function emptyRecruitmentForm(): RecruitmentForm {
   return { project_title: "", direction: "", stage: "", introduction: "", goal: "", initial_plan: "", role_name: "", duties: "", requirements: "", time_commitment: "", headcount: "", idea_stage: "", beginner_friendly: "", deadline_local: "", contacts: [] };
 }
@@ -109,6 +116,7 @@ export function validateRecruitmentForm(form: RecruitmentForm, publication: bool
     catch { errors.deadline_local = "请选择有效的截止时间。"; }
   }
   if (publication && !form.contacts.length) errors.contacts = "请至少选择并授权一个联系方式。";
-  if (invalidRecruitmentContactChannels(form.contacts).length) errors.contacts = "请填写有效的授权联系值；每类渠道只选一个。";
+  const invalidContacts = invalidRecruitmentContactChannels(form.contacts);
+  if (invalidContacts.length) errors.contacts = invalidContacts.map((channel) => RECRUITMENT_CONTACT_INPUTS[channel].error).join(" ");
   return errors;
 }

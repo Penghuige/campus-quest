@@ -56,6 +56,17 @@ test("invalid selected channels are identified without rejecting valid selected 
   assert.deepEqual(invalidRecruitmentContactChannels([]), []);
   assert.deepEqual(invalidRecruitmentContactChannels([{ channel: "QQ", value: "12345678" }, { channel: "QQ", value: "23456789" }]), ["QQ"]);
 });
+
+test("contact validation explains the invalid channel format so it can be corrected", () => {
+  for (const [channel, value, rule] of [
+    ["QQ", "abc", /5～20 位数字.*不能为 0/],
+    ["WECHAT", "12", /6～20.*字母开头/],
+    ["EMAIL", "invalid", /邮箱.*@/],
+    ["PHONE", "invalid", /手机.*数字/],
+  ] as const) {
+    assert.match(validateRecruitmentForm({ ...complete(), contacts: [{ channel, value }] }, false, 0).contacts!, rule);
+  }
+});
 test("publication cannot call the literal idea stage a different stage", () => {
   const errors = validateRecruitmentForm({ ...complete(), stage: "创意起步", idea_stage: false }, true, 0);
   assert.ok(errors.stage);

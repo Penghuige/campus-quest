@@ -28,6 +28,14 @@ Expectations recorded from approved R3 spec before locating implementation tests
 
 | UX6 | Existing §8 first-class error recovery | Failed qualification read shows a recoverable error and the visible Retry restores a usable owner list; one bounded UI retry never bypasses permission assertions or persistent failure | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
 
+| F01 | 2026-10-12 acceptance fix | Same-tab route recovery retains unsaved fields without an API write; explicit discard and all auth epoch transitions clear private values; unknown commands retain precedence | `frontend/src/__tests__/innovation-recruitment-recovery.test.ts` + `frontend/src/__tests__/innovation-recruitment-pending.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F02 | 2026-10-12 acceptance fix | Missing or forbidden owner workspace uses a neutral 404 explanation and return action; network/5xx keeps Retry | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F03 | 2026-10-12 acceptance fix | Idea-only fields hide in other stages and preview, preserve input across comparisons, and reappear with focus if stored input exceeds the unchanged server bounds | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F04 | 2026-10-12 acceptance fix | Channel-specific format hints/errors match the existing validator; QQ numeric keyboard, email/tel semantics; invalid fields receive their own error rather than a repeated generic group error | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F05 | 2026-10-12 acceptance fix | New/existing editor headings receive focus; return restores create/edit action; contact success announces result availability without reading contact values aloud | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F06 | 2026-10-12 acceptance fix | False beginner flag explicitly says 不接受零基础 on public surfaces | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F07 | 2026-10-12 acceptance fix | Closed roles never display the next 30-day confirmation reminder | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+
 ## 缺口明细
 
 - No remaining spec coverage gaps. Covered means an executable assertion exists; actual gate results are recorded separately for the current source.

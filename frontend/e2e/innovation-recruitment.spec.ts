@@ -64,12 +64,42 @@ test("R3 acceptance: contact correction explains formats and provides suitable k
   await expect(editor.getByLabel("手机", { exact: true })).toHaveAttribute("type", "tel");
 });
 
+test("R3 acceptance: hidden over-limit idea content remains correctable", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByLabel("阶段目标", { exact: true }).fill("长".repeat(2001));
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await editor.getByLabel("具体阶段", { exact: true }).fill("原型验证");
+  await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveCount(0);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  const goal = editor.getByLabel("阶段目标", { exact: true });
+  await expect(goal).toBeFocused();
+  await expect(goal).toHaveAccessibleDescription(/最多 2000 个字符/);
+  await goal.fill("已修正的临时目标");
+  await expect(goal).toHaveCount(0);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
+  await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveValue("已修正的临时目标");
+});
+
 test("R3 acceptance: editor entry and list return provide keyboard focus", async ({ page }) => {
   await prepare(page);
   await page.getByRole("button", { name: "新建招募岗位", exact: true }).press("Enter");
   await expect(page.getByRole("heading", { name: "新建招募岗位", exact: true })).toBeFocused();
   await page.getByRole("button", { name: "返回招募列表", exact: true }).click();
   await expect(page.getByRole("button", { name: "新建招募岗位", exact: true })).toBeFocused();
+});
+
+test("R3 acceptance: returning from an existing editor restores its edit action", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await editor.getByRole("button", { name: "返回招募列表", exact: true }).click();
+  const edit = page.getByRole("button", { name: "编辑招募：研究伙伴", exact: true });
+  await edit.press("Enter");
+  await expect(editor.getByRole("heading", { name: "编辑招募岗位", exact: true })).toBeFocused();
+  await editor.getByRole("button", { name: "返回招募列表", exact: true }).click();
+  await expect(edit).toBeFocused();
 });
 
 test("R3 acceptance: public labels and contact feedback stay accurate through closure", async ({ page }) => {
@@ -82,17 +112,17 @@ test("R3 acceptance: public labels and contact feedback stay accurate through cl
   const browsing = await page.context().newPage();
   try {
     await browsing.goto(`${BASE_URL}${href}`);
-    await expect(browsing.getByRole("article", { name: "校内招募详情" })).toContainText("不接受零基础");
+    await expect.soft(browsing.getByRole("article", { name: "校内招募详情" })).toContainText("不接受零基础");
     const contacts = browsing.getByRole("region", { name: "授权联系方式" });
     await contacts.getByRole("button", { name: "查看联系方式", exact: true }).click();
     const announcement = contacts.getByRole("status", { name: "联系读取结果", exact: true });
-    await expect(announcement).toHaveText("联系方式已读取，请查看下方已授权渠道。");
-    await expect(announcement).not.toContainText("demo_partner");
+    await expect.soft(announcement).toHaveText("联系方式已读取，请查看下方已授权渠道。");
+    await expect.soft(announcement).not.toContainText("demo_partner");
     await expect(contacts).toContainText("demo_partner");
     await editor.getByRole("button", { name: "关闭招募", exact: true }).click();
     await page.getByRole("dialog").getByRole("button", { name: "确认关闭", exact: true }).click();
     await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
-    await expect(editor).not.toContainText("下次提醒");
+    await expect.soft(editor).not.toContainText("下次提醒");
   } finally { await browsing.close(); }
 });
 
