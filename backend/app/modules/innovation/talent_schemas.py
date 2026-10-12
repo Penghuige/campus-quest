@@ -169,3 +169,84 @@ class TalentSuggestionResponse(BaseModel):
     id: UUID
     status: Literal["PENDING"]
     replayed: bool
+
+
+class TalentQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    q: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] = ""
+    tag_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    cooperation_state: CooperationState | None = None
+    limit: int = Field(default=20, ge=1, le=50)
+    offset: int = Field(default=0, ge=0)
+
+    @field_validator("tag_ids", mode="before")
+    @classmethod
+    def deduplicate_tags(cls, value: list[UUID]) -> list[UUID]:
+        return list(dict.fromkeys(value))
+
+
+class PublicTalentContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    faculty: str
+    grade: str
+    introduction: str
+    advantages: str
+    tags: list[TalentTagResponse]
+    skill_notes: str
+    cooperation_direction: str
+    desired_roles: str
+    weekly_hours: int | None
+    work_mode: WorkMode
+    cooperation_state: CooperationState
+    experience: str
+    links: list[TalentLink]
+
+
+class PublicTalentFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    name: str
+    content_type: Literal["application/pdf", "image/png", "image/jpeg"]
+    size: int
+
+
+class PublicTalentSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    name: str
+    faculty: str
+    grade: str
+    introduction: str
+    advantages: str
+    tags: list[TalentTagResponse]
+    cooperation_state: CooperationState
+    public_version: int
+    published_at: datetime
+
+
+class PublicTalentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    content: PublicTalentContent
+    files: list[PublicTalentFile]
+    contact_channels: list[ContactChannel]
+    public_version: int
+    published_at: datetime
+
+
+class PublicTalentListResponse(BaseModel):
+    items: list[PublicTalentSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+class TalentPublicReadCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_public_version: Annotated[int, Field(strict=True, ge=1)]
+
+
+class TalentContactsResponse(BaseModel):
+    public_version: int
+    contacts: list[ContactInput]

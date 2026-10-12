@@ -70,6 +70,7 @@ class ErrorCode(StrEnum):
     OTP_RESEND_COOLDOWN = "OTP_RESEND_COOLDOWN"
     RATE_LIMITED = "RATE_LIMITED"
     RECRUITMENT_CONTACTS_UNAVAILABLE = "RECRUITMENT_CONTACTS_UNAVAILABLE"
+    TALENT_CONTACTS_UNAVAILABLE = "TALENT_CONTACTS_UNAVAILABLE"
     # Registered in interfaces.md (not a §29-listed name; Plan 08 T9): the
     # generic business code for 409 state/conflict refusals — concurrent
     # ownership (an unfinished cleanup deletion claim), replay-integrity

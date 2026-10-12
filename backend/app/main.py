@@ -40,6 +40,9 @@ from app.modules.innovation import (
     public_recruitment_router as innovation_public_recruitment_router,
 )
 from app.modules.innovation import (
+    public_talent_router as innovation_public_talent_router,
+)
+from app.modules.innovation import (
     qualification_router as innovation_qualification_router,
 )
 from app.modules.innovation import recruitment_router as innovation_recruitment_router
@@ -91,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(innovation_router.router, prefix="/api/v1")
     app.include_router(innovation_talent_router.router, prefix="/api/v1")
     app.include_router(innovation_talent_file_router.router, prefix="/api/v1")
+    app.include_router(innovation_public_talent_router.router, prefix="/api/v1")
     app.include_router(innovation_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_public_recruitment_router.router, prefix="/api/v1")
     app.include_router(innovation_owner_router.router, prefix="/api/v1")

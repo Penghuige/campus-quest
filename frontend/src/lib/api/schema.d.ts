@@ -683,6 +683,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ie/talents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Visible */
+        get: operations["list_visible_api_v1_ie_talents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/talents/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_ie_talents__profile_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/talents/{profile_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Contacts */
+        post: operations["contacts_api_v1_ie_talents__profile_id__contacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/talents/{profile_id}/files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Content */
+        get: operations["content_api_v1_ie_talents__profile_id__files__file_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ie/me/project-drafts/{project_id}/recruitments": {
         parameters: {
             query?: never;
@@ -4841,6 +4909,123 @@ export interface components {
              */
             published_at: string;
         };
+        /** PublicTalentContent */
+        PublicTalentContent: {
+            /** Name */
+            name: string;
+            /** Faculty */
+            faculty: string;
+            /** Grade */
+            grade: string;
+            /** Introduction */
+            introduction: string;
+            /** Advantages */
+            advantages: string;
+            /** Tags */
+            tags: components["schemas"]["TalentTagResponse"][];
+            /** Skill Notes */
+            skill_notes: string;
+            /** Cooperation Direction */
+            cooperation_direction: string;
+            /** Desired Roles */
+            desired_roles: string;
+            /** Weekly Hours */
+            weekly_hours: number | null;
+            /**
+             * Work Mode
+             * @enum {string}
+             */
+            work_mode: "UNSPECIFIED" | "ONLINE" | "OFFLINE" | "EITHER";
+            /**
+             * Cooperation State
+             * @enum {string}
+             */
+            cooperation_state: "LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE";
+            /** Experience */
+            experience: string;
+            /** Links */
+            links: components["schemas"]["TalentLink"][];
+        };
+        /** PublicTalentFile */
+        PublicTalentFile: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "application/pdf" | "image/png" | "image/jpeg";
+            /** Size */
+            size: number;
+        };
+        /** PublicTalentListResponse */
+        PublicTalentListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicTalentSummary"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** PublicTalentResponse */
+        PublicTalentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            content: components["schemas"]["PublicTalentContent"];
+            /** Files */
+            files: components["schemas"]["PublicTalentFile"][];
+            /** Contact Channels */
+            contact_channels: ("WECHAT" | "QQ" | "EMAIL" | "PHONE")[];
+            /** Public Version */
+            public_version: number;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+        };
+        /** PublicTalentSummary */
+        PublicTalentSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Faculty */
+            faculty: string;
+            /** Grade */
+            grade: string;
+            /** Introduction */
+            introduction: string;
+            /** Advantages */
+            advantages: string;
+            /** Tags */
+            tags: components["schemas"]["TalentTagResponse"][];
+            /**
+             * Cooperation State
+             * @enum {string}
+             */
+            cooperation_state: "LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE";
+            /** Public Version */
+            public_version: number;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+        };
         /** QualificationApply */
         QualificationApply: {
             /** Version */
@@ -5996,6 +6181,13 @@ export interface components {
             applied_version: number;
             current: components["schemas"]["TalentProfileResponse"];
         };
+        /** TalentContactsResponse */
+        TalentContactsResponse: {
+            /** Public Version */
+            public_version: number;
+            /** Contacts */
+            contacts: components["schemas"]["ContactInput"][];
+        };
         /** TalentFields */
         TalentFields: {
             /**
@@ -6185,6 +6377,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** TalentPublicReadCommand */
+        TalentPublicReadCommand: {
+            /** Expected Public Version */
+            expected_public_version: number;
         };
         /** TalentRevokeContactCommand */
         TalentRevokeContactCommand: {
@@ -8248,6 +8445,141 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_visible_api_v1_ie_talents_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                tag_ids?: string[];
+                cooperation_state?: ("LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTalentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_ie_talents__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTalentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    contacts_api_v1_ie_talents__profile_id__contacts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TalentPublicReadCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentContactsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    content_api_v1_ie_talents__profile_id__files__file_id__content_get: {
+        parameters: {
+            query: {
+                expected_public_version: number;
+            };
+            header?: never;
+            path: {
+                profile_id: string;
                 file_id: string;
             };
             cookie?: never;
