@@ -53,4 +53,4 @@ Files: PublicProjectsView.tsx、PublicRecruitmentsView.tsx、e2e-selector-contra
 - [x] 前端完整静态/类型/CSS/单测/覆盖/审计/构建/契约门禁；独立测试库跑完整浏览器电池与 no-skip。
 - [x] 先比较原像素基线，确认变化只属于本轮批准的界面修复；受影响产品基线在独立提交更新，记录新旧走查，不放宽容差。
 - [x] 一次独立最终评审，处理重要问题，重新验证最终产品源码；保留完整输出及源码身份。
-- [ ] 保存并推送既有授权 fork，核对当前提交 CI 与 Draft PR；提供体验步骤，本轮到此交付。
+- [x] 保存并推送既有授权 fork，核对当前提交 CI 与 Draft PR；提供体验步骤，本轮到此交付。
