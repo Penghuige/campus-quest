@@ -167,7 +167,7 @@ A feature or fix PR walks this manifest before requesting review; "yes" items sh
 - new stable-screen UI → pixel baseline under the pinned-font discipline; never regenerate baselines to force green (font-normalization regenerations are separate commits with a walk-through note);
 - new selectors that specs depend on → docs/quality/e2e-selector-contract.md B-table entry;
 - coverage moved → ratchet floors updated via the documented `--update`/`coverage:update` path with the reason in the same PR;
-- API surface changed → regenerated OpenAPI snapshot + generated client types.
+- API surface changed → regenerated OpenAPI snapshot + generated client types. **Docstrings count**: any router/endpoint docstring edit lands in the OpenAPI `description` layer and flips both freshness gates — regen (`dump_openapi.py` + `npm run api:types:snapshot`) rides in the same PR. Two incidents on record: #71→#75, #76→this.
 
 The campusquest-test-process skill (repo `.claude/skills/`) holds the full gate matrix and protocols; invoke it when writing tests or touching test infrastructure.
 
