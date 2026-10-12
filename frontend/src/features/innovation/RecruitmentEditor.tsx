@@ -22,6 +22,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
   const [newDefaults] = useState(() => recovered?.newDefaults ?? initialRecruitmentForm(projectDefaults));
   const [form, setForm] = useState(() => resumed?.form ?? recovered?.form ?? (initial ? toRecruitmentForm(initial.fields) : newDefaults));
   const [errors, setErrors] = useState<RecruitmentFormErrors>({});
+  const [ideaCorrections, setIdeaCorrections] = useState<("goal" | "initial_plan")[]>([]);
   const [error, setError] = useState<ReturnType<typeof recruitmentError> | null>(resumed ? recruitmentError(null) : null);
   const [remote, setRemote] = useState<RecruitmentDto | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,6 +58,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
   function current() { return active.current && epoch.current === getAuthEpoch(); }
   function changeForm(next: RecruitmentForm) {
     if (!current() || locked) return;
+    if (next.idea_stage !== form.idea_stage) setIdeaCorrections([]);
     if (hasRecruitmentChanges(next, original)) rememberRecruitmentRecovery(projectId, { epoch: epoch.current, record, form: next, newDefaults });
     else clearRecruitmentRecovery(projectId, epoch.current);
     setForm(next); setMessage(""); setErrors({});
@@ -68,6 +70,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
   }
   function validate(publication: boolean) {
     const next = validateRecruitmentForm(form, publication, serverNow(currentServerClockOffset())); setErrors(next);
+    if (form.idea_stage !== true) setIdeaCorrections((["goal", "initial_plan"] as const).filter((key) => !!next[key]));
     const key = Object.keys(next)[0];
     if (key) {
       setMessage(`请修正表单中标出的 ${Object.keys(next).length} 项问题。`); return false;
@@ -83,21 +86,21 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
       if (command.kind === "save") {
         next = command.id ? await updateRecruitment(projectId, command.id, { ...command.body, version: command.body.version! }) : await createRecruitment(projectId, command.body);
         clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
-        clearRecruitmentRecovery(projectId, epoch.current);
+        clearRecruitmentRecovery(projectId, epoch.current, form);
         if (!current()) return;
         setMessage("招募草稿已保存，仅自己可见；公开版本保持原内容。");
       } else {
         const operation = { publish: publishRecruitment, close: closeRecruitment, reopen: reopenRecruitment, confirm: confirmActiveRecruitment, revoke: revokeRecruitmentContact }[command.kind];
         const receipt = command.kind === "revoke" ? await revokeRecruitmentContact(projectId, command.id, command.body as RevokeCommand) : await operation(projectId, command.id, command.body as RevokeCommand);
         clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
-        if (command.kind === "publish" || command.kind === "reopen") clearRecruitmentRecovery(projectId, epoch.current);
+        if (command.kind === "publish" || command.kind === "reopen") clearRecruitmentRecovery(projectId, epoch.current, form);
         if (!current()) return;
         next = receipt.current; setMessage(recruitmentReceiptText(receipt));
         setConfirmation((value) => value ? { ...value, completed: true } : null);
       }
       setRecord(next);
       if (command.kind === "revoke") setForm((value) => ({ ...value, contacts: value.contacts.filter((contact) => contact.channel !== (command.body as RevokeCommand).channel) }));
-      else if (command.kind === "save" || command.kind === "publish" || command.kind === "reopen") setForm(toRecruitmentForm(next.fields));
+      else if (command.kind === "save" || command.kind === "publish" || command.kind === "reopen") { setForm(toRecruitmentForm(next.fields)); setIdeaCorrections([]); }
       setRemote(null); pending.current = null;
     } catch (cause) {
       const view = recruitmentError(cause);
@@ -141,7 +144,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
     {dirty ? <p className="field-hint">未保存输入暂留在本标签页，站内离开后返回此项目可继续；刷新或退出账号会清除。保存后才写入草稿。</p> : null}
     <form className="panel form ie-draft-form" method="post" onSubmit={save} noValidate ref={formRef}>
       <fieldset disabled={locked} className="ie-recruitment-fields"><legend className="section-title">项目与岗位</legend>
-        {RECRUITMENT_TEXT_FIELDS.filter(({ key }) => !isRecruitmentIdeaField(key) || form.idea_stage === true || !!errors[key]).map(({ key, label, rows, limit }) => key === "stage" ? <RecruitmentStageField key={key} form={form} errors={errors} onChange={changeForm} /> : <div className="field" key={key}><div className="field-head"><label className="field-label" htmlFor={`recruit-${key}`}>{label}</label><span className="field-counter" data-over={codePointCount(form[key].trim()) > limit ? "true" : undefined}>{codePointCount(form[key].trim())}/{limit}</span></div><textarea className="input ie-draft-textarea" id={`recruit-${key}`} name={key} rows={rows} value={form[key]} aria-invalid={errors[key] ? true : undefined} aria-describedby={`recruit-${key}-hint${errors[key] ? ` recruit-${key}-error` : ""}`} onChange={(event) => changeForm({ ...form, [key]: event.target.value })} /><p className="field-hint" id={`recruit-${key}-hint`}>{key === "introduction" ? "仅描述目标、方向和工作计划，请勿填写未经核实的成果或奖项。发布时必填。" : key === "goal" || key === "initial_plan" ? form.idea_stage === true ? "创意起步项目发布时必填。" : "先前输入超过限制，请修正后保存；当前阶段不要求填写此项。" : "发布时必填。"} 最多 {limit} 个字符。</p>{errors[key] ? <p className="field-error" id={`recruit-${key}-error`}>{errors[key]}</p> : null}</div>)}
+        {RECRUITMENT_TEXT_FIELDS.filter(({ key }) => !isRecruitmentIdeaField(key) || form.idea_stage === true || ideaCorrections.some((field) => field === key)).map(({ key, label, rows, limit }) => key === "stage" ? <RecruitmentStageField key={key} form={form} errors={errors} onChange={changeForm} /> : <div className="field" key={key}><div className="field-head"><label className="field-label" htmlFor={`recruit-${key}`}>{label}</label><span className="field-counter" data-over={codePointCount(form[key].trim()) > limit ? "true" : undefined}>{codePointCount(form[key].trim())}/{limit}</span></div><textarea className="input ie-draft-textarea" id={`recruit-${key}`} name={key} rows={rows} value={form[key]} aria-invalid={errors[key] ? true : undefined} aria-describedby={`recruit-${key}-hint${errors[key] ? ` recruit-${key}-error` : ""}`} onChange={(event) => changeForm({ ...form, [key]: event.target.value })} /><p className="field-hint" id={`recruit-${key}-hint`}>{key === "introduction" ? "仅描述目标、方向和工作计划，请勿填写未经核实的成果或奖项。发布时必填。" : key === "goal" || key === "initial_plan" ? form.idea_stage === true ? "创意起步项目发布时必填。" : "此前输入需要修正；当前阶段不要求填写此项，保存后将收起。" : "发布时必填。"} 最多 {limit} 个字符。</p>{errors[key] ? <p className="field-error" id={`recruit-${key}-error`}>{errors[key]}</p> : null}</div>)}
         <AuthField name="headcount" label="招募人数" error={errors.headcount} hint="发布时填写 1～999 的整数。" inputProps={{ type: "text", inputMode: "numeric", value: form.headcount, onChange: (event) => changeForm({ ...form, headcount: event.target.value }) }} />
         {([ ["beginner_friendly", "零基础友好"] ] as const).map(([key, label]) => <div className="field" key={key}><label className="field-label" htmlFor={`recruit-${key}`}>{label}</label><select className="input" id={`recruit-${key}`} name={key} value={String(form[key])} aria-invalid={errors[key] ? true : undefined} aria-describedby={errors[key] ? `recruit-${key}-error` : undefined} onChange={(event) => changeForm({ ...form, [key]: event.target.value === "" ? "" : event.target.value === "true" })}><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select>{errors[key] ? <p className="field-error" id={`recruit-${key}-error`}>{errors[key]}</p> : null}</div>)}
         <AuthField name="deadline_local" label="截止时间" hint={`按 ${BUSINESS_TIME_CONFIG.timeZone}（北京时间）填写；留空表示无截止日期，每 30 天提醒确认。`} error={errors.deadline_local} inputProps={{ type: "datetime-local", value: form.deadline_local, onChange: (event) => changeForm({ ...form, deadline_local: event.target.value }) }} />

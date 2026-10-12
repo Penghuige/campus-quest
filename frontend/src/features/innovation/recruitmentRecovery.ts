@@ -14,6 +14,9 @@ export function getRecruitmentRecovery(projectId: string): RecruitmentRecovery |
 export function rememberRecruitmentRecovery(projectId: string, snapshot: RecruitmentRecovery): void {
   if (snapshot.epoch === getAuthEpoch()) recoveries.set(projectId, snapshot);
 }
-export function clearRecruitmentRecovery(projectId: string, epoch: number): void {
-  if (recoveries.get(projectId)?.epoch === epoch) recoveries.delete(projectId);
+export function clearRecruitmentRecovery(projectId: string, epoch: number, expectedForm?: RecruitmentForm): void {
+  const snapshot = recoveries.get(projectId);
+  // A retried command can finish before its original response. That late
+  // response owns its input object, never a newer editor's unsaved snapshot.
+  if (snapshot?.epoch === epoch && (!expectedForm || snapshot.form === expectedForm)) recoveries.delete(projectId);
 }

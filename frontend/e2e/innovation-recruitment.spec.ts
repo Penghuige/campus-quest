@@ -31,6 +31,36 @@ test("R3 acceptance: missing workspace explains access without outage retries", 
   await expect(page).toHaveURL(/\/profile\/project-drafts$/);
 });
 
+test("R3 acceptance: delayed original save cannot erase input made after its successful retry", async ({ page }) => {
+  const project = await prepare(page); const editor = await fillRole(page);
+  let release!: () => void; const held = new Promise<void>((resolve) => { release = resolve; });
+  let originalReady = false; const bodies: string[] = [];
+  const path = `**/api/v1/ie/me/project-drafts/${project}/recruitments`;
+  await page.route(path, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    bodies.push(route.request().postData()!); const original = bodies.length === 1;
+    const response = await route.fetch(); expect(response.status()).toBe(original ? 201 : 200);
+    if (original) { originalReady = true; await held; }
+    await route.fulfill({ response });
+  });
+  try {
+    await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+    await expect.poll(() => originalReady).toBe(true);
+    await page.locator('a[href="/innovation"]:visible').first().click();
+    await expect(page).toHaveURL(/\/innovation$/); await page.goBack();
+    await editor.getByRole("button", { name: "重试原请求", exact: true }).click();
+    await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+    expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]);
+    await editor.getByLabel("岗位名称", { exact: true }).fill("重试成功后的新输入");
+    const delivered = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/project-drafts/${project}/recruitments`));
+    release(); await (await delivered).finished();
+    await page.locator('a[href="/innovation"]:visible').first().click();
+    await expect(page).toHaveURL(/\/innovation$/); await page.goBack();
+    await expect(editor.getByLabel("岗位名称", { exact: true })).toHaveValue("重试成功后的新输入");
+    await expect(editor.getByLabel("微信", { exact: true })).toHaveValue("demo_partner");
+  } finally { release(); await page.unroute(path); }
+});
+
 test("R3 acceptance: conditional idea fields preserve values but do not mislead other-stage preview", async ({ page }) => {
   await prepare(page); const editor = await fillRole(page);
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
@@ -66,7 +96,7 @@ test("R3 acceptance: contact correction explains formats and provides suitable k
 
 test("R3 acceptance: hidden over-limit idea content remains correctable", async ({ page }) => {
   await prepare(page); const editor = await fillRole(page);
-  await editor.getByLabel("阶段目标", { exact: true }).fill("长".repeat(2001));
+  await editor.getByLabel("阶段目标", { exact: true }).fill("长".repeat(2003));
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
   await editor.getByLabel("具体阶段", { exact: true }).fill("原型验证");
   await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveCount(0);
@@ -74,10 +104,16 @@ test("R3 acceptance: hidden over-limit idea content remains correctable", async 
   const goal = editor.getByLabel("阶段目标", { exact: true });
   await expect(goal).toBeFocused();
   await expect(goal).toHaveAccessibleDescription(/最多 2000 个字符/);
-  await goal.fill("已修正的临时目标");
-  await expect(goal).toHaveCount(0);
+  await goal.press("End"); await goal.press("Backspace");
+  await expect(goal).toHaveValue("长".repeat(2002));
+  await expect(goal).toBeFocused();
+  await goal.press("ControlOrMeta+A");
+  await goal.pressSequentially("已修正的临时目标");
+  await expect(goal).toHaveValue("已修正的临时目标");
+  await expect(goal).toBeFocused();
   await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
   await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await expect(goal).toHaveCount(0);
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
   await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveValue("已修正的临时目标");
 });

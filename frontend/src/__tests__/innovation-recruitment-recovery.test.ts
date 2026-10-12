@@ -27,3 +27,12 @@ test("logout, login, sibling reset and pre-request auth transitions erase recove
     endAuthTransition();
   }
 });
+test("a delayed completed command cannot erase a newer unsaved form in the same epoch", () => {
+  const commandInput = snapshot(); rememberRecruitmentRecovery("p", commandInput);
+  const newerInput = { ...snapshot(), form: { ...commandInput.form, role_name: "newer unsaved input" } };
+  rememberRecruitmentRecovery("p", newerInput);
+  clearRecruitmentRecovery("p", commandInput.epoch, commandInput.form);
+  assert.equal(getRecruitmentRecovery("p"), newerInput);
+  clearRecruitmentRecovery("p", newerInput.epoch, newerInput.form);
+  assert.equal(getRecruitmentRecovery("p"), undefined);
+});
