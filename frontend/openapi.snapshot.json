@@ -47,7 +47,7 @@
     "/api/v1/auth/phone/challenges/{challenge_id}/verify": {
       "post": {
         "summary": "Verify Phone Challenge",
-        "description": "Consume the challenge with its SMS code; mint the single-use proof.",
+        "description": "Consume the challenge with its SMS code; mint the single-use proof.\n\nRate-limited per challenge id AND per transport peer (hardening A-1):\nthe OTP service already bounds wrong-code attempts per challenge, so\nthese buckets anti-hammer the HTTP surface itself.",
         "operationId": "verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post",
         "parameters": [
           {
@@ -732,7 +732,7 @@
     "/api/v1/auth/staff/login": {
       "post": {
         "summary": "Staff Login",
-        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first.",
+        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):\nper email and per transport peer.",
         "operationId": "staff_login_api_v1_auth_staff_login_post",
         "requestBody": {
           "content": {

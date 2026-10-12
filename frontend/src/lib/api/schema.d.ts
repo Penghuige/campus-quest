@@ -39,6 +39,10 @@ export interface paths {
         /**
          * Verify Phone Challenge
          * @description Consume the challenge with its SMS code; mint the single-use proof.
+         *
+         *     Rate-limited per challenge id AND per transport peer (hardening A-1):
+         *     the OTP service already bounds wrong-code attempts per challenge, so
+         *     these buckets anti-hammer the HTTP surface itself.
          */
         post: operations["verify_phone_challenge_api_v1_auth_phone_challenges__challenge_id__verify_post"];
         delete?: never;
@@ -384,7 +388,8 @@ export interface paths {
          *
          *     A correct password without a confirmed TOTP raises the typed setup
          *     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
-         *     finish ``/staff/totp/*`` first.
+         *     finish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):
+         *     per email and per transport peer.
          */
         post: operations["staff_login_api_v1_auth_staff_login_post"];
         delete?: never;
@@ -719,10 +724,14 @@ export interface paths {
         put?: never;
         /**
          * Preview Assignment Import
-         * @description Parse and pre-check a CSV upload (spec §7.1 steps 1-4).
+         * @description Parse and pre-check an import upload (spec §7.1 steps 1-4).
          *
-         *     The file is the raw request body (``text/csv``); the importer's byte
-         *     cap rejects oversize payloads before any parsing work.
+         *     The file (CSV or XLSX) is the raw request body; the format is
+         *     decided by content sniffing — never by the wire ``Content-Type``.
+         *     Security round F2: the body is read streaming-bounded (reject the
+         *     moment the running total crosses the import byte cap — no
+         *     unbounded buffering before any check) and the route is rate
+         *     limited like claim/abandon.
          */
         post: operations["preview_assignment_import_api_v1_teacher_tasks__task_id__assignments_import_preview_post"];
         delete?: never;
@@ -1637,8 +1646,9 @@ export interface paths {
         /**
          * List Notification Failures
          * @description FAILED deliveries with last_error + attempts, newest first (the
-         *     spec §25.4 failure query). Admin-only until scoped delegation (PR
-         *     #2 hardening ruling): any ACTIVE+TOTP teacher reading every user's
+         *     spec §25.4 failure query). Stayed Admin-only under the delegation
+         *     ruling (the points review family is the widened one; PR #2
+         *     hardening ruling): any ACTIVE+TOTP teacher reading every user's
          *     delivery errors was judged too broad for V1.
          */
         get: operations["list_notification_failures_api_v1_admin_notification_failures_get"];
