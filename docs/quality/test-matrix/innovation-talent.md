@@ -10,7 +10,7 @@ Task 1/2 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs/r4
 | A03 | 暂不接洽与开关分离，仍能公开；公共展示待 Task 3 | `tests/integration/innovation/test_talent_lifecycle.py::test_last_contact_can_be_revoked_without_hiding_talent`；G-1 | 缺口 |
 | A04 | 标签/建议私有且去重，字面关键词、多标签全部匹配/分页 | `tests/integration/innovation/test_talent_lifecycle.py::test_tag_suggestions_are_private_deduplicated_requests`；G-1 | 缺口 |
 | A05 | PDF/PNG/JPEG、10MiB/10库存/5公开，整批替换可用 | `tests/unit/innovation/test_talent_file_schemas.py`；`tests/integration/innovation/test_talent_files.py::test_five_public_files_can_all_be_replaced_before_closing_old_version`；`tests/integration/innovation/test_talent_file_races.py::test_concurrent_upload_intents_cannot_exceed_ten_records` | 已覆盖 |
-| A06 | 显式授权文件才可读，关闭/撤回旧链接拒绝 | G-2、G-1 | 缺口 |
+| A06 | 显式授权文件才可读，关闭/撤回旧链接拒绝 | `tests/integration/innovation/test_talent_files.py::test_public_file_requires_revocation_and_cannot_be_published_again`；G-1 | 缺口 |
 | A07 | 身份/治理限制不可绕过；列表搜索直链同样生效 | `tests/integration/innovation/test_talent_lifecycle.py::test_moderation_cannot_be_cleared_by_saving_or_publishing`；`tests/integration/innovation/test_talent_races.py::test_account_disabled_before_publication`；G-1 | 缺口 |
 | A08 | 普通详情无联系值，点击按版本读取；限流/审计故障不给值 | G-1 | 缺口 |
 | A09 | 幂等、版本冲突、PG并发最多一次改变；审计失败原子回滚，历史不可改 | `tests/integration/innovation/test_talent_races.py`；`tests/integration/innovation/test_talent_lifecycle.py::test_failed_audit_rolls_back_publication`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_history_is_immutable_in_postgres`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_pointer_cannot_use_another_students_revision` | 已覆盖 |
