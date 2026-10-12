@@ -31,7 +31,7 @@ Files: recruitmentForm.ts、RecruitmentWorkspace.tsx、RecruitmentEditor.tsx、i
 
 - [x] 写失败测试：新建岗位带入名称/方向/阶段说明/简介，阶段分类仍显式选择、contacts 为空；选择创意起步生成 stage=创意起步、idea_stage=true；切换其他阶段要求实际说明；旧 record 原样读取。
 - [x] 在旧代码上运行并记录 RED。
-- [x] 实现 initialRecruitmentForm(projectDefaults)、chooseRecruitmentStage(form, choice)；项目阶段选择创意起步或其他阶段，后者显示具体阶段说明。已有创意记录的原说明保留展示，实际重新选择后才写入新说明。
+- [x] 实现 initialRecruitmentForm(projectDefaults)、chooseRecruitmentStage(form, choice)；项目阶段选择创意起步或其他阶段，后者显示具体阶段说明。已有创意记录的原说明保留展示；切换比较两类选项分别保留并恢复临时说明，临时缓存不提交且不造成假 dirty。
 - [x] 新建时以项目初值作为未修改基准；编辑既有岗位不重新带入项目资料。
 - [x] 运行单测和对应浏览器回归，记录 GREEN。
 
@@ -41,7 +41,7 @@ Files: RecruitmentEditor.tsx、RecruitmentConfirm.tsx、innovation-recruitment.s
 
 - [x] 写失败浏览器测试：未保存时点击预览，提示在视野内；缺少字段且 dirty 时焦点到字段、校验摘要不被保存提示覆盖。
 - [x] 运行旧代码并记录 RED。
-- [x] 操作状态放到按钮旁；编辑输入清除旧保存成功消息；字段校验先于未保存检查，按阶段入口/联系组定位错误。
+- [x] 操作状态放到按钮旁；编辑输入清除旧保存成功消息；字段校验先于未保存检查，按阶段入口/具体联系输入或首个授权复选框定位错误，关联错误描述。
 - [x] 编辑器说明保存草稿→预览→确认发布，保存不公开；确认按钮明确动作，保留原 Dialog 焦点和未知结果重试。
 - [x] 更新既有招募 E2E 的阶段与确认按钮契约，运行回归。
 
@@ -49,8 +49,8 @@ Files: RecruitmentEditor.tsx、RecruitmentConfirm.tsx、innovation-recruitment.s
 
 Files: PublicProjectsView.tsx、PublicRecruitmentsView.tsx、e2e-selector-contract.md、test-matrix/innovation-recruitment.md、交付/走查文档、受影响的像素 PNG。
 
-- [ ] 招募列表省去仅看正在招募控件，项目库保留；通过真实页面和 E2E 核对。
-- [ ] 前端完整静态/类型/CSS/单测/覆盖/审计/构建/契约门禁；独立测试库跑完整浏览器电池与 no-skip。
-- [ ] 先比较原像素基线，确认变化只属于本轮批准的界面修复；受影响产品基线在独立提交更新，记录新旧走查，不放宽容差。
-- [ ] 一次独立最终评审，处理重要问题，重新验证最终产品源码；保留完整输出及源码身份。
+- [x] 招募列表省去仅看正在招募控件，项目库保留；通过真实页面和 E2E 核对。
+- [x] 前端完整静态/类型/CSS/单测/覆盖/审计/构建/契约门禁；独立测试库跑完整浏览器电池与 no-skip。
+- [x] 先比较原像素基线，确认变化只属于本轮批准的界面修复；受影响产品基线在独立提交更新，记录新旧走查，不放宽容差。
+- [x] 一次独立最终评审，处理重要问题，重新验证最终产品源码；保留完整输出及源码身份。
 - [ ] 保存并推送既有授权 fork，核对当前提交 CI 与 Draft PR；提供体验步骤，本轮到此交付。
