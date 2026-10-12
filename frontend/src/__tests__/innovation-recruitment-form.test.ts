@@ -37,6 +37,11 @@ test("comparing stage categories preserves each description without putting hidd
   assert.equal(chooseRecruitmentStage(chooseRecruitmentStage(legacy, "false"), "true").stage, "原来的构想说明");
   assert.equal(chooseRecruitmentStage(chooseRecruitmentStage(idea, ""), "false").stage, "已访谈十二人，正在验证原型");
 });
+test("an unfinished saved idea draft can explicitly choose its stage", () => {
+  const selected = chooseRecruitmentStage({ ...complete(), stage: "" }, "true");
+  assert.equal(selected.idea_stage, true); assert.equal(selected.stage, "创意起步");
+  assert.equal(validateRecruitmentForm(selected, true, 0).stage, undefined);
+});
 test("temporary stage notes do not make unchanged visible content dirty", () => {
   const original = { ...complete(), idea_stage: false as const, stage: "原型验证" };
   const restored = chooseRecruitmentStage(chooseRecruitmentStage(original, "true"), "false");

@@ -39,7 +39,7 @@ export function chooseRecruitmentStage(form: RecruitmentForm, choice: string): R
   const notes = { ...form.stage_notes };
   if (form.idea_stage === true) notes.idea = form.stage;
   else if (form.idea_stage === false || !form.stage_notes) notes.other = form.stage;
-  if (choice === "true") return { ...form, idea_stage: true, stage: notes.idea ?? "创意起步", stage_notes: notes };
+  if (choice === "true") return { ...form, idea_stage: true, stage: notes.idea?.trim() ? notes.idea : "创意起步", stage_notes: notes };
   if (choice === "false") return { ...form, idea_stage: false, stage: notes.other ?? "", stage_notes: notes };
   return { ...form, idea_stage: "", stage_notes: notes };
 }

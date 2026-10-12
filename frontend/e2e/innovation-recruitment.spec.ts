@@ -79,6 +79,26 @@ test("R3 UX: new roles reuse project context and have one explicit stage choice"
   await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveValue("已经访谈十二人，正在验证原型");
 });
 
+test("R3 UX: an unfinished legacy idea draft can select and save its phase", async ({ page }) => {
+  const parent = await prepare(page);
+  const created = await page.request.post(`${API_URL}/ie/me/project-drafts/${parent}/recruitments`, {
+    headers: { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_STUDENT_ID!)}` },
+    data: { request_id: crypto.randomUUID(), fields: { project_title: "模拟旧项目", direction: "", stage: "", introduction: "", goal: "", initial_plan: "", role_name: "模拟旧未完成岗位", duties: "", requirements: "", time_commitment: "", idea_stage: true } },
+  });
+  expect(created.status()).toBe(201);
+  await page.reload();
+  await page.getByRole("button", { name: "编辑招募：模拟旧未完成岗位", exact: true }).click();
+  const editor = page.getByRole("region", { name: "招募岗位编辑器" });
+  await expect(editor.getByLabel("项目阶段", { exact: true })).toHaveValue("");
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
+  await expect(editor.getByLabel("项目阶段", { exact: true })).toHaveValue("true");
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await page.reload();
+  await page.getByRole("button", { name: "编辑招募：模拟旧未完成岗位", exact: true }).click();
+  await expect(page.getByRole("region", { name: "招募岗位编辑器" }).getByLabel("项目阶段", { exact: true })).toHaveValue("true");
+});
+
 for (const invalid of ["none", "QQ"] as const) test(`R3 UX: contact validation focuses the editable target (${invalid})`, async ({ page }) => {
   await prepare(page); const editor = await fillRole(page);
   await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
