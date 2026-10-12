@@ -1,5 +1,6 @@
 import { BUSINESS_TIME_CONFIG } from "@/lib/time";
 import type { ContactChannel, RecruitmentFieldsDto } from "./recruitmentApi";
+import type { ProjectDraftDto } from "./api";
 import { codePointCount } from "./draftForm";
 
 export const RECRUITMENT_TEXT_FIELDS = [
@@ -25,6 +26,17 @@ export type RecruitmentForm = Record<TextKey, string> & {
 export type RecruitmentFormErrors = Partial<Record<keyof RecruitmentForm, string>>;
 export function emptyRecruitmentForm(): RecruitmentForm {
   return { project_title: "", direction: "", stage: "", introduction: "", goal: "", initial_plan: "", role_name: "", duties: "", requirements: "", time_commitment: "", headcount: "", idea_stage: "", beginner_friendly: "", deadline_local: "", contacts: [] };
+}
+export type RecruitmentProjectDefaults = Pick<ProjectDraftDto, "title" | "summary" | "direction" | "stage">;
+export function initialRecruitmentForm(project?: RecruitmentProjectDefaults): RecruitmentForm {
+  const form = emptyRecruitmentForm();
+  if (!project) return form;
+  return { ...form, project_title: project.title, direction: project.direction, stage: project.stage, introduction: project.summary };
+}
+export function chooseRecruitmentStage(form: RecruitmentForm, choice: string): RecruitmentForm {
+  if (choice === "true") return { ...form, idea_stage: true, stage: "创意起步" };
+  if (choice === "false") return { ...form, idea_stage: false, stage: form.idea_stage === true ? "" : form.stage };
+  return { ...form, idea_stage: "" };
 }
 function wallParts(instant: number): number[] {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TIME_CONFIG.timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(instant);
@@ -70,7 +82,8 @@ export function validateRecruitmentForm(form: RecruitmentForm, publication: bool
     else if (codePointCount(form[key].trim()) > limit) errors[key] = `最多 ${limit} 个字符。`;
   }
   if ((publication || form.headcount.trim()) && (!/^[1-9]\d{0,2}$/.test(form.headcount.trim()) || Number(form.headcount) > 999)) errors.headcount = "招募人数须为 1～999 的整数。";
-  for (const key of ["idea_stage", "beginner_friendly"] as const) if (publication && form[key] === "") errors[key] = "请明确选择是或否。";
+  for (const key of ["idea_stage", "beginner_friendly"] as const) if (publication && form[key] === "") errors[key] = key === "idea_stage" ? "请选择项目阶段。" : "请明确选择是或否。";
+  if (publication && form.idea_stage === false && form.stage.trim() === "创意起步") errors.stage = "阶段说明为创意起步，请在项目阶段中选择创意起步。";
   if (form.deadline_local) {
     try { if (publication && Date.parse(localDeadlineToUtc(form.deadline_local)) <= now) errors.deadline_local = "截止时间须晚于当前时间。"; }
     catch { errors.deadline_local = "请选择有效的截止时间。"; }

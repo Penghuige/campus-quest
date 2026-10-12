@@ -18,7 +18,7 @@ test("R3: account switching preserves the shared student's resumable session", a
   } finally { await context.close(); }
 });
 
-async function prepare(page: Page) {
+async function prepare(page: Page, projectFields?: { title: string; summary: string; direction: string; stage: string }) {
   await ensureStudentLogin(page);
   await page.goto(`${BASE_URL}/profile/owner-profile`);
   const editor = page.getByRole("region", { name: "负责人资料编辑器" });
@@ -34,7 +34,7 @@ async function prepare(page: Page) {
     const approval = await page.request.post(`${API_URL}/admin/ie/owner-qualifications/${process.env.CQ_E2E_STUDENT_ID}/approve`, { headers: { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_ADMIN_ID!)}` }, data: { version: application.version } });
     expect(approval.status()).toBe(200);
   }
-  const project = await page.request.post(`${API_URL}/ie/me/project-drafts`, { headers: { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_STUDENT_ID!)}` }, data: { request_id: crypto.randomUUID(), title: `模拟招募项目 ${Date.now()}`, summary: "PRIVATE_PARENT_SENTINEL", direction: "", stage: "", team_status: "" } });
+  const project = await page.request.post(`${API_URL}/ie/me/project-drafts`, { headers: { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_STUDENT_ID!)}` }, data: { request_id: crypto.randomUUID(), title: `模拟招募项目 ${Date.now()}`, summary: "PRIVATE_PARENT_SENTINEL", direction: "", stage: "", team_status: "", ...projectFields } });
   expect(project.status()).toBe(201);
   const parent = await project.json();
   await page.goto(`${BASE_URL}/profile/project-drafts/${parent.id}/recruitments`);
@@ -43,8 +43,8 @@ async function prepare(page: Page) {
 async function fillRole(page: Page) {
   await page.getByRole("button", { name: "新建招募岗位", exact: true }).click();
   const editor = page.getByRole("region", { name: "招募岗位编辑器" });
-  for (const [label, value] of Object.entries({ "项目名称": "模拟学习实验", "项目方向": "学习", "项目阶段": "构想", "项目介绍": "模拟资料：访谈项目", "阶段目标": "验证学习方法", "初步方案": "先做访谈", "岗位名称": "研究伙伴", "招募人数": "1", "主要职责": "参与访谈", "能力要求": "愿意学习", "时间投入": "每周两小时" })) await editor.getByLabel(label, { exact: true }).fill(value);
-  await editor.getByLabel("创意起步", { exact: true }).selectOption("true");
+  for (const [label, value] of Object.entries({ "项目名称": "模拟学习实验", "项目方向": "学习", "项目介绍": "模拟资料：访谈项目", "阶段目标": "验证学习方法", "初步方案": "先做访谈", "岗位名称": "研究伙伴", "招募人数": "1", "主要职责": "参与访谈", "能力要求": "愿意学习", "时间投入": "每周两小时" })) await editor.getByLabel(label, { exact: true }).fill(value);
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
   await editor.getByLabel("零基础友好", { exact: true }).selectOption("true");
   await editor.getByLabel("授权微信", { exact: true }).check();
   await editor.getByLabel("微信", { exact: true }).fill("demo_partner");
@@ -54,11 +54,51 @@ async function publish(page: Page) {
   await page.getByRole("button", { name: "预览发布招募", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "发布招募", exact: true });
   await expect(dialog).toContainText("独立免审");
-  await dialog.getByRole("button", { name: "确认", exact: true }).focus();
+  await dialog.getByRole("button", { name: "确认发布", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("正在招募");
 }
+
+test("R3 UX: new roles reuse project context and have one explicit stage choice", async ({ page }) => {
+  await prepare(page, { title: "模拟上下文项目", summary: "模拟访谈介绍", direction: "教育", stage: "调研中" });
+  await page.getByRole("button", { name: "新建招募岗位", exact: true }).click();
+  const editor = page.getByRole("region", { name: "招募岗位编辑器" });
+  await expect(editor.getByLabel("项目名称", { exact: true })).toHaveValue("模拟上下文项目");
+  await expect(editor.getByLabel("项目方向", { exact: true })).toHaveValue("教育");
+  await expect(editor.getByLabel("项目介绍", { exact: true })).toHaveValue("模拟访谈介绍");
+  await expect(editor.getByLabel("项目阶段", { exact: true })).toHaveValue("");
+  await expect(editor.getByLabel("授权微信", { exact: true })).not.toBeChecked();
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveValue("调研中");
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
+  await expect(editor.getByLabel("具体阶段", { exact: true })).toHaveCount(0);
+  await expect(editor.getByLabel("创意起步", { exact: true })).toHaveCount(0);
+});
+
+test("R3 UX: an unsaved preview explains the next step in the action viewport", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  const result = page.getByRole("status", { name: "招募操作结果" });
+  await expect(result).toContainText("已保存");
+  await editor.getByLabel("岗位名称", { exact: true }).fill("尚未保存的新名称");
+  await editor.getByRole("button", { name: "预览发布招募", exact: true }).click();
+  await expect(result).toContainText("先保存");
+  expect(await result.evaluate((el) => { const box = el.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("R3 UX: missing publication fields take priority over unsaved changes", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  const result = page.getByRole("status", { name: "招募操作结果" });
+  await expect(result).toContainText("已保存");
+  await editor.getByLabel("岗位名称", { exact: true }).fill("");
+  await editor.getByRole("button", { name: "预览发布招募", exact: true }).click();
+  await expect(editor.getByLabel("岗位名称", { exact: true })).toBeFocused();
+  await expect(result).toContainText("修正");
+  await expect(result).not.toContainText("先保存");
+});
 
 test("R3: independent publication, private saves, deliberate contact grant and last revoke", async ({ page }) => {
   const project = await prepare(page);
@@ -88,7 +128,7 @@ test("R3: independent publication, private saves, deliberate contact grant and l
     await editor.getByRole("button", { name: "撤销联系授权：微信", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "撤销最后一项联系授权", exact: true });
     await expect(dialog).toContainText("同时关闭");
-    await dialog.getByRole("button", { name: "确认", exact: true }).click();
+    await dialog.getByRole("button", { name: "撤销并关闭招募", exact: true }).click();
     await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
     await expect(editor.getByLabel("授权微信", { exact: true })).not.toBeChecked();
     await browsing.reload();
@@ -103,9 +143,12 @@ test("R3: campus recruitment entry has accessible empty/mobile content", async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/innovation/recruitments`);
   await expect(page.getByRole("heading", { name: "正在招募", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "仅看正在招募", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important}" });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.goto(`${BASE_URL}/innovation/projects`);
+  await expect(page.getByRole("checkbox", { name: "仅看正在招募", exact: true })).toBeVisible();
 });
 
 test("R3: dated publication and maximum unbroken content fit mobile", async ({ page }) => {
@@ -113,7 +156,8 @@ test("R3: dated publication and maximum unbroken content fit mobile", async ({ p
   await editor.getByLabel("项目名称", { exact: true }).fill("P".repeat(120));
   await editor.getByLabel("岗位名称", { exact: true }).fill("R".repeat(120));
   await editor.getByLabel("项目方向", { exact: true }).fill("D".repeat(120));
-  await editor.getByLabel("项目阶段", { exact: true }).fill("S".repeat(80));
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await editor.getByLabel("具体阶段", { exact: true }).fill("S".repeat(80));
   await editor.getByLabel("项目介绍", { exact: true }).fill("A".repeat(2000));
   await editor.getByLabel("截止时间", { exact: true }).fill("2099-10-11T18:30");
   await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
@@ -230,7 +274,7 @@ test("R3: publication ACK loss, update, close/reopen and deliberate fresh consen
   });
   await editor.getByRole("button", { name: "预览发布招募", exact: true }).click();
   const publication = page.getByRole("dialog", { name: "发布招募", exact: true });
-  await publication.getByRole("button", { name: "确认", exact: true }).click();
+  await publication.getByRole("button", { name: "确认发布", exact: true }).click();
   await expect(publication.getByRole("alert")).toContainText("结果尚未确认");
   await publication.getByRole("button", { name: "重试原请求", exact: true }).click();
   await expect(publication).not.toBeVisible();
@@ -241,16 +285,16 @@ test("R3: publication ACK loss, update, close/reopen and deliberate fresh consen
   await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
   await editor.getByRole("button", { name: "发布招募更新", exact: true }).click();
-  await page.getByRole("dialog", { name: "发布招募", exact: true }).getByRole("button", { name: "确认", exact: true }).click();
+  await page.getByRole("dialog", { name: "发布招募", exact: true }).getByRole("button", { name: "确认发布", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("正在招募");
   await editor.getByRole("button", { name: "关闭招募", exact: true }).click();
-  await page.getByRole("dialog", { name: "关闭招募", exact: true }).getByRole("button", { name: "确认", exact: true }).click();
+  await page.getByRole("dialog", { name: "关闭招募", exact: true }).getByRole("button", { name: "确认关闭", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
   await editor.getByRole("button", { name: "重新开放招募", exact: true }).click();
-  await page.getByRole("dialog", { name: "重新开放招募", exact: true }).getByRole("button", { name: "确认", exact: true }).click();
+  await page.getByRole("dialog", { name: "重新开放招募", exact: true }).getByRole("button", { name: "确认重新开放", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("正在招募");
   await editor.getByRole("button", { name: "撤销联系授权：微信", exact: true }).click();
-  await page.getByRole("dialog", { name: "撤销最后一项联系授权", exact: true }).getByRole("button", { name: "确认", exact: true }).click();
+  await page.getByRole("dialog", { name: "撤销最后一项联系授权", exact: true }).getByRole("button", { name: "撤销并关闭招募", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
   await expect(editor.getByLabel("授权微信", { exact: true })).not.toBeChecked();
   await editor.getByRole("button", { name: "重新开放招募", exact: true }).click();
@@ -264,12 +308,12 @@ test("R3: publication ACK loss, update, close/reopen and deliberate fresh consen
   await editor.getByRole("button", { name: "重新开放招募", exact: true }).click();
   const reopened = page.getByRole("dialog", { name: "重新开放招募", exact: true });
   await expect(reopened).toContainText("授权微信：demo_newpartner");
-  await reopened.getByRole("button", { name: "确认", exact: true }).click();
+  await reopened.getByRole("button", { name: "确认重新开放", exact: true }).click();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("正在招募");
   await editor.getByRole("button", { name: "确认继续招募", exact: true }).click();
   const confirmed = page.getByRole("dialog", { name: "确认继续招募", exact: true });
   await expect(confirmed).toContainText("30 天后");
-  await confirmed.getByRole("button", { name: "确认", exact: true }).click();
+  await confirmed.getByRole("button", { name: "确认继续招募", exact: true }).click();
   await expect(confirmed).not.toBeVisible();
   await expect(page.getByRole("status", { name: "招募操作结果" })).toBeFocused();
 });

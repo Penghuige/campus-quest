@@ -1,8 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyRecruitmentForm, normalizeRecruitmentForm, validateRecruitmentForm, toRecruitmentForm, localDeadlineToUtc } from "../features/innovation/recruitmentForm";
+import { emptyRecruitmentForm, normalizeRecruitmentForm, validateRecruitmentForm, toRecruitmentForm, localDeadlineToUtc, initialRecruitmentForm, chooseRecruitmentStage } from "../features/innovation/recruitmentForm";
 
 const complete = () => ({ ...emptyRecruitmentForm(), project_title: "模拟项目", direction: "学习", stage: "构想", introduction: "模拟资料", idea_stage: true as const, goal: "验证", initial_plan: "访谈", role_name: "研究伙伴", headcount: "1", duties: "访谈", requirements: "愿意参与", time_commitment: "每周两小时", beginner_friendly: false as const, contacts: [{ channel: "WECHAT" as const, value: "demo_partner" }] });
+test("new roles reuse project context without implied stage choice or contact consent", () => {
+  const form = initialRecruitmentForm({ title: "模拟项目", direction: "教育", stage: "调研中", summary: "模拟访谈" });
+  assert.equal(form.project_title, "模拟项目"); assert.equal(form.direction, "教育");
+  assert.equal(form.stage, "调研中"); assert.equal(form.introduction, "模拟访谈");
+  assert.equal(form.idea_stage, ""); assert.deepEqual(form.contacts, []);
+  assert.equal(initialRecruitmentForm().project_title, "");
+  assert.deepEqual(initialRecruitmentForm().contacts, []);
+});
+test("a unified stage choice writes coherent idea fields and preserves other stage details", () => {
+  const idea = chooseRecruitmentStage({ ...complete(), stage: "调研中", idea_stage: false }, "true");
+  assert.equal(idea.stage, "创意起步"); assert.equal(idea.idea_stage, true);
+  const other = chooseRecruitmentStage(idea, "false");
+  assert.equal(other.idea_stage, false); assert.equal(other.stage, "");
+  assert.ok(validateRecruitmentForm(other, true, 0).stage);
+  assert.equal(chooseRecruitmentStage({ ...other, stage: "原型验证" }, "false").stage, "原型验证");
+  const unselected = chooseRecruitmentStage({ ...other, stage: "原型验证" }, "");
+  assert.equal(unselected.idea_stage, ""); assert.equal(unselected.stage, "原型验证");
+});
+test("reading a legacy idea role does not rewrite its saved stage description", () => {
+  const form = toRecruitmentForm(normalizeRecruitmentForm(complete()));
+  assert.equal(form.stage, "构想"); assert.equal(form.idea_stage, true);
+  assert.equal(normalizeRecruitmentForm(form).stage, "构想");
+});
+test("publication cannot call the literal idea stage a different stage", () => {
+  const errors = validateRecruitmentForm({ ...complete(), stage: "创意起步", idea_stage: false }, true, 0);
+  assert.ok(errors.stage);
+});
 test("an incomplete draft is saveable, while publication needs explicit choices and consent", () => {
   assert.deepEqual(validateRecruitmentForm(emptyRecruitmentForm(), false, 0), {});
   const errors = validateRecruitmentForm(emptyRecruitmentForm(), true, 0);
