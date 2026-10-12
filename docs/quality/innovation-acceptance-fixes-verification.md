@@ -62,7 +62,7 @@ Node 22.23.3，两端实际 Next 16.4.0。Audit 通过既有5个具名 HIGH 开�
 
 已验证键盘、DOM关联、live status及自动axe；未实际运行屏幕阅读器，不能宣称读屏验收通过。导航恢复只保证同标签当前会话，刷新/关闭与跨设备持久草稿须显式保存。后续视觉布局整理、筛选上下文、存量模拟正文等建议仍未纳入本批。
 
-本地门禁、独立评审和远端完整CI是三份不同证据。PR #43保持Draft；完整CI与最终提交核对后记录，不把GitGuardian单项成功称为全CI通过。
+本地门禁、独立评审和远端完整CI是三份不同证据。首交文档b9b1166保存推送后，local/fork/PR head一致、工作树干净；PR #43仍OPEN/Draft、CONFLICTING/DIRTY；GitGuardian单项进行中，两仓该SHA的Actions workflow run为0，没有完整CI通过证据。上游Actions/fork status的TLS握手超时后只读重试成功，不能称为CI失败。最终仅文档收尾提交的精确查询见 `qa12-final-git-ci.json`；不将首交SHA的检查移用为最终SHA的通过证明。
 
 ## 执行裁定与成本
 
