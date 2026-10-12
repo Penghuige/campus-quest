@@ -4,6 +4,98 @@ import type { Page } from "@playwright/test";
 
 test.skip(process.env.CQ_E2E !== "1", "CQ_E2E=1 with an owned real browser database");
 
+test("R3 acceptance: recovery retains unsaved fields across navigation without writing", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByLabel("岗位名称", { exact: true }).fill("未保存恢复岗位");
+  let writes = 0;
+  page.on("request", (r) => { if (r.method() !== "GET" && new URL(r.url()).pathname.includes("/recruitments")) writes++; });
+  await page.locator('a[href="/innovation"]:visible').first().click();
+  await expect(page).toHaveURL(/\/innovation$/);
+  await page.goBack();
+  await expect(editor.getByLabel("岗位名称", { exact: true })).toHaveValue("未保存恢复岗位");
+  await expect(editor.getByLabel("微信", { exact: true })).toHaveValue("demo_partner");
+  expect(writes).toBe(0);
+  page.once("dialog", (dialog) => dialog.accept());
+  await editor.getByRole("button", { name: "返回招募列表", exact: true }).click();
+  await page.getByRole("button", { name: "新建招募岗位", exact: true }).click();
+  await expect(editor.getByLabel("岗位名称", { exact: true })).toHaveValue("");
+  await expect(editor.getByLabel("授权微信", { exact: true })).not.toBeChecked();
+});
+
+test("R3 acceptance: missing workspace explains access without outage retries", async ({ page }) => {
+  await ensureStudentLogin(page);
+  await page.goto(`${BASE_URL}/profile/project-drafts/${crypto.randomUUID()}/recruitments`);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("项目不存在或不可访问");
+  await expect(page.getByRole("main").getByRole("button", { name: "重试", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "返回我的项目", exact: true }).click();
+  await expect(page).toHaveURL(/\/profile\/project-drafts$/);
+});
+
+test("R3 acceptance: conditional idea fields preserve values but do not mislead other-stage preview", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await editor.getByLabel("具体阶段", { exact: true }).fill("原型验证");
+  await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveCount(0);
+  await expect(editor.getByLabel("初步方案", { exact: true })).toHaveCount(0);
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
+  await expect(editor.getByLabel("阶段目标", { exact: true })).toHaveValue("验证学习方法");
+  await editor.getByLabel("项目阶段", { exact: true }).selectOption("false");
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await editor.getByRole("button", { name: "预览发布招募", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "发布招募", exact: true });
+  await expect(dialog).not.toContainText("阶段目标：");
+  await expect(dialog).not.toContainText("初步方案：");
+  await expect(dialog).toContainText("原型验证");
+});
+
+test("R3 acceptance: contact correction explains formats and provides suitable keyboards", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByLabel("授权QQ", { exact: true }).check();
+  const qq = editor.getByLabel("QQ", { exact: true }); await qq.fill("abc");
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(qq).toBeFocused();
+  await expect(qq).toHaveAccessibleDescription(/5～20 位数字.*不能为 0/);
+  await expect(editor.getByText("请填写有效的授权联系值；每类渠道只选一个。", { exact: true })).toHaveCount(0);
+  await expect(qq).toHaveAttribute("inputmode", "numeric");
+  await editor.getByLabel("授权邮箱", { exact: true }).check();
+  await expect(editor.getByLabel("邮箱", { exact: true })).toHaveAttribute("type", "email");
+  await editor.getByLabel("授权手机", { exact: true }).check();
+  await expect(editor.getByLabel("手机", { exact: true })).toHaveAttribute("type", "tel");
+});
+
+test("R3 acceptance: editor entry and list return provide keyboard focus", async ({ page }) => {
+  await prepare(page);
+  await page.getByRole("button", { name: "新建招募岗位", exact: true }).press("Enter");
+  await expect(page.getByRole("heading", { name: "新建招募岗位", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "返回招募列表", exact: true }).click();
+  await expect(page.getByRole("button", { name: "新建招募岗位", exact: true })).toBeFocused();
+});
+
+test("R3 acceptance: public labels and contact feedback stay accurate through closure", async ({ page }) => {
+  await prepare(page); const editor = await fillRole(page);
+  await editor.getByLabel("零基础友好", { exact: true }).selectOption("false");
+  await editor.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await publish(page);
+  const href = await editor.getByRole("link", { name: "查看校内岗位", exact: true }).getAttribute("href");
+  const browsing = await page.context().newPage();
+  try {
+    await browsing.goto(`${BASE_URL}${href}`);
+    await expect(browsing.getByRole("article", { name: "校内招募详情" })).toContainText("不接受零基础");
+    const contacts = browsing.getByRole("region", { name: "授权联系方式" });
+    await contacts.getByRole("button", { name: "查看联系方式", exact: true }).click();
+    const announcement = contacts.getByRole("status", { name: "联系读取结果", exact: true });
+    await expect(announcement).toHaveText("联系方式已读取，请查看下方已授权渠道。");
+    await expect(announcement).not.toContainText("demo_partner");
+    await expect(contacts).toContainText("demo_partner");
+    await editor.getByRole("button", { name: "关闭招募", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "确认关闭", exact: true }).click();
+    await expect(editor.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
+    await expect(editor).not.toContainText("下次提醒");
+  } finally { await browsing.close(); }
+});
+
 test("R3: account switching preserves the shared student's resumable session", async ({ page, browser }) => {
   await ensureStudentLogin(page);
   await loginThroughUi(page, parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT, "CQ_E2E_AUTHOR_STUDENT"));
@@ -54,8 +146,8 @@ async function prepare(page: Page, projectFields?: { title: string; summary: str
 async function fillRole(page: Page) {
   await page.getByRole("button", { name: "新建招募岗位", exact: true }).click();
   const editor = page.getByRole("region", { name: "招募岗位编辑器" });
-  for (const [label, value] of Object.entries({ "项目名称": "模拟学习实验", "项目方向": "学习", "项目介绍": "模拟资料：访谈项目", "阶段目标": "验证学习方法", "初步方案": "先做访谈", "岗位名称": "研究伙伴", "招募人数": "1", "主要职责": "参与访谈", "能力要求": "愿意学习", "时间投入": "每周两小时" })) await editor.getByLabel(label, { exact: true }).fill(value);
   await editor.getByLabel("项目阶段", { exact: true }).selectOption("true");
+  for (const [label, value] of Object.entries({ "项目名称": "模拟学习实验", "项目方向": "学习", "项目介绍": "模拟资料：访谈项目", "阶段目标": "验证学习方法", "初步方案": "先做访谈", "岗位名称": "研究伙伴", "招募人数": "1", "主要职责": "参与访谈", "能力要求": "愿意学习", "时间投入": "每周两小时" })) await editor.getByLabel(label, { exact: true }).fill(value);
   await editor.getByLabel("零基础友好", { exact: true }).selectOption("true");
   await editor.getByLabel("授权微信", { exact: true }).check();
   await editor.getByLabel("微信", { exact: true }).fill("demo_partner");

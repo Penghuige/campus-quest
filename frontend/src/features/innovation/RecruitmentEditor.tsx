@@ -12,17 +12,19 @@ import { RecruitmentConfirm } from "./RecruitmentConfirm";
 import { RecruitmentStageField } from "./RecruitmentStageField";
 import { codePointCount } from "./draftForm";
 import { getPendingRecruitment, rememberPendingRecruitment, clearPendingRecruitment, type RecruitmentAction as Action, type PendingRecruitmentCommand as Pending, type RecruitmentConfirmation as Confirmation } from "./recruitmentPending";
+import { getRecruitmentRecovery, rememberRecruitmentRecovery, clearRecruitmentRecovery } from "./recruitmentRecovery";
 
 export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack }: { projectId: string; initial?: RecruitmentDto; projectDefaults?: RecruitmentProjectDefaults; onBack: () => void }) {
   const [resumed] = useState(() => getPendingRecruitment(projectId));
-  const [record, setRecord] = useState(resumed?.record ?? initial ?? null);
-  const [newDefaults] = useState(() => initialRecruitmentForm(projectDefaults));
-  const [form, setForm] = useState(() => resumed?.form ?? (initial ? toRecruitmentForm(initial.fields) : newDefaults));
+  const [recovered] = useState(() => getRecruitmentRecovery(projectId));
+  const [record, setRecord] = useState(resumed ? resumed.record : recovered?.record ?? initial ?? null);
+  const [newDefaults] = useState(() => recovered?.newDefaults ?? initialRecruitmentForm(projectDefaults));
+  const [form, setForm] = useState(() => resumed?.form ?? recovered?.form ?? (initial ? toRecruitmentForm(initial.fields) : newDefaults));
   const [errors, setErrors] = useState<RecruitmentFormErrors>({});
   const [error, setError] = useState<ReturnType<typeof recruitmentError> | null>(resumed ? recruitmentError(null) : null);
   const [remote, setRemote] = useState<RecruitmentDto | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(recovered && !resumed ? "已恢复未保存输入，仍未保存到服务器。" : "");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(resumed?.confirmation ?? null);
   const pending = useRef<Pending | null>(resumed?.command ?? null);
   const active = useRef(false); const epoch = useRef(getAuthEpoch());
@@ -33,13 +35,27 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
   const locked = busy || error?.unknown === true;
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => {
+    if (epoch.current !== getAuthEpoch() || pending.current) return;
+    if (hasRecruitmentChanges(form, record ? toRecruitmentForm(record.fields) : newDefaults)) rememberRecruitmentRecovery(projectId, { epoch: epoch.current, record, form, newDefaults });
+    else clearRecruitmentRecovery(projectId, epoch.current);
+  }, [form, record, newDefaults, projectId]);
+  useEffect(() => {
     if (!dirty && !error?.unknown) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, error?.unknown]);
   function current() { return active.current && epoch.current === getAuthEpoch(); }
-  function changeForm(next: RecruitmentForm) { setForm(next); setMessage(""); setErrors({}); }
-  function back() { if (!locked && (!dirty || window.confirm("有未保存内容，确定返回吗？"))) onBack(); }
+  function changeForm(next: RecruitmentForm) {
+    if (!current() || locked) return;
+    if (hasRecruitmentChanges(next, original)) rememberRecruitmentRecovery(projectId, { epoch: epoch.current, record, form: next, newDefaults });
+    else clearRecruitmentRecovery(projectId, epoch.current);
+    setForm(next); setMessage(""); setErrors({});
+  }
+  function back() {
+    if (!locked && (!dirty || window.confirm("有未保存内容，返回将丢弃这些输入，确定返回吗？"))) {
+      clearRecruitmentRecovery(projectId, epoch.current); onBack();
+    }
+  }
   function validate(publication: boolean) {
     const next = validateRecruitmentForm(form, publication, Date.now()); setErrors(next);
     const key = Object.keys(next)[0];
@@ -60,12 +76,14 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
       if (command.kind === "save") {
         next = command.id ? await updateRecruitment(projectId, command.id, { ...command.body, version: command.body.version! }) : await createRecruitment(projectId, command.body);
         clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
+        clearRecruitmentRecovery(projectId, epoch.current);
         if (!current()) return;
         setMessage("招募草稿已保存，仅自己可见；公开版本保持原内容。");
       } else {
         const operation = { publish: publishRecruitment, close: closeRecruitment, reopen: reopenRecruitment, confirm: confirmActiveRecruitment, revoke: revokeRecruitmentContact }[command.kind];
         const receipt = command.kind === "revoke" ? await revokeRecruitmentContact(projectId, command.id, command.body as RevokeCommand) : await operation(projectId, command.id, command.body as RevokeCommand);
         clearPendingRecruitment(projectId, epoch.current, command.body.request_id);
+        if (command.kind === "publish" || command.kind === "reopen") clearRecruitmentRecovery(projectId, epoch.current);
         if (!current()) return;
         next = receipt.current; setMessage(recruitmentReceiptText(receipt));
         setConfirmation((value) => value ? { ...value, completed: true } : null);
@@ -113,6 +131,7 @@ export function RecruitmentEditor({ projectId, initial, projectDefaults, onBack 
     <p className="field-hint">草稿仅自己可见。发布招募须具备负责人资格及当前项目权限；无需先有通过审核的成果。</p>
     {record ? <p className="field-hint">当前{recruitmentStatusText(record.status, record.moderation_state)}{record.has_unpublished_changes ? " · 有未发布改动" : ""}{record.next_remind_at ? ` · 下次提醒 ${recruitmentDateTime(record.next_remind_at)}` : ""}</p> : null}
     <p className="field-hint">填写内容 → 保存草稿（仅自己可见） → 预览并确认发布。</p>
+    {dirty ? <p className="field-hint">未保存输入暂留在本标签页，站内离开后返回此项目可继续；刷新或退出账号会清除。保存后才写入草稿。</p> : null}
     <form className="panel form ie-draft-form" method="post" onSubmit={save} noValidate ref={formRef}>
       <fieldset disabled={locked} className="ie-recruitment-fields"><legend className="section-title">项目与岗位</legend>
         {RECRUITMENT_TEXT_FIELDS.map(({ key, label, rows, limit }) => key === "stage" ? <RecruitmentStageField key={key} form={form} errors={errors} onChange={changeForm} /> : <div className="field" key={key}><div className="field-head"><label className="field-label" htmlFor={`recruit-${key}`}>{label}</label><span className="field-counter" data-over={codePointCount(form[key].trim()) > limit ? "true" : undefined}>{codePointCount(form[key].trim())}/{limit}</span></div><textarea className="input ie-draft-textarea" id={`recruit-${key}`} name={key} rows={rows} value={form[key]} aria-invalid={errors[key] ? true : undefined} aria-describedby={`recruit-${key}-hint${errors[key] ? ` recruit-${key}-error` : ""}`} onChange={(event) => changeForm({ ...form, [key]: event.target.value })} /><p className="field-hint" id={`recruit-${key}-hint`}>{key === "introduction" ? "仅描述目标、方向和工作计划，请勿填写未经核实的成果或奖项。发布时必填。" : key === "goal" || key === "initial_plan" ? "创意起步项目发布时必填。" : "发布时必填。"} 最多 {limit} 个字符。</p>{errors[key] ? <p className="field-error" id={`recruit-${key}-error`}>{errors[key]}</p> : null}</div>)}

@@ -13,6 +13,7 @@ import { recruitmentStatusText } from "./recruitmentPresentation";
 import { RecruitmentEditor } from "./RecruitmentEditor";
 import { getPendingRecruitment } from "./recruitmentPending";
 import type { RecruitmentProjectDefaults } from "./recruitmentForm";
+import { getRecruitmentRecovery } from "./recruitmentRecovery";
 
 export function RecruitmentWorkspace({ projectId }: { projectId: string }) {
   const { state } = useSession();
@@ -29,10 +30,11 @@ function WorkspaceGuard({ projectId }: { projectId: string }) {
 function Workspace({ projectId, projectDefaults }: { projectId: string; projectDefaults: RecruitmentProjectDefaults }) {
   const [selected, setSelected] = useState<string | null | undefined>(() => {
     const resumed = getPendingRecruitment(projectId);
-    return resumed ? resumed.command.id : undefined;
+    const recovered = getRecruitmentRecovery(projectId);
+    return resumed ? resumed.command.id : recovered ? recovered.record?.id ?? null : undefined;
   });
   const [offset, setOffset] = useState(0);
-  if (selected !== undefined) return selected === null || getPendingRecruitment(projectId) ? <RecruitmentEditor projectId={projectId} projectDefaults={projectDefaults} onBack={() => setSelected(undefined)} /> : <EditorLoader projectId={projectId} id={selected} onBack={() => setSelected(undefined)} />;
+  if (selected !== undefined) return selected === null || getPendingRecruitment(projectId) || getRecruitmentRecovery(projectId) ? <RecruitmentEditor projectId={projectId} projectDefaults={projectDefaults} onBack={() => setSelected(undefined)} /> : <EditorLoader projectId={projectId} id={selected} onBack={() => setSelected(undefined)} />;
   return <section className="section" aria-label="招募岗位列表"><SectionHeading title="招募岗位" action={<Button onClick={() => setSelected(null)}>新建招募岗位</Button>} /><RecruitmentList key={offset} projectId={projectId} offset={offset} onPage={setOffset} onEdit={setSelected} /></section>;
 }
 function RecruitmentList({ projectId, offset, onPage, onEdit }: { projectId: string; offset: number; onPage: (offset: number) => void; onEdit: (id: string) => void }) {
