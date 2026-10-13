@@ -16,6 +16,10 @@ from app.core.security import AccessTokenCodec
         "tests.integration.system.test_system_settings_api",
         "tests.integration.tasks.test_task_api",
         "tests.integration.tasks.test_abandon_settings_composition",
+        "tests.integration.points.test_points_api",
+        "tests.integration.points.test_reward_admin",
+        "tests.integration.points.test_term_setting_provider",
+        "tests.integration.submissions.test_review_audit",
     ],
 )
 def test_api_clock_survives_collection_older_than_token_ttl(

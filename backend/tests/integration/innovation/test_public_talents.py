@@ -42,6 +42,63 @@ async def published(client, db, clock, patch=None):
     return owner, headers, response.json()["current"]
 
 
+async def test_unselected_file_and_nonexistent_profile_have_neutral_denial(
+    client, db_session, clock, storage
+):
+    from uuid import uuid4
+
+    _, owner, _, _ = await saved(client, db_session, clock)
+    selected = await ready(client, owner, storage)
+    private = await ready(client, owner, storage)
+    row = await select_and_publish(client, owner, [selected["id"]])
+    _, viewer = await account(db_session, clock)
+    await db_session.commit()
+    denied = await client.get(
+        f"{PUBLIC}/{row['id']}/files/{private['id']}/content",
+        headers=viewer,
+        params={"expected_public_version": row["public_version"]},
+    )
+    absent = await client.post(
+        f"{PUBLIC}/{uuid4()}/contacts",
+        headers=viewer,
+        json={"expected_public_version": 1},
+    )
+    assert denied.status_code == absent.status_code == 404
+    assert "object_key" not in denied.text + absent.text
+
+
+@pytest.mark.parametrize("change", ["missing", "size", "mime", "digest"])
+async def test_public_download_denies_changed_or_unavailable_checked_bytes(
+    client, db_session, clock, storage, change
+):
+    from dataclasses import replace
+
+    _, owner, _, _ = await saved(client, db_session, clock)
+    file = await ready(client, owner, storage)
+    row = await select_and_publish(client, owner, [file["id"]])
+    _, viewer = await account(db_session, clock)
+    key = storage.upload_urls[-1].object_key
+    if change == "missing":
+        storage.fail_with(OSError("storage unavailable"))
+    elif change == "mime":
+        storage.objects[key] = replace(storage.objects[key], content_type="image/png")
+    else:
+        original = file_support.PDF
+        storage.put_object(
+            object_key=key,
+            content=original + b"changed" if change == "size" else b"X" * len(original),
+        )
+    response = await client.get(
+        f"{PUBLIC}/{row['id']}/files/{file['id']}/content",
+        headers=viewer,
+        params={"expected_public_version": row["public_version"]},
+    )
+    assert response.status_code == 409, response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "content-disposition" not in response.headers
+    assert file_support.PDF not in response.content
+
+
 async def test_hidden_talent_is_absent_from_search_and_direct_links(
     client, db_session, clock
 ):

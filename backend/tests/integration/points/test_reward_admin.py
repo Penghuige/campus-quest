@@ -105,6 +105,9 @@ _TERM = "2026-fall"
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # Keep seeded business timestamps and JWT issuance on the fresh test anchor.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 

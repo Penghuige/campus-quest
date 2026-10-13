@@ -435,3 +435,58 @@ async def test_file_tombstone_cannot_be_cleared_in_postgres(
                 text(f"UPDATE ie_talent_files SET {column}=NULL WHERE id=:id"),
                 {"id": file_id},
             )
+
+
+@pytest.mark.parametrize("change", ["missing", "size", "mime", "digest"])
+async def test_owner_download_denies_storage_content_changed_after_check(
+    client, db_session, clock, storage, change
+):
+    from dataclasses import replace
+
+    _, headers, _, _ = await saved(client, db_session, clock)
+    file = await ready(client, headers, storage)
+    key = storage.upload_urls[-1].object_key
+    if change == "missing":
+        storage.fail_with(OSError("storage unavailable"))
+    elif change == "mime":
+        storage.objects[key] = replace(storage.objects[key], content_type="image/png")
+    else:
+        content = PDF + b"changed" if change == "size" else b"X" * len(PDF)
+        storage.put_object(object_key=key, content=content)
+    denied = await client.get(FILES + f"/{file['id']}/content", headers=headers)
+    assert denied.status_code == 409, denied.text
+    assert denied.headers["cache-control"] == "private, no-store"
+    assert "content-disposition" not in denied.headers
+    assert PDF not in denied.content
+
+
+@pytest.mark.parametrize("rejected", [False, True])
+async def test_repeated_completed_check_keeps_readiness_verdict(
+    client, db_session, clock, storage, scanner, rejected
+):
+    _, headers, _, _ = await saved(client, db_session, clock)
+    if rejected:
+        scanner.failure = EvidenceThreatError("threat")
+    created = await upload(client, headers, storage)
+    path = FILES + f"/{created['file']['id']}/complete"
+    first = await client.post(path, headers=headers)
+    scanner.failure = None
+    second = await client.post(path, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert second.json()["state"] == ("REJECTED" if rejected else "READY")
+    assert second.json()["version"] == first.json()["version"]
+
+
+async def test_revoked_ready_file_cannot_be_checked_or_private_file_revoked(
+    client, db_session, clock, storage
+):
+    _, headers, _, _ = await saved(client, db_session, clock)
+    file = await ready(client, headers, storage)
+    path = FILES + f"/{file['id']}"
+    row = await current(client, headers)
+    refused = await client.post(path + "/revoke", headers=headers, json=command(row))
+    assert refused.status_code == 409
+    row = await select_and_publish(client, headers, [file["id"]])
+    revoked = await client.post(path + "/revoke", headers=headers, json=command(row))
+    assert revoked.status_code == 200
+    assert (await client.post(path + "/complete", headers=headers)).status_code == 409

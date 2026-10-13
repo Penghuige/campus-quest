@@ -59,6 +59,9 @@ _SEED_TERM = "2026-fall"  # Settings.current_academic_term dev default
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # A long full suite must not expire tokens before this fixture executes.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 

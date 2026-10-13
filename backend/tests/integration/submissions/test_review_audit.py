@@ -403,6 +403,10 @@ async def test_invalidate_audits_the_lock_migration_and_redacted_basis(
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # Refresh the business seed anchor before HTTP tests issue their JWTs.
+    global _T0, _GRACE
+    _T0 = datetime.now(UTC).replace(microsecond=0)
+    _GRACE = _T0 + timedelta(days=4)
     return FrozenClock(_T0)
 
 

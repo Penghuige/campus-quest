@@ -133,6 +133,9 @@ _QUEUE_FIELDS = {"items", "total", "limit", "offset"}
 
 @pytest.fixture
 def api_clock() -> FrozenClock:
+    # PyJWT checks wall time; collection may precede execution by over 15 min.
+    global _T0
+    _T0 = datetime.now(UTC).replace(microsecond=0)
     return FrozenClock(_T0)
 
 

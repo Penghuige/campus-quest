@@ -35,6 +35,37 @@ from tests.integration.innovation.test_achievement_review_operations import acco
 pytestmark = pytest.mark.integration
 
 
+async def test_publication_before_building_a_profile_is_neutral_not_found(
+    client, db_session, clock
+):
+    _, headers = await account(db_session, clock)
+    await db_session.commit()
+    response = await client.post(
+        BASE + "/publish",
+        headers=headers,
+        json={"request_id": str(uuid4()), "version": 1},
+    )
+    assert response.status_code == 404
+    assert (await client.get(BASE, headers=headers)).json()["profile"] is None
+
+
+async def test_hidden_profile_cannot_be_hidden_again_or_revoke_absent_consent(
+    client, db_session, clock
+):
+    _, headers, row, _ = await saved(client, db_session, clock)
+    hidden = await client.post(BASE + "/hide", headers=headers, json=command(row))
+    assert hidden.status_code == 409
+    revoke = await client.post(
+        BASE + "/revoke-contact",
+        headers=headers,
+        json={**command(row), "channel": "WECHAT"},
+    )
+    assert revoke.status_code == 409
+    after = (await client.get(BASE, headers=headers)).json()["profile"]
+    assert after["version"] == row["version"]
+    assert after["public_contact_channels"] == []
+
+
 async def test_owner_can_distinguish_governance_removal_from_display_switch(
     client, db_session, clock
 ):

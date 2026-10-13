@@ -70,6 +70,8 @@ def test_unicode_text_limit(field, limit):
         {"contacts": [{"channel": "WECHAT", "value": "demo_test"}] * 2},
         {"links": [{"title": "x", "url": "javascript:alert(1)"}]},
         {"links": [{"title": "x", "url": "https://"}]},
+        {"links": [{"title": "x", "url": "https://example.com:invalid"}]},
+        {"links": [{"title": "x", "url": "https://[invalid"}]},
         {"links": [{"title": "x", "url": "https://example.com"}] * 6},
         {"student_no": "12345"},
         {"owner_user_id": str(uuid4())},
