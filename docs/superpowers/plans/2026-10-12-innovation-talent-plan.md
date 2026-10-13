@@ -126,12 +126,12 @@
 - `talentForm` 暴露 `emptyTalentForm()`、`fieldsToTalentForm(fields)`、`talentFormToFields(form)`、`validateTalentForm(form, mode: 'save'|'publish')`；`talentQuery` parse/build URL 与公共 page/sort 对齐；Unicode 字数使用码点，包含0小时/未填写区别。
 - `talentRecovery` 保存当前 session epoch 的输入与原 request_id/载荷，条件比较清理，仅内存；get/put/discard/reset 函数供 editor；迟到 save/scan 不覆盖新输入。
 
-- [ ] Step 1：先写真实转换/恢复/筛选测试：零经历/零contact publish允许、Unicode精确限制、链接拒绝、标准标签映射、auth epoch清空、迟到回执 compare-delete 不删新输入、URL页码返回；运行 `npm.cmd run test:unit`。Expected: 新行为 RED，记录后再实现纯模块。
-- [ ] Step 2：实现 API与本人表单/文件/联系/预览；明确保存/公开/关闭/撤回，show scannerstate 可重试；提交中仍保留后来输入；脏表单不可发布旧版；库存替换说明动作，未建档与未公开状态不等同错误。
-- [ ] Step 3：实现标准标签建议、公共列表/详情、URL筛选/回列表、按需联系与鉴权 blob下载，不预加载私密值；本人页面导航与创新创业人才入口；沿用 token/Field/Button，必要 Next.js 行为读本地配套文档。
-- [ ] Step 4：建立 E2E `new_student_without_evidence_can_enable`、`selected_ready_file_and_contact_are_visible_only_after_confirmation`、`close_denies_old_profile_contact_and_file_links`、`draft_recovery_does_not_cross_accounts`、`late_save_preserves_newer_edit`、`keyboard_error_preview_return_focus`、`scan_retry_and_replace_five_files`；真实模拟资料与双账号，保留测试世界cleanup隔离，不碰开发记录。
-- [ ] Step 5：移动/桌面 loading/empty/error/long-input/permission/scan/conflict 走查；axe、键盘focus、公告不读联系值；为新稳定人才页面建立钉字体基线，旧 baseline 必须保持或对因实际新增导航差异单独走查，不更改容差。
-- [ ] Step 6：运行 frontend typecheck/lint/check:css/test:unit/build/coverage:ratchet/audit:gate 与人才 E2E/视觉/no-skip；Expected: 全退出0且真实用例数以当轮日志为准；提交 `feat(innovation): deliver student talent workspace and directory`。
+- [x] Step 1：先写真实转换/恢复/筛选测试：零经历/零contact publish允许、Unicode精确限制、链接拒绝、标准标签映射、auth epoch清空、迟到回执 compare-delete 不删新输入、URL页码返回；运行 `npm.cmd run test:unit`。Expected: 新行为 RED，记录后再实现纯模块。
+- [x] Step 2：实现 API与本人表单/文件/联系/预览；明确保存/公开/关闭/撤回，show scannerstate 可重试；提交中仍保留后来输入；脏表单不可发布旧版；库存替换说明动作，未建档与未公开状态不等同错误。
+- [x] Step 3：实现标准标签建议、公共列表/详情、URL筛选/回列表、按需联系与鉴权 blob下载，不预加载私密值；本人页面导航与创新创业人才入口；沿用 token/Field/Button，必要 Next.js 行为读本地配套文档。
+- [x] Step 4：建立 E2E `new_student_without_evidence_can_enable`、`selected_ready_file_and_contact_are_visible_only_after_confirmation`、`close_denies_old_profile_contact_and_file_links`、`draft_recovery_does_not_cross_accounts`、`late_save_preserves_newer_edit`、`keyboard_error_preview_return_focus`、`scan_retry_and_replace_five_files`；真实模拟资料与双账号，保留测试世界cleanup隔离，不碰开发记录。
+- [x] Step 5：移动/桌面 loading/empty/error/long-input/permission/scan/conflict 走查；axe、键盘focus、公告不读联系值；为新稳定人才页面建立钉字体基线，旧 baseline 必须保持或对因实际新增导航差异单独走查，不更改容差。
+- [x] Step 6：运行 frontend typecheck/lint/check:css/test:unit/build/coverage:ratchet/audit:gate 与人才 E2E/视觉/no-skip；Expected: 全退出0且真实用例数以当轮日志为准；提交 `feat(innovation): deliver student talent workspace and directory`。
 
 ### Task 5: 端到端用户验收、独立评审与交付
 
@@ -139,11 +139,11 @@
 
 **Interfaces:** 消费 Tasks 1–4 实际服务/页面/契约/矩阵；交付功能、明确模拟的体验环境、同一最终提交证据与未通过的远端状态，不虚构上线/学校认证。
 
-- [ ] Step 1：隔离环境全量后端单测/真实 PG 集成/worker/适用 E2E及迁移；Windows/Linux双环境前端八门禁、完整浏览器/no-skip、新旧视觉。所有生产组合与输入树哈希对齐；完整输出日志与退出码，Expected: 全适用本地门禁0。
-- [ ] Step 2：按 R4-A01–12 逐行对账，不以套件绿替代需求；亲自从普通学生无经验建档→模拟上传→私有预览→公开→观察者搜索联系下载→主人关闭→旧链接拒绝→本人可维护；检查5文件替换与反馈合理性。记录实际屏幕阅读器未执行边界，不用axe替代读屏。
-- [ ] Step 3：生成本计划 review-package，最终一次独立全分支评审；开始评审前向用户说明模型/强度。Critical/Important 作者一次修复，RED→GREEN+完整相关套件，不派第二次复审；Minor与任何Ruling按成本列交付。
-- [ ] Step 4：恢复演示 Web/API/Worker/Beat，保留全部开发数据、关闭本次临时演示公开样本但保留记录；新功能完成供体验，不接着做R5。
-- [ ] Step 5：git diff --check、聚焦提交并推授权 fork，核对本地/fork/PR最终SHA、Draft、完整CI状态；若当前头未跑CI照实记录，GitGuardian不是完整CI。提供验收卡、技术说明及保存状态；完成后将本计划 scratch 留存必要证据到工作区日志并仅清理该计划workspace。
+- [x] Step 1：隔离环境全量后端单测/真实 PG 集成/worker/适用 E2E及迁移；Windows/Linux双环境前端八门禁、完整浏览器/no-skip、新旧视觉。所有生产组合与输入树哈希对齐；完整输出日志与退出码，Expected: 全适用本地门禁0。
+- [x] Step 2：按 R4-A01–12 逐行对账，不以套件绿替代需求；亲自从普通学生无经验建档→模拟上传→私有预览→公开→观察者搜索联系下载→主人关闭→旧链接拒绝→本人可维护；检查5文件替换与反馈合理性。记录实际屏幕阅读器未执行边界，不用axe替代读屏。
+- [x] Step 3：生成本计划 review-package，最终一次独立全分支评审；开始评审前向用户说明模型/强度。Critical/Important 作者一次修复，RED→GREEN+完整相关套件，不派第二次复审；Minor与任何Ruling按成本列交付。
+- [x] Step 4：恢复演示 Web/API/Worker/Beat，保留全部开发数据、关闭本次临时演示公开样本但保留记录；新功能完成供体验，不接着做R5。
+- [x] Step 5：git diff --check、聚焦提交并推授权 fork，核对本地/fork/PR最终SHA、Draft、完整CI状态；若当前头未跑CI照实记录，GitGuardian不是完整CI。提供验收卡、技术说明及保存状态；完成后将本计划 scratch 留存必要证据到工作区日志并仅清理该计划workspace。
 
 ## 自审与执行记录
 

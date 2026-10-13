@@ -1,7 +1,7 @@
 # 人才库规约测试矩阵
 
 预期先从 R4 spec §1–8 推导，2026-10-12 落笔。A01 对应 R4-A01，其余同序。
-Task 1/2 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs/r4-task1-*`、`r4-task2-*`；公共接口、前端与最终验收尚未完成。
+Tasks 1–3 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs/r4-task1-*`、`r4-task2-*`、`r4-task3-*`；最终13个人才浏览器场景、手机长内容及新旧视觉均通过；全量门禁与当前产品输入对应见 `docs/quality/innovation-talent-verification.md`，不是历史结果替代。
 
 | 编号 | 规约预期 | 验证位置 | 状态 |
 | --- | --- | --- | --- |
@@ -15,12 +15,12 @@ Task 1/2 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs/r4
 | A08 | 普通详情无联系值，点击按版本读取；限流/审计故障不给值 | `tests/integration/innovation/test_public_talents.py::test_public_projection_excludes_private_sentinels`；`tests/integration/innovation/test_talent_contacts.py`；`tests/integration/innovation/test_talent_public_file_races.py::test_public_file_audit_failure_never_returns_loaded_bytes` | 已覆盖 |
 | A09 | 幂等、版本冲突、PG并发最多一次改变；审计失败原子回滚，历史不可改 | `tests/integration/innovation/test_talent_races.py`；`tests/integration/innovation/test_talent_lifecycle.py::test_failed_audit_rolls_back_publication`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_history_is_immutable_in_postgres`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_pointer_cannot_use_another_students_revision` | 已覆盖 |
 | A10 | 外部I/O无持锁，迟到扫描不复活移除文件；关闭/撤权拒绝已读入字节 | `tests/integration/innovation/test_talent_file_races.py`；`tests/integration/innovation/test_talent_public_file_races.py` | 已覆盖 |
-| A11 | 就地纠错/键盘/恢复，迟到回执不覆盖新输入，账号切换不泄露 | G-3 | 缺口 |
-| A12 | 成果、招募、原任务不回归；模拟资料标记；学校认证仍未接 | G-4 | 缺口 |
+| A11 | 就地纠错/键盘/恢复，迟到回执不覆盖新输入，账号切换不泄露 | `frontend/src/__tests__/talent-form.test.ts`；`frontend/src/__tests__/talent-recovery.test.ts`；`frontend/src/__tests__/talent-presentation.test.ts`；`frontend/e2e/innovation-talents.spec.ts`；`frontend/e2e/innovation-talents-visual.spec.ts` | 已覆盖 |
+| A12 | 成果、招募、原任务不回归；模拟资料标记；学校认证仍未接 | `frontend/e2e/innovation-navigation.spec.ts`；`frontend/e2e/innovation-review.spec.ts`；`frontend/e2e/innovation-recruitment.spec.ts`；`docs/quality/innovation-talent-verification.md` | 已覆盖 |
 
-## 缺口明细
+## 对账说明与明确边界
 
 - Task 3 公共查询、主动联系、最终文件授权已覆盖；真实生产组合含观察者下载与关闭后旧请求拒绝。
 - Task 2 文件 lifecycle、审计回滚、私有读权限与扫描竞态已验证；真实 adapter 和生产组合分别见 `tests/integration/test_object_storage_smoke.py::test_talent_file_private_namespace_and_signed_write_once_contract`、`tests/integration/innovation/test_talent_composition_smoke.py`，均启用 opt-in 服务。
-- G-3：Task 4 前端和 E2E 待实施和验证。
-- G-4：Task 5 全量门禁与用户视角走查待完成。
+- Task 4：十三个真实浏览器场景验证最小建档、显式授权、关闭旧链接、账号隔离、迟到保存、键盘焦点、版本冲突、教师权限及五文件整批替换；新视觉包括手机/桌面、空/错误/加载、长内容与零小时投入。实际屏幕阅读器尚未执行，axe 不作为读屏替代。
+- 全量：后端2818通过、双平台前端各704通过、完整浏览器152通过/34具名豁免、五组视觉23通过；G-4本地缺口关闭。远端当前完整CI、正式学校认证与实际读屏不在本地通过结论内。
