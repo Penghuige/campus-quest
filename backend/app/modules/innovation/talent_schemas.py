@@ -127,6 +127,7 @@ class TalentProfileResponse(BaseModel):
     fields: TalentFields
     version: int
     visibility: Literal["HIDDEN", "VISIBLE"]
+    moderation_state: Literal["NORMAL", "TAKEN_DOWN"]
     public_version: int
     public_contact_channels: list[ContactChannel]
     public_file_ids: list[UUID]

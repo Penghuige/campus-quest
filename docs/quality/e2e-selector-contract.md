@@ -117,6 +117,10 @@ owner-approved product decision — never "to fit the new DOM".
 | `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
 | `.ie-draft-list` · `.ie-draft-row` · `.ie-draft-form` | private innovation drafts | list/form boundaries; functional tests prefer named regions and labels |
+| region `本人人才档案编辑器` · status `人才档案操作结果` · region `最新人才版本` | private talent profile | exact labeled fields; 保存人才草稿 / 预览开启校内展示 / 预览更新公开档案; original request retry preserves later edits; conflict resolution is explicit |
+| group `作品与证明文件（选填）` · status `人才文件操作结果` · `#talent-upload` | private checked talent uploads | functional specs use label 选择作品或证明文件 and checkbox 公开 {name}; cancellation preserves original File and request; removal/revocation requires confirmation |
+| region `校内人才库` · form `人才筛选` · nav `人才分页` · article `校内人才详情` | campus talent directory | URL carries keyword, all-match tags, cooperation state and offset; 返回人才列表 keeps filters; no private identity or contact values in ordinary browsing |
+| region `人才授权联系` · status `人才联系读取结果` · region `公开作品文件` | deliberate sensitive talent reads | 查看授权联系方式 / 下载 {name} trigger current-version authorized requests; live status never reads contact values aloud; unavailable states contain neutral messages |
 | region `负责人资料编辑器` · region `最新负责人资料` | private owner profile | fields use exact labels 姓名/学号/专业/年级; current account only; owner-profile API is not opened to ADMIN |
 | status `负责人资料保存状态` | private owner profile save announcement | exact role/name scopes save assertions now that the page also contains qualification status; preserve the save success/error behavior |
 | region `负责人资格` · status `负责人资格状态` · status `资格操作结果` | student owner qualification | qualification state and mutation result are independently named; no user ID, approver identity or another student's PII in the student DOM |

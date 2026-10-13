@@ -16229,6 +16229,14 @@
             ],
             "title": "Visibility"
           },
+          "moderation_state": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "TAKEN_DOWN"
+            ],
+            "title": "Moderation State"
+          },
           "public_version": {
             "type": "integer",
             "title": "Public Version"
@@ -16271,6 +16279,7 @@
           "fields",
           "version",
           "visibility",
+          "moderation_state",
           "public_version",
           "public_contact_channels",
           "public_file_ids",

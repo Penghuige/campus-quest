@@ -6364,6 +6364,11 @@ export interface components {
              * @enum {string}
              */
             visibility: "HIDDEN" | "VISIBLE";
+            /**
+             * Moderation State
+             * @enum {string}
+             */
+            moderation_state: "NORMAL" | "TAKEN_DOWN";
             /** Public Version */
             public_version: number;
             /** Public Contact Channels */

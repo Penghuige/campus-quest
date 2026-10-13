@@ -110,11 +110,11 @@
 - `TalentQuery` q≤100、去重 tag_ids≤5 全匹配、单 cooperation_state、limit=20(1–50)、offset≥0；排序公开时间 desc/id asc；两身份 ACTIVE + owner STUDENT + VISIBLE/NORMAL + 当前 snapshot；数据库字段白名单投影，不加载草稿/身份私密数据。
 - route 组合 S3 adapter 和独立 Redis 桶 ie:talent-contacts；敏感读取先锁双账号、聚合，外部 I/O 后最终锁查版本/状态/文件及审计，锁顺序与 Task 1/2 一致。
 
-- [ ] Step 1：`test_hidden_talent_is_absent_from_search_and_direct_links`、`test_public_projection_excludes_private_sentinels` assert 隐藏人才0条/404、公开不含 student_no/user_id/object_key/contactvalue/草稿 sentinel；运行 `uv run pytest tests/integration/innovation/test_public_talents.py -q`。Expected: 公共路由缺失业务 RED。
-- [ ] Step 2：实现上述投影/DTO/Query/router；R4-A03/04 全匹配与通配符字面用例、分页/稳定次序、暂不接洽公开、主人/查看者禁用与治理都隐藏。
-- [ ] Step 3：主动联系值仅授权渠道返回；expected_public_version 旧页409、关闭404、30次限流、第31次429、Redis503、审计失败不给值；更新/撤回最后联系人仍可见。
-- [ ] Step 4：`test_close_during_public_file_read_denies_final_output`、`test_revoke_during_public_file_read_denies_final_output`、`test_revision_change_requires_refresh_before_contact_or_download`；真人身份、真实 PG+屏障，无旧 URL 或对象 key 绕过；PRIVATE/no-store 连错误一起断言。
-- [ ] Step 5：运行 `uv run pytest tests/unit tests/integration/innovation -q`、ruff/mypy、alembic check、真实 adapter smoke；Expected: 全退出0；生成 API 契约，提交 `feat(innovation): add authorized campus talent browsing`。
+- [x] Step 1：`test_hidden_talent_is_absent_from_search_and_direct_links`、`test_public_projection_excludes_private_sentinels` assert 隐藏人才0条/404、公开不含 student_no/user_id/object_key/contactvalue/草稿 sentinel；运行 `uv run pytest tests/integration/innovation/test_public_talents.py -q`。Expected: 公共路由缺失业务 RED。
+- [x] Step 2：实现上述投影/DTO/Query/router；R4-A03/04 全匹配与通配符字面用例、分页/稳定次序、暂不接洽公开、主人/查看者禁用与治理都隐藏。
+- [x] Step 3：主动联系值仅授权渠道返回；expected_public_version 旧页409、关闭404、30次限流、第31次429、Redis503、审计失败不给值；更新/撤回最后联系人仍可见。
+- [x] Step 4：`test_close_during_public_file_read_denies_final_output`、`test_revoke_during_public_file_read_denies_final_output`、`test_revision_change_requires_refresh_before_contact_or_download`；真人身份、真实 PG+屏障，无旧 URL 或对象 key 绕过；PRIVATE/no-store 连错误一起断言。
+- [x] Step 5：运行 `uv run pytest tests/unit tests/integration/innovation -q`、ruff/mypy、alembic check、真实 adapter smoke；Expected: 全退出0；生成 API 契约，提交 `feat(innovation): add authorized campus talent browsing`。
 
 ### Task 4: 本人档案、作品与公共查找前端闭环
 

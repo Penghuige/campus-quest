@@ -1,0 +1,132 @@
+import AxeBuilder from '@axe-core/playwright';
+import { API_URL, BASE_URL, expect, test, mintToken, loginThroughUi, parseSeededAccount, staffLogin } from './fixtures';
+import { TALENT_OWN, editor, result, prepareTalent, fillTalent, saveTalent, publishTalent, uploadTalent, ownRecord, PNG, ownerHeaders } from './talent-helpers';
+
+test.skip(process.env.CQ_E2E!=='1','CQ_E2E=1 with an owned real database');
+
+test('R4: a rejected upload intent allows selecting a corrected file',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const intent=(url:URL)=>url.pathname==='/api/v1/ie/me/talent-profile/files';
+  await page.route(intent,route=>route.request().method()==='POST'?route.fulfill({status:422,json:{error:{code:'VALIDATION_ERROR',message:'请选择名称不超过 200 字的文件'}}}):route.continue());
+  const chooser=editor(page).getByLabel('选择作品或证明文件',{exact:true});
+  await chooser.setInputFiles({name:'模拟更正前.png',mimeType:'image/png',buffer:PNG});
+  await expect(editor(page).getByRole('alert')).toContainText('请选择名称不超过 200 字的文件');
+  await expect(chooser).toBeEnabled();
+  await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toHaveCount(0);
+  await page.unroute(intent);await uploadTalent(page,'模拟更正后.png');
+});
+
+test('R4: new_student_without_evidence_can_enable',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  await editor(page).getByRole('button',{name:'预览开启校内展示',exact:true}).click();
+  await expect(page.getByRole('dialog')).toContainText('未授权联系方式；仍可以公开档案');
+  await page.keyboard.press('Escape');await expect(editor(page).getByRole('button',{name:'预览开启校内展示',exact:true})).toBeFocused();
+  await publishTalent(page);await expect(result(page)).toBeFocused();
+  await editor(page).getByRole('link',{name:'查看校内公开档案',exact:true}).click();
+  await expect(page.getByRole('article',{name:'校内人才详情'})).toContainText('暂无公开文件');
+  await expect(page.getByRole('region',{name:'人才授权联系'})).toContainText('暂未授权联系方式');
+  await expect(page.getByRole('button',{name:'查看授权联系方式',exact:true})).toHaveCount(0);
+});
+
+test('R4: selected_ready_file_and_contact_are_visible_only_after_confirmation',async({page,browser})=>{
+  test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const selected=await uploadTalent(page);await expect(selected).not.toBeChecked();await selected.check();
+  await editor(page).getByLabel('授权微信',{exact:true}).check();await editor(page).getByLabel('微信',{exact:true}).fill('demo_r4_talent');await saveTalent(page);
+  const record=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  expect((await page.request.get(`${API_URL}/ie/talents/${record.id}`,{headers})).status()).toBe(404);
+  await publishTalent(page);
+  const context=await browser.newContext({ignoreHTTPSErrors:true});const viewer=await context.newPage();
+  try{
+    await loginThroughUi(viewer,parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT,'CQ_E2E_AUTHOR_STUDENT'));
+    let contacts=0;let downloads=0;viewer.on('request',r=>{const path=new URL(r.url()).pathname;if(path.endsWith('/contacts'))contacts++;if(path.endsWith('/content'))downloads++;});
+    await viewer.goto(`${BASE_URL}/innovation/talents?q=模拟新同学&tag_ids=00000000-0000-4000-8000-000000000003`);
+    await viewer.getByRole('link',{name:'模拟新同学',exact:true}).click();
+    await expect(viewer.getByRole('article',{name:'校内人才详情'})).toBeVisible();expect(contacts).toBe(0);expect(downloads).toBe(0);
+    await expect(viewer.getByRole('main')).not.toContainText('demo_r4_talent');
+    await viewer.getByRole('button',{name:'查看授权联系方式',exact:true}).click();
+    await expect(viewer.getByRole('region',{name:'人才授权联系'})).toContainText('demo_r4_talent');
+    await expect(viewer.getByRole('status',{name:'人才联系读取结果'})).not.toContainText('demo_r4_talent');
+    const download=viewer.waitForEvent('download');await viewer.getByRole('button',{name:'下载 模拟作品.png',exact:true}).click();
+    const file=await download;expect(file.suggestedFilename()).toBe('模拟作品.png');const stream=await file.createReadStream();const chunks:Buffer[]=[];for await(const chunk of stream!)chunks.push(Buffer.from(chunk));expect(Buffer.concat(chunks)).toEqual(PNG);
+    await viewer.getByRole('link',{name:'返回人才列表',exact:true}).click();await expect(viewer).toHaveURL(/q=.*&tag_ids=/);
+    await editor(page).getByLabel('自我介绍',{exact:true}).fill('PRIVATE_R4_DRAFT');await saveTalent(page);await viewer.goto(`${BASE_URL}/innovation/talents/${record.id}`);await expect(viewer.getByRole('main')).not.toContainText('PRIVATE_R4_DRAFT');
+    await editor(page).getByRole('button',{name:'立即撤回微信授权',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'确认撤回授权',exact:true}).click();await expect(result(page)).toContainText('授权已撤回');
+    await viewer.reload();await expect(viewer.getByRole('region',{name:'人才授权联系'})).toContainText('暂未授权');await expect(viewer.getByRole('article')).not.toContainText('PRIVATE_R4_DRAFT');
+  }finally{await context.close();}
+});
+
+test('R4: close_denies_old_profile_contact_and_file_links',async({page})=>{
+  test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page);await saveTalent(page);await(await uploadTalent(page)).check();await editor(page).getByLabel('授权微信',{exact:true}).check();await editor(page).getByLabel('微信',{exact:true}).fill('demo_r4_close');await saveTalent(page);await publishTalent(page);
+  const old=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  const viewer=await page.context().newPage();try{
+    await viewer.goto(`${BASE_URL}/innovation/talents/${old.id}`);await expect(viewer.getByRole('article')).toBeVisible();
+    await editor(page).getByRole('button',{name:'关闭校内展示',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'确认关闭',exact:true}).click();await expect(result(page)).toContainText('已关闭');
+    await viewer.getByRole('button',{name:'查看授权联系方式',exact:true}).click();await expect(viewer.getByRole('main').getByRole('alert')).toContainText('停止展示');
+    expect((await page.request.get(`${API_URL}/ie/talents/${old.id}`,{headers})).status()).toBe(404);
+    expect((await page.request.post(`${API_URL}/ie/talents/${old.id}/contacts`,{headers,data:{expected_public_version:old.public_version}})).status()).toBe(404);
+    expect((await page.request.get(`${API_URL}/ie/talents/${old.id}/files/${old.public_file_ids[0]}/content?expected_public_version=${old.public_version}`,{headers})).status()).toBe(404);
+    expect((await page.request.get(`${API_URL}${TALENT_OWN}/files/${old.public_file_ids[0]}/content`,{headers:ownerHeaders()})).status()).toBe(200);
+  }finally{await viewer.close();}
+});
+
+test('R4: draft_recovery_does_not_cross_accounts',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await editor(page).getByLabel('自我介绍',{exact:true}).fill('R4_ACCOUNT_PRIVATE_SENTINEL');
+  await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);await page.goBack();await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('R4_ACCOUNT_PRIVATE_SENTINEL');
+  await page.locator('a[href="/innovation"]:visible').first().click();await page.goto(`${BASE_URL}/logout`);await page.getByRole('button',{name:'确认退出登录',exact:true}).click();await expect(page).toHaveURL(/\/login/);
+  await loginThroughUi(page,parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT,'CQ_E2E_AUTHOR_STUDENT'));await page.goto(`${BASE_URL}/profile/talent-profile`);await expect(editor(page)).toBeVisible();await expect(editor(page).getByLabel('自我介绍',{exact:true})).not.toHaveValue('R4_ACCOUNT_PRIVATE_SENTINEL');
+});
+
+test('R4: late_save_preserves_newer_edit',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let acknowledged=false;const bodies:string[]=[];
+  const path='**/api/v1/ie/me/talent-profile';await page.route(path,async route=>{if(route.request().method()!=='PUT')return route.continue();bodies.push(route.request().postData()!);const original=bodies.length===1;const response=await route.fetch();expect(response.status()).toBe(200);if(original){acknowledged=true;await held;}await route.fulfill({response});});
+  try{
+    await editor(page).getByRole('button',{name:'保存人才草稿',exact:true}).click();await expect.poll(()=>acknowledged).toBe(true);
+    await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);await page.goBack();
+    await editor(page).getByLabel('自我介绍',{exact:true}).fill('迟到回执不能覆盖的新输入');await editor(page).getByRole('button',{name:'重试原请求',exact:true}).click();await expect(result(page)).toContainText('原请求已处理');expect(bodies).toHaveLength(2);expect(bodies[1]).toBe(bodies[0]);
+    release();await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);await page.goBack();await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('迟到回执不能覆盖的新输入');
+  }finally{release();await page.unroute(path);}
+});
+
+test('R4: keyboard_error_preview_return_focus',async({page})=>{
+  await prepareTalent(page);await saveTalent(page);await editor(page).getByRole('button',{name:'预览开启校内展示',exact:true}).press('Enter');await expect(editor(page).getByLabel('展示姓名',{exact:true})).toBeFocused();await expect(editor(page).getByLabel('展示姓名',{exact:true})).toHaveAttribute('aria-invalid','true');
+  await fillTalent(page);await saveTalent(page);const opener=editor(page).getByRole('button',{name:'预览开启校内展示',exact:true});await opener.press('Enter');await expect(page.getByRole('dialog')).toBeVisible();await expect(page.getByRole('dialog')).toContainText('模拟新同学');expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);await page.keyboard.press('Escape');await expect(opener).toBeFocused();expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
+});
+
+test('R4: conflicting_save_preserves_input_and_explicitly_rebases',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const record=(await ownRecord(page))!;
+  await editor(page).getByLabel('自我介绍',{exact:true}).fill('窗口里的新介绍');
+  const concurrent=await page.request.put(`${API_URL}${TALENT_OWN}`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:record.version,fields:{...record.fields,advantages:'另一窗口保存的优势'}}});expect(concurrent.status()).toBe(200);
+  await editor(page).getByRole('button',{name:'保存人才草稿',exact:true}).click();
+  await expect(editor(page).getByRole('alert')).toContainText('档案已变化');
+  await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('窗口里的新介绍');
+  await editor(page).getByRole('button',{name:'读取最新版本（保留输入）',exact:true}).click();
+  const latest=page.getByRole('region',{name:'最新人才版本'});await expect(latest).toContainText('另一窗口保存的优势');
+  await latest.getByRole('button',{name:'以最新版本继续（保留输入）',exact:true}).click();
+  await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('窗口里的新介绍');await saveTalent(page);
+  expect((await ownRecord(page))!.fields.introduction).toBe('窗口里的新介绍');
+});
+
+test('R4: active_staff_can_browse_but_not_edit_student_talent',async({page})=>{
+  await staffLogin(page,process.env.CQ_E2E_STAFF!,process.env.CQ_E2E_STAFF_TOTP_SECRET!);
+  await page.goto(`${BASE_URL}/innovation/talents`);await expect(page.getByRole('form',{name:'人才筛选'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'建立或管理我的人才档案',exact:true})).toHaveCount(0);
+  await page.goto(`${BASE_URL}/profile/talent-profile`);await expect(page.getByRole('region',{name:'本人人才档案编辑器'})).toHaveCount(0);
+  await expect(page.getByRole('main')).toContainText(/学生|教师/);
+});
+
+test('R4: scan_retry_and_replace_five_files',async({page})=>{
+  test.setTimeout(360_000);await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const complete='**/api/v1/ie/me/talent-profile/files/*/complete';let blocked=true;await page.route(complete,async route=>{if(blocked)await route.fulfill({status:503,json:{error:{code:'HTTP_ERROR',message:'模拟检查服务暂不可用'}}});else await route.continue();});
+  await editor(page).getByLabel('选择作品或证明文件',{exact:true}).setInputFiles({name:'旧作品1.png',mimeType:'image/png',buffer:PNG});await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toBeVisible();
+  await editor(page).getByRole('button',{name:'刷新文件状态',exact:true}).click();await editor(page).getByRole('button',{name:'移除 旧作品1.png',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toBeVisible();
+  blocked=false;await editor(page).getByRole('button',{name:'重试原文件上传',exact:true}).click();await expect(page.getByRole('status',{name:'人才文件操作结果'})).toContainText('文件检查通过',{timeout:150_000});await editor(page).getByRole('checkbox',{name:'公开 旧作品1.png',exact:true}).check();await page.unroute(complete);
+  for(let i=2;i<=5;i++)await(await uploadTalent(page,`旧作品${i}.png`)).check();await saveTalent(page);await publishTalent(page);
+  for(let i=1;i<=5;i++)await uploadTalent(page,`新作品${i}.png`);
+  await expect(editor(page).getByLabel('选择作品或证明文件',{exact:true})).toBeDisabled();
+  for(let i=1;i<=5;i++)await editor(page).getByRole('checkbox',{name:`公开 旧作品${i}.png`,exact:true}).uncheck();
+  for(let i=1;i<=5;i++)await editor(page).getByRole('checkbox',{name:`公开 新作品${i}.png`,exact:true}).check();await saveTalent(page);await publishTalent(page);
+  for(let i=1;i<=5;i++){await editor(page).getByRole('button',{name:`移除 旧作品${i}.png`,exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'确认移除',exact:true}).click();await expect(editor(page).getByRole('button',{name:`移除 旧作品${i}.png`,exact:true})).toHaveCount(0);}
+  await expect(editor(page).getByLabel('选择作品或证明文件',{exact:true})).toBeEnabled();
+  await editor(page).getByRole('link',{name:'查看校内公开档案',exact:true}).click();await expect(page.getByRole('region',{name:'公开作品文件'}).getByRole('button')).toHaveCount(5);await expect(page.getByRole('region',{name:'公开作品文件'})).not.toContainText('旧作品');
+});

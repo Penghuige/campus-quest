@@ -83,6 +83,9 @@ class TalentService:
             fields=fields,
             version=row.version,
             visibility=cast(Literal["HIDDEN", "VISIBLE"], row.visibility),
+            moderation_state=cast(
+                Literal["NORMAL", "TAKEN_DOWN"], row.moderation_state
+            ),
             public_version=row.public_version,
             public_contact_channels=[
                 cast(ContactChannel, value["channel"]) for value in revision.contacts

@@ -16,7 +16,8 @@ export default function InnovationPage() {
       <h2 className="section-title">三库资源</h2>
       <p><Link className="section-link" href="/innovation/projects">项目库</Link> · <Link className="section-link" href="/innovation/achievements">校内成果</Link> · <Link className="section-link" href="/innovation/recruitments">正在招募</Link></p>
       <p className="field-hint">成果须审核通过；招募由有资格的项目负责人独立发布，免审。</p>
-      <p className="field-hint">人才库尚未开放 · 导师库尚未开放</p>
+      <p><Link className="section-link" href="/innovation/talents">人才库 · 找同学</Link></p>
+      <p className="field-hint">人才档案由同学主动确认公开；导师库尚未开放。</p>
     </section>
     <PublicAchievementsView />
     <PublicRecruitmentsView compact />

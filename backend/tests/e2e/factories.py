@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import hash_password
@@ -750,6 +750,50 @@ async def clean_world(
         await db.execute(delete(OwnerProfile).where(OwnerProfile.user_id.in_(users)))
         await db.execute(
             delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
+        )
+
+        # R4 browser worlds own their talent rows too. History guards are
+        # disabled only here, transactionally, in an explicitly guarded test DB.
+        from app.core.config import get_settings
+        from app.modules.innovation.talent_models import (
+            TalentActionReceipt,
+            TalentFile,
+            TalentProfile,
+            TalentRevision,
+            TalentRevisionFile,
+            TalentTagSuggestion,
+        )
+        from tests.integration.db_guard import require_test_database
+
+        require_test_database(get_settings().database_url)
+        talents = select(TalentProfile.id).where(TalentProfile.owner_user_id.in_(users))
+        await db.execute(
+            update(TalentProfile)
+            .where(TalentProfile.owner_user_id.in_(users))
+            .values(visibility="HIDDEN", public_revision_id=None)
+        )
+        for model in (
+            TalentRevisionFile,
+            TalentRevision,
+            TalentFile,
+            TalentActionReceipt,
+        ):
+            table = model.__tablename__
+            await db.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            condition = (
+                model.actor_user_id.in_(users)
+                if model is TalentActionReceipt
+                else model.profile_id.in_(talents)
+            )
+            await db.execute(delete(model).where(condition))
+            await db.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        await db.execute(
+            delete(TalentTagSuggestion).where(
+                TalentTagSuggestion.owner_user_id.in_(users)
+            )
+        )
+        await db.execute(
+            delete(TalentProfile).where(TalentProfile.owner_user_id.in_(users))
         )
 
         # Identity: honors grants, staff artifacts, sessions, 2FA, then

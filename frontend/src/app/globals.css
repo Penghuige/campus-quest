@@ -4276,4 +4276,4 @@ body {
 .ie-recruitment-fields { display: grid; gap: var(--space-4); min-width: 0; border: 0; padding: 0; margin: 0; }
 .ie-recruitment-fields legend { margin-bottom: var(--space-4); }
 .ie-recruitment-confirm { overscroll-behavior: contain; }
-.ie-recruitment-public { overflow-wrap: anywhere; min-width: 0; }
+.ie-recruitment-public, .ie-talent-public { overflow-wrap: anywhere; min-width: 0; }

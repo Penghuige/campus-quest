@@ -25,7 +25,8 @@ test("R1: desktop public navigation is separate from personal management and per
   await navigation.getByRole("link", { name: "创新创业", exact: true }).click();
   await expect(page.getByRole("heading", { name: "创新创业", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "校内已核实成果" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "双创三库" })).toContainText("人才库尚未开放");
+  await expect(page.getByRole("region", { name: "双创三库" }).getByRole("link", { name: "人才库 · 找同学", exact: true })).toHaveAttribute("href", "/innovation/talents");
+  await expect(page.getByRole("region", { name: "双创三库" })).toContainText("导师库尚未开放");
   await expect(page.getByRole("link", { name: "双创运营工作台", exact: true })).toHaveCount(0);
   await page.goto(`${BASE_URL}/profile`);
   await expect(page.getByRole("link", { name: "我的项目", exact: true })).toBeVisible();

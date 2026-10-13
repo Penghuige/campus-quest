@@ -42,6 +42,7 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         <nav className="ie-draft-actions" aria-label="本人双创管理">
           <Link className="section-link" href="/profile/project-drafts">我的项目</Link>
           <Link className="section-link" href="/profile/owner-profile">负责人资料与资格</Link>
+          <Link className="section-link" href="/profile/talent-profile">我的人才档案</Link>
         </nav>
       </div>
       <nav className="tab-bar" aria-label="个人主页分区">

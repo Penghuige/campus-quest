@@ -35,6 +35,22 @@ from tests.integration.innovation.test_achievement_review_operations import acco
 pytestmark = pytest.mark.integration
 
 
+async def test_owner_can_distinguish_governance_removal_from_display_switch(
+    client, db_session, clock
+):
+    from sqlalchemy import update
+
+    _, headers, row, _ = await saved(client, db_session, clock)
+    await db_session.execute(
+        update(TalentProfile)
+        .where(TalentProfile.id == UUID(row["id"]))
+        .values(moderation_state="TAKEN_DOWN")
+    )
+    response = await client.get(BASE, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["profile"]["moderation_state"] == "TAKEN_DOWN"
+
+
 async def test_new_student_can_publish_without_work_or_contact(
     client, db_session, clock
 ):

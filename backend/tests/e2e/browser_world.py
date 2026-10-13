@@ -556,6 +556,7 @@ async def _seed() -> dict[str, Any]:
             # open task they render.
             "CQ_E2E_TASK_URL": f"/tasks/{task_d.task_id}",
             "CQ_E2E_AUTHOR_STUDENT": f"{author.username}:{author.password}",
+            "CQ_E2E_AUTHOR_STUDENT_ID": str(author.user_id),
             "CQ_E2E_AUTHOR_SECRETS": ",".join(
                 (
                     author_nickname,
@@ -730,6 +731,7 @@ async def _clean(world_path: str) -> dict[str, Any]:
         # S3 objects this run PUT (guarded: absent objects raise, §27).
         from app.modules.innovation.evidence_models import AchievementEvidence
         from app.modules.innovation.models import AchievementDraft, ProjectDraft
+        from app.modules.innovation.talent_models import TalentFile, TalentProfile
 
         storage = S3ObjectStorage(get_settings())
         async with factory() as db:
@@ -759,6 +761,19 @@ async def _clean(world_path: str) -> dict[str, Any]:
                                             ProjectDraft.owner_user_id.in_(user_ids)
                                         )
                                     )
+                                )
+                            )
+                        )
+                    )
+                ).all()
+            )
+            keys.extend(
+                (
+                    await db.scalars(
+                        select(TalentFile.object_key).where(
+                            TalentFile.profile_id.in_(
+                                select(TalentProfile.id).where(
+                                    TalentProfile.owner_user_id.in_(user_ids)
                                 )
                             )
                         )
