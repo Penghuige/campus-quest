@@ -1704,6 +1704,22 @@
             }
           },
           {
+            "name": "has_public_materials",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Public Materials"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -13219,6 +13235,10 @@
             ],
             "title": "Cooperation State"
           },
+          "has_public_materials": {
+            "type": "boolean",
+            "title": "Has Public Materials"
+          },
           "public_version": {
             "type": "integer",
             "title": "Public Version"
@@ -13240,6 +13260,7 @@
           "advantages",
           "tags",
           "cooperation_state",
+          "has_public_materials",
           "public_version",
           "published_at"
         ],

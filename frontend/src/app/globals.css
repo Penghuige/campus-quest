@@ -4277,3 +4277,74 @@ body {
 .ie-recruitment-fields legend { margin-bottom: var(--space-4); }
 .ie-recruitment-confirm { overscroll-behavior: contain; }
 .ie-recruitment-public, .ie-talent-public { overflow-wrap: anywhere; min-width: 0; }
+
+/* R4.1: compact discovery and grouped reading, within the shared view step. */
+.ie-talent-directory, .ie-talent-public, .ie-talent-editor {
+  width: 100%;
+  max-width: 56rem;
+  min-width: 0;
+}
+.ie-talent-filters { align-items: start; }
+.ie-talent-filter-tags { gap: var(--space-2); }
+.ie-talent-filter-tags legend { margin-bottom: var(--space-2); }
+.ie-talent-choices, .ie-talent-tags, .ie-talent-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.ie-talent-choices > label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  min-height: 2.75rem;
+}
+.ie-talent-choices > label:has(:checked) { border-color: var(--primary); }
+.ie-talent-choices > label:has(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ie-talent-tags { list-style: none; padding: 0; margin: 0; }
+.ie-talent-tags > li, .ie-talent-state {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  background: var(--surface-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.ie-talent-heading { justify-content: space-between; }
+.ie-talent-heading > :first-child { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.ie-talent-material {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+.ie-talent-material svg { width: var(--space-4); height: var(--space-4); flex-shrink: 0; }
+.ie-talent-results .ie-draft-row { padding-block: var(--space-5); }
+.ie-talent-advantage { white-space: pre-wrap; }
+.ie-talent-summary, .ie-talent-reading, .ie-talent-preview {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ie-talent-reading { border-top: 1px solid var(--border); padding-top: var(--space-5); }
+.ie-talent-prose { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.ie-talent-prose > div { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.ie-talent-prose dd { margin: 0; }
+.ie-talent-editor .ie-recruitment-fields + .ie-recruitment-fields {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.ie-talent-identity-fields, .ie-talent-cooperation-fields { display: grid; gap: var(--space-4); }
+.ie-talent-editor .ie-draft-form { gap: var(--space-5); }
+@media (min-width: 48rem) {
+  .ie-talent-filters { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  .ie-talent-filter-tags, .ie-talent-filters > .ie-draft-actions { grid-column: 1 / -1; }
+  .ie-talent-identity-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ie-talent-cooperation-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

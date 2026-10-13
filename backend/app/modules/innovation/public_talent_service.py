@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, Text, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import JSONPATH
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
@@ -44,6 +45,31 @@ def literal_pattern(value: str) -> str:
     )
 
 
+def readable_material_conditions() -> tuple[ColumnElement[bool], ...]:
+    """One availability rule for the directory fact, detail and download."""
+    return (
+        TalentFile.state == "READY",
+        TalentFile.removed_at.is_(None),
+        TalentFile.revoked_at.is_(None),
+    )
+
+
+def has_public_materials() -> ColumnElement[bool]:
+    # Correlated EXISTS preserves one row per profile and uses the revision/file
+    # primary keys; no extra query per result or scan of private upload inventory.
+    return (
+        select(TalentRevisionFile.file_id)
+        .join(TalentFile, TalentFile.id == TalentRevisionFile.file_id)
+        .where(
+            TalentRevisionFile.revision_id == TalentRevision.id,
+            TalentFile.profile_id == TalentProfile.id,
+            *readable_material_conditions(),
+        )
+        .correlate(TalentRevision, TalentProfile)
+        .exists()
+    )
+
+
 class PublicTalentService:
     def __init__(
         self,
@@ -64,6 +90,7 @@ class PublicTalentService:
                 TalentProfile.public_updated_at.label("published_at"),
                 TalentRevision.id.label("revision_id"),
                 TalentRevision.content,
+                has_public_materials().label("has_public_materials"),
                 func.jsonb_path_query_array(
                     TalentRevision.contacts, literal("$[*].channel").cast(JSONPATH)
                 ).label("channels"),
@@ -139,6 +166,10 @@ class PublicTalentService:
             statement = statement.where(
                 content["cooperation_state"].astext == query.cooperation_state
             )
+        if query.has_public_materials is not None:
+            statement = statement.where(
+                has_public_materials() == query.has_public_materials
+            )
         total = await db.scalar(select(func.count()).select_from(statement.subquery()))
         rows = (
             (
@@ -159,6 +190,7 @@ class PublicTalentService:
                     "id": row["id"],
                     "public_version": row["public_version"],
                     "published_at": row["published_at"],
+                    "has_public_materials": row["has_public_materials"],
                     **{
                         name: row["content"][name]
                         for name in (
@@ -209,9 +241,7 @@ class PublicTalentService:
                     .where(
                         TalentRevisionFile.revision_id == row["revision_id"],
                         TalentFile.profile_id == profile_id,
-                        TalentFile.state == "READY",
-                        TalentFile.removed_at.is_(None),
-                        TalentFile.revoked_at.is_(None),
+                        *readable_material_conditions(),
                     )
                     .order_by(TalentFile.created_at, TalentFile.id)
                 )
@@ -293,9 +323,7 @@ class PublicTalentService:
             .where(
                 TalentFile.id == file_id,
                 TalentFile.profile_id == row.id,
-                TalentFile.state == "READY",
-                TalentFile.removed_at.is_(None),
-                TalentFile.revoked_at.is_(None),
+                *readable_material_conditions(),
                 select(TalentRevisionFile.file_id)
                 .where(
                     TalentRevisionFile.revision_id == row.public_revision_id,

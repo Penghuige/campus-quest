@@ -4,6 +4,40 @@ import { TALENT_OWN, editor, result, prepareTalent, fillTalent, saveTalent, publ
 
 test.skip(process.env.CQ_E2E!=='1','CQ_E2E=1 with an owned real database');
 
+test('R4.1: public materials filter follows publication and withdrawal without certifying talent',async({page})=>{
+  test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page,'模拟材料同学');await saveTalent(page);await publishTalent(page);
+  const selected=await uploadTalent(page,'模拟材料标志.png');await selected.check();await saveTalent(page);
+  const record=(await ownRecord(page))!;
+  const publicHeaders={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  const privateList=await page.request.get(`${API_URL}/ie/talents?q=模拟材料同学&has_public_materials=true`,{headers:publicHeaders});
+  expect(privateList.status()).toBe(200);expect((await privateList.json()).total).toBe(0);
+  await page.goto(`${BASE_URL}/innovation/talents?q=模拟材料同学&has_public_materials=false`);
+  const filters=page.getByRole('form',{name:'人才筛选'});
+  await expect(filters.getByLabel('作品/证明材料筛选',{exact:true})).toHaveValue('false');
+  await expect(page.getByRole('link',{name:'模拟材料同学',exact:true})).toBeVisible();
+  await expect(page.getByRole('region',{name:'校内人才库'})).not.toContainText('含作品/证明材料');
+  await filters.getByLabel('作品/证明材料筛选',{exact:true}).selectOption('true');
+  await filters.getByRole('button',{name:'查找人才',exact:true}).click();await expect(page).toHaveURL(/has_public_materials=true/);
+  await expect(page.getByRole('region',{name:'校内人才库'})).toContainText('暂无符合条件的人才');
+  await page.goto(`${BASE_URL}/profile/talent-profile`);await expect(editor(page)).toBeVisible();
+  await publishTalent(page);
+  await page.goto(`${BASE_URL}/innovation/talents?q=模拟材料同学&has_public_materials=true`);
+  await expect(page.getByRole('region',{name:'校内人才库'})).toContainText('含作品/证明材料');
+  await expect(page.getByRole('region',{name:'校内人才库'})).toContainText('文件安全检查不代表内容真实性或能力已核实');
+  await page.getByRole('link',{name:'模拟材料同学',exact:true}).click();
+  await expect(page.getByRole('article')).toContainText('含作品/证明材料');
+  await expect(page.getByRole('button',{name:'下载 模拟材料标志.png',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'返回人才列表',exact:true}).click();await expect(page).toHaveURL(/has_public_materials=true/);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const materialSelect=page.getByLabel('作品/证明材料筛选',{exact:true});await materialSelect.focus();await expect(materialSelect).toBeFocused();await page.keyboard.press('Tab');await expect(page.getByRole('checkbox').first()).toBeFocused();
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
+  const latest=(await ownRecord(page))!;
+  const revoked=await page.request.post(`${API_URL}${TALENT_OWN}/files/${record.fields.file_ids[0]}/revoke`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:latest.version}});
+  expect(revoked.status()).toBe(200);await page.reload();await expect(page.getByRole('region',{name:'校内人才库'})).toContainText('暂无符合条件的人才');
+  await page.getByLabel('作品/证明材料筛选',{exact:true}).selectOption('false');await page.getByRole('button',{name:'查找人才',exact:true}).click();await expect(page.getByRole('link',{name:'模拟材料同学',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'清除筛选',exact:true}).click();await expect(page).toHaveURL(`${BASE_URL}/innovation/talents`);await expect(page.getByLabel('作品/证明材料筛选',{exact:true})).toHaveValue('');
+});
+
 test('R4 review: returning reconciles current visibility and clean fields while preserving edits',async({page})=>{
   await prepareTalent(page);await fillTalent(page);await saveTalent(page);
   await editor(page).getByLabel('我的优势',{exact:true}).fill('本窗口尚未保存的优势');

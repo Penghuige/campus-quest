@@ -177,6 +177,7 @@ class TalentQuery(BaseModel):
     q: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] = ""
     tag_ids: list[UUID] = Field(default_factory=list, max_length=5)
     cooperation_state: CooperationState | None = None
+    has_public_materials: bool | None = None
     limit: int = Field(default=20, ge=1, le=50)
     offset: int = Field(default=0, ge=0)
 
@@ -222,6 +223,7 @@ class PublicTalentSummary(BaseModel):
     advantages: str
     tags: list[TalentTagResponse]
     cooperation_state: CooperationState
+    has_public_materials: bool
     public_version: int
     published_at: datetime
 

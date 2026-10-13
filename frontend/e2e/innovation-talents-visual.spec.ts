@@ -1,12 +1,18 @@
 import AxeBuilder from '@axe-core/playwright';
 import { BASE_URL, expect, test, ensureStudentLogin } from './fixtures';
-import { editor, prepareTalent, fillTalent, saveTalent, publishTalent } from './talent-helpers';
+import { editor, prepareTalent, fillTalent, saveTalent, publishTalent, uploadTalent } from './talent-helpers';
 
 test.skip(process.env.CQ_E2E!=='1'||process.env.CQ_VISUAL!=='1'||process.env.CQ_E2E_FIXED_LABELS!=='1','separate Linux pinned-font R4 visual world');
 async function stable(page:import('@playwright/test').Page){
   await page.addStyleTag({content:':root { --font-sans: "Noto Sans CJK SC", sans-serif; } *, *::before, *::after { animation: none !important; transition: none !important; }'});
   await page.evaluate(()=>document.fonts.ready);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
 }
+
+test('R4.1 visual: public materials remain neutral in directory and detail',async({page})=>{
+  test.setTimeout(180_000);await prepareTalent(page);await fillTalent(page,'模拟材料同学');await saveTalent(page);await(await uploadTalent(page,'模拟证明材料.png')).check();await saveTalent(page);await publishTalent(page);
+  await page.setViewportSize({width:1440,height:900});await page.goto(`${BASE_URL}/innovation/talents?has_public_materials=true`);await expect(page.getByRole('link',{name:'模拟材料同学',exact:true})).toBeVisible();await expect(page.getByRole('region',{name:'校内人才库'})).toContainText('含作品/证明材料');await stable(page);await expect(page).toHaveScreenshot('talent-materials-list-desktop.png',{fullPage:true,maxDiffPixelRatio:0.01});
+  await page.getByRole('link',{name:'模拟材料同学',exact:true}).click();await page.setViewportSize({width:390,height:844});await expect(page.getByRole('button',{name:'下载 模拟证明材料.png',exact:true})).toBeVisible();await stable(page);await expect(page).toHaveScreenshot('talent-materials-detail-mobile.png',{fullPage:true,maxDiffPixelRatio:0.01});
+});
 test('R4 visual: owner, mobile preview and public talent',async({page})=>{
   test.setTimeout(150_000);await prepareTalent(page);await fillTalent(page,'模拟人才同学');await editor(page).getByLabel('授权微信',{exact:true}).check();await editor(page).getByLabel('微信',{exact:true}).fill('demo_talent_visual');await saveTalent(page);
   await page.setViewportSize({width:1440,height:900});await stable(page);await expect(editor(page)).toHaveScreenshot('talent-owner-desktop.png',{maxDiffPixelRatio:0.01});

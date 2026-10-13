@@ -4,10 +4,10 @@ import importlib.util
 from uuid import UUID
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import event, update
 
 from app.modules.identity.models import User
-from app.modules.innovation.talent_models import TalentProfile
+from app.modules.innovation.talent_models import TalentFile, TalentProfile
 from tests.integration.innovation import test_talent_files as file_support
 from tests.integration.innovation.talent_support import BASE, command, saved
 from tests.integration.innovation.test_achievement_review_operations import account
@@ -19,6 +19,187 @@ from tests.integration.innovation.test_talent_files import storage as storage
 pytestmark = pytest.mark.integration
 file_client = file_support.client
 PUBLIC = "/api/v1/ie/talents"
+
+
+async def test_material_filter_counts_only_current_public_files(
+    client, db_session, clock, storage
+):
+    _, owner, first = await published(client, db_session, clock)
+    _, _, second = await published(
+        client,
+        db_session,
+        clock,
+        {
+            "links": [{"title": "模拟作品", "url": "https://example.invalid/work"}],
+            "experience": "仅自述经历，不代表附件",
+        },
+    )
+    private = await ready(client, owner, storage)
+    # Even a saved selection is private until explicit publication.
+    draft = await client.put(
+        BASE,
+        headers=owner,
+        json={
+            **command(first),
+            "fields": {**first["fields"], "file_ids": [private["id"]]},
+        },
+    )
+    assert draft.status_code == 200
+    _, viewer = await account(db_session, clock)
+    for query in [{}, {"has_public_materials": "false"}]:
+        response = await client.get(PUBLIC, headers=viewer, params=query)
+        assert response.status_code == 200, response.text
+        assert response.json()["total"] == 2
+        assert all(
+            item["has_public_materials"] is False for item in response.json()["items"]
+        )
+    with_materials = await client.get(
+        PUBLIC, headers=viewer, params={"has_public_materials": "true"}
+    )
+    assert with_materials.status_code == 200, with_materials.text
+    assert with_materials.json()["total"] == 0
+    row = await select_and_publish(client, owner, [private["id"]])
+    another = await ready(
+        client, owner, storage
+    )  # unselected upload must not count twice
+    assert another["id"] != private["id"]
+    with_materials = await client.get(
+        PUBLIC, headers=viewer, params={"has_public_materials": "true", "limit": 1}
+    )
+    assert with_materials.json()["total"] == 1
+    assert with_materials.json()["items"][0]["id"] == first["id"]
+    assert with_materials.json()["items"][0]["has_public_materials"] is True
+    assert (
+        len(
+            (await client.get(PUBLIC + "/" + row["id"], headers=viewer)).json()["files"]
+        )
+        == 1
+    )
+    without = await client.get(
+        PUBLIC, headers=viewer, params={"has_public_materials": "false"}
+    )
+    assert [item["id"] for item in without.json()["items"]] == [second["id"]]
+    for query in [
+        {"offset": 1},
+        {"q": "does-not-match"},
+        {"cooperation_state": "NOT_AVAILABLE"},
+    ]:
+        response = await client.get(
+            PUBLIC, headers=viewer, params={"has_public_materials": "true", **query}
+        )
+        assert response.json()["items"] == []
+        assert response.json()["total"] == (1 if "offset" in query else 0)
+    # A newer public snapshot without files excludes historical and private uploads.
+    row = await select_and_publish(client, owner, [])
+    response = await client.get(
+        PUBLIC, headers=viewer, params={"has_public_materials": "true"}
+    )
+    assert response.json()["total"] == 0
+    assert (await client.get(PUBLIC + "/" + row["id"], headers=viewer)).json()[
+        "files"
+    ] == []
+
+
+async def test_revoke_last_material_changes_flag_and_filter_immediately(
+    client, db_session, clock, storage
+):
+    _, owner, _, _ = await saved(client, db_session, clock)
+    files = [await ready(client, owner, storage) for _ in range(2)]
+    row = await select_and_publish(client, owner, [f["id"] for f in files])
+    _, viewer = await account(db_session, clock)
+    for index, file in enumerate(files):
+        revoked = await client.post(
+            f"{BASE}/files/{file['id']}/revoke", headers=owner, json=command(row)
+        )
+        assert revoked.status_code == 200, revoked.text
+        row = revoked.json()["current"]
+        expected = index == 0
+        response = await client.get(PUBLIC, headers=viewer)
+        assert response.json()["items"][0]["has_public_materials"] is expected
+        filtered = await client.get(
+            PUBLIC,
+            headers=viewer,
+            params={"has_public_materials": str(expected).lower()},
+        )
+        assert filtered.json()["total"] == 1
+        detail = await client.get(PUBLIC + "/" + row["id"], headers=viewer)
+        assert bool(detail.json()["files"]) is expected
+
+
+async def test_material_filter_has_stable_pagination_without_per_profile_queries(
+    client, db_session, db_engine, clock, storage
+):
+    ids = []
+    for _ in range(3):
+        _, owner, _, _ = await saved(client, db_session, clock)
+        file = await ready(client, owner, storage)
+        row = await select_and_publish(client, owner, [file["id"]])
+        ids.append(row["id"])
+    await published(client, db_session, clock)  # no materials must not affect total
+    _, viewer = await account(db_session, clock)
+    selects = []
+
+    def count_selects(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(1)
+
+    event.listen(db_engine.sync_engine, "before_cursor_execute", count_selects)
+    try:
+        found = []
+        counts = []
+        for offset in range(3):
+            selects.clear()
+            response = await client.get(
+                PUBLIC,
+                headers=viewer,
+                params={
+                    "has_public_materials": "true",
+                    "limit": 1,
+                    "offset": offset,
+                    "cooperation_state": "LOOKING",
+                    "q": "模拟新生",
+                },
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["total"] == 3
+            found.append(response.json()["items"][0]["id"])
+            counts.append(len(selects))
+        assert found == sorted(ids)
+        selects.clear()
+        full = await client.get(
+            PUBLIC, headers=viewer, params={"has_public_materials": "true", "limit": 50}
+        )
+        assert len(full.json()["items"]) == 3
+        assert counts == [len(selects)] * 3  # list size cannot add DB round trips
+        assert len(selects) > 0
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", count_selects)
+
+
+@pytest.mark.parametrize("unavailable", ["revoked_at", "removed_at"])
+async def test_unreadable_current_materials_do_not_set_public_flag(
+    client, db_session, clock, storage, unavailable
+):
+    _, owner, _, _ = await saved(client, db_session, clock)
+    file = await ready(client, owner, storage)
+    row = await select_and_publish(client, owner, [file["id"]])
+    value = clock.now()
+    await db_session.execute(
+        update(TalentFile)
+        .where(TalentFile.id == UUID(file["id"]))
+        .values(**{unavailable: value})
+    )
+    await db_session.commit()
+    _, viewer = await account(db_session, clock)
+    listing = await client.get(
+        PUBLIC, headers=viewer, params={"has_public_materials": "false"}
+    )
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["has_public_materials"] is False
+    assert (await client.get(PUBLIC + "/" + row["id"], headers=viewer)).json()[
+        "files"
+    ] == []
 
 
 @pytest.fixture

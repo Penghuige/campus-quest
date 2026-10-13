@@ -24,3 +24,12 @@ Tasks 1–3 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs
 - Task 2 文件 lifecycle、审计回滚、私有读权限与扫描竞态已验证；真实 adapter 和生产组合分别见 `tests/integration/test_object_storage_smoke.py::test_talent_file_private_namespace_and_signed_write_once_contract`、`tests/integration/innovation/test_talent_composition_smoke.py`，均启用 opt-in 服务。
 - Task 4：十三个真实浏览器场景验证最小建档、显式授权、关闭旧链接、账号隔离、迟到保存、键盘焦点、版本冲突、教师权限及五文件整批替换；新视觉包括手机/桌面、空/错误/加载、长内容与零小时投入。实际屏幕阅读器尚未执行，axe 不作为读屏替代。
 - 全量：后端2818通过、双平台前端各704通过、完整浏览器152通过/34具名豁免、五组视觉23通过；G-4本地缺口关闭。远端当前完整CI、正式学校认证与实际读屏不在本地通过结论内。
+# R4.1 追加预测（先于测试定位，2026-10-13）
+
+| 依据 | 操作与预期 | 验证位置 |
+| --- | --- | --- |
+| R4.1 材料事实 | 仅当前公开版有效 READY 附件计入；草稿/未选上传/旧版/文字/链接不计入 | `tests/integration/innovation/test_public_talents.py::test_material_filter_counts_only_current_public_files`；`test_unreadable_current_materials_do_not_set_public_flag` |
+| R4.1 撤回 | 撤回最后文件后标志、详情、筛选同步变化；其他有效附件仍计入 | `tests/integration/innovation/test_public_talents.py::test_revoke_last_material_changes_flag_and_filter_immediately` |
+| R4.1 查询 | 有/无/全部与技能/状态/关键词组合，total及稳定分页一致，无N+1 | `tests/integration/innovation/test_public_talents.py::test_material_filter_has_stable_pagination_without_per_profile_queries`；既有多标签全部匹配用例 |
+| R4.1 URL/UI | false与true均保留，返回详情/分页保留，提交重置offset；默认全部、清除筛选 | `frontend/src/__tests__/talent-query.test.ts`；`frontend/e2e/innovation-talents.spec.ts` 的 R4.1 场景 |
+| R4.1 UI | 材料事实不等于认证，新生无文件仍能公开；四组字段、窄屏长内容、键盘焦点与axe | `frontend/e2e/innovation-talents.spec.ts` 最小新生与 R4.1 场景；`frontend/e2e/innovation-talents-visual.spec.ts` |

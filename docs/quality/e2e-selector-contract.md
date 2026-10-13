@@ -170,3 +170,11 @@ R3 recruitment contracts (2026-10-11 approved design, 2026-10-12 owner-authorize
 Recruitment contact correction (2026-10-12): missing channels focuses the 授权微信 checkbox; malformed selected values focus the matching `contact-{channel}` input. Each invalid input has `aria-invalid=true` and its own associated `contact-{channel}-error`; unselected-channel checkbox errors refer to `recruit-contacts-error`.
 
 Recruitment acceptance fixes (2026-10-12): same-tab route recovery returns directly to the unsaved editor without automatic saves; explicit local 返回招募列表 discards only after confirmation when dirty. New/edit headings 新建招募岗位 / 编辑招募岗位 are focusable on entry, and returning restores the create/edit action. A workspace 404 says 项目不存在或不可访问, preserving its neutral privacy meaning and 返回我的项目; temporary errors retain 重试. Idea-only 阶段目标 / 初步方案 are absent outside idea stage, except an invalid preserved field temporarily reappears for correction. Contact fields retain their individual error associations and add channel format hints/input semantics. Persistent status 联系读取结果 announces 联系方式已读取，请查看下方已授权渠道。 without containing contact values. Public beginner false says 不接受零基础. Only normal, open, undated roles show 下次提醒.
+# R4.1 人才材料与阅读分组（2026-10-13）
+
+| B 契约 | 范围 | 行为 |
+| --- | --- | --- |
+| label `作品/证明材料筛选` | form `人才筛选` | 原生 select，空值全部、true有材料、false无材料；提交重置offset，详情返回/分页保留URL |
+| list `技能标签` | public list/detail and private preview | 每标签独立li，中性样式，长标签换行；不替代编辑器原有checkbox标签 |
+| text `含作品/证明材料` | list/detail/preview | 中性附件图形，无认证勾/盾牌；列表使用服务端事实，详情来自可读文件；附本人提供与未核实说明 |
+| region `个人与优势` / `合作意向` / `实践经历` | public detail and private preview | 标題和字段定义列表；保持literal换行及长内容可读；本人编辑原字段label/name/错误关联保持 |

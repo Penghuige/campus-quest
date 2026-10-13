@@ -5018,6 +5018,8 @@ export interface components {
              * @enum {string}
              */
             cooperation_state: "LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE";
+            /** Has Public Materials */
+            has_public_materials: boolean;
             /** Public Version */
             public_version: number;
             /**
@@ -8482,6 +8484,7 @@ export interface operations {
                 q?: string;
                 tag_ids?: string[];
                 cooperation_state?: ("LOOKING" | "OPEN_TO_OPPORTUNITIES" | "NOT_AVAILABLE") | null;
+                has_public_materials?: boolean | null;
                 limit?: number;
                 offset?: number;
             };
