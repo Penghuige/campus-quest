@@ -27,6 +27,10 @@ const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_APP_BASE_PATH: basePath ?? "" },
   ...(proxyTarget !== undefined && proxyTarget !== ""
     ? {
+        // Checked-file operations have a bounded 140s provider phase and
+        // 150s browser budget. Next's default 30s proxy timeout truncates
+        // valid local requests; leave the application limits authoritative.
+        experimental: { proxyTimeout: 180_000 },
         async rewrites() {
           return [
             {

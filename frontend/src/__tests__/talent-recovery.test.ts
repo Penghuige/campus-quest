@@ -1,10 +1,38 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { getAuthEpoch, recordLogin, recordLogout, setAccessToken } from '../lib/accessToken';
-import { emptyTalentForm, talentFormToFields } from '../features/innovation/talentForm';
-import { getTalentRecovery, putTalentRecovery, discardTalentRecovery, settleTalentRecovery, getTalentUploadRecovery, putTalentUploadRecovery, discardTalentUploadRecovery } from '../features/innovation/talentRecovery';
+import { emptyTalentForm, fieldsToTalentForm, talentFormToFields } from '../features/innovation/talentForm';
+import { getTalentRecovery, putTalentRecovery, discardTalentRecovery, settleTalentRecovery, getTalentUploadRecovery, putTalentUploadRecovery, discardTalentUploadRecovery, reconcileTalentRecovery, reconcileTalentUploadFiles, talentRecoveryNeedsComparison } from '../features/innovation/talentRecovery';
+import type { TalentProfileDto, TalentFileDto, TalentUploadGrant } from '../features/innovation/talentApi';
 afterEach(recordLogout);
 const snapshot=()=>({epoch:getAuthEpoch(), record:null, form:{...emptyTalentForm(),introduction:'未保存输入',contacts:[{channel:'EMAIL' as const,value:'qa@example.invalid'}]},pending:null});
+
+function record(version=1,visibility:'HIDDEN'|'VISIBLE'='HIDDEN'):TalentProfileDto{return {id:'profile',version,visibility,moderation_state:'NORMAL',public_version:version,public_contact_channels:[],public_file_ids:[],has_unpublished_changes:false,fields:talentFormToFields({...emptyTalentForm(),name:'模拟同学',introduction:`版本${version}`}),updated_at:'2026-10-13T00:00:00Z'};}
+test('simultaneous private edits require an explicit comparison without dropping an uncertain command',()=>{
+  const original=record();const remote=record(2);assert.equal(talentRecoveryNeedsComparison(remote),false);
+  const form={...fieldsToTalentForm(original.fields),advantages:'本地编辑'};putTalentRecovery({epoch:getAuthEpoch(),record:original,form,pending:null});assert.equal(talentRecoveryNeedsComparison(remote),true);assert.equal(talentRecoveryNeedsComparison(null),false);
+  assert.equal(talentRecoveryNeedsComparison({...original,version:2,visibility:'VISIBLE'}),false);
+  const pending={kind:'save' as const,form,body:{request_id:'uncertain',version:1,fields:talentFormToFields(form)}};putTalentRecovery({epoch:getAuthEpoch(),record:original,form,pending});assert.equal(talentRecoveryNeedsComparison(remote),false);assert.equal(reconcileTalentRecovery(remote).pending,pending);
+  putTalentRecovery({epoch:getAuthEpoch(),record:original,form:fieldsToTalentForm(original.fields),pending:null});assert.equal(talentRecoveryNeedsComparison(remote),false);
+});
+test('current server record controls visibility and clean recovered fields',()=>{
+  assert.equal(reconcileTalentRecovery(null).record,null);const old=record();putTalentRecovery({epoch:getAuthEpoch(),record:old,form:fieldsToTalentForm(old.fields),pending:null});
+  const opened=record(2,'VISIBLE');assert.equal(reconcileTalentRecovery(opened).record,opened);assert.equal(reconcileTalentRecovery(opened).form.introduction,'版本2');assert.equal(reconcileTalentRecovery(null).record,null);
+});
+test('fresh server state never erases unsaved input or rekeys an original pending command',()=>{
+  const old=record();const form={...fieldsToTalentForm(old.fields),introduction:'未保存的新输入'};const body={request_id:'original-save',version:1,fields:talentFormToFields(form)};const pending={kind:'save' as const,body,form};
+  putTalentRecovery({epoch:getAuthEpoch(),record:old,form,pending});const current=record(2,'VISIBLE');const result=reconcileTalentRecovery(current);assert.equal(result.record,current);assert.equal(result.form,form);assert.equal(result.pending,pending);assert.equal(result.pending?.body.version,1);
+  putTalentRecovery({...snapshot(),pending:null});assert.equal(reconcileTalentRecovery(current).form.introduction,'未保存输入');recordLogin('new-account');assert.equal(reconcileTalentRecovery(current).form.introduction,'版本2');
+});
+test('authoritative file terminal states settle only the matching granted upload',()=>{
+  const file:TalentFileDto={id:'file',name:'模拟文件.pdf',size:4,content_type:'application/pdf',state:'PENDING',failure_code:null,version:1,created_at:'2026-10-13T00:00:00Z',removed_at:null,revoked_at:null};
+  const grant:TalentUploadGrant={file,upload_url:'https://example.invalid/private-put',expires_at:'2026-10-13T00:15:00Z',client_headers:{},pinned_content_length:4};
+  const value={epoch:getAuthEpoch(),file:new File(['mock'],file.name),body:{request_id:'original-file',name:file.name,size:4,content_type:'application/pdf' as const},grant};
+  assert.equal(reconcileTalentUploadFiles([],'original-file'),null);putTalentUploadRecovery({...value,grant:null});assert.equal(reconcileTalentUploadFiles([],'original-file'),null);assert.ok(getTalentUploadRecovery());
+  putTalentUploadRecovery(value);assert.equal(reconcileTalentUploadFiles([],'other-request'),null);assert.ok(getTalentUploadRecovery());assert.equal(reconcileTalentUploadFiles([file],'original-file'),null);assert.ok(getTalentUploadRecovery());
+  for(const terminal of [{...file,state:'READY' as const},{...file,state:'REJECTED' as const},{...file,removed_at:'2026-10-13T00:01:00Z'},{...file,revoked_at:'2026-10-13T00:01:00Z'}]){putTalentUploadRecovery(value);assert.equal(reconcileTalentUploadFiles([terminal],'original-file'),terminal.removed_at||terminal.revoked_at?'UNAVAILABLE':terminal.state);assert.equal(getTalentUploadRecovery(),undefined);}
+  putTalentUploadRecovery(value);assert.equal(reconcileTalentUploadFiles([],'original-file'),'UNAVAILABLE');assert.equal(getTalentUploadRecovery(),undefined);
+});
 test('recovery is memory scoped to the current identity and survives token rotation', () => {
   const value=snapshot(); putTalentRecovery(value); setAccessToken('same-account');
   assert.equal(getTalentRecovery(),value); recordLogin('another-account');

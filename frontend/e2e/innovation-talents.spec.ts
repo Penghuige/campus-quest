@@ -4,6 +4,48 @@ import { TALENT_OWN, editor, result, prepareTalent, fillTalent, saveTalent, publ
 
 test.skip(process.env.CQ_E2E!=='1','CQ_E2E=1 with an owned real database');
 
+test('R4 review: returning reconciles current visibility and clean fields while preserving edits',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  await editor(page).getByLabel('我的优势',{exact:true}).fill('本窗口尚未保存的优势');
+  await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);
+  let row=(await ownRecord(page))!;
+  const published=await page.request.post(`${API_URL}${TALENT_OWN}/publish`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version}});expect(published.status()).toBe(200);row=(await published.json()).current;
+  await page.goBack();await expect(editor(page)).toContainText('校内展示中');await expect(editor(page).getByRole('button',{name:'关闭校内展示',exact:true})).toBeVisible();await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('本窗口尚未保存的优势');
+  await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);
+  const hidden=await page.request.post(`${API_URL}${TALENT_OWN}/hide`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version}});expect(hidden.status()).toBe(200);
+  await page.goBack();await expect(editor(page)).toContainText('仅自己可见');await expect(editor(page).getByRole('button',{name:'关闭校内展示',exact:true})).toHaveCount(0);await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('本窗口尚未保存的优势');await saveTalent(page);
+  await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);row=(await ownRecord(page))!;
+  const remote=await page.request.put(`${API_URL}${TALENT_OWN}`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version,fields:{...row.fields,introduction:'另一窗口已保存的新介绍'}}});expect(remote.status()).toBe(200);
+  await page.goBack();await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('另一窗口已保存的新介绍');
+  await editor(page).getByLabel('我的优势',{exact:true}).fill('本窗口第二次未保存优势');await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);row=(await ownRecord(page))!;
+  const changed=await page.request.put(`${API_URL}${TALENT_OWN}`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version,fields:{...row.fields,introduction:'需要明确比较的服务器介绍'}}});expect(changed.status()).toBe(200);
+  await page.goBack();await expect(page.getByRole('region',{name:'最新人才版本'})).toContainText('需要明确比较的服务器介绍');await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('本窗口第二次未保存优势');await expect(editor(page).getByRole('button',{name:'保存人才草稿',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'以最新版本继续（保留输入）',exact:true}).click();await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('本窗口第二次未保存优势');await expect(editor(page).getByRole('button',{name:'保存人才草稿',exact:true})).toBeEnabled();
+  await saveTalent(page);const selected=await uploadTalent(page,'模拟会被移除.png');await selected.check();await saveTalent(page);await editor(page).getByLabel('我的优势',{exact:true}).fill('清除失效选择时保留此输入');
+  await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);row=(await ownRecord(page))!;const fileId=row.fields.file_ids[0];
+  const removed=await page.request.post(`${API_URL}${TALENT_OWN}/files/${fileId}/remove`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version}});expect(removed.status()).toBe(200);
+  await page.goBack();await editor(page).getByRole('button',{name:'清除已移除的文件选择',exact:true}).click();await page.getByRole('button',{name:'以最新版本继续（保留输入）',exact:true}).click();await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('清除失效选择时保留此输入');await saveTalent(page);
+});
+
+test('R4 review: removed upload grant is reconciled and does not lock file selection',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const complete=(url:URL)=>url.pathname.startsWith('/api/v1/ie/me/talent-profile/files/')&&url.pathname.endsWith('/complete');
+  await page.route(complete,route=>route.fulfill({status:503,json:{error:{code:'HTTP_ERROR',message:'模拟检查服务暂不可用'}}}));
+  await editor(page).getByLabel('选择作品或证明文件',{exact:true}).setInputFiles({name:'模拟移除前.png',mimeType:'image/png',buffer:PNG});await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toBeVisible();await page.unroute(complete);
+  const listed=await page.request.get(`${API_URL}${TALENT_OWN}/files`,{headers:ownerHeaders()});expect(listed.status()).toBe(200);const file=(await listed.json()).items[0];const row=(await ownRecord(page))!;
+  const removed=await page.request.post(`${API_URL}${TALENT_OWN}/files/${file.id}/remove`,{headers:ownerHeaders(),data:{request_id:crypto.randomUUID(),version:row.version}});expect(removed.status()).toBe(200);
+  await editor(page).getByLabel('我的优势',{exact:true}).fill('移除发生后仍保留的新输入');await editor(page).getByRole('button',{name:'重试原文件上传',exact:true}).click();
+  await editor(page).getByRole('button',{name:'刷新文件状态',exact:true}).click();await expect(editor(page).getByLabel('选择作品或证明文件',{exact:true})).toBeEnabled();await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toHaveCount(0);await expect(editor(page).getByLabel('我的优势',{exact:true})).toHaveValue('移除发生后仍保留的新输入');await uploadTalent(page,'模拟重新选择.png');
+});
+
+test('R4 review: existing uploaded bytes can be checked without replaying an expired PUT',async({page})=>{
+  await prepareTalent(page);await fillTalent(page);await saveTalent(page);
+  const complete=(url:URL)=>url.pathname.startsWith('/api/v1/ie/me/talent-profile/files/')&&url.pathname.endsWith('/complete');await page.route(complete,route=>route.fulfill({status:503,json:{error:{code:'HTTP_ERROR',message:'模拟丢失检查回执'}}}));
+  await editor(page).getByLabel('选择作品或证明文件',{exact:true}).setInputFiles({name:'模拟已上传.png',mimeType:'image/png',buffer:PNG});await expect(editor(page).getByRole('button',{name:'重试原文件上传',exact:true})).toBeVisible();await page.unroute(complete);
+  let oldPuts=0;await page.route('https://127.0.0.1:9002/**',route=>{if(route.request().method()==='PUT'){oldPuts++;return route.fulfill({status:403,body:'ExpiredToken'});}return route.continue();});
+  await editor(page).getByRole('button',{name:'重试原文件上传',exact:true}).click();await expect(page.getByRole('status',{name:'人才文件操作结果'})).toContainText('检查通过');await expect(editor(page).getByLabel('选择作品或证明文件',{exact:true})).toBeEnabled();expect(oldPuts).toBe(0);
+});
+
 test('R4: a rejected upload intent allows selecting a corrected file',async({page})=>{
   await prepareTalent(page);await fillTalent(page);await saveTalent(page);
   const intent=(url:URL)=>url.pathname==='/api/v1/ie/me/talent-profile/files';

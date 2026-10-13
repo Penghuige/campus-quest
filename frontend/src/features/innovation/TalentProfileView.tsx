@@ -8,7 +8,7 @@ import { useSession } from '@/features/auth/session';
 import { getAuthEpoch } from '@/lib/accessToken';
 import { getTalentProfile, getTalentTags, getTalentFiles, saveTalentProfile, publishTalentProfile, hideTalentProfile, revokeTalentContact, removeTalentFile, revokeTalentFile, type TalentProfileDto, type TalentTagDto, type TalentFileDto, type TalentContactChannel } from './talentApi';
 import { emptyTalentForm, fieldsToTalentForm, talentFormToFields, validateTalentForm, hasTalentChanges, type TalentForm, type TalentFormErrors } from './talentForm';
-import { getTalentRecovery, putTalentRecovery, settleTalentRecovery, getTalentUploadRecovery, discardTalentUploadRecovery, type TalentRecovery, type TalentPending } from './talentRecovery';
+import { getTalentRecovery, reconcileTalentRecovery, talentRecoveryNeedsComparison, putTalentRecovery, settleTalentRecovery, getTalentUploadRecovery, discardTalentUploadRecovery, type TalentRecovery, type TalentPending } from './talentRecovery';
 import { talentError, talentDisplayStatus, talentActionMessage } from './talentPresentation';
 import { TalentFields } from './TalentFields';
 import { TalentFiles } from './TalentFiles';
@@ -29,10 +29,10 @@ function TalentLoader(){
   return <TalentEditor initial={state.data.record} tags={state.data.tags} initialFiles={state.data.files}/>;
 }
 function TalentEditor({initial,tags,initialFiles}:{initial:TalentProfileDto|null;tags:TalentTagDto[];initialFiles:TalentFileDto[]}){
-  const [data,setData]=useState<TalentRecovery>(()=>getTalentRecovery()??{epoch:getAuthEpoch(),record:initial,form:initial?fieldsToTalentForm(initial.fields):emptyTalentForm(),pending:null});
+  const [data,setData]=useState<TalentRecovery>(()=>reconcileTalentRecovery(initial));
   const [files,setFiles]=useState(initialFiles);const [errors,setErrors]=useState<TalentFormErrors>({});
-  const [error,setError]=useState<ReturnType<typeof talentError>|null>(null);const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);
-  const [remote,setRemote]=useState<TalentProfileDto|null>(null);const [confirmation,setConfirmation]=useState<TalentConfirmation|null>(null);
+  const [error,setError]=useState<ReturnType<typeof talentError>|null>(()=>talentRecoveryNeedsComparison(initial)?{message:'服务器草稿已改变；输入已恢复，请比较后明确选择如何继续。',requestId:null,unknown:false,refresh:true}:null);const [message,setMessage]=useState(()=>getTalentRecovery()?'站内返回已核对最新展示状态；未保存输入仍保留，请核对后保存。':'');const [busy,setBusy]=useState(false);
+  const [remote,setRemote]=useState<TalentProfileDto|null>(()=>talentRecoveryNeedsComparison(initial)?initial:null);const [confirmation,setConfirmation]=useState<TalentConfirmation|null>(null);
   const active=useRef(false);const running=useRef(false);const latest=useRef(data);const resultRef=useRef<HTMLParagraphElement>(null);const formRef=useRef<HTMLFormElement>(null);
   const {record,form,pending}=data;const dirty=hasTalentChanges(form,record?.fields??talentFormToFields(emptyTalentForm()));
   useEffect(()=>{active.current=true;putTalentRecovery(latest.current);return()=>{active.current=false;};},[]);
