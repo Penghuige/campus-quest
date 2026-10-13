@@ -10,7 +10,7 @@
  * an over-broad fragment hides future skips — keep them specific).
  */
 export const NOSKIP_EXEMPTIONS = [
-  ...['R4 visual: owner, mobile preview and public talent','R4 visual: empty, unavailable, loading and error','R4 visual: long content and zero availability remain usable on mobile'].map(title=>({
+  ...['R4.1 visual: public materials remain neutral in directory and detail','R4 visual: owner, mobile preview and public talent','R4 visual: empty, unavailable, loading and error','R4 visual: long content and zero availability remain usable on mobile'].map(title=>({
     file:'innovation-talents-visual.spec.ts',title,gate:'CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1',
     reason:'Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world.',
   })),
