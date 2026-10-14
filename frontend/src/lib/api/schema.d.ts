@@ -495,9 +495,10 @@ export interface paths {
          * Staff Email Code Totp
          * @description Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).
          *
-         *     ``pending_token`` is the verify leg's short-lived access token — a
-         *     real, revocable session, exactly the pending-staff shape invitation
-         *     acceptance mints; this endpoint only adds the second factor.
+         *     ``pending_token`` is the verify leg's OPAQUE mid-login credential
+         *     (Redis, 30-minute TTL, consumed by this call) — it authenticates
+         *     nothing but this endpoint, so a half-finished login holds no session
+         *     power (final review F1).
          */
         post: operations["staff_email_code_totp_api_v1_auth_staff_email_code_totp_post"];
         delete?: never;

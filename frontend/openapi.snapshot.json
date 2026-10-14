@@ -905,7 +905,7 @@
     "/api/v1/auth/staff/email-code/totp": {
       "post": {
         "summary": "Staff Email Code Totp",
-        "description": "Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).\n\n``pending_token`` is the verify leg's short-lived access token — a\nreal, revocable session, exactly the pending-staff shape invitation\nacceptance mints; this endpoint only adds the second factor.",
+        "description": "Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).\n\n``pending_token`` is the verify leg's OPAQUE mid-login credential\n(Redis, 30-minute TTL, consumed by this call) — it authenticates\nnothing but this endpoint, so a half-finished login holds no session\npower (final review F1).",
         "operationId": "staff_email_code_totp_api_v1_auth_staff_email_code_totp_post",
         "requestBody": {
           "content": {
