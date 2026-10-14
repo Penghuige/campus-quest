@@ -130,6 +130,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     NotificationEventRecorder,
 )
+from app.modules.identity.login_failure_guard import LoginFailureGuard
 from app.modules.identity.models import (
     RecoveryCode,
     StaffInvitation,
@@ -252,6 +253,7 @@ class StaffService:
         invitation_ttl_hours: int = 48,
         notification_recorder: NotificationEventRecorder | None = None,
         audit: AuditLogWriter | None = None,
+        guard: LoginFailureGuard | None = None,
     ) -> None:
         # The clock is the only business-time source (expiry, verified-at,
         # confirmed-at); `sessions` shares the same instance at the
@@ -265,6 +267,9 @@ class StaffService:
         self._users = UserRepository()
         self._notification_recorder = notification_recorder
         self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
+        # Per-account lockout (V1.1 §6); optional for the same reason and
+        # with the same wiring-test pin as SessionService's guard.
+        self._guard = guard
 
     async def create_staff_invitation(
         self,
@@ -634,11 +639,15 @@ class StaffService:
             # SessionService.login_student for the enumeration rationale).
             self._verify_shielded(password)
             raise self._staff_authentication_required()
+        if self._guard is not None:
+            await self._guard.ensure_not_locked(user.id)
         try:
             matched = verify_password(password, user.password_hash)
         except ValueError:
             matched = False
         if not matched:
+            if self._guard is not None:
+                await self._guard.record_failure(user.id)
             raise self._staff_authentication_required()
         if user.status != UserStatus.ACTIVE:
             raise BusinessError(
@@ -662,6 +671,8 @@ class StaffService:
         if not verify_totp_code(
             secret, totp_code, at=now
         ) and not await self._consume_recovery_code(db, user.id, totp_code, now):
+            if self._guard is not None:
+                await self._guard.record_failure(user.id)
             logger.info(
                 "staff second factor rejected user_id=%s reason=totp_or_recovery",
                 user.id,
@@ -671,6 +682,8 @@ class StaffService:
         session_row, tokens = await self._sessions.issue_session(db, user=user, now=now)
         user_id, session_id = user.id, session_row.id
         await db.commit()
+        if self._guard is not None:
+            await self._guard.reset(user_id)
         logger.info(
             "staff session opened user_id=%s session_id=%s", user_id, session_id
         )

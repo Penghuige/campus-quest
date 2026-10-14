@@ -35,9 +35,13 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 
+from app.core.error_codes import ErrorCode
+from app.core.errors import BusinessError
+
 LOCK_THRESHOLD = 5
 LOCK_TTL_SECONDS = 900
 _KEY_PREFIX = "login:fail:"
+_ACCOUNT_LOCKED_MESSAGE = "尝试次数过多，请稍后再试"
 
 
 class LoginFailureGuard:
@@ -83,3 +87,20 @@ class LoginFailureGuard:
             # Lapsed between the GET above and now; the lock is over.
             return None
         return ttl
+
+    async def ensure_not_locked(self, user_id: UUID) -> None:
+        """Fail fast with the ACCOUNT_LOCKED envelope when locked.
+
+        The one shared raise every login path (student password, staff
+        password+TOTP, email code) calls at the top of its credential
+        check — one envelope shape, one retry hint, no drift.
+        """
+        if not await self.is_locked(user_id):
+            return
+        retry_after = await self.retry_after_seconds(user_id)
+        raise BusinessError(
+            ErrorCode.ACCOUNT_LOCKED,
+            _ACCOUNT_LOCKED_MESSAGE,
+            status_code=429,
+            details={"retry_after_seconds": retry_after},
+        )

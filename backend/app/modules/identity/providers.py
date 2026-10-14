@@ -155,6 +155,7 @@ def get_session_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
     codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
     settings: Annotated[Settings, Depends(get_settings)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
 ) -> SessionService:
     return SessionService(
         clock=clock,
@@ -167,6 +168,8 @@ def get_session_service(
         replay_crypt=Fernet(settings.refresh_replay_encryption_key.encode())
         if settings.refresh_grace_seconds > 0
         else None,
+        # V1.1 §6: the per-account lockout rides the student login path.
+        guard=guard,
     )
 
 
@@ -210,6 +213,7 @@ def get_staff_service(
     sessions: Annotated[SessionService, Depends(get_session_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     events: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
 ) -> StaffService:
     # The notification recorder is the MERGE_CARRIES item 2 production
     # wiring for the identity-security producer: NotificationPort joins
@@ -233,6 +237,10 @@ def get_staff_service(
         # lifecycle actions (Plan 08 T2) — identical to the constructor
         # default, spelled out so the dependency is visible here.
         audit=AuditLogWriter(),
+        # V1.1 §6: the staff password+TOTP path shares the lockout
+        # counter (guard=None in the constructor would silently disable
+        # it — the #69 wiring lesson).
+        guard=guard,
     )
 
 

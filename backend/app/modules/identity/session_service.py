@@ -69,6 +69,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.identity.enums import Role, UserStatus
+from app.modules.identity.login_failure_guard import LoginFailureGuard
 from app.modules.identity.models import User, UserSession
 from app.modules.identity.repository import UserRepository
 
@@ -109,12 +110,19 @@ class SessionService:
         refresh_token_ttl_days: int = 30,
         refresh_grace_seconds: int = 0,
         replay_crypt: Fernet | None = None,
+        guard: LoginFailureGuard | None = None,
     ) -> None:
         self._clock = clock
         self._codec = access_codec
         self._refresh_ttl = timedelta(days=refresh_token_ttl_days)
         self._grace = timedelta(seconds=refresh_grace_seconds)
         self._replay_crypt = replay_crypt
+        # The per-account lockout counter (V1.1 §6). Optional only so
+        # focused unit tests can construct the service bare — the
+        # composition root injects it, and the wiring tests pin that
+        # (the AuditLogWriter pattern: a wiring slip must not silently
+        # disable the guard in production).
+        self._guard = guard
         if self._grace.total_seconds() > 0 and replay_crypt is None:
             raise ValueError(
                 "refresh_grace_seconds > 0 requires replay_crypt (the "
@@ -136,6 +144,11 @@ class SessionService:
         ``StaffService.authenticate_staff``'s STUDENT check), so a staff
         account can never open a password-only session and reach the
         self-service endpoints without its second factor (spec §5.6, §33.4).
+
+        V1.1 §6: the per-account lockout rides the same order — the
+        check fires once the account is resolved (an unknown username
+        has no counter), a wrong password counts, and a success resets
+        the streak.
         """
         now = self._clock.now()
         user = await self._users.find_by_username(db, username.strip())
@@ -145,6 +158,9 @@ class SessionService:
             self._verify_shielded(password)
             raise self._authentication_required()
 
+        if self._guard is not None:
+            await self._guard.ensure_not_locked(user.id)
+
         try:
             matched = verify_password(password, user.password_hash)
         except ValueError:
@@ -152,6 +168,8 @@ class SessionService:
             # failure uniform instead of leaking policy at login.
             matched = False
         if not matched:
+            if self._guard is not None:
+                await self._guard.record_failure(user.id)
             raise self._authentication_required()
 
         if user.status != UserStatus.ACTIVE:
@@ -176,6 +194,8 @@ class SessionService:
         # (accessing an expired attribute would trigger lazy IO).
         user_id, session_id = user.id, session_row.id
         await db.commit()
+        if self._guard is not None:
+            await self._guard.reset(user_id)
         logger.info("session opened user_id=%s session_id=%s", user_id, session_id)
         return tokens
 
