@@ -34,7 +34,6 @@ Design decisions:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import hmac
 import logging
 import secrets
@@ -50,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.core.security import hmac_challenge_code
 from app.integrations.email import EmailSender
 from app.integrations.errors import ProviderError
 from app.integrations.masking import mask_email
@@ -125,6 +125,7 @@ class EmailLoginService:
         guard: LoginFailureGuard | None = None,
         users: UserRepository | None = None,
         audit: AuditLogWriter | None = None,
+        hmac_secret: str = "",
     ) -> None:
         # sessions/fernet/guard serve the verify legs; a caller that only
         # issues codes (request_code) may leave them unset.
@@ -134,8 +135,17 @@ class EmailLoginService:
         self._sessions = sessions
         self._fernet = fernet
         self._guard = guard
+        # The keyed-digest secret (settings.otp_hmac_secret at the
+        # composition root): a bare SHA-256 of a 10^6 code space would be
+        # brute-forceable from a database dump (hmac_challenge_code).
+        self._hmac_secret = hmac_secret
         self._users = users if users is not None else UserRepository()
         self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
+
+    def _hash_code(self, code: str) -> str:
+        """Keyed digest of a login code (hmac_challenge_code): the
+        stored form and the verify comparison share one construction."""
+        return hmac_challenge_code(self._hmac_secret, code)
 
     async def _account_locked(self, user_id: UUID) -> BusinessError:
         """The ACCOUNT_LOCKED envelope with the remaining cooldown."""
@@ -190,7 +200,7 @@ class EmailLoginService:
         )
         challenge = LoginEmailChallenge(
             email_normalized=normalized,
-            code_hash=hashlib.sha256(code.encode()).hexdigest(),
+            code_hash=self._hash_code(code),
             expires_at=now + timedelta(minutes=CODE_TTL_MINUTES),
         )
         db.add(challenge)
@@ -293,7 +303,7 @@ class EmailLoginService:
             )
             raise BusinessError(ErrorCode.EMAIL_CODE_INVALID, _CODE_INVALID_MESSAGE)
 
-        submitted_hash = hashlib.sha256(code.strip().encode()).hexdigest()
+        submitted_hash = self._hash_code(code.strip())
         if not hmac.compare_digest(submitted_hash, challenge.code_hash):
             challenge.attempts += 1
             await db.flush()

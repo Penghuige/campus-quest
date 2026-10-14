@@ -128,6 +128,7 @@ def get_email_login_service(
         sessions=sessions,
         fernet=Fernet(settings.totp_encryption_key),
         guard=guard,
+        hmac_secret=settings.otp_hmac_secret,
     )
 
 

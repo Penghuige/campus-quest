@@ -22,8 +22,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import FrozenClock
+from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.core.security import hmac_challenge_code
 from app.integrations.errors import PermanentProviderError
 from app.modules.identity.email_login_service import (
     CODE_TTL_MINUTES,
@@ -89,7 +91,13 @@ def _service(
     sender: FakeEmailSender, redis: InMemoryRedis, clock: FrozenClock
 ) -> EmailLoginService:
     # request_code needs no verify-leg dependencies; they stay unset.
-    return EmailLoginService(sender=sender, redis=redis, clock=clock)
+    # The keyed-digest secret mirrors the composition root (settings).
+    return EmailLoginService(
+        sender=sender,
+        redis=redis,
+        clock=clock,
+        hmac_secret=get_settings().otp_hmac_secret,
+    )
 
 
 async def test_request_code_stores_hashed_challenge_and_sends(
@@ -102,18 +110,21 @@ async def test_request_code_stores_hashed_challenge_and_sends(
 
     await service.request_code(db_session, _TEACHER_EMAIL)
 
-    challenge = (
-        await db_session.execute(select(LoginEmailChallenge))
-    ).scalar_one()
+    challenge = (await db_session.execute(select(LoginEmailChallenge))).scalar_one()
     sent = sender.messages[0]
     assert sent.to == _TEACHER_EMAIL
     assert sent.template == "staff_login_code"
     assert sent.variables["ttl_minutes"] == str(CODE_TTL_MINUTES)
-    # Hash, not plaintext: the stored digest is the SHA-256 of the code
-    # that was actually sent, and never equals it.
-    assert challenge.code_hash == sha256(
-        str(sent.variables["code"]).encode()
-    ).hexdigest()
+    # A KEYED digest, never a bare SHA-256: a database dump must not be
+    # brute-forceable over the 10^6 code space (the reviewer's ruling —
+    # the SMS OTP discipline, shared hmac_challenge_code primitive).
+    secret = get_settings().otp_hmac_secret
+    assert challenge.code_hash == hmac_challenge_code(
+        secret, str(sent.variables["code"])
+    )
+    assert (
+        challenge.code_hash != sha256(str(sent.variables["code"]).encode()).hexdigest()
+    )
     assert challenge.attempts == 0
     assert challenge.expires_at == _T0 + timedelta(minutes=CODE_TTL_MINUTES)
     # Six digits, zero-padded.
@@ -220,9 +231,7 @@ async def test_request_code_normalizes_case_and_whitespace(
     await service.request_code(db_session, f"  {_TEACHER_EMAIL.upper()}  ")
 
     assert sender.messages[0].to == _TEACHER_EMAIL
-    challenge = (
-        await db_session.execute(select(LoginEmailChallenge))
-    ).scalar_one()
+    challenge = (await db_session.execute(select(LoginEmailChallenge))).scalar_one()
     assert challenge.email_normalized == _TEACHER_EMAIL
 
 
@@ -241,9 +250,7 @@ async def test_request_code_replaces_the_previous_challenge(
     service = _service(sender, InMemoryRedis(), clock)
     await service.request_code(db_session, _TEACHER_EMAIL)
 
-    rows = (
-        await db_session.execute(select(LoginEmailChallenge))
-    ).scalars().all()
+    rows = (await db_session.execute(select(LoginEmailChallenge))).scalars().all()
     assert len(rows) == 1
     assert rows[0].created_at is not None
 

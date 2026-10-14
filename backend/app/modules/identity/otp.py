@@ -56,7 +56,6 @@ envelope response. Callers can already branch precisely today.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import hmac
 import json
 import logging
@@ -70,6 +69,7 @@ from typing import TYPE_CHECKING
 import phonenumbers
 import redis.asyncio as aioredis
 
+from app.core.security import hmac_challenge_code
 from app.modules.identity.ports import VerifiedPhone
 
 if TYPE_CHECKING:
@@ -563,10 +563,15 @@ def normalize_phone(raw: str, region: str) -> str:
 
 
 def _hmac_hex(secret: str, salt: str, value: str) -> str:
-    """Domain-separated HMAC-SHA256 hex digest (spec §33.2: no plaintext)."""
-    return hmac.new(
-        secret.encode(), f"{salt}:{value}".encode(), hashlib.sha256
-    ).hexdigest()
+    """Domain-separated HMAC-SHA256 hex digest (spec §33.2: no plaintext).
+
+    Delegates to the shared ``hmac_challenge_code`` primitive
+    (core/security) — the SMS OTP and the email login code are the same
+    threat model (a 10^6 code space at rest) and share the keyed-digest
+    rule; the per-challenge ``salt`` here also domain-separates the
+    verified-token keys from the code keys.
+    """
+    return hmac_challenge_code(secret, f"{salt}:{value}")
 
 
 def _decode(value: bytes | str) -> str:
