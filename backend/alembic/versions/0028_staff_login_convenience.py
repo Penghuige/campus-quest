@@ -62,9 +62,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             nullable=False,
         ),
-        sa.Column(
-            "user_id", sa.UUID(), sa.ForeignKey("users.id"), nullable=False
-        ),
+        sa.Column("user_id", sa.UUID(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
@@ -76,9 +74,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_remembered_devices_user_id", "remembered_devices", ["user_id"]
-    )
+    op.create_index("ix_remembered_devices_user_id", "remembered_devices", ["user_id"])
     op.alter_column(
         "users",
         "password_hash",
@@ -94,9 +90,7 @@ def downgrade() -> None:
         existing_type=sa.String(length=255),
         nullable=False,
     )
-    op.drop_index(
-        "ix_remembered_devices_user_id", table_name="remembered_devices"
-    )
+    op.drop_index("ix_remembered_devices_user_id", table_name="remembered_devices")
     op.drop_table("remembered_devices")
     op.drop_index(
         "ix_login_email_challenges_email_normalized",
