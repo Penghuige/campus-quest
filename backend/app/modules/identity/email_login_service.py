@@ -226,6 +226,16 @@ class EmailLoginService:
         await db.flush()
 
         try:
+            # KNOWN SIDE CHANNEL (final review F4, documented by the
+            # reviewer's ruling 2026-10-15): the send happens inline, so
+            # under a real SMTP relay a staff mailbox answers measurably
+            # slower than an unknown one (delivery latency vs. the no-op
+            # return) — a staff-existence probe. Accepted for V1.1
+            # (staff mailboxes are guessable anyway; the 60s cooldown and
+            # the request limiter bound the probe rate); the fix is
+            # queueing the send behind the 202, which changes the
+            # product semantics and is a deliberate follow-up, not a
+            # patch here.
             await asyncio.to_thread(
                 self._sender.send,
                 to=normalized,
