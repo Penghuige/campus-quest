@@ -240,8 +240,10 @@ function base32Decode(input: string): Buffer {
   return Buffer.from(out);
 }
 
-/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits). */
-function totpCode(secret: string, atMs: number = Date.now()): string {
+/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits).
+ * Exported since V1.1: the email-code login spec's ADMIN leg computes
+ * the same code this module's staffLogin does — ONE implementation. */
+export function totpCode(secret: string, atMs: number = Date.now()): string {
   const counter = Math.floor(atMs / 30_000);
   const block = Buffer.alloc(8);
   block.writeBigUInt64BE(BigInt(counter));
