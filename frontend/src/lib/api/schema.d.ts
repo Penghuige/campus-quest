@@ -484,12 +484,15 @@ export interface paths {
         put?: never;
         /**
          * Accept Staff Invitation
-         * @description Trade the single-use invitation token for a pending staff session.
+         * @description Trade the single-use invitation token for a staff session.
          *
-         *     The returned tokens are a real session confined to finishing TOTP
-         *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
-         *     The accept writes its durable audit row inside the service's
-         *     transaction, carrying this request's correlation pair (§30).
+         *     V1.1 §2.3: a TEACHER acceptance is a COMPLETE login (optional
+         *     password, no TOTP onboarding — ``totp_required: false``); an ADMIN
+         *     acceptance is the V1 pending-TOTP onboarding session
+         *     (``totp_required: true``; management endpoints stay closed until 2FA
+         *     is confirmed). The accept writes its durable audit row inside the
+         *     service's transaction, carrying this request's correlation pair
+         *     (§30).
          */
         post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
         delete?: never;
@@ -4209,12 +4212,16 @@ export interface components {
         /**
          * StaffInvitationAcceptRequest
          * @description Trade the single-use invitation token for a staff account (§5.8).
+         *
+         *     ``password`` is OPTIONAL for TEACHER (V1.1 §2.3: blank = an
+         *     email-code-only account) and effectively mandatory for ADMIN (the
+         *     service rejects a blank one after the invitation lookup).
          */
         StaffInvitationAcceptRequest: {
             /** Token */
             token: string;
             /** Password */
-            password: string;
+            password?: string | null;
         };
         /**
          * StaffInvitationCreateRequest
@@ -4263,6 +4270,22 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /**
+         * StaffSessionResponse
+         * @description A staff session plus the onboarding branch flag (V1.1 §2.3).
+         *
+         *     ``totp_required`` tells the client which screen follows: the ADMIN
+         *     pending-TOTP onboarding (True — the tokens are a real session
+         *     confined to finishing 2FA setup) or a complete login (False).
+         */
+        StaffSessionResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Csrf Token */
+            csrf_token: string;
+            /** Totp Required */
+            totp_required: boolean;
         };
         /**
          * SubmissionPublic
@@ -5863,7 +5886,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
+                    "application/json": components["schemas"]["StaffSessionResponse"];
                 };
             };
             /** @description Validation Error */

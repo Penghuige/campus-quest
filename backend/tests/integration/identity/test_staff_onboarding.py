@@ -76,6 +76,8 @@ _T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
 _TEACHER_EMAIL = "Chen.Li@campus.example.edu.cn"
 _TEACHER_EMAIL_NORMALIZED = "chen.li@campus.example.edu.cn"
+_ADMIN_EMAIL = "Wang.Admin@campus.example.edu.cn"
+_ADMIN_EMAIL_NORMALIZED = "wang.admin@campus.example.edu.cn"
 _ACCESS_SECRET = "integration-test-access-token-secret-0123456789"
 _ACCESS_TTL_MINUTES = 15
 _REFRESH_TTL_DAYS = 30
@@ -304,13 +306,16 @@ async def test_invitation_accepted_at_ttl_boundary_still_works(
     service = _make_service(clock)
     admin = await _seed_user(db_session, username="campus-admin", role=Role.ADMIN)
     issued = await service.create_staff_invitation(
-        db_session, _actor(admin), _TEACHER_EMAIL, Role.TEACHER
+        db_session, _actor(admin), _ADMIN_EMAIL, Role.ADMIN
     )
 
     _advance(clock, hours=_INVITATION_TTL_HOURS, seconds=-1)
     pending = await service.accept_staff_invitation(db_session, issued.token, _PASSWORD)
 
+    # V1.1 §2.3: ADMIN acceptance stays the pending-TOTP onboarding state
+    # (the TEACHER branch no longer is — see test_invitation_accept_no_totp).
     assert pending.must_setup_totp is True
+    assert pending.role is Role.ADMIN
 
 
 @pytest.mark.integration
@@ -605,29 +610,29 @@ async def test_accept_before_totp_confirm_is_not_a_management_session(
     service = _make_service(clock)
     admin = await _seed_user(db_session, username="campus-admin", role=Role.ADMIN)
     issued = await service.create_staff_invitation(
-        db_session, _actor(admin), _TEACHER_EMAIL, Role.TEACHER
+        db_session, _actor(admin), _ADMIN_EMAIL, Role.ADMIN
     )
 
     pending = await service.accept_staff_invitation(db_session, issued.token, _PASSWORD)
 
     assert isinstance(pending, PendingStaffSession)
     assert pending.must_setup_totp is True
-    assert pending.role == Role.TEACHER
+    assert pending.role == Role.ADMIN
     user = await db_session.get(User, pending.user_id)
     assert user is not None
     assert user.status == UserStatus.ACTIVE  # staff have no phone: no PENDING_PHONE
-    assert user.role == Role.TEACHER.value
+    assert user.role == Role.ADMIN.value
     assert user.phone_e164 is None
     # V1 simplification (documented): the invitation email is treated as
     # verified on acceptance because the single-use link was delivered to
     # that address; staff login uses it as the identifier.
-    assert user.email_normalized == _TEACHER_EMAIL_NORMALIZED
+    assert user.email_normalized == _ADMIN_EMAIL_NORMALIZED
     assert user.email_verified_at == _T0
-    assert user.username == _TEACHER_EMAIL_NORMALIZED
+    assert user.username == _ADMIN_EMAIL_NORMALIZED
 
     with pytest.raises(TotpSetupRequiredError):
         await service.authenticate_staff(
-            db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, "123456"
+            db_session, _ADMIN_EMAIL_NORMALIZED, _PASSWORD, "123456"
         )
 
     # Starting setup is not enough: until a valid code is confirmed, the
@@ -636,7 +641,7 @@ async def test_accept_before_totp_confirm_is_not_a_management_session(
     with pytest.raises(TotpSetupRequiredError):
         await service.authenticate_staff(
             db_session,
-            _TEACHER_EMAIL_NORMALIZED,
+            _ADMIN_EMAIL_NORMALIZED,
             _PASSWORD,
             _code_for(setup.secret, clock),
         )

@@ -40,6 +40,7 @@ from app.modules.identity.providers import (
 from app.modules.identity.routing_common import (
     _client_ip,
     _enforce_rate_limit,
+    _issue_session_cookies,
     _token_pair_response,
 )
 from app.modules.identity.schemas import (
@@ -49,6 +50,7 @@ from app.modules.identity.schemas import (
     StaffEmailCodeVerifyRequest,
     StaffInvitationAcceptRequest,
     StaffLoginRequest,
+    StaffSessionResponse,
     TokenPairResponse,
     TotpConfirmRequest,
     TotpConfirmResponse,
@@ -205,7 +207,7 @@ def _set_device_cookie(response: Response, cookie_value: str | None) -> None:
     )
 
 
-@router.post("/auth/staff/invitations/accept", response_model=TokenPairResponse)
+@router.post("/auth/staff/invitations/accept", response_model=StaffSessionResponse)
 async def accept_staff_invitation(
     body: StaffInvitationAcceptRequest,
     response: Response,
@@ -213,13 +215,16 @@ async def accept_staff_invitation(
     staff: Annotated[StaffService, Depends(get_staff_service)],
     settings: AppSettings,
     db: DbSession,
-) -> TokenPairResponse:
-    """Trade the single-use invitation token for a pending staff session.
+) -> StaffSessionResponse:
+    """Trade the single-use invitation token for a staff session.
 
-    The returned tokens are a real session confined to finishing TOTP
-    setup (§5.8); management endpoints stay closed until 2FA is confirmed.
-    The accept writes its durable audit row inside the service's
-    transaction, carrying this request's correlation pair (§30).
+    V1.1 §2.3: a TEACHER acceptance is a COMPLETE login (optional
+    password, no TOTP onboarding — ``totp_required: false``); an ADMIN
+    acceptance is the V1 pending-TOTP onboarding session
+    (``totp_required: true``; management endpoints stay closed until 2FA
+    is confirmed). The accept writes its durable audit row inside the
+    service's transaction, carrying this request's correlation pair
+    (§30).
     """
     pending = await staff.accept_staff_invitation(
         db,
@@ -227,7 +232,12 @@ async def accept_staff_invitation(
         body.password,
         audit_context=AuditContext.from_request(request),
     )
-    return _token_pair_response(response, pending.tokens, settings)
+    csrf_token = _issue_session_cookies(response, pending.tokens, settings)
+    return StaffSessionResponse(
+        access_token=pending.tokens.access_token,
+        csrf_token=csrf_token,
+        totp_required=pending.must_setup_totp,
+    )
 
 
 @router.post("/staff/totp/begin", response_model=TotpSetupResponse)

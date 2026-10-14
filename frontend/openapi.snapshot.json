@@ -894,7 +894,7 @@
     "/api/v1/auth/staff/invitations/accept": {
       "post": {
         "summary": "Accept Staff Invitation",
-        "description": "Trade the single-use invitation token for a pending staff session.\n\nThe returned tokens are a real session confined to finishing TOTP\nsetup (§5.8); management endpoints stay closed until 2FA is confirmed.\nThe accept writes its durable audit row inside the service's\ntransaction, carrying this request's correlation pair (§30).",
+        "description": "Trade the single-use invitation token for a staff session.\n\nV1.1 §2.3: a TEACHER acceptance is a COMPLETE login (optional\npassword, no TOTP onboarding — ``totp_required: false``); an ADMIN\nacceptance is the V1 pending-TOTP onboarding session\n(``totp_required: true``; management endpoints stay closed until 2FA\nis confirmed). The accept writes its durable audit row inside the\nservice's transaction, carrying this request's correlation pair\n(§30).",
         "operationId": "accept_staff_invitation_api_v1_auth_staff_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -912,7 +912,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
+                  "$ref": "#/components/schemas/StaffSessionResponse"
                 }
               }
             }
@@ -9459,17 +9459,23 @@
             "title": "Token"
           },
           "password": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Password"
           }
         },
         "type": "object",
         "required": [
-          "token",
-          "password"
+          "token"
         ],
         "title": "StaffInvitationAcceptRequest",
-        "description": "Trade the single-use invitation token for a staff account (§5.8)."
+        "description": "Trade the single-use invitation token for a staff account (§5.8).\n\n``password`` is OPTIONAL for TEACHER (V1.1 §2.3: blank = an\nemail-code-only account) and effectively mandatory for ADMIN (the\nservice rejects a blank one after the invitation lookup)."
       },
       "StaffInvitationCreateRequest": {
         "properties": {
@@ -9549,6 +9555,30 @@
         ],
         "title": "StaffLoginRequest",
         "description": "Staff login: verified email + password + TOTP/recovery code (§5.8)."
+      },
+      "StaffSessionResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          },
+          "totp_required": {
+            "type": "boolean",
+            "title": "Totp Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "csrf_token",
+          "totp_required"
+        ],
+        "title": "StaffSessionResponse",
+        "description": "A staff session plus the onboarding branch flag (V1.1 §2.3).\n\n``totp_required`` tells the client which screen follows: the ADMIN\npending-TOTP onboarding (True — the tokens are a real session\nconfined to finishing 2FA setup) or a complete login (False)."
       },
       "SubmissionPublic": {
         "properties": {

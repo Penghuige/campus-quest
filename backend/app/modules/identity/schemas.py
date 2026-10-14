@@ -200,10 +200,28 @@ class PasswordResetRequest(BaseModel):
 
 
 class StaffInvitationAcceptRequest(BaseModel):
-    """Trade the single-use invitation token for a staff account (§5.8)."""
+    """Trade the single-use invitation token for a staff account (§5.8).
+
+    ``password`` is OPTIONAL for TEACHER (V1.1 §2.3: blank = an
+    email-code-only account) and effectively mandatory for ADMIN (the
+    service rejects a blank one after the invitation lookup).
+    """
 
     token: str
-    password: str
+    password: str | None = None
+
+
+class StaffSessionResponse(BaseModel):
+    """A staff session plus the onboarding branch flag (V1.1 §2.3).
+
+    ``totp_required`` tells the client which screen follows: the ADMIN
+    pending-TOTP onboarding (True — the tokens are a real session
+    confined to finishing 2FA setup) or a complete login (False).
+    """
+
+    access_token: str
+    csrf_token: str
+    totp_required: bool
 
 
 class StaffInvitationCreateRequest(BaseModel):
