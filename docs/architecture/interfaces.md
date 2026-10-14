@@ -295,6 +295,9 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `OTP_RESEND_COOLDOWN` | §33.2 |
 | `RATE_LIMITED` | §33.1 |
 | `CONFLICT` | §29 envelope（HTTP 409） |
+| `EMAIL_CODE_INVALID` | V1.1 §2.1 |
+| `ACCOUNT_LOCKED` | V1.1 §6 |
+| `EMAIL_DELIVERY_FAILED` | V1.1 §2.1 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 

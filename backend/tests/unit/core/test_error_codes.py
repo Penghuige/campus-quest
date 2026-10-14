@@ -64,6 +64,12 @@ FROZEN_BUSINESS_CODES = (
     # Plan 08 T9 addition (registered in interfaces.md before this enum
     # grew): the generic 409 state/conflict business code.
     "CONFLICT",
+    # V1.1 Wave 1 additions (registered in interfaces.md before this enum
+    # grew): staff email-code login — uniform wrong/expired/exhausted
+    # code, account lockout envelope, mail-provider failure.
+    "EMAIL_CODE_INVALID",
+    "ACCOUNT_LOCKED",
+    "EMAIL_DELIVERY_FAILED",
 )
 
 FROZEN_SYSTEM_CODES = (

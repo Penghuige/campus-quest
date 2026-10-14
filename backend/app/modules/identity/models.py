@@ -237,3 +237,54 @@ class RecoveryCode(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     code_hash: Mapped[str] = mapped_column(String(128))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoginEmailChallenge(Base):
+    """Hashed 6-digit staff login code, emailed on request (V1.1 §2.1).
+
+    Deliberately its own table, not a shape of the Redis-backed phone
+    OTP challenge: the email-code lifecycle is keyed by the normalized
+    email (one live challenge per mailbox — verify loads the newest
+    row), verified against a plain SHA-256 digest, and capped at 5
+    verify attempts by the ``attempts`` counter. Only ``code_hash``
+    rests here; the plaintext code exists in the send call and the
+    recipient's mailbox only.
+    """
+
+    __tablename__ = "login_email_challenges"
+
+    id: Mapped[UUID] = mapped_column(
+        server_default=text("gen_random_uuid()"), primary_key=True
+    )
+    email_normalized: Mapped[str] = mapped_column(String(320), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+
+class RememberedDevice(Base):
+    """A 30-day remembered-login device cookie (V1.1 §2.2).
+
+    The cookie VALUE is ``secrets.token_urlsafe(32)`` and travels only
+    in the response; this row stores its SHA-256 digest, so a database
+    leak cannot be replayed into a login. Independent of refresh
+    tokens: revoking sessions (kick, password change) deletes these
+    rows too — the device credential must not outlive the account's
+    other credentials.
+    """
+
+    __tablename__ = "remembered_devices"
+
+    id: Mapped[UUID] = mapped_column(
+        server_default=text("gen_random_uuid()"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
