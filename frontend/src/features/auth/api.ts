@@ -20,6 +20,7 @@ import {
 } from "../../lib/accessToken";
 import { invalidateDataCache } from "@/lib/dataCache";
 import { invalidateSessionCache } from "./session";
+import { classifyVerifyResponse } from "./staffEmailLoginView";
 import type { components } from "../../lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -206,6 +207,84 @@ export async function loginStaff(
   invalidateSessionCache();
   invalidateDataCache();
   return tokens;
+}
+
+// --- staff email-code login (V1.1 §2.1/§2.2; plan T5 contract) -------------------
+//
+// Three endpoints under /auth/staff/email-code/*: a 202-always request
+// (anti-enumeration), a verify whose 200 body is EITHER a full
+// TokenPairResponse (TEACHER, or ADMIN riding a valid remembered
+// device) or the ADMIN {status:"totp_required", pending_token} second
+// leg, and that second leg's totp completion. The pending token of the
+// totp_required body is the sanctioned body-token exception — it rides
+// ONE Authorization header into the totp endpoint and lives in the
+// form's React state only, exactly like the invitation flow's pending
+// session. Full-login outcomes (both shapes that answer tokens) walk
+// the same adoption dance as loginStaff below.
+
+/** The verify-step outcome the form branches on (T5 frozen contract). */
+export type EmailCodeVerifyResult =
+  | { kind: "tokens"; tokens: LoginTokens }
+  | { kind: "totp_required"; pendingToken: string };
+
+/**
+ * Ask for a 6-digit login email. 202 with an empty body regardless of
+ * whether the address exists / is staff / is active (anti-enumeration);
+ * only the 60s-per-email resend cooldown answers 429.
+ */
+export function requestEmailLoginCode(email: string): Promise<void> {
+  return apiRequest<void>(`${BASE}/staff/email-code/request`, {
+    method: "POST",
+    body: { email },
+  });
+}
+
+/**
+ * Trade the emailed code for a session. A tokens body completes the
+ * login (memory-manager adoption + cache invalidation, loginStaff's
+ * dance); the ADMIN totp_required body adopts NOTHING — the pending
+ * token stays in the caller's React state for the second leg.
+ */
+export async function verifyEmailLoginCode(
+  email: string,
+  code: string,
+): Promise<EmailCodeVerifyResult> {
+  const body = await apiRequest<unknown>(`${BASE}/staff/email-code/verify`, {
+    method: "POST",
+    body: { email, code },
+  });
+  const outcome = classifyVerifyResponse(body);
+  if (outcome.kind === "totp_required") {
+    return outcome;
+  }
+  const tokens = body as LoginTokens;
+  adoptFullLogin(tokens);
+  return { kind: "tokens", tokens };
+}
+
+/**
+ * Complete the ADMIN second leg: the pending token rides one Bearer
+ * header (never the shared manager), a success body is a full login.
+ */
+export async function emailLoginTotp(
+  pendingToken: string,
+  code: string,
+  rememberDevice: boolean,
+): Promise<LoginTokens> {
+  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/email-code/totp`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${pendingToken}` },
+    body: rememberDevice ? { code, remember_device: true } : { code },
+  });
+  adoptFullLogin(tokens);
+  return tokens;
+}
+
+/** The shared explicit-login adoption (loginStaff's dance verbatim). */
+function adoptFullLogin(tokens: LoginTokens): void {
+  recordLogin(tokens.access_token);
+  invalidateSessionCache();
+  invalidateDataCache();
 }
 
 /**

@@ -54,6 +54,12 @@ export const BUSINESS_ERROR_CODES = [
   // replay-integrity failures, illegal state transitions). The mirror
   // here syncs with the registered table; admin mutations branch on it.
   "CONFLICT",
+  // V1.1 Wave 1 (plan 2026-10-15, Global Constraints — the frozen
+  // contract the backend T5/T6 work registers): the uniform email-code
+  // verdict (wrong/expired/exhausted, branch reason never leaves the
+  // server) and the per-account lockout envelope.
+  "EMAIL_CODE_INVALID",
+  "ACCOUNT_LOCKED",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];
