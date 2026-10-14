@@ -246,3 +246,26 @@ async def test_request_code_replaces_the_previous_challenge(
     ).scalars().all()
     assert len(rows) == 1
     assert rows[0].created_at is not None
+
+
+async def test_email_code_probe_recovers_the_mailed_code(
+    db_session: AsyncSession,
+) -> None:
+    """The e2e recovery channel (tests/e2e/email_code_probe.py): the
+    probe rediscovers the code from the stored digest alone — the same
+    honesty contract as otp_probe, proven against a real issued row."""
+    from tests.e2e.email_code_probe import recover_email_code
+
+    await _seed_user(db_session, _TEACHER_EMAIL, role=Role.TEACHER)
+    sender = FakeEmailSender()
+    service = _service(sender, InMemoryRedis(), FrozenClock(_T0))
+    await service.request_code(db_session, _TEACHER_EMAIL)
+    mailed = str(sender.messages[0].variables["code"])
+
+    challenge_id, recovered = await recover_email_code(db_session, _TEACHER_EMAIL)
+
+    assert recovered == mailed
+    assert challenge_id is not None
+
+    with pytest.raises(LookupError):
+        await recover_email_code(db_session, "never-requested@campus.example.edu")
