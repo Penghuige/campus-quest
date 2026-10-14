@@ -734,13 +734,31 @@ body {
   font-weight: 550;
 }
 
+/* Topbar identity cluster. The 10rem bound sits on the WHOLE cluster
+   (the pre-restructure geometry), but the ellipsis machinery lives on
+   the name child: a long nickname truncates on its own line while the
+   staff-role-tag (flex: none) never gets squeezed or clipped — the
+   owner-report fix (2026-10-14): any nickname length keeps the tag
+   legible and the bar's three-zone layout intact; `title` on the
+   cluster carries the full name on hover. */
 .app-user {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--muted-foreground);
   max-width: 10rem;
+}
+
+.app-user-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-user .staff-role-tag {
+  flex: none;
 }
 
 .app-main {

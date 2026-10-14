@@ -159,7 +159,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </nav>
             <div className="app-topbar-actions">
               <span className="app-user" title={state.me.nickname}>
-                {state.me.nickname}
+                <span className="app-user-name">{state.me.nickname}</span>
                 <span className="staff-role-tag">管理员</span>
               </span>
               <StaffLogoutButton />
