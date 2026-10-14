@@ -52,6 +52,21 @@ logger = logging.getLogger(__name__)
 #: presentation, like the SMS adapter's sign name).
 _VERIFICATION_SUBJECT = "CampusQuest 邮箱验证"
 
+#: The staff login-code email (V1.1 §2.1): the code and its TTL are the
+#: whole message — no links, no account hints (anti-enumeration).
+_LOGIN_CODE_SUBJECT = "CampusQuest 登录验证码"
+
+
+def _login_code_body(variables: Mapping[str, Any]) -> str:
+    code = variables.get("code", "")
+    ttl_minutes = variables.get("ttl_minutes", "")
+    return (
+        "您正在登录 CampusQuest。\n\n"
+        f"登录验证码：{code}\n\n"
+        f"验证码 {ttl_minutes} 分钟内有效；如非本人操作，请忽略本邮件。\n"
+        "\n—— CampusQuest"
+    )
+
 
 def _verification_body(variables: Mapping[str, Any]) -> str:
     token = variables.get("token", "")
@@ -115,6 +130,9 @@ class SmtpEmailSender:
         elif template == "email_verification":
             subject = _VERIFICATION_SUBJECT
             body = _verification_body(variables)
+        elif template == "staff_login_code":
+            subject = _LOGIN_CODE_SUBJECT
+            body = _login_code_body(variables)
         else:
             raise PermanentProviderError(
                 f"unknown email template shape {template!r} without "

@@ -43,8 +43,10 @@ from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
 )
+from app.modules.identity.email_login_service import EmailLoginService
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.events import DomainEventPublisher, LoggingEventPublisher
+from app.modules.identity.login_failure_guard import LoginFailureGuard
 from app.modules.identity.otp import OtpChallengeService, OtpPolicy
 from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.service import IdentityService
@@ -96,9 +98,37 @@ def get_email_sender(
 ) -> EmailSender:
     """Resolve the email adapter from `settings.email_provider`.
 
-    The fail-closed chain mirrors `get_sms_sender`.
+    The fail-closed chain mirrors `get_sms_sender` — including the
+    settings hand-off: without it the factory would refuse a real smtp
+    selection at composition in EVERY environment (the #69 wiring
+    lesson; providers must pass the deployment settings through).
     """
-    return build_email_sender(settings.email_provider)
+    return build_email_sender(settings.email_provider, settings)
+
+
+def get_login_failure_guard(
+    redis: RedisDep,
+) -> LoginFailureGuard:
+    """The per-account lockout counter on the module's shared Redis."""
+    return LoginFailureGuard(redis=redis)
+
+
+def get_email_login_service(
+    sender: Annotated[EmailSender, Depends(get_email_sender)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    redis: RedisDep,
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
+) -> EmailLoginService:
+    return EmailLoginService(
+        sender=sender,
+        redis=redis,
+        clock=clock,
+        sessions=sessions,
+        fernet=Fernet(settings.totp_encryption_key),
+        guard=guard,
+    )
 
 
 def get_event_publisher() -> DomainEventPublisher:

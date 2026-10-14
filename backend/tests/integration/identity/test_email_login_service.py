@@ -88,6 +88,7 @@ async def _seed_user(
 def _service(
     sender: FakeEmailSender, redis: InMemoryRedis, clock: FrozenClock
 ) -> EmailLoginService:
+    # request_code needs no verify-leg dependencies; they stay unset.
     return EmailLoginService(sender=sender, redis=redis, clock=clock)
 
 

@@ -768,6 +768,129 @@
         }
       }
     },
+    "/api/v1/auth/staff/email-code/request": {
+      "post": {
+        "summary": "Request Staff Email Code",
+        "description": "Mail one 6-digit login code (V1.1 §2.1) — always 202, empty body.\n\nThe response is identical for every mailbox — unknown, student, or\nstaff — so the endpoint is not an existence oracle; the service's\n60s cooldown is armed on the raw submitted email for all of them\nalike, and only a cooldown/liter breach (429) differs.",
+        "operationId": "request_staff_email_code_api_v1_auth_staff_email_code_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffEmailCodeRequestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/staff/email-code/verify": {
+      "post": {
+        "summary": "Verify Staff Email Code",
+        "description": "Trade the emailed code for a login (V1.1 §2.1/§2.2).\n\nTEACHER completes here; ADMIN answers ``totp_required`` with a\npending session token — unless a valid remembered-device cookie\naccompanies the request, in which case ADMIN finishes here too.\n``remember_device`` issues the 30-day cookie on whichever leg\ncompletes the login.",
+        "operationId": "verify_staff_email_code_api_v1_auth_staff_email_code_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffEmailCodeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TokenPairResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StaffEmailCodePendingResponse"
+                    }
+                  ],
+                  "title": "Response Verify Staff Email Code Api V1 Auth Staff Email Code Verify Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/staff/email-code/totp": {
+      "post": {
+        "summary": "Staff Email Code Totp",
+        "description": "Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).\n\n``pending_token`` is the verify leg's short-lived access token — a\nreal, revocable session, exactly the pending-staff shape invitation\nacceptance mints; this endpoint only adds the second factor.",
+        "operationId": "staff_email_code_totp_api_v1_auth_staff_email_code_totp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffEmailCodeTotpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/staff/invitations/accept": {
       "post": {
         "summary": "Accept Staff Invitation",
@@ -9247,6 +9370,87 @@
           "ADMIN"
         ],
         "title": "Role"
+      },
+      "StaffEmailCodePendingResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "pending_token": {
+            "type": "string",
+            "title": "Pending Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "pending_token"
+        ],
+        "title": "StaffEmailCodePendingResponse",
+        "description": "The ADMIN mid-login state: a short-lived session token that may\nfinish the login via the totp leg (or TOTP onboarding endpoints),\nand nothing else."
+      },
+      "StaffEmailCodeRequestRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "StaffEmailCodeRequestRequest",
+        "description": "Ask for a 6-digit login code by email (V1.1 §2.1).\n\nAlways answered 202 with an empty body — staff existence is not an\nanswer this endpoint gives (anti-enumeration)."
+      },
+      "StaffEmailCodeTotpRequest": {
+        "properties": {
+          "pending_token": {
+            "type": "string",
+            "title": "Pending Token"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending_token",
+          "code"
+        ],
+        "title": "StaffEmailCodeTotpRequest",
+        "description": "Finish an ADMIN email-code login with the TOTP second leg."
+      },
+      "StaffEmailCodeVerifyRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "StaffEmailCodeVerifyRequest",
+        "description": "Trade the emailed code for a login (V1.1 §2.1/§2.2).\n\nTEACHER completes in one step; ADMIN gets ``totp_required`` (unless a\nvalid remembered-device cookie accompanies the request)."
       },
       "StaffInvitationAcceptRequest": {
         "properties": {

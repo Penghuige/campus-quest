@@ -13,14 +13,28 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse
 
+from app.core.clock import Clock
+from app.core.security import AccessTokenCodec
 from app.modules.audit.context import AuditContext
-from app.modules.identity.dependencies import require_active_staff_actor
+from app.modules.identity.dependencies import (
+    get_access_token_codec,
+    get_business_clock,
+    require_active_staff_actor,
+    resolve_access_token,
+)
+from app.modules.identity.device_credentials import (
+    DEVICE_COOKIE_NAME,
+    DEVICE_TTL_DAYS,
+)
+from app.modules.identity.email_login_service import EmailLoginService
 from app.modules.identity.events import Actor
 from app.modules.identity.providers import (
     AppSettings,
     DbSession,
     LimiterDep,
+    get_email_login_service,
     get_staff_service,
 )
 from app.modules.identity.routing_common import (
@@ -29,6 +43,10 @@ from app.modules.identity.routing_common import (
     _token_pair_response,
 )
 from app.modules.identity.schemas import (
+    StaffEmailCodePendingResponse,
+    StaffEmailCodeRequestRequest,
+    StaffEmailCodeTotpRequest,
+    StaffEmailCodeVerifyRequest,
     StaffInvitationAcceptRequest,
     StaffLoginRequest,
     TokenPairResponse,
@@ -74,6 +92,117 @@ async def staff_login(
         db, body.email, body.password, body.totp_code
     )
     return _token_pair_response(response, tokens, settings)
+
+
+@router.post("/auth/staff/email-code/request", status_code=202)
+async def request_staff_email_code(
+    body: StaffEmailCodeRequestRequest,
+    request: Request,
+    email_login: Annotated[EmailLoginService, Depends(get_email_login_service)],
+    limiter: LimiterDep,
+    db: DbSession,
+) -> Response:
+    """Mail one 6-digit login code (V1.1 §2.1) — always 202, empty body.
+
+    The response is identical for every mailbox — unknown, student, or
+    staff — so the endpoint is not an existence oracle; the service's
+    60s cooldown is armed on the raw submitted email for all of them
+    alike, and only a cooldown/liter breach (429) differs.
+    """
+    await _enforce_rate_limit(
+        limiter,
+        "auth:staff-email-code",
+        body.email.strip().lower(),
+        client_ip=_client_ip(request),
+    )
+    await email_login.request_code(db, body.email)
+    return JSONResponse({}, status_code=202)
+
+
+@router.post("/auth/staff/email-code/verify")
+async def verify_staff_email_code(
+    body: StaffEmailCodeVerifyRequest,
+    request: Request,
+    response: Response,
+    email_login: Annotated[EmailLoginService, Depends(get_email_login_service)],
+    settings: AppSettings,
+    db: DbSession,
+) -> TokenPairResponse | StaffEmailCodePendingResponse:
+    """Trade the emailed code for a login (V1.1 §2.1/§2.2).
+
+    TEACHER completes here; ADMIN answers ``totp_required`` with a
+    pending session token — unless a valid remembered-device cookie
+    accompanies the request, in which case ADMIN finishes here too.
+    ``remember_device`` issues the 30-day cookie on whichever leg
+    completes the login.
+    """
+    outcome = await email_login.verify_code(
+        db,
+        email=body.email,
+        code=body.code,
+        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        remember_device=body.remember_device,
+        audit_context=AuditContext.from_request(request),
+    )
+    if outcome.pending_tokens is not None:
+        return StaffEmailCodePendingResponse(
+            status="totp_required",
+            pending_token=outcome.pending_tokens.access_token,
+        )
+    assert outcome.tokens is not None
+    tokens = _token_pair_response(response, outcome.tokens, settings)
+    _set_device_cookie(response, outcome.device_cookie)
+    return tokens
+
+
+@router.post("/auth/staff/email-code/totp", response_model=TokenPairResponse)
+async def staff_email_code_totp(
+    body: StaffEmailCodeTotpRequest,
+    request: Request,
+    response: Response,
+    email_login: Annotated[EmailLoginService, Depends(get_email_login_service)],
+    settings: AppSettings,
+    db: DbSession,
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> TokenPairResponse:
+    """Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).
+
+    ``pending_token`` is the verify leg's short-lived access token — a
+    real, revocable session, exactly the pending-staff shape invitation
+    acceptance mints; this endpoint only adds the second factor.
+    """
+    user = await resolve_access_token(db, body.pending_token, codec, clock)
+    outcome = await email_login.verify_totp(
+        db,
+        user_id=user.id,
+        code=body.code,
+        remember_device=body.remember_device,
+        audit_context=AuditContext.from_request(request),
+    )
+    assert outcome.tokens is not None
+    tokens = _token_pair_response(response, outcome.tokens, settings)
+    _set_device_cookie(response, outcome.device_cookie)
+    return tokens
+
+
+def _set_device_cookie(response: Response, cookie_value: str | None) -> None:
+    """Set the remembered-device cookie exactly when one was minted.
+
+    HttpOnly + Secure + SameSite=Lax (V1.1 §2.2); no explicit Path — the
+    cookie must reach every /api/v1/auth/staff/email-code/* call, and
+    the browser default (this host, all paths) is precisely that scope.
+    """
+    if cookie_value is None:
+        return
+    response.set_cookie(
+        DEVICE_COOKIE_NAME,
+        cookie_value,
+        max_age=DEVICE_TTL_DAYS * 24 * 3600,
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
 
 
 @router.post("/auth/staff/invitations/accept", response_model=TokenPairResponse)

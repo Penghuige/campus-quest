@@ -85,6 +85,45 @@ class StaffLoginRequest(BaseModel):
     totp_code: str
 
 
+class StaffEmailCodeRequestRequest(BaseModel):
+    """Ask for a 6-digit login code by email (V1.1 §2.1).
+
+    Always answered 202 with an empty body — staff existence is not an
+    answer this endpoint gives (anti-enumeration).
+    """
+
+    email: str
+
+
+class StaffEmailCodeVerifyRequest(BaseModel):
+    """Trade the emailed code for a login (V1.1 §2.1/§2.2).
+
+    TEACHER completes in one step; ADMIN gets ``totp_required`` (unless a
+    valid remembered-device cookie accompanies the request).
+    """
+
+    email: str
+    code: str
+    remember_device: bool = False
+
+
+class StaffEmailCodeTotpRequest(BaseModel):
+    """Finish an ADMIN email-code login with the TOTP second leg."""
+
+    pending_token: str
+    code: str
+    remember_device: bool = False
+
+
+class StaffEmailCodePendingResponse(BaseModel):
+    """The ADMIN mid-login state: a short-lived session token that may
+    finish the login via the totp leg (or TOTP onboarding endpoints),
+    and nothing else."""
+
+    status: str
+    pending_token: str
+
+
 class RefreshRequest(BaseModel):
     """Rotate one refresh session; the token may also arrive by cookie.
 

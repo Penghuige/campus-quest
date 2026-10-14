@@ -1714,6 +1714,9 @@ Teacher 不允许任意修改全局短信模板。
   2026-10-11 扩列——状态流转即治理事件，行携带 before/after status 快照）。
 - Task 协作者授予/移除（同上裁定）。
 - Task Assignment 批量导入确认（同上裁定；行携带 inserted 计数）。
+- 邮箱验证码登录成功与 ADMIN 二腿分派（V1.1 2026-10-15 随 Wave 1 扩列）：
+  `EMAIL_LOGIN_SUCCEEDED`（含 channel=email_code / +device / +totp 快照）与
+  `EMAIL_LOGIN_TOTP_REQUIRED`——actor 即登录账号本人，行内不落邮箱（G11）。
 
 AuditLog 不允许通过普通管理后台删除。
 

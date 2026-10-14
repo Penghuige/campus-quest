@@ -119,6 +119,7 @@ __all__ = [
     "require_active_student_or_staff_management_actor",
     "require_admin_actor",
     "require_staff_management_actor",
+    "resolve_access_token",
 ]
 
 _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
@@ -179,8 +180,20 @@ async def _resolve_user(
     """
     if credentials is None:
         raise _authentication_required()
+    return await resolve_access_token(db, credentials.credentials, codec, clock)
+
+
+async def resolve_access_token(
+    db: AsyncSession, token: str, codec: AccessTokenCodec, clock: Clock
+) -> User:
+    """Authenticate one raw access-token string; return the fresh user row.
+
+    The Bearer-header guards delegate here; routes that carry the token
+    in the request body (the email-code totp leg's ``pending_token``)
+    call it directly with the same uniform-failure semantics.
+    """
     try:
-        claims = codec.decode(credentials.credentials)
+        claims = codec.decode(token)
     except AccessTokenError as exc:
         raise _authentication_required() from exc
     try:
