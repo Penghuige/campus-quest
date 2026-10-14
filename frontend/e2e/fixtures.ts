@@ -389,3 +389,10 @@ export function mintToken(userId: string): string {
 export function recoverOtpCode(phoneE164: string): string {
   return runWorldAction<{ code: string }>("otp-code", phoneE164).code;
 }
+
+/** Recover the current staff login email code for an address (V1.1
+ * Wave 1; world action `email-code` — the otp-code pattern). The FORM
+ * value passes as typed: the action strips/lowercases internally. */
+export function recoverEmailCode(email: string): string {
+  return runWorldAction<{ code: string }>("email-code", email).code;
+}

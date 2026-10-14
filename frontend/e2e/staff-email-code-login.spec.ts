@@ -1,10 +1,9 @@
 /**
  * Staff email-code login e2e (V1.1 §2.1/§2.2; plan Tasks 8/12) — runs
  * against the MERGED Wave-1 backend (the endpoints the T5 contract
- * froze). Executed in the T12 round after the backend PR lands; the
- * one PLACEHOLDER below swaps when the backend confirms the e2e code
- * recovery channel (drafted after the SMS OTP redis-broker pattern —
- * recoverOtpCode's shape).
+ * froze). Executed in the T12 round after the backend PR lands. Code
+ * recovery rides the confirmed world action (`email-code`, exposed as
+ * fixtures' recoverEmailCode — the otp-code pattern).
  *
  * Coverage (the plan's Task 12 list):
  * 1. teacher happy path: email → code → logged in, landing on the
@@ -20,7 +19,7 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { mintToken, totpCode } from "./fixtures";
+import { mintToken, recoverEmailCode, totpCode } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -37,14 +36,10 @@ test.skip(
 );
 
 /**
- * PLACEHOLDER (single call site — swap when the backend confirms the
- * channel): recover the emailed login code the SMS OTP broker pattern
- * uses (world action + identifier, code in the answer).
+ * The emailed login code via the world action the backend confirmed
+ * (`email-code <email>`, the otp-code pattern; the address passes the
+ * form value — the action strips/lowercases internally).
  */
-async function recoverEmailCode(email: string): Promise<string> {
-  const { runWorldAction } = await import("./global-setup");
-  return runWorldAction<{ code: string }>("email-login-code", email).code;
-}
 
 /** The obviously-wrong neighbor of the real code — deterministic, not
  * a guess (rolling +1 keeps it wrong with certainty). */
