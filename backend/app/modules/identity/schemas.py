@@ -280,6 +280,24 @@ class UserPublic(BaseModel):
         )
 
 
+class RememberedDevicePublic(BaseModel):
+    """One remembered device of the caller (V1.1 §2.2 self-service).
+
+    Explicitly enumerated fields: the stored token hash is unrepresentable.
+    """
+
+    id: UUID
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+
+
+class OwnDevicesRevokedResponse(BaseModel):
+    """DELETE /me/devices result: how many credentials were dropped."""
+
+    revoked: int
+
+
 class MePublic(UserPublic):
     """The owner's own account page (spec §40): contacts included.
 

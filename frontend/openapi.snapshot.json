@@ -326,6 +326,56 @@
         }
       }
     },
+    "/api/v1/me/devices": {
+      "get": {
+        "summary": "List Own Devices",
+        "description": "The caller's remembered login devices (V1.1 §2.2 self-service).\n\nStaff-only on purpose: the credential exists solely on the staff\nemail-code channel, and a student's answer would imply a capability\nthat does not exist. Rows map to the explicit DTO — hashes stay\nserver-side.",
+        "operationId": "list_own_devices_api_v1_me_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RememberedDevicePublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Own Devices Api V1 Me Devices Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Revoke Own Devices",
+        "description": "Drop every remembered device of the caller (V1.1 §2.2).\n\nThe stolen-cookie answer: after this, a login presenting a formerly\nremembered device falls back to the full TOTP leg. The\n``OWN_DEVICES_REVOKED`` audit row joins the same transaction.",
+        "operationId": "revoke_own_devices_api_v1_me_devices_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnDevicesRevokedResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "summary": "Read Me",
@@ -7876,6 +7926,20 @@
         ],
         "title": "NotificationTemplateUpdateRequest"
       },
+      "OwnDevicesRevokedResponse": {
+        "properties": {
+          "revoked": {
+            "type": "integer",
+            "title": "Revoked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revoked"
+        ],
+        "title": "OwnDevicesRevokedResponse",
+        "description": "DELETE /me/devices result: how many credentials were dropped."
+      },
       "OwnedHonorResponse": {
         "properties": {
           "honor_id": {
@@ -8546,6 +8610,46 @@
           "availability_status"
         ],
         "title": "ReleaseOccupiedAssignmentResponse"
+      },
+      "RememberedDevicePublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "last_used_at",
+          "expires_at"
+        ],
+        "title": "RememberedDevicePublic",
+        "description": "One remembered device of the caller (V1.1 §2.2 self-service).\n\nExplicitly enumerated fields: the stored token hash is unrepresentable."
       },
       "ReportClosureResponse": {
         "properties": {

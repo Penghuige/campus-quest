@@ -33,12 +33,16 @@ from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.events import Actor
 from app.modules.identity.models import RememberedDevice
 
 #: The browser-facing cookie name — the frontend contract (V1.1 §2.2).
 DEVICE_COOKIE_NAME = "cq_staff_device"
 DEVICE_TTL_DAYS = 30
 _COOKIE_MAX_AGE_SECONDS = DEVICE_TTL_DAYS * 24 * 3600
+AUDIT_OWN_DEVICES_REVOKED = "OWN_DEVICES_REVOKED"
 
 
 def _hash_cookie(cookie_value: str) -> str:
@@ -91,3 +95,47 @@ async def revoke_all(db: AsyncSession, user_id: UUID) -> int:
     await db.flush()
     # rowcount is the matched-row count (the cleanup-jobs cast precedent).
     return int(cast("CursorResult[Any]", result).rowcount)
+
+
+async def list_for_user(db: AsyncSession, user_id: UUID) -> list[RememberedDevice]:
+    """The owner's devices, newest first — the /me/devices list source.
+
+    The route maps rows to the explicit public DTO; the hash-bearing
+    rows never leave this module as anything but ``id``/timestamps.
+    """
+    return list(
+        await db.scalars(
+            select(RememberedDevice)
+            .where(RememberedDevice.user_id == user_id)
+            .order_by(RememberedDevice.created_at.desc(), RememberedDevice.id)
+        )
+    )
+
+
+async def revoke_all_for_user(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    actor: Actor,
+    audit: AuditLogWriter | None = None,
+    audit_context: AuditContext | None = None,
+) -> int:
+    """Self-service revocation (V1.1 §2.2): drop every device credential
+    of the caller and write the ``OWN_DEVICES_REVOKED`` audit row in the
+    SAME transaction (flush-only writer, the PR #80 discipline; actor =
+    the account that revoked its own devices).
+    """
+    writer = audit if audit is not None else AuditLogWriter()
+    count = await revoke_all(db, user_id)
+    await writer.append(
+        db,
+        actor=actor,
+        action=AUDIT_OWN_DEVICES_REVOKED,
+        target_type="user",
+        target_id=str(user_id),
+        after_snapshot={"revoked": count},
+        ip_address=audit_context.ip_address if audit_context else None,
+        request_id=audit_context.request_id if audit_context else None,
+    )
+    await db.commit()
+    return count

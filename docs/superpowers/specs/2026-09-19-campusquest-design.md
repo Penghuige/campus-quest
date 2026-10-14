@@ -1717,6 +1717,8 @@ Teacher 不允许任意修改全局短信模板。
 - 邮箱验证码登录成功与 ADMIN 二腿分派（V1.1 2026-10-15 随 Wave 1 扩列）：
   `EMAIL_LOGIN_SUCCEEDED`（含 channel=email_code / +device / +totp 快照）与
   `EMAIL_LOGIN_TOTP_REQUIRED`——actor 即登录账号本人，行内不落邮箱（G11）。
+- 记住设备自助清退（V1.1 §2.2 随 Wave 1）：`OWN_DEVICES_REVOKED`，actor=清退
+  本人，after 快照携带 revoked 计数。
 
 AuditLog 不允许通过普通管理后台删除。
 

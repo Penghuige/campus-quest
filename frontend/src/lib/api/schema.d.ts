@@ -173,6 +173,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Own Devices
+         * @description The caller's remembered login devices (V1.1 §2.2 self-service).
+         *
+         *     Staff-only on purpose: the credential exists solely on the staff
+         *     email-code channel, and a student's answer would imply a capability
+         *     that does not exist. Rows map to the explicit DTO — hashes stay
+         *     server-side.
+         */
+        get: operations["list_own_devices_api_v1_me_devices_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Own Devices
+         * @description Drop every remembered device of the caller (V1.1 §2.2).
+         *
+         *     The stolen-cookie answer: after this, a login presenting a formerly
+         *     remembered device falls back to the full TOTP leg. The
+         *     ``OWN_DEVICES_REVOKED`` audit row joins the same transaction.
+         */
+        delete: operations["revoke_own_devices_api_v1_me_devices_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -3434,6 +3467,14 @@ export interface components {
             template_body: string;
         };
         /**
+         * OwnDevicesRevokedResponse
+         * @description DELETE /me/devices result: how many credentials were dropped.
+         */
+        OwnDevicesRevokedResponse: {
+            /** Revoked */
+            revoked: number;
+        };
+        /**
          * OwnedHonorResponse
          * @description One honor the caller owns (the §19 已获得荣誉 row).
          */
@@ -3789,6 +3830,31 @@ export interface components {
             task_id: string;
             /** Availability Status */
             availability_status: string;
+        };
+        /**
+         * RememberedDevicePublic
+         * @description One remembered device of the caller (V1.1 §2.2 self-service).
+         *
+         *     Explicitly enumerated fields: the stored token hash is unrepresentable.
+         */
+        RememberedDevicePublic: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /**
          * ReportClosureResponse
@@ -5413,6 +5479,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_own_devices_api_v1_me_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RememberedDevicePublic"][];
+                };
+            };
+        };
+    };
+    revoke_own_devices_api_v1_me_devices_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnDevicesRevokedResponse"];
                 };
             };
         };
