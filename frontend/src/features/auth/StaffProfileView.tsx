@@ -19,6 +19,7 @@
 import { useState, type FormEvent } from "react";
 
 import { AuthField } from "./AuthField";
+import { DevicePanel } from "./DevicePanel";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import { updateNickname } from "./api";
@@ -90,6 +91,7 @@ export function StaffProfileView() {
         </div>
       </dl>
       <NicknameEditRow me={me} onUpdated={refresh} />
+      <DevicePanel />
     </section>
   );
 }
