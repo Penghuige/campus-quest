@@ -41,6 +41,8 @@ from app.modules.identity.providers import (
 )
 from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter
 
+pytestmark = pytest.mark.integration
+
 _LOCKOUT_REDIS_DB = 12
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _STUDENT = "20250017777"

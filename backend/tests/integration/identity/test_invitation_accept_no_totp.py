@@ -41,6 +41,8 @@ from app.modules.identity.providers import (
 )
 from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter
 
+pytestmark = pytest.mark.integration
+
 _INVITE_REDIS_DB = 11
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _OWNER_EMAIL = "invite-owner@campus.example.edu"

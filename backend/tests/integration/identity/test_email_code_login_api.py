@@ -52,6 +52,8 @@ from app.modules.identity.providers import (
 )
 from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter
 
+pytestmark = pytest.mark.integration
+
 _EMAIL_REDIS_DB = 13
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _TEACHER_EMAIL = "wave1-teacher@campus.example.edu"
@@ -337,9 +339,7 @@ async def test_pending_token_authenticates_nothing_but_the_totp_leg(
     pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
     token = pending.json()["pending_token"]
 
-    me = await client.get(
-        "/api/v1/me", headers={"Authorization": f"Bearer {token}"}
-    )
+    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 401, me.text
 
     manage = await client.get(
@@ -614,3 +614,82 @@ async def test_success_resets_failure_count(
 
     await _verify(client, _TEACHER_EMAIL, _last_code(api_email))
     assert await api_redis.get(key) is None
+
+
+async def test_totp_leg_wrong_code_is_401_and_counts(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    admin, _ = await _seed_admin_with_totp(db_session)
+    await _request_code(client, _ADMIN_EMAIL)
+    pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
+    token = pending.json()["pending_token"]
+
+    wrong = await client.post(
+        "/api/v1/auth/staff/email-code/totp",
+        json={"pending_token": token, "code": "000000"},
+    )
+    assert wrong.status_code == 401, wrong.text
+    assert _envelope(wrong)["code"] == "AUTHENTICATION_REQUIRED"
+    assert await api_redis.get(f"login:fail:{admin.id}") == "1"
+
+
+async def test_totp_leg_unconfirmed_admin_gets_setup_error(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+) -> None:
+    """An ADMIN whose credential was never confirmed (the unreachable-
+    in-product V1.1 shape, but the branch must answer typed, not crash):
+    the totp leg points back at the onboarding endpoints."""
+    admin, _ = await _seed_admin_with_totp(db_session)
+    # Wipe the confirmed credential but keep the pending login alive.
+    from sqlalchemy import update
+
+    from app.modules.identity.models import TotpCredential
+
+    await db_session.execute(
+        update(TotpCredential)
+        .where(TotpCredential.user_id == admin.id)
+        .values(confirmed_at=None)
+    )
+    await db_session.commit()
+
+    await _request_code(client, _ADMIN_EMAIL)
+    pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
+    token = pending.json()["pending_token"]
+
+    response = await client.post(
+        "/api/v1/auth/staff/email-code/totp",
+        json={"pending_token": token, "code": "123456"},
+    )
+    assert response.status_code == 403, response.text
+    assert _envelope(response)["code"] == "TOTP_SETUP_REQUIRED"
+
+
+async def test_totp_leg_locked_account_envelope(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    admin, _ = await _seed_admin_with_totp(db_session)
+    await _request_code(client, _ADMIN_EMAIL)
+    pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
+    token = pending.json()["pending_token"]
+
+    key = f"login:fail:{admin.id}"
+    for _ in range(5):
+        await api_redis.incr(key)
+    await api_redis.expire(key, 900)
+
+    response = await client.post(
+        "/api/v1/auth/staff/email-code/totp",
+        json={"pending_token": token, "code": "123456"},
+    )
+    assert response.status_code == 429, response.text
+    error = _envelope(response)
+    assert error["code"] == "ACCOUNT_LOCKED"
+    assert 0 < error["details"]["retry_after_seconds"] <= 900

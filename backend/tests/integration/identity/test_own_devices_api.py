@@ -38,6 +38,8 @@ from app.modules.identity.providers import (
 )
 from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter
 
+pytestmark = pytest.mark.integration
+
 _DEVICES_REDIS_DB = 10
 _T0 = datetime.now(UTC).replace(microsecond=0)
 _TEACHER_EMAIL = "devices-self@campus.example.edu"
