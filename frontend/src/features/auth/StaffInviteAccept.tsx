@@ -1,29 +1,40 @@
 "use client";
 /**
- * Staff invitation acceptance island — spec §5.8 steps 1-2 (patterns §6).
+ * Staff invitation acceptance island — spec §5.8 steps 1-2 (patterns
+ * §6); V1.1 §2.3 re-shapes the branch per role (plan Tasks 7/9).
  *
- * Two steps, one component:
- *
- *   password ──accept(token, password)──▶ totp (TotpSetup with the pending
- *                                         session's access token)
+ *   password (OPTIONAL since V1.1) ──accept(token, password?)──▶ ┌ teacher
+ *     │                                totp_required: false      │  full login,
+ *     │                                                           │  straight to the
+ *     ├─ 401 uniform: unknown/expired/used token                  │  workspace
+ *     │                                totp_required: true       └ admin: TotpSetup
+ *     └─ client-invalid band (supplied values only):              (unchanged two-step
+ *        field error, NO request — the token never burns           with the pending
+ *                                                                   session)
  *
  * - the invitation token arrives as a ROUTE PARAM (prop) — it is a
  *   single-use 256-bit secret, so it is never logged and never echoed
  *   back into the UI;
- * - password band (10-128) is client-mirrored BEFORE the request so an
- *   obvious mistake cannot burn the one-time token (the backend checks
- *   the band first for exactly this reason — staff_service);
- * - success answers `TokenPairResponse`: the body's short-lived access
- *   token is the sanctioned PendingStaffSession exception, held in React
- *   state ONLY for the TOTP step — the refresh token stays in its
- *   HttpOnly cookie untouched (the setup endpoints never need it);
- * - 401 on accept is UNIFORM for unknown/expired/used tokens (the branch
- *   reason never leaves the server); 409 USERNAME_ALREADY_EXISTS maps to
- *   the stable "email taken" copy.
+ * - V1.1: a TEACHER may leave the password EMPTY — the account runs
+ *   email-code-only (no password_hash). ADMIN invitations still
+ *   require one (the backend band-checks a SUPPLIED password before
+ *   touching the one-time token, so a wrong-shape value never burns
+ *   it; an empty password on an ADMIN invite is refused server-side
+ *   after lookup — the field error routes back here);
+ * - the branch discriminator is the response's `totp_required`
+ *   (reviewer ruling 2026-10-15); a body WITHOUT the field (the
+ *   pre-V1.1 shape) defaults to the admin leg — the safe default
+ *   until the backend's T7 lands;
+ * - success answers full tokens (teacher) or the pending session's
+ *   body access token (admin — the sanctioned exception, React state
+ *   only, confined to the TOTP setup endpoints).
  */
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { isApiError } from "@/lib/errors";
+import { TEACHER_LANDING_PATH } from "@/features/auth/workspace";
+import { useSession } from "./session";
 
 import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
@@ -33,8 +44,8 @@ import { acceptStaffInvitation } from "./api";
 import { NETWORK_ERROR_TEXT, withFieldErrorSummary, type AuthErrorView } from "./errors";
 import {
   describeStaffError,
-  validateInvitePassword,
-  validateInvitePasswordRepeat,
+  validateOptionalInvitePassword,
+  validateOptionalInvitePasswordRepeat,
 } from "./staffAuthView";
 
 type InviteFields = "password" | "repeat_password";
@@ -49,6 +60,8 @@ export interface StaffInviteAcceptProps {
 }
 
 export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
+  const router = useRouter();
+  const { refresh: refreshSession } = useSession();
   const [step, setStep] = useState<InviteStep>({ kind: "password" });
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -59,8 +72,8 @@ export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const errors: Partial<Record<InviteFields, string>> = {
-      password: validateInvitePassword(password) ?? undefined,
-      repeat_password: validateInvitePasswordRepeat(password, repeat) ?? undefined,
+      password: validateOptionalInvitePassword(password) ?? undefined,
+      repeat_password: validateOptionalInvitePasswordRepeat(password, repeat) ?? undefined,
     };
     setFieldErrors(errors);
     setSummary(null);
@@ -70,11 +83,19 @@ export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
 
     setSubmitting(true);
     try {
-      const tokens = await acceptStaffInvitation(token, password);
-      // PendingStaffSession: body access token, confined to /staff/totp/*.
+      const outcome = await acceptStaffInvitation(token, password.length === 0 ? null : password);
       setPassword("");
       setRepeat("");
-      setStep({ kind: "totp", accessToken: tokens.access_token });
+      if (outcome.kind === "teacher") {
+        // Full login adopted by the wrapper — land on the workspace
+        // (the rename nudge greets digit-shaped nicknames there).
+        refreshSession();
+        router.replace(TEACHER_LANDING_PATH);
+        router.refresh();
+        return;
+      }
+      // ADMIN: PendingStaffSession, confined to /staff/totp/*.
+      setStep({ kind: "totp", accessToken: outcome.pendingToken });
     } catch (error) {
       if (!isApiError(error)) {
         setSummary({ summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null });
@@ -104,21 +125,22 @@ export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
       <FormErrorSummary view={summary} />
       <AuthField
         name="password"
-        label="设置密码"
-        hint="10-128 个字符；密码设置后邀请链接即失效。"
+        label="设置密码（可选）"
+        hint="10-128 个字符。教师可留空（之后仅用邮箱验证码登录）；管理员必须设置。密码设置后邀请链接即失效。"
         error={fieldErrors.password}
         inputProps={{
           value: password,
           onChange: (event) => setPassword(event.target.value),
           type: "password",
           autoComplete: "new-password",
-          placeholder: "请设置密码",
+          placeholder: "请设置密码（教师可留空）",
           disabled: submitting,
         }}
       />
       <AuthField
         name="repeat_password"
         label="确认密码"
+        hint="再次输入上面的密码；若留空请保持两项都为空。"
         error={fieldErrors.repeat_password}
         inputProps={{
           value: repeat,
@@ -129,7 +151,7 @@ export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
           disabled: submitting,
         }}
       />
-      <SubmitButton loading={submitting}>设置密码并继续</SubmitButton>
+      <SubmitButton loading={submitting}>激活账号</SubmitButton>
     </form>
   );
 }

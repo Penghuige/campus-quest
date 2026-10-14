@@ -20,6 +20,7 @@ import {
 } from "../../lib/accessToken";
 import { invalidateDataCache } from "@/lib/dataCache";
 import { invalidateSessionCache } from "./session";
+import { classifyInviteAccept } from "./staffAuthView";
 import { classifyVerifyResponse } from "./staffEmailLoginView";
 import type { components } from "../../lib/api/schema";
 
@@ -167,15 +168,31 @@ export type StaffTotpSetup = Schemas["TotpSetupResponse"];
 /** `TotpConfirmResponse` — plaintext recovery codes, shown exactly once. */
 export type StaffTotpConfirm = Schemas["TotpConfirmResponse"];
 
-/** Trade the single-use invitation token for a pending staff session. */
-export function acceptStaffInvitation(
+/**
+ * Trade the single-use invitation token for a staff account (V1.1
+ * Task 7/9): the response's `totp_required` discriminator picks the
+ * branch — TEACHER (false) answers FULL tokens (adopted here: the
+ * account is ACTIVE and logged in; password was optional); ADMIN
+ * (true, or missing on the pre-V1.1 shape) answers the pending
+ * session whose access token is the sanctioned body-token exception.
+ */
+export type InviteAcceptResult =
+  | { kind: "teacher" }
+  | { kind: "admin"; pendingToken: string };
+
+export async function acceptStaffInvitation(
   token: string,
-  password: string,
-): Promise<LoginTokens> {
-  return apiRequest<LoginTokens>(`${BASE}/staff/invitations/accept`, {
+  password: string | null,
+): Promise<InviteAcceptResult> {
+  const body = await apiRequest<unknown>(`${BASE}/staff/invitations/accept`, {
     method: "POST",
     body: { token, password },
   });
+  if (classifyInviteAccept(body) === "teacher") {
+    adoptFullLogin(body as LoginTokens);
+    return { kind: "teacher" };
+  }
+  return { kind: "admin", pendingToken: (body as LoginTokens).access_token };
 }
 
 /** Staff login: verified email + password + TOTP-or-recovery code. */

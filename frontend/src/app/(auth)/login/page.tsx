@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { LoginForm } from "@/features/auth/LoginForm";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "登录 · CampusQuest",
@@ -45,6 +46,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           忘记密码？
         </Link>
       </p>
+      {/* V1.1 §2.4: the staff entry as a visible secondary action — the
+       * pre-V1.1 page had NO staff path at all; one visible button, not
+       * footer text. */}
+      <Button asChild variant="secondary" block>
+        <Link href="/staff/login">员工登录</Link>
+      </Button>
     </>
   );
 }

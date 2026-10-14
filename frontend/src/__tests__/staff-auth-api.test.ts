@@ -81,16 +81,38 @@ afterEach(() => {
 });
 
 describe("acceptStaffInvitation", () => {
-  test("posts {token, password} with cookie credentials", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    const tokens = await acceptStaffInvitation("invite-token", "correct-horse");
-    assert.equal(tokens.access_token, "at");
+  test("posts {token, password} with cookie credentials; an old-shape body lands on the admin leg UNADOPTED", async () => {
+    clearAccessToken();
+    stubFetch(JSON.stringify({ access_token: "pending-at", csrf_token: "ct", token_type: "bearer" }), 200);
+    const outcome = await acceptStaffInvitation("invite-token", "correct-horse");
+    assert.deepEqual(outcome, { kind: "admin", pendingToken: "pending-at" });
+    assert.equal(getAccessToken(), null);
     assert.equal(recorded?.url, "/api/v1/auth/staff/invitations/accept");
     assert.equal(recorded?.method, "POST");
     assert.equal(recorded?.credentials, "include");
     assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
       token: "invite-token",
       password: "correct-horse",
+    });
+  });
+
+  test("totp_required:false adopts the TEACHER full login; an empty password posts null", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        totp_required: false,
+        access_token: "teacher-at",
+        csrf_token: "ct",
+        token_type: "bearer",
+      }),
+      200,
+    );
+    const outcome = await acceptStaffInvitation("invite-token", null);
+    assert.equal(outcome.kind, "teacher");
+    assert.equal(getAccessToken(), "teacher-at");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      token: "invite-token",
+      password: null,
     });
   });
 
