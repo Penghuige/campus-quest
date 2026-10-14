@@ -26,11 +26,13 @@ from __future__ import annotations
 import secrets
 from datetime import timedelta
 from hashlib import sha256
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import Clock
 from app.modules.identity.models import RememberedDevice
 
 #: The browser-facing cookie name — the frontend contract (V1.1 §2.2).
@@ -43,7 +45,7 @@ def _hash_cookie(cookie_value: str) -> str:
     return sha256(cookie_value.encode()).hexdigest()
 
 
-async def issue(db: AsyncSession, user_id: UUID, *, clock) -> str:
+async def issue(db: AsyncSession, user_id: UUID, *, clock: Clock) -> str:
     """Mint one device credential; return the cookie VALUE once.
 
     Only the SHA-256 digest is persisted, so a database leak yields
@@ -61,7 +63,9 @@ async def issue(db: AsyncSession, user_id: UUID, *, clock) -> str:
     return cookie_value
 
 
-async def validate(db: AsyncSession, cookie_value: str, *, clock) -> UUID | None:
+async def validate(
+    db: AsyncSession, cookie_value: str, *, clock: Clock
+) -> UUID | None:
     """Resolve a presented cookie; None when unknown or expired.
 
     A success bumps ``last_used_at`` so the self-service device list can
@@ -85,4 +89,5 @@ async def revoke_all(db: AsyncSession, user_id: UUID) -> int:
         delete(RememberedDevice).where(RememberedDevice.user_id == user_id)
     )
     await db.flush()
-    return int(result.rowcount or 0)
+    # rowcount is the matched-row count (the cleanup-jobs cast precedent).
+    return int(cast("CursorResult[Any]", result).rowcount)
