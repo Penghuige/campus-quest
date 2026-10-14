@@ -67,9 +67,7 @@ async def issue(db: AsyncSession, user_id: UUID, *, clock: Clock) -> str:
     return cookie_value
 
 
-async def validate(
-    db: AsyncSession, cookie_value: str, *, clock: Clock
-) -> UUID | None:
+async def validate(db: AsyncSession, cookie_value: str, *, clock: Clock) -> UUID | None:
     """Resolve a presented cookie; None when unknown or expired.
 
     A success bumps ``last_used_at`` so the self-service device list can

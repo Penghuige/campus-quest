@@ -15,14 +15,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core.clock import Clock
-from app.core.security import AccessTokenCodec
 from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import (
-    get_access_token_codec,
-    get_business_clock,
     require_active_staff_actor,
-    resolve_access_token,
 )
 from app.modules.identity.device_credentials import (
     DEVICE_COOKIE_NAME,
@@ -146,10 +141,10 @@ async def verify_staff_email_code(
         remember_device=body.remember_device,
         audit_context=AuditContext.from_request(request),
     )
-    if outcome.pending_tokens is not None:
+    if outcome.pending_token is not None:
         return StaffEmailCodePendingResponse(
             status="totp_required",
-            pending_token=outcome.pending_tokens.access_token,
+            pending_token=outcome.pending_token,
         )
     assert outcome.tokens is not None
     tokens = _token_pair_response(response, outcome.tokens, settings)
@@ -165,19 +160,17 @@ async def staff_email_code_totp(
     email_login: Annotated[EmailLoginService, Depends(get_email_login_service)],
     settings: AppSettings,
     db: DbSession,
-    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
-    clock: Annotated[Clock, Depends(get_business_clock)],
 ) -> TokenPairResponse:
     """Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).
 
-    ``pending_token`` is the verify leg's short-lived access token — a
-    real, revocable session, exactly the pending-staff shape invitation
-    acceptance mints; this endpoint only adds the second factor.
+    ``pending_token`` is the verify leg's OPAQUE mid-login credential
+    (Redis, 30-minute TTL, consumed by this call) — it authenticates
+    nothing but this endpoint, so a half-finished login holds no session
+    power (final review F1).
     """
-    user = await resolve_access_token(db, body.pending_token, codec, clock)
     outcome = await email_login.verify_totp(
         db,
-        user_id=user.id,
+        pending_token=body.pending_token,
         code=body.code,
         remember_device=body.remember_device,
         audit_context=AuditContext.from_request(request),

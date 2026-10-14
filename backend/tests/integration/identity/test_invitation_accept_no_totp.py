@@ -300,3 +300,37 @@ async def test_admin_accept_requires_password(
 
     rejected = await _accept(client, token, None)
     assert rejected.status_code in (400, 422), rejected.text
+
+
+async def test_passwordless_teacher_on_password_channel_is_uniform_401(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Final-review F2 pin: a passwordless TEACHER hitting the retained
+    password channel (spec §2.4 keeps it) gets the SAME uniform 401 as a
+    wrong password — never a 500 (verify_password would raise
+    AttributeError on a NULL hash) and never a probe signal that the
+    account has no password."""
+    owner = await _seed_owner(db_session)
+    token, _ = await _seed_invitation(
+        db_session, _TEACHER_EMAIL, Role.TEACHER, created_by=owner.id
+    )
+    accepted = await _accept(client, token, None)
+    assert accepted.status_code == 200, accepted.text
+
+    staff_login = await client.post(
+        "/api/v1/auth/staff/login",
+        json={
+            "email": _TEACHER_EMAIL,
+            "password": "whatever-password",
+            "totp_code": "123456",
+        },
+    )
+    assert staff_login.status_code == 401, staff_login.text
+    assert staff_login.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+    student_door = await client.post(
+        "/api/v1/auth/login",
+        json={"username": _TEACHER_EMAIL, "password": "whatever-password"},
+    )
+    assert student_door.status_code == 401, student_door.text
+    assert student_door.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"

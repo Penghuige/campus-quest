@@ -208,12 +208,9 @@ def _cookie_value(response: httpx.Response, name: str) -> str:
     return jar[name].value
 
 
-
-
 def _envelope(response: httpx.Response) -> dict:
     """The §29 envelope body: {"error": {code, message, details, ...}}."""
     return response.json()["error"]
-
 
 
 async def _request_code(client: httpx.AsyncClient, email: str) -> httpx.Response:
@@ -321,6 +318,63 @@ async def test_admin_flow_totp_required_then_tokens(
     )
     assert finished.status_code == 200, finished.text
     assert finished.json()["access_token"]
+
+
+async def test_pending_token_authenticates_nothing_but_the_totp_leg(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+) -> None:
+    """Final-review F1 pin: the mid-login pending_token is NOT a session.
+
+    A full UserSession JWT here would pass every management guard (an
+    ADMIN with a confirmed credential satisfies the guards' only 2FA
+    check), reducing 邮箱码+TOTP to 邮箱码. The pending token must be an
+    opaque single-purpose credential: 401 on /me, 401 on the admin
+    surface — not 403/200."""
+    await _seed_admin_with_totp(db_session)
+    await _request_code(client, _ADMIN_EMAIL)
+    pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
+    token = pending.json()["pending_token"]
+
+    me = await client.get(
+        "/api/v1/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert me.status_code == 401, me.text
+
+    manage = await client.get(
+        "/api/v1/admin/users", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert manage.status_code == 401, manage.text
+
+
+async def test_totp_leg_consumes_the_pending_token(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+    api_clock: FrozenClock,
+) -> None:
+    """The totp leg is single-use: after it succeeds (or fails on a bad
+    code the lockout counts), the same pending_token answers nothing."""
+    from app.core.error_codes import ErrorCode  # noqa: F401
+
+    _, secret = await _seed_admin_with_totp(db_session)
+    await _request_code(client, _ADMIN_EMAIL)
+    pending = await _verify(client, _ADMIN_EMAIL, _last_code(api_email))
+    token = pending.json()["pending_token"]
+
+    finished = await client.post(
+        "/api/v1/auth/staff/email-code/totp",
+        json={"pending_token": token, "code": pyotp.TOTP(secret).at(api_clock.now())},
+    )
+    assert finished.status_code == 200, finished.text
+
+    replay = await client.post(
+        "/api/v1/auth/staff/email-code/totp",
+        json={"pending_token": token, "code": pyotp.TOTP(secret).at(api_clock.now())},
+    )
+    assert replay.status_code == 401, replay.text
+    assert _envelope(replay)["code"] == "AUTHENTICATION_REQUIRED"
 
 
 async def test_five_wrong_codes_then_correct_code_fails(
@@ -473,32 +527,33 @@ async def test_revoked_device_cookie_falls_back_to_totp(
     assert fallback.json()["status"] == "totp_required"
 
 
-async def test_totp_endpoint_rejects_teacher_tokens(
+async def test_totp_endpoint_answers_unknown_tokens_uniformly(
     client: httpx.AsyncClient,
     db_session: AsyncSession,
     api_email: FakeEmailSender,
 ) -> None:
-    """A TEACHER's own access token is a valid session but the totp leg
-    is the ADMIN email-code path — a TEACHER has no second leg."""
+    """The totp leg resolves only its own opaque pending tokens: a
+    TEACHER's real access token, a session JWT, or garbage all get the
+    same 401 — the leg is not a session surface and gives no branch
+    signal (the F1 posture)."""
     await _seed_teacher(db_session)
     await _request_code(client, _TEACHER_EMAIL)
     verified = await _verify(client, _TEACHER_EMAIL, _last_code(api_email))
     access_token = verified.json()["access_token"]
 
-    response = await client.post(
-        "/api/v1/auth/staff/email-code/totp",
-        json={"pending_token": access_token, "code": "123456"},
-    )
-    assert response.status_code == 403, response.text
-    assert _envelope(response)["code"] == "PERMISSION_DENIED"
+    for candidate in (access_token, "not-a-pending-token"):
+        response = await client.post(
+            "/api/v1/auth/staff/email-code/totp",
+            json={"pending_token": candidate, "code": "123456"},
+        )
+        assert response.status_code == 401, response.text
+        assert _envelope(response)["code"] == "AUTHENTICATION_REQUIRED"
 
 
 async def test_verify_unknown_email_is_uniform_invalid(
     client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     response = await _verify(client, "ghost@campus.example.edu", "123456")
-    print("PROBE-STATUS:", response.status_code)
-    print("PROBE-BODY:", response.text)
     assert response.status_code == 400, response.text
     assert _envelope(response)["code"] == "EMAIL_CODE_INVALID"
 

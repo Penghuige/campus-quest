@@ -97,7 +97,12 @@ class User(Base):
         server_default=text("gen_random_uuid()"), primary_key=True
     )
     username: Mapped[str] = mapped_column(String(64), unique=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # Nullable since migration 0028 (V1.1 §2.3): a TEACHER accepting an
+    # invitation may set no password — the email code is then the only
+    # login channel. The ORM annotation MUST track the column or the
+    # next autogenerate would emit a "drift fix" back to NOT NULL
+    # (final review F3).
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     nickname: Mapped[str] = mapped_column(String(255))
     # The avatar's object-storage key (spec amendment D1), or NULL when
     # the account shows the frontend's generated-initial default. The
@@ -245,10 +250,12 @@ class LoginEmailChallenge(Base):
     Deliberately its own table, not a shape of the Redis-backed phone
     OTP challenge: the email-code lifecycle is keyed by the normalized
     email (one live challenge per mailbox — verify loads the newest
-    row), verified against a plain SHA-256 digest, and capped at 5
-    verify attempts by the ``attempts`` counter. Only ``code_hash``
-    rests here; the plaintext code exists in the send call and the
-    recipient's mailbox only.
+    row), verified against the shared keyed digest
+    (``hmac_challenge_code``, the SMS OTP's own primitive — a database
+    dump must not be brute-forceable over the 10^6 code space), and
+    capped at 5 verify attempts by the ``attempts`` counter. Only the
+    digest rests here; the plaintext code exists in the send call and
+    the recipient's mailbox only.
     """
 
     __tablename__ = "login_email_challenges"

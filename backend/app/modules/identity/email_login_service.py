@@ -34,6 +34,7 @@ Design decisions:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import logging
 import secrets
@@ -82,6 +83,10 @@ COOLDOWN_SECONDS = 60
 #: Review Focus 2 — after the 5th miss even the CORRECT code fails).
 MAX_VERIFY_ATTEMPTS = 5
 _COOLDOWN_KEY_PREFIX = "emailcode:cooldown:"
+_PENDING_KEY_PREFIX = "emaillogin:pending:"
+#: The mid-login pending credential's lifetime (the batch-4 ruling ①
+#: posture: 30 minutes is short enough for a half-finished login).
+PENDING_TTL_SECONDS = 30 * 60
 _LOGIN_CODE_TEMPLATE = "staff_login_code"
 _COOLDOWN_429_MESSAGE = "验证码请求过于频繁，请稍后再试"
 _DELIVERY_FAILED_MESSAGE = "验证码邮件发送失败，请稍后重试"
@@ -99,7 +104,11 @@ _AUTHENTICATION_REQUIRED_MESSAGE = "未登录或登录状态已失效"
 class EmailCodeLoginOutcome:
     """What verify answered: final tokens, or the ADMIN TOTP mid-state.
 
-    Exactly one of ``tokens`` / ``pending_tokens`` is set. The optional
+    Exactly one of ``tokens`` / ``pending_token`` is set. The pending
+    token is an OPAQUE Redis-backed credential for the totp leg only —
+    never a session JWT (final review F1: a real session here would pass
+    every management guard, because a confirmed ADMIN satisfies the
+    guards' only 2FA check, reducing 邮箱码+TOTP to 邮箱码). The optional
     ``device_cookie`` is a freshly minted remembered-device value the
     route must set (HttpOnly) on whichever response it belongs to.
     """
@@ -107,7 +116,7 @@ class EmailCodeLoginOutcome:
     user_id: UUID
     role: Role
     tokens: SessionTokens | None = None
-    pending_tokens: SessionTokens | None = None
+    pending_token: str | None = None
     device_cookie: str | None = None
 
 
@@ -146,6 +155,16 @@ class EmailLoginService:
         """Keyed digest of a login code (hmac_challenge_code): the
         stored form and the verify comparison share one construction."""
         return hmac_challenge_code(self._hmac_secret, code)
+
+    @staticmethod
+    def _hash_pending(token: str) -> str:
+        """SHA-256 lookup key for the OPAQUE pending credential.
+
+        Unlike the 10^6 code space, the token is 256-bit random — plain
+        SHA-256 is the hash_refresh_token posture (deterministic lookup,
+        no stretching needed), not the keyed-digest threat model.
+        """
+        return hashlib.sha256(token.encode()).hexdigest()
 
     async def _account_locked(self, user_id: UUID) -> BusinessError:
         """The ACCOUNT_LOCKED envelope with the remaining cooldown."""
@@ -380,9 +399,18 @@ class EmailLoginService:
                 device_cookie=new_cookie,
             )
 
-        # ADMIN without the device: a real (revocable) session confined
-        # to the totp leg — the pending-TOTP shape of accept_staff_invitation.
-        _, pending_tokens = await self._sessions.issue_session(db, user=user, now=now)
+        # ADMIN without the device: an OPAQUE pending credential for the
+        # totp leg only (Redis, 30-minute TTL, single-use on completion).
+        # Deliberately NOT a session: a real UserSession JWT would pass
+        # every management guard (the guards' only 2FA check is
+        # confirmed_at, which a logging-in ADMIN already has) — final
+        # review F1.
+        pending_token = secrets.token_urlsafe(32)
+        await self._redis.set(
+            _pending_key(self._hash_pending(pending_token)),
+            str(user_id),
+            ex=PENDING_TTL_SECONDS,
+        )
         await self._audit.append(
             db,
             actor=actor,
@@ -395,31 +423,48 @@ class EmailLoginService:
         await db.commit()
         logger.info("email login totp_required user_id=%s", user_id)
         return EmailCodeLoginOutcome(
-            user_id=user_id, role=role_value, pending_tokens=pending_tokens
+            user_id=user_id, role=role_value, pending_token=pending_token
         )
 
     async def verify_totp(
         self,
         db: AsyncSession,
         *,
-        user_id: UUID,
+        pending_token: str,
         code: str,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
     ) -> EmailCodeLoginOutcome:
         """Finish an ADMIN email-code login with the TOTP second leg.
 
-        The pending token authenticated the route (a real session), so
-        the caller's identity is proven; what remains is the second
-        factor. A wrong TOTP code is the staff-login uniform
-        authentication failure and counts toward the lockout; a missing
-        or unconfirmed credential is the typed setup error (the pending
-        session can still finish onboarding via /staff/totp/*).
+        ``pending_token`` is the opaque Redis credential the verify leg
+        minted: resolved (and consumed atomically via GETDEL) here — it
+        authenticates NOTHING else, so the identity it names is only
+        proven once the second factor below also passes. A wrong TOTP
+        code is the staff-login uniform authentication failure and
+        counts toward the lockout (the pending credential survives a
+        wrong code — the lockout, not token churn, bounds the retries);
+        a missing or unconfirmed credential is the typed setup error.
         """
         assert self._sessions is not None and self._guard is not None, (
             "verify legs require sessions and guard wiring"
         )
         now = self._clock.now()
+        raw_user_id = await self._redis.getdel(
+            _pending_key(self._hash_pending(pending_token))
+        )
+        if raw_user_id is None:
+            # Unknown, expired, or already-consumed pending credential —
+            # one uniform answer; the branch reason never leaves the server.
+            logger.info("email login totp rejected reason=unknown_pending_token")
+            raise BusinessError(
+                ErrorCode.AUTHENTICATION_REQUIRED,
+                _AUTHENTICATION_REQUIRED_MESSAGE,
+                status_code=401,
+            )
+        user_id = UUID(
+            raw_user_id.decode() if isinstance(raw_user_id, bytes) else raw_user_id
+        )
         user = await db.get(User, user_id)
         if user is None or Role(user.role) is not Role.ADMIN:
             raise BusinessError(
@@ -478,3 +523,8 @@ class EmailLoginService:
             tokens=tokens,
             device_cookie=device_cookie,
         )
+
+
+def _pending_key(token_hash: str) -> str:
+    """Redis key of one mid-login pending credential (hashed lookup)."""
+    return _PENDING_KEY_PREFIX + token_hash

@@ -57,9 +57,7 @@ async def test_issue_returns_plaintext_and_stores_only_the_hash(
 
     cookie_value = await issue(db_session, staff.id, clock=clock)
 
-    rows = (
-        await db_session.execute(select(RememberedDevice))
-    ).scalars().all()
+    rows = (await db_session.execute(select(RememberedDevice))).scalars().all()
     assert len(rows) == 1
     stored = rows[0]
     assert stored.token_hash == sha256(cookie_value.encode()).hexdigest()
@@ -79,9 +77,7 @@ async def test_validate_roundtrip_returns_user_and_bumps_last_used(
 
     assert await validate(db_session, cookie_value, clock=clock) == staff.id
 
-    row = (
-        await db_session.execute(select(RememberedDevice))
-    ).scalar_one()
+    row = (await db_session.execute(select(RememberedDevice))).scalar_one()
     assert row.last_used_at == _T0
 
 
@@ -102,8 +98,7 @@ async def test_validate_wrong_value_returns_none(
     await issue(db_session, staff.id, clock=_frozen_at(_T0))
 
     assert (
-        await validate(db_session, "not-a-device-cookie", clock=_frozen_at(_T0))
-        is None
+        await validate(db_session, "not-a-device-cookie", clock=_frozen_at(_T0)) is None
     )
 
 

@@ -161,12 +161,18 @@ class SessionService:
         if self._guard is not None:
             await self._guard.ensure_not_locked(user.id)
 
-        try:
-            matched = verify_password(password, user.password_hash)
-        except ValueError:
-            # Out-of-band length: cannot be anyone's password; keep the
-            # failure uniform instead of leaking policy at login.
+        if user.password_hash is None:
+            # A passwordless staff account (V1.1 §2.3) matches no
+            # password: the uniform authentication failure, never the
+            # hasher's None-type crash (final review F2).
             matched = False
+        else:
+            try:
+                matched = verify_password(password, user.password_hash)
+            except ValueError:
+                # Out-of-band length: cannot be anyone's password; keep
+                # the failure uniform instead of leaking policy at login.
+                matched = False
         if not matched:
             if self._guard is not None:
                 await self._guard.record_failure(user.id)
