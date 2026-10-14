@@ -5,17 +5,17 @@
  *
  * The session gate reuses the shared `useSession` cache with an
  * ADMIN-only rule (`adminWorkspaceGate`): `kind: "admin"` is the sole
- * branch that mounts the six admin pages, so a TEACHER or STUDENT
+ * branch that mounts the seven admin pages, so a TEACHER or STUDENT
  * session renders ONLY the permission guidance — zero admin API calls
  * fire (the plan's step-1 privilege test; the backend's
  * `require_admin_actor` stays the authority, this gate is the
  * no-wasted-requests mirror). Anonymous visitors get the staff-login
  * CTA; ACTIVE-account and confirmed-TOTP enforcement stays server-side.
  *
- * The nav lists the six operational pages (users/whitelist/rewards/
- * redemptions/audit/system); the anonymous-reveal entry deliberately
- * does NOT live here — it hangs off the teacher workspace's community
- * moderation context where the comment rows are.
+ * The nav lists the seven operational pages (users/invitations/
+ * whitelist/rewards/redemptions/audit/system); the anonymous-reveal
+ * entry deliberately does NOT live here — it hangs off the teacher
+ * workspace's community moderation context where the comment rows are.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
+  { href: "/admin/invitations", label: "员工邀请", icon: <InboxIcon /> },
   { href: "/admin/whitelist", label: "注册白名单", icon: <TasksIcon /> },
   { href: "/admin/rewards", label: "奖励目录", icon: <GiftIcon /> },
   { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },

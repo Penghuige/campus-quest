@@ -162,6 +162,14 @@ export const SHOTS: Shot[] = [
       },
     ],
   },
+  {
+    // The pristine form state only — the issued state carries the
+    // run-unique one-time token and never enters a baseline.
+    name: "admin-invitations",
+    path: "/admin/invitations",
+    auth: "admin",
+    masks: [],
+  },
 ];
 
 export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
