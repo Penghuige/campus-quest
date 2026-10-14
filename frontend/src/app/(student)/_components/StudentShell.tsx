@@ -28,6 +28,7 @@ import { BottomNav } from "@/components/shell/BottomNav";
 import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
 import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
+import { NicknameNudge } from "@/features/auth/NicknameNudge";
 import { shellChromeFor, type ShellHint } from "@/features/auth/shellChrome";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
@@ -312,7 +313,10 @@ export function StudentShell({
             </div>
           </div>
         </header>
-        <main className="app-main">{children}</main>
+        <main className="app-main">
+          <NicknameNudge me={state.me} />
+          {children}
+        </main>
       </div>
       <BottomNav items={BOTTOM_NAV} />
     </div>

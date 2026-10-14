@@ -25,6 +25,7 @@ import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import { ReviewIcon, TasksIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
+import { NicknameNudge } from "@/features/auth/NicknameNudge";
 import { teacherWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
 
@@ -163,7 +164,10 @@ export function TeacherShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
-        <main className="app-main">{children}</main>
+        <main className="app-main">
+          <NicknameNudge me={state.me} />
+          {children}
+        </main>
       </div>
     </div>
   );
