@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 14 | I1-I13, I15 |
+| 已覆盖 | 19 | I1-I13, I15, I16-I20 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | I14 |
@@ -45,3 +45,8 @@
 
 - I12 的"冻结五影响"横跨四域（领取/上传/社区/积分审计保留），本矩阵引状态治理主行，域级行为在 claims/submissions/community 各矩阵已对账——互引不重复。
 - `test_account_status.py::test_role_comes_from_the_user_row_not_the_jwt_claim` 是 G10"服务端解析角色"的额外加固证据（role 不信 token 声明）。
+| I16 | V1.1 spec 2026-10-15 §2.1/§2.2 | 邮箱码登录：request 恒 202 空体（unknown/student/locked 同形）+60s 冷却任意邮箱统一 429；verify 挑战 5 次耗尽后正确码也拒（锁定优先 ACCOUNT_LOCKED）；TEACHER 两步完成；ADMIN 无设备走 totp_required 腿、有效 cq_staff_device cookie 跳过；cookie 仅在完整登录后签发（HttpOnly/Secure/Lax/30d） | `tests/integration/identity/test_email_code_login_api.py::test_request_constant_202_for_unknown_and_student_mailboxes`（防枚举+timing band）/ `::test_cooldown_second_request_is_uniform_429` / `::test_five_wrong_codes_then_correct_code_fails`（RF2）/ `::test_teacher_email_code_happy_path`（RF5 无密码端到端）/ `::test_admin_flow_totp_required_then_tokens` / `::test_remember_device_cookie_flags_and_totp_skip`（含 pending 腿不发 cookie 安全断言）/ `::test_revoked_device_cookie_falls_back_to_totp`（RF3）/ `::test_audit_rows_for_success_and_totp_required`（G11）；服务级：`test_email_login_service.py` 全族（哈希/冷却 no-op 形状/发送失败清理/挑战替换） | 已覆盖 |
+| I17 | V1.1 §6 | 账号锁定三路径统一：学生密码/员工密码+TOTP/邮箱码，连续 5 次凭证失败→15 分钟 ACCOUNT_LOCKED（retry_after_seconds）；成功清零；窗口锚定首次失败（EXPIRE 仅首次）；429 限速不计数 | `tests/integration/identity/test_login_lockout_api.py::test_student_five_wrong_passwords_then_correct_is_locked` / `::test_staff_wrong_totp_counts_and_locks` / `::test_staff_wrong_password_counts_before_second_factor`（含成功重置）/ `::test_rate_limit_429_never_counts_as_failure`（RF4）+ 单元 `tests/unit/identity/test_login_failure_guard.py`（阈值/TTL 锚定/独立账号/reset） | 已覆盖 |
+| I18 | V1.1 §2.3 | 邀请减负：TEACHER 接受=可选密码（空则 password_hash NULL，纯邮箱码流）+完整会话+无 TOTP/恢复码+响应 totp_required:false；ADMIN 逐字节不变（必填密码+pending TOTP+totp_required:true）；弱密码在 token 消耗前拒绝 | `tests/integration/identity/test_invitation_accept_no_totp.py::test_teacher_accept_with_password_is_complete` / `::test_teacher_accept_without_password_then_email_code_login`（RF5）/ `::test_teacher_accept_weak_password_is_rejected_before_the_token_burns` / `::test_admin_accept_unchanged_pending_totp` / `::test_admin_accept_requires_password`；V1 pending 语义迁移至 ADMIN 的回归：`test_staff_onboarding.py::test_accept_before_totp_confirm_is_not_a_management_session` / `::test_invitation_accepted_at_ttl_boundary_still_works` | 已覆盖 |
+| I19 | V1.1 §2.2 | 记住设备自助：GET /me/devices 仅本人设备（DTO 显式枚举，hash 不可表示）；DELETE 全撤+OWN_DEVICES_REVOKED 同事务审计+stolen cookie 回落 TOTP 端到端；student 403（staff-only 面）；空列表 revoked:0 | `tests/integration/identity/test_own_devices_api.py::test_list_returns_only_caller_devices_without_hashes` / `::test_delete_revokes_every_device_and_kills_the_cookie` / `::test_student_token_is_denied` / `::test_unauthenticated_is_401` / `::test_delete_with_no_devices_reports_zero`；凭据生命周期单元：`test_device_c*.py` 全族 | 已覆盖 |
+| I20 | V1.1 §2.1（reviewer 2026-10-15 裁定） | 登录挑战哈希=共享 hmac_challenge_code 键控 HMAC（SMS 与邮箱同强）：库行 ≠ 裸 sha256(code)，dump 下 10^6 码空间不可暴；e2e 取码走 email-code 世界动作（probe 闭空间暴力，otp_probe 孪生） | `tests/integration/identity/test_email_login_service.py::test_request_code_stores_hashed_challenge_and_sends`（断言 ==HMAC 且 !=sha256）/ `::test_email_code_probe_recovers_the_mailed_code`（probe 恢复==寄出码）+ `tests/unit/identity/test_otp.py`（SMS 侧换芯不变形） | 已覆盖 |
