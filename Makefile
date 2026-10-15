@@ -3,7 +3,7 @@
 # so `uv run` never drifts; frontend tooling is committed in frontend/package.json.
 
 .PHONY: test-backend test-integration lint-backend verify \
-        arch-lint-backend arch-lint-frontend arch-lint
+        arch-lint-backend arch-lint-frontend arch-lint arch-map
 # Plan 10 task 11's release steps are individually runnable and composed
 # by `release-gate` below; .NOTPARALLEL keeps prerequisite order
 # deterministic even under `make -j`.
@@ -35,6 +35,13 @@ arch-lint-frontend:
 	cd frontend && npm run arch:lint
 
 arch-lint: arch-lint-backend arch-lint-frontend
+
+# Derived-only as-built map: regenerates docs/architecture/as-built.md
+# (module graphs + boundary-debt tables) from the tree. Commit the
+# regenerated file with any change that drifts it; `--check` is the
+# freshness mode, `--self-test` proves the scanners.
+arch-map:
+	cd backend && uv run python ../scripts/generate_as_built.py
 
 verify: lint-backend arch-lint
 	cd backend && uv run pytest -v
