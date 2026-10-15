@@ -246,8 +246,12 @@ class EmailLoginService:
                 },
             )
         except ProviderError as exc:
-            # The code reached nobody: erase this request's traces so the
-            # recipient's retry is clean (module docstring).
+            # The code reached nobody: the caller's transaction ends in a
+            # rollback (the route raises past any commit), which discards
+            # the flushed challenge row by itself; the explicit delete
+            # keeps that true even if a future caller commits on another
+            # path. The Redis cooldown is released so the recipient's
+            # retry is clean (module docstring).
             await db.delete(challenge)
             await db.flush()
             await self._redis.delete(cooldown_key)
@@ -262,10 +266,20 @@ class EmailLoginService:
                 status_code=502,
             ) from exc
 
+        # COMMIT BOUNDARY (production hotfix): get_db_session never
+        # commits and rolls back in its finally — without this commit the
+        # 202 returns and the challenge row silently vanishes, and the
+        # verify leg (a different request/connection) finds nothing. The
+        # flush above is NOT enough; every verify leg already commits the
+        # same way (the authenticate_staff discipline). The id is
+        # captured pre-commit (the SessionService rule: no post-commit
+        # attribute access on a session that may expire).
+        challenge_id = challenge.id
+        await db.commit()
         logger.info(
             "email login code issued to=%s challenge_id=%s",
             mask_email(normalized),
-            challenge.id,
+            challenge_id,
         )
 
     # --- verify legs (routes mount these; V1.1 §2.1/§2.2) -----------------------
