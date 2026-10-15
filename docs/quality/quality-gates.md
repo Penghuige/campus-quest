@@ -125,6 +125,14 @@ Check dependency direction:
 
 router -> service/use case -> repository/query/port -> adapter/database
 
+Machine-checked since 2026-10-16 by `make arch-lint` (import-linter
+contracts in `backend/pyproject.toml`; per-module layering plus the
+package-level rules; known drift carries explicit rental waivers in the
+same config). The human checks below still apply to everything the
+contracts cannot see (transaction boundaries, service granularity,
+schema exposure); `docs/architecture/as-built.md` reports the drift
+without waivers.
+
 Reject if:
 
 - router directly performs a multi-table business transaction;
@@ -250,7 +258,7 @@ An Agent's final implementation report should include:
 
 ## 15. Release gate
 
-Release verification runs the full local gate that exists today (test-database bootstrap, backend unit/integration/worker/e2e, migration verification, frontend typecheck/lint/CSS guard/unit/build, Playwright e2e, pixel visual regression, and the coverage ratchet; the Makefile documents the order):
+Release verification runs the full local gate that exists today (architecture contract gate, test-database bootstrap, backend unit/integration/worker/e2e, migration verification, frontend typecheck/lint/arch boundaries/CSS guard/unit/build, Playwright e2e, pixel visual regression, and the coverage ratchet; the Makefile documents the order):
 
 ~~~bash
 make release-gate

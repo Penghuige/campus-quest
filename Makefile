@@ -43,6 +43,21 @@ arch-lint: arch-lint-backend arch-lint-frontend
 arch-map:
 	cd backend && uv run python ../scripts/generate_as_built.py
 
+# Owner-facing 3D "code city" (optional visual layer; local-only tools):
+# churn metrics from git history + code metrics from tree-sitter parsing,
+# merged into one CodeCharta map. Height/complexity + color/commits =
+# hotspots (the CodeScene-style signal). JVM via npx; first run downloads.
+# Open the result with: npx codecharta-visualization -p build/code-city.cc.json
+# (launches the local Electron app; see docs/architecture/visual-tools.md).
+.PHONY: arch-city
+arch-city:
+	mkdir -p build
+	npx -y codecharta-analysis@latest gitlogparser repo-scan --repo-path=. -nc -o build/cc-churn.cc.json
+	npx -y codecharta-analysis@latest unifiedparser backend/app -nc -o build/cc-be.cc.json
+	npx -y codecharta-analysis@latest unifiedparser frontend/src -nc -o build/cc-fe.cc.json
+	npx -y codecharta-analysis@latest merge -f -nc build/cc-churn.cc.json build/cc-be.cc.json build/cc-fe.cc.json -o build/code-city.cc.json
+	@echo "open: npx codecharta-visualization -p build/code-city.cc.json"
+
 verify: lint-backend arch-lint
 	cd backend && uv run pytest -v
 	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run build

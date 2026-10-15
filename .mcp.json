@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "code-graph-context": {
+      "command": "cgc",
+      "args": ["mcp", "start"]
+    }
+  }
+}
