@@ -27,6 +27,7 @@ const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
 const RUN = process.env.CQ_E2E_RUN;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
 const STAFF = process.env.CQ_E2E_STAFF;
+const STAFF2 = process.env.CQ_E2E_STAFF2;
 const ADMIN = process.env.CQ_E2E_ADMIN;
 const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
 
@@ -48,8 +49,21 @@ function wrongNeighborOf(code: string): string {
 }
 
 async function requestCode(page: Page, email: string): Promise<string> {
-  // exact: the 邮箱 label must not substring-match 邮箱验证码.
-  await page.getByLabel("邮箱", { exact: true }).fill(email);
+  // exact: the 邮箱 label must not substring-match 邮箱验证码. The fill
+  // is re-checked after a settle beat — a fill that lands before the
+  // client island hydrates is wiped by React's state initialization
+  // (the dev-server cold page), and a same-instant check would pass
+  // before the wipe. Post-hydration refills stick.
+  const emailField = page.getByLabel("邮箱", { exact: true });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await emailField.fill(email);
+    await page.waitForTimeout(400);
+    const value = await emailField.inputValue();
+    if (value === email) {
+      break;
+    }
+  }
+  await expect(emailField).toHaveValue(email);
   await page.getByRole("button", { name: "重新发送", exact: true }).click();
   // The resend control enters its cooldown countdown (visible seconds).
   await expect(
@@ -78,9 +92,12 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
   });
 
   test("a wrong code renders the uniform EMAIL_CODE_INVALID copy", async ({ page }) => {
-    const [teacherEmail] = STAFF!.split(":");
+    // A SEPARATE mailbox: the 60s resend cooldown is per-email, and the
+    // teacher mailbox was just armed by the happy-path test above.
+    const [teacher2Email] = (STAFF2 ?? "").split(":");
+    test.skip(!teacher2Email, "needs CQ_E2E_STAFF2 (the seeded second teacher)");
     await page.goto(`${BASE_URL}/staff/login`);
-    const code = await requestCode(page, teacherEmail);
+    const code = await requestCode(page, teacher2Email);
     await page
       .getByLabel("邮箱验证码", { exact: false })
       .fill(wrongNeighborOf(code));
@@ -90,6 +107,9 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
   });
 
   test("admin: totp_required two-leg; the remembered device then skips the leg", async ({ page, browser }) => {
+    // The replay leg waits out the 60s resend cooldown — 180s covers
+    // both legs plus the wait.
+    test.setTimeout(180_000);
     const [adminEmail] = ADMIN!.split(":");
     await page.goto(`${BASE_URL}/staff/login`);
     const code = await requestCode(page, adminEmail);
@@ -105,20 +125,36 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
     });
     await expect(remember).toBeVisible();
     await remember.check();
-    await page.getByLabel("动态验证码").fill(totpCode(ADMIN_TOTP_SECRET!));
-    await page.getByRole("button", { name: "完成登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+    // A slow hop can carry the totp submit across a 30s step boundary —
+    // recompute the code on retry, exactly like the fixtures' loop.
+    let landed = false;
+    for (let attempt = 0; attempt < 3 && !landed; attempt += 1) {
+      await page.getByLabel("动态验证码").fill(totpCode(ADMIN_TOTP_SECRET!));
+      await page.getByRole("button", { name: "完成登录" }).click();
+      try {
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), {
+          timeout: 5_000,
+        });
+        landed = true;
+      } catch {
+        /* step rolled over mid-submit */
+      }
+    }
+    expect(landed, "the totp leg must land on the workspace").toBe(true);
 
-    // Replay the same browser context (the 30-day cookie rides it):
-    // email + code again — this time NO totp leg.
+    // Replay the same browser context (the 30-day cookie rides it). A
+    // successful verify CONSUMES the challenge row, so the replay needs
+    // a fresh code — and the 60s per-mailbox resend cooldown is live in
+    // the e2e stack (the login-rate relief covers the rate-LIMITER
+    // family only, not this Redis cooldown key). Waiting the window out
+    // is the honest path: this is the only end-to-end cookie-skip proof.
+    await page.waitForTimeout(61_000);
     const state = await page.context().storageState();
     const replay = await browser.newContext({ storageState: state });
     const second = await replay.newPage();
     second.goto(`${BASE_URL}/staff/login`);
     const secondCode = await requestCode(second, adminEmail);
-    await second
-      .getByLabel("邮箱验证码", { exact: false })
-      .fill(secondCode);
+    await second.getByLabel("邮箱验证码", { exact: false }).fill(secondCode);
     await second.getByRole("button", { name: "登录", exact: true }).click();
     await expect(second).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
     await expect(second.getByTestId("email-login-totp-leg")).toHaveCount(0);

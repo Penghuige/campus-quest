@@ -132,6 +132,8 @@ async function loginAsStaff(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(STAFF_LOGIN_URL);
+  // V1.1 T8: the email-code tab is default; ride the password channel.
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("邮箱").fill(username);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {

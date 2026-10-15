@@ -68,10 +68,11 @@ test.describe("nickname rename nudge (V1.1 §6)", () => {
     }
 
     // Register with the NUMBER ITSELF as the chosen nickname (digits —
-    // the predicate's first arm) + a run-unique phone.
-    const phone = `138${String(
-      Number.parseInt((RUN ?? "0").slice(0, 8), 16) % 10 ** 8,
-    ).padStart(8, "0")}`;
+    // the predicate's first arm). The phone is TIME-derived: a
+    // registered user is not part of the world file (teardown's clean
+    // never sees it), so a RUN-derived phone collides with the previous
+    // invocation's leftover row (该手机号已绑定其他账号).
+    const phone = `138${String(Date.now()).slice(-8)}`;
     await page.goto(`${BASE_URL}/register`);
     await page.getByLabel("学号").fill(NUDGE_NUMBER);
     await page.getByLabel("昵称").fill(NUDGE_NUMBER);

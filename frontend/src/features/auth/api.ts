@@ -308,10 +308,14 @@ export async function emailLoginTotp(
   code: string,
   rememberDevice: boolean,
 ): Promise<LoginTokens> {
+  // The T5 frozen contract carries the pending token IN THE BODY
+  // ({pending_token, code, remember_device?}) — unlike the invitation
+  // flow's TOTP-setup endpoints, which ride it as a Bearer header.
   const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/email-code/totp`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${pendingToken}` },
-    body: rememberDevice ? { code, remember_device: true } : { code },
+    body: rememberDevice
+      ? { pending_token: pendingToken, code, remember_device: true }
+      : { pending_token: pendingToken, code },
   });
   adoptFullLogin(tokens);
   return tokens;

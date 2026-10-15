@@ -259,7 +259,7 @@ describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
     assert.equal(getAccessToken(), null);
   });
 
-  test("the totp leg POSTs {code, remember_device} under the pending bearer and records the login", async () => {
+  test("the totp leg POSTs {pending_token, code, remember_device} IN THE BODY (T5 contract) and records the login", async () => {
     clearAccessToken();
     stubFetch(
       JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
@@ -269,8 +269,12 @@ describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
     assert.equal(tokens.access_token, "admin-at");
     assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/totp");
     assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.headers.get("Authorization"), "Bearer pending-at");
+    // The pending token rides the BODY, never a Bearer header (the
+    // invitation flow's TOTP-setup endpoints differ — the contract
+    // divergence the e2e run caught).
+    assert.equal(recorded?.headers.get("Authorization"), null);
     assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      pending_token: "pending-at",
       code: "234567",
       remember_device: true,
     });
@@ -284,6 +288,9 @@ describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
       200,
     );
     await emailLoginTotp("pending-at", "234567", false);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), { code: "234567" });
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      pending_token: "pending-at",
+      code: "234567",
+    });
   });
 });
