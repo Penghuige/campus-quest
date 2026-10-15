@@ -100,3 +100,35 @@ def test_assembly_default_leaves_rules_untouched() -> None:
     for bucket in rate_limit.LOGIN_FAMILY_BUCKETS:
         rule = rate_limit.RATE_LIMIT_RULES[bucket]
         assert rule == rate_limit._DEFAULT_LOGIN_RULES[bucket], bucket
+
+
+def test_assembly_with_env_applies_the_relief(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other side of the assembly pin: with the env set, building the
+    real app walks the relief branch — the login family comes out at
+    battery scale (covers create_app's flag-true path; the flag-false
+    path is pinned by the default-assembly test above)."""
+    from app.core.config import get_settings
+    from app.main import create_app
+
+    for key, value in (
+        ("DATABASE_URL", "postgresql+asyncpg://u:p@db/test"),
+        ("REDIS_URL", "redis://relief-check:6379/0"),
+        ("S3_ENDPOINT_URL", "http://minio:9000"),
+        ("S3_BUCKET", "campusquest"),
+        ("S3_ACCESS_KEY", "access"),
+        ("S3_SECRET_KEY", "secret"),
+        ("BUSINESS_TIMEZONE", "Asia/Shanghai"),
+        ("CQ_E2E_LOGIN_RATELIMIT", "1"),
+    ):
+        monkeypatch.setenv(key, value)
+
+    get_settings.cache_clear()
+    try:
+        create_app()
+        assert rate_limit.RATE_LIMIT_RULES["auth:staff-login"].limit == 1000
+        assert rate_limit.RATE_LIMIT_RULES["auth:staff-email-code-ip"].limit == 1000
+    finally:
+        get_settings.cache_clear()
+        # The autouse fixture restores the table on teardown as well.
