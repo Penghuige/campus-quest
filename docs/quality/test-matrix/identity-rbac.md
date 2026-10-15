@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 20 | I1-I13, I15-I21 |
+| 已覆盖 | 21 | I1-I13, I15-I22 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | I14 |
@@ -51,3 +51,4 @@
 | I19 | V1.1 §2.3 | 邀请减负：TEACHER 接受=可选密码（空则 password_hash NULL，纯邮箱码流）+完整会话+无 TOTP/恢复码+响应 totp_required:false；ADMIN 逐字节不变（必填密码+pending TOTP+totp_required:true）；弱密码在 token 消耗前拒绝 | `tests/integration/identity/test_invitation_accept_no_totp.py::test_teacher_accept_with_password_is_complete` / `::test_teacher_accept_without_password_then_email_code_login`（RF5）/ `::test_teacher_accept_weak_password_is_rejected_before_the_token_burns` / `::test_admin_accept_unchanged_pending_totp` / `::test_admin_accept_requires_password`；V1 pending 语义迁移至 ADMIN 的回归：`test_staff_onboarding.py::test_accept_before_totp_confirm_is_not_a_management_session` / `::test_invitation_accepted_at_ttl_boundary_still_works` | 已覆盖 |
 | I20 | V1.1 §2.2 | 记住设备自助：GET /me/devices 仅本人设备（DTO 显式枚举，hash 不可表示）；DELETE 全撤+OWN_DEVICES_REVOKED 同事务审计+stolen cookie 回落 TOTP 端到端；student 403（staff-only 面）；空列表 revoked:0 | `tests/integration/identity/test_own_devices_api.py::test_list_returns_only_caller_devices_without_hashes` / `::test_delete_revokes_every_device_and_kills_the_cookie` / `::test_student_token_is_denied` / `::test_unauthenticated_is_401` / `::test_delete_with_no_devices_reports_zero`；凭据生命周期单元：`test_device_c*.py` 全族 | 已覆盖 |
 | I21 | V1.1 §2.1（reviewer 2026-10-15 裁定） | 登录挑战哈希=共享 hmac_challenge_code 键控 HMAC（SMS 与邮箱同强）：库行 ≠ 裸 sha256(code)，dump 下 10^6 码空间不可暴；e2e 取码走 email-code 世界动作（probe 闭空间暴力，otp_probe 孪生） | `tests/integration/identity/test_email_login_service.py::test_request_code_stores_hashed_challenge_and_sends`（断言 ==HMAC 且 !=sha256）/ `::test_email_code_probe_recovers_the_mailed_code`（probe 恢复==寄出码）+ `tests/unit/identity/test_otp.py`（SMS 侧换芯不变形） | 已覆盖 |
+| I22 | design §8/§10（owner 生产反馈 2026-10-15，reviewer 热修指令） | ADMIN 登录/刷新落点=自身工作台：landingPathForRole 三分支（STUDENT→/、TEACHER→/teacher/reviews、ADMIN→/admin/users）；staff 登录表单以登录后 /me 的角色决定落点（提交前 state 可能是 anonymous，不得用）；studentWorkspaceGate 的 staff-guidance 链接按角色分流；teacherWorkspaceGate 不动（管理员访问教师台=合法跨舱，仅默认落点变更） | `frontend/src/__tests__/workspace-gate.test.ts`（回归 2 三分支落点+回归 3 按角色 guidance）+ e2e `frontend/e2e/admin.spec.ts::an admin login lands on the admin workspace, not the teacher cockpit`（beforeEach 登录后的页面 URL 即落点判决） | 已覆盖 |

@@ -25,13 +25,13 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
-import { TEACHER_LANDING_PATH } from "@/features/auth/workspace";
+import { landingPathForRole } from "@/features/auth/workspace";
 import { isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
-import { loginStaff } from "./api";
+import { loginStaff, readMe } from "./api";
 import { NETWORK_ERROR_TEXT, withFieldErrorSummary, type AuthErrorView } from "./errors";
 import { describeStaffError, validateSecondFactor, validateStaffEmail } from "./staffAuthView";
 import { validatePassword } from "./validation";
@@ -78,7 +78,12 @@ export function StaffLoginForm() {
     try {
       await loginStaff(email, values.password, values.totp_code.trim());
       refreshSession();
-      router.replace(TEACHER_LANDING_PATH); // Teacher landing: the review queue
+      // Each staff role lands on its OWN cockpit (the admin workspace
+      // for ADMINs — the owner report's landing rule). The role comes
+      // from the session's own answer: the pre-login hook state may be
+      // anonymous (or a previous account's), never the fresh login's.
+      const me = await readMe();
+      router.replace(landingPathForRole(me.role));
       router.refresh();
     } catch (error) {
       if (!isApiError(error)) {
