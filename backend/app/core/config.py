@@ -10,7 +10,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cryptography.fernet import Fernet
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Development-only secrets (backend-engineering §17 fail-fast): all are
@@ -172,6 +172,17 @@ class Settings(BaseSettings):
     # were never actually sent.
     sms_provider: Literal["logging", "aliyun_dypns"] = "logging"
     email_provider: Literal["logging", "smtp"] = "logging"
+    # e2e battery only (the orchestration stack sets the env): raises
+    # the login family rate buckets to battery scale and shortens the
+    # email-code resend cooldown. Every default deployment — production
+    # included — keeps byte-identical limits with this unset.
+    e2e_login_ratelimit: bool = Field(
+        default=False, validation_alias="CQ_E2E_LOGIN_RATELIMIT"
+    )
+    # The emailed login code's resend cooldown (seconds); 60 is the
+    # product contract. The e2e relief wiring shortens it to 1s for the
+    # battery only (providers), never by default.
+    email_code_resend_cooldown_seconds: int = 60
 
     # Aliyun DYPNS SMS credentials (owner-approved 2026-10-05; local
     # stack scope first). Secrets live in deployment env, never in the

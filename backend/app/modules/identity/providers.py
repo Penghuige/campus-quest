@@ -129,6 +129,11 @@ def get_email_login_service(
         fernet=Fernet(settings.totp_encryption_key),
         guard=guard,
         hmac_secret=settings.otp_hmac_secret,
+        resend_cooldown_seconds=(
+            1
+            if settings.e2e_login_ratelimit
+            else settings.email_code_resend_cooldown_seconds
+        ),
     )
 
 

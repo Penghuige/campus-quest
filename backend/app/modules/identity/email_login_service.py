@@ -135,6 +135,7 @@ class EmailLoginService:
         users: UserRepository | None = None,
         audit: AuditLogWriter | None = None,
         hmac_secret: str = "",
+        resend_cooldown_seconds: int = COOLDOWN_SECONDS,
     ) -> None:
         # sessions/fernet/guard serve the verify legs; a caller that only
         # issues codes (request_code) may leave them unset.
@@ -148,6 +149,10 @@ class EmailLoginService:
         # composition root): a bare SHA-256 of a 10^6 code space would be
         # brute-forceable from a database dump (hmac_challenge_code).
         self._hmac_secret = hmac_secret
+        # The product contract is 60s; the e2e battery wiring passes 1s
+        # (Settings.e2e_login_ratelimit) so per-test re-requests do not
+        # wait a real minute. Default deployments get the default.
+        self._cooldown_seconds = resend_cooldown_seconds
         self._users = users if users is not None else UserRepository()
         self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
 

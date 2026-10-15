@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.observability import RequestIDMiddleware
 from app.core.readiness import ReadinessRegistry, get_readiness_registry
+from app.integrations import rate_limit
 from app.modules.audit import router as audit_router
 from app.modules.community import router as community_router
 from app.modules.identity import (
@@ -59,7 +60,14 @@ def create_app() -> FastAPI:
     # /docs, /redoc, and /openapi.json hand an attacker a complete route
     # map of the deployment (spec §33.1 posture), so environment=
     # production mounts none of them; development keeps the defaults.
-    docs_disabled = get_settings().environment == "production"
+    settings = get_settings()
+    # e2e battery only (CQ_E2E_LOGIN_RATELIMIT): raise the login family
+    # buckets to battery scale at assembly. Default deployments skip
+    # this entirely — byte-identical limits (the relief's own tests pin
+    # the default shape).
+    if settings.e2e_login_ratelimit:
+        rate_limit.apply_e2e_login_relief()
+    docs_disabled = settings.environment == "production"
     app = FastAPI(
         title="CampusQuest API",
         lifespan=_lifespan,
