@@ -110,7 +110,13 @@ async def test_request_code_stores_hashed_challenge_and_sends(
 
     await service.request_code(db_session, _TEACHER_EMAIL)
 
-    challenge = (await db_session.execute(select(LoginEmailChallenge))).scalar_one()
+    challenge = (
+        await db_session.execute(
+            select(LoginEmailChallenge).where(
+                LoginEmailChallenge.email_normalized == _TEACHER_EMAIL
+            )
+        )
+    ).scalar_one()
     sent = sender.messages[0]
     assert sent.to == _TEACHER_EMAIL
     assert sent.template == "staff_login_code"
@@ -192,7 +198,11 @@ async def test_request_code_noop_for_non_staff_or_inactive_mailboxes(
 
     assert sender.messages == []
     assert (
-        await db_session.execute(select(LoginEmailChallenge))
+        await db_session.execute(
+            select(LoginEmailChallenge).where(
+                LoginEmailChallenge.email_normalized == "probe@campus.example.edu"
+            )
+        )
     ).scalar_one_or_none() is None
 
 
@@ -216,7 +226,11 @@ async def test_request_code_send_failure_raises_502_and_cleans_up(
     assert error_info.value.code == ErrorCode.EMAIL_DELIVERY_FAILED
     assert error_info.value.status_code == 502
     assert (
-        await db_session.execute(select(LoginEmailChallenge))
+        await db_session.execute(
+            select(LoginEmailChallenge).where(
+                LoginEmailChallenge.email_normalized == "probe@campus.example.edu"
+            )
+        )
     ).scalar_one_or_none() is None
     assert redis.strings == {}
 
@@ -231,7 +245,13 @@ async def test_request_code_normalizes_case_and_whitespace(
     await service.request_code(db_session, f"  {_TEACHER_EMAIL.upper()}  ")
 
     assert sender.messages[0].to == _TEACHER_EMAIL
-    challenge = (await db_session.execute(select(LoginEmailChallenge))).scalar_one()
+    challenge = (
+        await db_session.execute(
+            select(LoginEmailChallenge).where(
+                LoginEmailChallenge.email_normalized == _TEACHER_EMAIL
+            )
+        )
+    ).scalar_one()
     assert challenge.email_normalized == _TEACHER_EMAIL
 
 
@@ -250,7 +270,17 @@ async def test_request_code_replaces_the_previous_challenge(
     service = _service(sender, InMemoryRedis(), clock)
     await service.request_code(db_session, _TEACHER_EMAIL)
 
-    rows = (await db_session.execute(select(LoginEmailChallenge))).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(LoginEmailChallenge).where(
+                    LoginEmailChallenge.email_normalized == _TEACHER_EMAIL
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].created_at is not None
 
