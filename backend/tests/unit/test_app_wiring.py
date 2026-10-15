@@ -132,7 +132,7 @@ def test_create_app_disables_interactive_docs_in_production(
     monkeypatch.setattr(
         main_module,
         "get_settings",
-        lambda: SimpleNamespace(environment="production"),
+        lambda: SimpleNamespace(environment="production", e2e_login_ratelimit=False),
     )
     production_paths = {getattr(route, "path", None) for route in create_app().routes}
     assert "/docs" not in production_paths
