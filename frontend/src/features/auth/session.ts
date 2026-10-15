@@ -51,7 +51,7 @@ type SessionResult =
 
 const STALE_AFTER_MS = 30_000;
 
-// Cache generation (targeted re-review P1): bumped by
+// Cache generation: bumped by
 // invalidateSessionCache() on every auth transition (login, logout).
 // A fetch started under an older generation must not write its result
 // into the cache — a stale anonymous /me landing after a successful
@@ -72,8 +72,8 @@ export function invalidateSessionCache(): void {
   cache = null;
 }
 
-// Round-5 (review P2): the cache invalidation on a sibling reset runs
-// ONCE per event at module level. Per-instance subscribers each bumping
+// The cache invalidation on a sibling reset runs ONCE per event at
+// module level. Per-instance subscribers each bumping
 // the generation would strand every consumer but the last — each bump
 // fences the previous subscriber's just-started /me, and a dropped /me
 // has no retry until the stale window or a focus event. This module
@@ -129,7 +129,7 @@ async function fetchSession(): Promise<SessionResult> {
 }
 
 function load(): Promise<SessionResult> {
-  // The inflight slot is GENERATION-SCOPED (final re-review P1): a
+  // The inflight slot is GENERATION-SCOPED: a
   // consumer may only dedupe onto a /me from its OWN generation. After
   // a login bumps the generation, a newly mounted shell must start a
   // FRESH /me with the new bearer instead of inheriting the pre-login
@@ -189,14 +189,14 @@ export function useSession(): UseSessionResult {
 
   useEffect(() => {
     let cancelled = false;
-    // Round-5 P0: the component fence is PER-REQUEST. Each load()
+    // The component fence is PER-REQUEST. Each load()
     // captures the session generation it started under, and only that
     // request's own callbacks may apply — and only while the generation
-    // is still current. (Round-4's single shared mutable
-    // `applyGeneration` was REASSIGNED by the reset handler, so an old
-    // in-flight /me settling after the bump read the new value and
-    // repainted the stale identity: a shared guard cannot tell WHICH
-    // request produced a result. An immutable per-call snapshot can.)
+    // is still current. (A single shared mutable `applyGeneration`
+    // REASSIGNED by the reset handler would let an old in-flight /me
+    // settling after the bump read the new value and repaint the stale
+    // identity: a shared guard cannot tell WHICH request produced a
+    // result. An immutable per-call snapshot can.)
     const startLoad = () => {
       const requestGeneration = generation;
       load().then(
