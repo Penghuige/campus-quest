@@ -151,7 +151,7 @@ jobs:
             --health-timeout 3s \
             --health-retries 12 \
             quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 90); do
             status=$(docker inspect -f '{{.State.Health.Status}}' minio-ci)
             if [ "$status" = "healthy" ]; then
               echo "MinIO is healthy"
@@ -377,7 +377,7 @@ jobs:
             -v "$PWD/infra/e2e-certs/minio:/etc/minio/certs:ro" \
             quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
             server /data --certs-dir /etc/minio/certs --address :9000 --console-address :9001
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 90); do
             if curl -skf https://localhost:9002/minio/health/live >/dev/null; then
               echo "e2e MinIO is live over https"
               exit 0
