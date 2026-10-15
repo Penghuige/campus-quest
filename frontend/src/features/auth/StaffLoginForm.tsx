@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
-import { landingPathForRole } from "@/features/auth/workspace";
+import { landAfterStaffLogin } from "./staffLoginFlow";
 import { isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
@@ -76,15 +76,13 @@ export function StaffLoginForm() {
 
     setLoading(true);
     try {
-      await loginStaff(email, values.password, values.totp_code.trim());
-      refreshSession();
-      // Each staff role lands on its OWN cockpit (the admin workspace
-      // for ADMINs — the owner report's landing rule). The role comes
-      // from the session's own answer: the pre-login hook state may be
-      // anonymous (or a previous account's), never the fresh login's.
-      const me = await readMe();
-      router.replace(landingPathForRole(me.role));
-      router.refresh();
+      await landAfterStaffLogin({
+        login: () =>
+          loginStaff(email, values.password, values.totp_code.trim()),
+        refreshSession,
+        router,
+        readMe,
+      });
     } catch (error) {
       if (!isApiError(error)) {
         setSummary({ summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null });

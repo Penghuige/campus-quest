@@ -22,6 +22,7 @@ import {
   beginTotpSetup,
   confirmTotpSetup,
   loginStaff,
+  readMe,
 } from "../features/auth/api";
 import { describeStaffError } from "../features/auth/staffAuthView";
 import { isApiError } from "../lib/errors";
@@ -164,5 +165,30 @@ describe("TOTP setup calls (pending-session bearer)", () => {
     assert.ok(isApiError(error));
     const view = describeStaffError(error as never, "totp-confirm");
     assert.match(view.summary!, /动态验证码错误/);
+  });
+});
+
+describe("readMe (the post-login role source; owner report 2026-10-15)", () => {
+  test("rides a bare GET /api/v1/me with cookie credentials", async () => {
+    stubFetch(
+      JSON.stringify({
+        id: "u1",
+        username: "a@b.edu",
+        nickname: "A",
+        role: "ADMIN",
+        status: "ACTIVE",
+        has_avatar: false,
+        phone_e164: null,
+        email_normalized: null,
+        email_verified_at: null,
+        created_at: "2030-01-01T00:00:00Z",
+      }),
+      200,
+    );
+    const me = await readMe();
+    assert.equal(me.role, "ADMIN");
+    assert.equal(recorded?.url, "/api/v1/me");
+    assert.equal(recorded?.method, "GET");
+    assert.equal(recorded?.credentials, "include");
   });
 });
