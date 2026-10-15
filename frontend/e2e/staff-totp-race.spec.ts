@@ -99,7 +99,9 @@ test.describe("TOTP begin single-flight (E5 flake watch)", () => {
   async function freshInvitationToken(email: string): Promise<string> {
     const response = await api.post(`${API_URL}/staff/invitations`, {
       headers: { Authorization: `Bearer ${mintToken(ADMIN_ID!)}` },
-      data: { email, role: "TEACHER" },
+      // V1.1 §2.3: only the ADMIN branch walks the TOTP onboarding this
+      // spec drives — a TEACHER invitation completes without it.
+      data: { email, role: "ADMIN" },
     });
     expect(
       response.ok(),
