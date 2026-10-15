@@ -27,7 +27,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shellChromeFor } from "../features/auth/shellChrome";
+import {
+  shellChromeFor,
+  shellHintFromCookieValue,
+  SHELL_HINT_COOKIE_NAME,
+} from "../features/auth/shellChrome";
 
 test("session evidence gates the optimistic workspace chrome", () => {
   // A returning session: loading AND error hold the workspace geometry.
@@ -44,4 +48,46 @@ test("terminal states ignore the cookie probe", () => {
   assert.equal(shellChromeFor("authenticated", false), "workspace");
   assert.equal(shellChromeFor("anonymous", true), "minimal");
   assert.equal(shellChromeFor("anonymous", false), "minimal");
+});
+
+// The staff wrong-shell flash (owner report 2026-10-15, fix plan A):
+// csrf evidence is ROLE-BLIND — a staff session refreshing a student
+// route SSR'd the STUDENT optimistic shell and repainted to the
+// guidance card once /me answered. The session mint now also sets a
+// role-HINT cookie (cq_shell, coarse student|staff — deliberately NOT
+// ADMIN/TEACHER granular); a staff hint routes the pre-resolve frames
+// to MINIMAL chrome, which IS the staff terminal geometry here (the
+// guidance card renders under minimal chrome) — no wrong-role flash,
+// no jump for students.
+test("a STAFF shell hint routes the pre-resolve frames to minimal chrome", () => {
+  assert.equal(shellChromeFor("loading", true, "staff"), "minimal");
+  assert.equal(shellChromeFor("error", true, "staff"), "minimal");
+});
+
+test("a STUDENT hint (and the pre-cookie legacy default) keeps today's behavior", () => {
+  assert.equal(shellChromeFor("loading", true, "student"), "workspace");
+  // The compat default: sessions minted before the hint cookie existed
+  // (or a dropped cookie) must not regress the student refresh fix.
+  assert.equal(shellChromeFor("loading", true, undefined), "workspace");
+  assert.equal(shellChromeFor("error", true, undefined), "workspace");
+});
+
+test("the hint never overrides evidence or the terminal verdicts", () => {
+  // No csrf evidence: minimal regardless of any hint value.
+  assert.equal(shellChromeFor("loading", false, "staff"), "minimal");
+  // Terminal states follow /me, never the hint.
+  assert.equal(shellChromeFor("authenticated", true, "staff"), "workspace");
+  assert.equal(shellChromeFor("anonymous", true, "staff"), "minimal");
+});
+
+test("the hint cookie contract: coarse two-value domain, HttpOnly-class shape", () => {
+  // The frozen contract with the backend mint (reviewer ruling
+  // 2026-10-15): name cq_shell, values student|staff ONLY — coarse by
+  // design; unknown values read as absent (the legacy default).
+  assert.equal(SHELL_HINT_COOKIE_NAME, "cq_shell");
+  assert.equal(shellHintFromCookieValue("staff"), "staff");
+  assert.equal(shellHintFromCookieValue("student"), "student");
+  assert.equal(shellHintFromCookieValue("ADMIN"), undefined);
+  assert.equal(shellHintFromCookieValue(""), undefined);
+  assert.equal(shellHintFromCookieValue(undefined), undefined);
 });

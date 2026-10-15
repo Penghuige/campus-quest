@@ -26,14 +26,51 @@ import type { SessionState } from "./session";
 
 export type ShellChrome = "workspace" | "minimal";
 
+/**
+ * The role-hint cookie's name (the staff wrong-shell flash fix, plan
+ * A; owner report 2026-10-15). The session mint writes it alongside
+ * the csrf cookie — HttpOnly + SameSite=Lax is the sanctioned shape
+ * (the consumer is the (student) layout's SERVER-side cookie probe,
+ * not client JS). The value domain is COARSE and frozen:
+ * "student" | "staff" — deliberately NOT ADMIN/TEACHER granular.
+ *
+ * Lifecycle (three write points, all server-side — keep them in sync
+ * when touching the session mint):
+ * 1. LOGIN and every refresh ROTATION (re)write it with the minted
+ *    session's role family;
+ * 2. LOGOUT clears it;
+ * 3. ROLE CHANGE rewrites it (the admin role-change power lands with
+ *    Wave 2a — that endpoint MUST join this contract).
+ *
+ * Absence (a session minted before this cookie existed, or a dropped
+ * cookie) reads as "no hint" and keeps the pre-fix behavior — the
+ * self-healing legacy path.
+ */
+export const SHELL_HINT_COOKIE_NAME = "cq_shell";
+
+/** The coarse hint values the contract admits. */
+export type ShellHint = "student" | "staff";
+
+/**
+ * Parse a cookie value into the hint domain; anything else (including
+ * absent) is "no hint" — an unknown value must never change chrome.
+ */
+export function shellHintFromCookieValue(value: string | undefined): ShellHint | undefined {
+  if (value === "staff" || value === "student") {
+    return value;
+  }
+  return undefined;
+}
+
 /** The chrome for a session state, given whether the document request
- * carried session evidence. The role refinement (a TEACHER/ADMIN
- * session gets the guidance page, still minimal chrome) happens in
- * StudentShell AFTER useSession resolves — this table only owns the
- * chrome verdict. */
+ * carried session evidence, and the role hint when it did. The role
+ * refinement (a TEACHER/ADMIN session gets the guidance page, still
+ * minimal chrome) happens in StudentShell AFTER useSession resolves —
+ * this table only owns the chrome verdict. */
 export function shellChromeFor(
   status: SessionState["status"],
   sessionCookiePresent: boolean,
+  shellHint: ShellHint | undefined = undefined,
 ): ShellChrome {
   switch (status) {
     case "authenticated":
@@ -44,6 +81,13 @@ export function shellChromeFor(
     // The pre-resolve frames: optimistic only with session evidence.
     case "loading":
     case "error":
-      return sessionCookiePresent ? "workspace" : "minimal";
+      if (!sessionCookiePresent) {
+        return "minimal";
+      }
+      // A STAFF hint routes the pre-resolve frames to the minimal
+      // shell — which IS the staff terminal geometry on student
+      // routes (the guidance card renders under minimal chrome), so a
+      // staff refresh never paints the student workspace first.
+      return shellHint === "staff" ? "minimal" : "workspace";
   }
 }
