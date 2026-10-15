@@ -150,6 +150,15 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     await loginAsStaff(page, ADMIN!, ADMIN_TOTP_SECRET!);
   });
 
+  // Owner report (2026-10-15): an admin login used to land on the
+  // teacher review queue. The beforeEach just logged in — the page's
+  // CURRENT url IS the landing verdict.
+  test("an admin login lands on the admin workspace, not the teacher cockpit", async ({
+    page,
+  }) => {
+    await expect(page).toHaveURL(/\/admin\/users/);
+  });
+
   test("whitelist import: preview classifies rows, confirm writes the importable set", async ({
     page,
   }) => {

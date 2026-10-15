@@ -14,12 +14,26 @@ type Role = components["schemas"]["Role"];
 /** Where a successful STUDENT login lands (the student home). */
 export const STUDENT_LANDING_PATH = "/";
 
-/** Where a successful STAFF (teacher/admin) login lands: the review queue. */
+/** Where a successful TEACHER login lands: the review queue. */
 export const TEACHER_LANDING_PATH = "/teacher/reviews";
+
+/**
+ * Where a successful ADMIN login lands: the admin workspace. Owner
+ * report (2026-10-15): an admin taken to the teacher cockpit on every
+ * login/refresher reads as being routed into someone else's workspace
+ * — each staff role lands on its OWN cockpit.
+ */
+export const ADMIN_LANDING_PATH = "/admin/users";
 
 /** Landing path by the session's role (login-success redirect target). */
 export function landingPathForRole(role: Role): string {
-  return role === "STUDENT" ? STUDENT_LANDING_PATH : TEACHER_LANDING_PATH;
+  if (role === "STUDENT") {
+    return STUDENT_LANDING_PATH;
+  }
+  if (role === "ADMIN") {
+    return ADMIN_LANDING_PATH;
+  }
+  return TEACHER_LANDING_PATH;
 }
 
 /**
@@ -37,7 +51,9 @@ export function studentWorkspaceGate(role: Role): StudentWorkspaceGate {
   if (role === "STUDENT") {
     return { kind: "student" };
   }
-  return { kind: "staff-guidance", workspacePath: TEACHER_LANDING_PATH };
+  // Each staff role is pointed at its OWN cockpit (the owner report's
+  // landing rule, mirrored in the guidance link).
+  return { kind: "staff-guidance", workspacePath: landingPathForRole(role) };
 }
 
 /**
@@ -46,6 +62,11 @@ export function studentWorkspaceGate(role: Role): StudentWorkspaceGate {
  * guidance, not a page of 403ing sections). ACTIVE-account and
  * confirmed-TOTP enforcement stays with the backend's staff guard — a
  * 403 surfaces through each section's error state.
+ *
+ * Deliberate boundary (owner report 2026-10-15): admins KEEP access to
+ * the teacher workspace — the fix changed only the DEFAULT LANDING
+ * (`landingPathForRole`), never this gate. An admin browsing
+ * /teacher/* is a legitimate cross-cockpit visit, not a misroute.
  */
 export type TeacherWorkspaceGate =
   | { kind: "staff" }

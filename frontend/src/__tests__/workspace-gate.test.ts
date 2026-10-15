@@ -5,11 +5,14 @@
  * admin shell's gate (Plan 09 Task 10):
  *
  * 1. student login lands on the student home;
- * 2. teacher (and admin) login lands on the teacher review queue;
+ * 2. each staff role lands on ITS OWN workspace — teachers on the
+ *    review queue, admins on the admin workspace (the owner report
+ *    2026-10-15: an ADMIN login/refresher landing on /teacher/reviews
+ *    read as being taken to the wrong cockpit);
  * 3. a staff session opening "/" gets staff-guidance (the student shell
  *    renders ONLY the guidance — `kind: "student"` is the sole branch
  *    that mounts the student pages, so no student-only API storm can
- *    fire), and the guidance carries the staff-workspace link;
+ *    fire), and the guidance carries EACH ROLE's OWN workspace link;
  * 4. a student session opening /teacher/* gets student-guidance with the
  *    student entry link.
  * 5. (Task 10 step 1) /admin/* mounts ONLY for ADMIN: TEACHER and
@@ -21,6 +24,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  ADMIN_LANDING_PATH,
   adminWorkspaceGate,
   landingPathForRole,
   STUDENT_LANDING_PATH,
@@ -35,10 +39,11 @@ describe("login landing by role", () => {
     assert.equal(STUDENT_LANDING_PATH, "/");
   });
 
-  test("regression 2: teacher AND admin logins land on the review queue", () => {
+  test("regression 2 (owner report 2026-10-15): each staff role lands on ITS OWN workspace", () => {
     assert.equal(landingPathForRole("TEACHER"), "/teacher/reviews");
-    assert.equal(landingPathForRole("ADMIN"), "/teacher/reviews");
     assert.equal(TEACHER_LANDING_PATH, "/teacher/reviews");
+    assert.equal(landingPathForRole("ADMIN"), "/admin/users");
+    assert.equal(ADMIN_LANDING_PATH, "/admin/users");
   });
 });
 
@@ -47,12 +52,16 @@ describe("student workspace gate (the / student shell's branch)", () => {
     assert.deepEqual(studentWorkspaceGate("STUDENT"), { kind: "student" });
   });
 
-  test("regression 3: TEACHER/ADMIN on \"/\" get staff-guidance with the workspace link — never the pages", () => {
+  test("regression 3: TEACHER/ADMIN on \"/\" get staff-guidance with EACH ROLE's own workspace link — never the pages", () => {
+    const expectations = {
+      TEACHER: "/teacher/reviews",
+      ADMIN: "/admin/users",
+    } as const;
     for (const role of ["TEACHER", "ADMIN"] as const) {
       const gate = studentWorkspaceGate(role);
       assert.equal(gate.kind, "staff-guidance");
       if (gate.kind === "staff-guidance") {
-        assert.equal(gate.workspacePath, "/teacher/reviews");
+        assert.equal(gate.workspacePath, expectations[role]);
       }
     }
   });

@@ -51,6 +51,15 @@ export type EmailChallengeDto = Schemas["EmailChallengeResponse"];
 const BASE = "/api/v1/auth";
 const ME = "/api/v1/me";
 
+/**
+ * One-shot /me read for post-login routing (the staff form serves two
+ * roles and must land each on its OWN cockpit — the role is only
+ * knowable from the session's answer, never from the pre-login state).
+ */
+export function readMe(): Promise<MeDto> {
+  return apiRequest<MeDto>(ME);
+}
+
 /** Issue a REGISTER-purpose phone OTP challenge (§5.4, §33.2). */
 export function requestPhoneChallenge(phone: string): Promise<ChallengeView> {
   return apiRequest<ChallengeView>(`${BASE}/phone/challenges`, {
