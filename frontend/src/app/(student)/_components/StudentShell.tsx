@@ -29,6 +29,7 @@ import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSid
 import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { shellChromeFor, type ShellHint } from "@/features/auth/shellChrome";
+import { StaffRouteRedirect } from "@/features/auth/StaffRouteRedirect";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 
@@ -209,6 +210,19 @@ export function StudentShell({
         />
       );
     }
+    if (shellHint === "staff") {
+      // The staff redirect placeholder: the hint routes the pre-resolve
+      // frame to minimal geometry carrying the SAME quiet copy the
+      // redirect island shows — one placeholder across the whole jump.
+      return (
+        <MinimalShell state="loading">
+          <p className="field-hint" role="status">
+            正在前往工作台…
+            <span className="spinner" aria-hidden="true" />
+          </p>
+        </MinimalShell>
+      );
+    }
     return (
       <MinimalShell state="loading">
         <span className="skeleton skeleton-line" style={{ width: "40%" }} />
@@ -249,30 +263,36 @@ export function StudentShell({
     if (shellChromeFor("error", sessionCookiePresent, shellHint) === "workspace") {
       return <OptimisticWorkspaceShell state="error" main={errorCard} />;
     }
+    if (shellHint === "staff") {
+      // A /me failure under a staff hint: the error frame lives INSIDE
+      // the placeholder shell — a retry AND a way out (the session may
+      // be dead), never an infinite 正在前往.
+      return (
+        <MinimalShell state="error">
+          {errorCard}
+          <p className="auth-alt-action">
+            <Link className="link" href="/staff/login">
+              前往员工登录
+            </Link>
+          </p>
+        </MinimalShell>
+      );
+    }
     return <MinimalShell state="error">{errorCard}</MinimalShell>;
   }
 
   // Role gate (PR #4 hardening Task 3): the student workspace mounts
-  // ONLY for a STUDENT session. A TEACHER/ADMIN session gets guidance
-  // to the staff workspace instead — and because the pages (children)
-  // never mount, none of the student-only sections can fire their API
-  // calls from a staff session. The guidance page keeps the minimal
-  // chrome: the workspace rail is the student surface, not staff's.
+  // ONLY for a STUDENT session. A TEACHER/ADMIN session is REDIRECTED
+  // to its own workspace (audit item A, owner feedback 2026-10-15 —
+  // the guidance card is retired for this family; true cross-role
+  // errors keep their cards in the staff shells) — and because the
+  // pages (children) never mount, none of the student-only sections
+  // can fire their API calls from a staff session.
   const gate = studentWorkspaceGate(state.me.role);
   if (gate.kind !== "student") {
     return (
       <MinimalShell state="gate">
-        <div className="alert alert-warning" role="alert">
-          <p>
-            <span className="alert-marker" aria-hidden="true">!</span>
-            学生工作区仅对学生账号开放，当前登录的是教师或管理员账号。
-          </p>
-          <p>
-            <Link className="btn btn-primary" href={gate.workspacePath}>
-              前往教师工作台
-            </Link>
-          </p>
-        </div>
+        <StaffRouteRedirect role={state.me.role} />
       </MinimalShell>
     );
   }

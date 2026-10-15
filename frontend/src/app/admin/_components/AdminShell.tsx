@@ -25,6 +25,7 @@ import { SectionError } from "@/components/ui/sectionStates";
 import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
+import { StaffShellSkeleton } from "@/components/shell/StaffShellSkeleton";
 import {
   GiftIcon,
   InboxIcon,
@@ -53,19 +54,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   if (state.status === "loading") {
+    // PATH IS GEOMETRY (owner feedback 2026-10-15): the /admin group
+    // renders its own workspace shape from the first frame — no
+    // white-bar topbar, no cross-shape repaint when the session lands.
     return (
-      <div className="app-shell">
-        <div className="app-topbar">
-          <div className="app-topbar-inner">
-            <span className="app-brand">CampusQuest</span>
-          </div>
-        </div>
-        <main className="app-main" aria-busy="true">
-          <span className="skeleton skeleton-line" style={{ width: "40%" }} />
-          <span className="skeleton skeleton-line" />
-          <span className="skeleton skeleton-block" />
-        </main>
-      </div>
+      <StaffShellSkeleton
+        brandHref="/admin/users"
+        navLabel="管理后台导航"
+        navItems={NAV_ITEMS}
+        sidebarGroupLabel="管理后台"
+      />
     );
   }
 
