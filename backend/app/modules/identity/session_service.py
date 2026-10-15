@@ -97,6 +97,10 @@ class SessionTokens:
 
     access_token: str
     refresh_token: str
+    # The login-time role (the access token's own claim, carried out for
+    # cookie derivation — cq_shell; None only for hand-built pairs in
+    # focused tests).
+    role: str | None = None
 
 
 class SessionService:
@@ -385,7 +389,9 @@ class SessionService:
             role=Role(user.role).value,
             now=now,
         )
-        return SessionTokens(access_token=access_token, refresh_token=secret), row
+        return SessionTokens(
+            access_token=access_token, refresh_token=secret, role=user.role
+        ), row
 
     def _decrypt_envelope(self, row: UserSession) -> str | None:
         """The successor secret inside ``row``'s envelope, or ``None``.
@@ -543,7 +549,7 @@ class SessionService:
             now=now,
         )
         return session_row, SessionTokens(
-            access_token=access_token, refresh_token=refresh_token
+            access_token=access_token, refresh_token=refresh_token, role=user.role
         )
 
     @staticmethod

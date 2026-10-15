@@ -84,6 +84,18 @@ from app.modules.identity.staff_service import TotpSetupRequiredError
 REFRESH_COOKIE_NAME = "refresh_token"
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
+#: The role-hint cookie for the RSC shell probe (shell-flicker fix): the
+#: frontend's server components read it to render the right chrome
+#: before any client JS wakes up. Two values only — student | staff, no
+#: ADMIN/TEACHER granularity (the probe needs the shell, not the role).
+SHELL_COOKIE_NAME = "cq_shell"
+
+
+def _shell_for_role(role: str | None) -> str:
+    """Map a login-time role onto the two-value shell domain."""
+    from app.core import rbac
+
+    return "staff" if role is not None and rbac.is_staff(role) else "student"
 
 
 def auth_cookie_path(settings: Settings) -> str:
@@ -153,6 +165,14 @@ def _issue_session_cookies(
     previous session cannot authorize the next refresh. Spec §5.6/§33.1:
     Secure + SameSite=Lax on both; HttpOnly on the refresh cookie only —
     the CSRF token is double-submit material and must stay readable.
+
+    The cq_shell role hint rides the same issuance (login, rotation,
+    invite accept): HttpOnly + Secure + Lax too — its consumer is the
+    RSC server probe, never client JS. TODO(Wave 2a admin role-change):
+    rewriting cq_shell belongs with the role-change endpoint when it
+    lands; a demoted staff member keeps the staff hint until the next
+    login/refresh (acceptable: the shell is presentation, the guards
+    re-read the row).
     """
     csrf_token = secrets.token_urlsafe(32)
     max_age = settings.refresh_token_ttl_days * _SECONDS_PER_DAY
@@ -170,6 +190,15 @@ def _issue_session_cookies(
         csrf_token,
         max_age=max_age,
         secure=True,
+        samesite="lax",
+        path=csrf_cookie_path(settings),
+    )
+    response.set_cookie(
+        SHELL_COOKIE_NAME,
+        _shell_for_role(tokens.role),
+        max_age=max_age,
+        secure=True,
+        httponly=True,
         samesite="lax",
         path=csrf_cookie_path(settings),
     )
@@ -201,14 +230,16 @@ def _expire_stale_trailing_slash_csrf(response: Response, settings: Settings) ->
 
 
 def clear_session_cookies(response: Response, settings: Settings) -> None:
-    """Expire both auth cookies at the SAME paths they were set with.
+    """Expire every auth cookie at the SAME paths they were set with.
 
     A delete at a different Path edits a different jar entry: the real
-    cookie would survive. Both paths derive from the same settings the
-    issue used, so logout always clears exactly what login set.
+    cookie would survive. All paths derive from the same settings the
+    issue used, so logout always clears exactly what login set — the
+    shell hint included.
     """
     response.delete_cookie(REFRESH_COOKIE_NAME, path=auth_cookie_path(settings))
     response.delete_cookie(CSRF_COOKIE_NAME, path=csrf_cookie_path(settings))
+    response.delete_cookie(SHELL_COOKIE_NAME, path=csrf_cookie_path(settings))
 
 
 def _token_pair_response(
