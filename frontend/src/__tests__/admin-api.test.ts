@@ -25,6 +25,7 @@ import {
   confirmWhitelistImport,
   createNotificationTemplate,
   createRewardItem,
+  createStaffInvitation,
   disableNotificationTemplate,
   disableRewardItem,
   enableNotificationTemplate,
@@ -459,6 +460,33 @@ describe("notification failures + templates (spec §25.4/§25.5)", () => {
       recorded?.url,
       "/api/v1/admin/notification-templates/tpl1/disable",
     );
+  });
+});
+
+describe("staff invitations (spec §5.8)", () => {
+  test("create POSTs {email, role} and resolves the one-time-token response", async () => {
+    stubFetch(
+      JSON.stringify({
+        id: "f0f0f0f0-0000-4000-8000-000000000001",
+        role: "TEACHER",
+        token: "tok_once",
+        expires_at: "2030-01-01T00:00:00Z",
+        created_at: "2029-12-30T00:00:00Z",
+      }),
+      201,
+    );
+    const issued = await createStaffInvitation({
+      email: "new.teacher@example.edu",
+      role: "TEACHER",
+    });
+    assert.equal(recorded?.url, "/api/v1/staff/invitations");
+    assert.equal(recorded?.method, "POST");
+    assert.deepEqual(JSON.parse(String(recorded?.body)), {
+      email: "new.teacher@example.edu",
+      role: "TEACHER",
+    });
+    assert.equal(recorded?.credentials, "include");
+    assert.equal(issued.token, "tok_once");
   });
 });
 

@@ -35,6 +35,7 @@ authoritative record.
 | 邮箱 / 密码 / 动态验证码 | staff login |
 | 设置密码 / 确认密码 / 设置密码并继续 | register, staff invite activation |
 | 昵称 / 手机号 | register, profile binding |
+| 受邀人邮箱 / 角色 / 创建邀请 / 复制邀请链接 | admin staff invitations (`/admin/invitations`; the one-time issuance surface) |
 | 任务评论 / 发布评论 / 发布回复 / 回复 | task-detail comment thread |
 | 通知收件箱 / 标为已读 | notifications |
 | 积分余额 (`getByLabel` + `[aria-label='积分余额']`) | student shell points readout |
@@ -120,6 +121,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
 | `.app-shell[data-shell]` | student shell state marker | shell-refresh spec pins the chrome verdict per state (loading/workspace/anonymous/error/gate); the optimistic frame reuses the existing `.app-sidebar`/`.app-nav`/`.app-bottomnav` structural locators |
 | `.task-card[data-depleted='true']` | depleted square card marker | same verdict as the 已被领完 badge (defect #20 / batch ④); the recede treatment assertions (dashed border, dimmed content) key on it |
+| `[data-testid='invitation-link']` | admin one-time invitation link box | admin-invitations.spec pins the link text shape (origin + `/staff/invite/<urlsafe-token>`) and follows it to the accept page; CopyButton beside it is label-anchored (A-table) |
 | `.meta-deadline` · `.reward-window` | zero-weight mask anchors | visual-suite mask hooks (shot-surfaces): the task card's clock-derived deadline line and the reward card's window line; the classes carry no styles by design |
 
 ## Rules for the visual workstream

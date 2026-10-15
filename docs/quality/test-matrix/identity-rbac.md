@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 14 | I1-I13, I15 |
+| 已覆盖 | 15 | I1-I13, I15-I16 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | I14 |
@@ -32,6 +32,7 @@
 | I13 | §21.4 + G12 | Admin 揭示：权限+reason+每次审计 | `tests/integration/community/test_anonymous_moderation.py::test_reveal_requires_a_reason` / `test_reveal_is_admin_only` + e2e `tests/e2e/test_privacy_rbac.py::test_anonymous_privacy_and_explicit_reveal` | 已覆盖（community M11 的完整落位） |
 | I14 | G10 | 元规则：RBAC=角色+所有权+状态；不确定默认拒 | ——（流程行：I1-I4 的正负空间矩阵即其执法面） | 流程行 |
 | I15 | design §8 + patterns §8（owner QA 2026-10-03 遗留项） | 会话证据在场（文档请求携带 csrf cookie）时加载/错误帧乐观渲染工作区几何（三带与认证态同几何，用户数据槽占位），刷新无壳跳变；无证据访客保持极简壳，401→anonymous 退场不引入 sidebar→card 新跳变方向；终态跟随 /me 答案而非探针 | `frontend/e2e/shell-refresh.spec.ts`（SSR HTML 含乐观 rail 断言 + 三带 loading↔workspace 几何逐项相等 + 无 cookie 极简壳→auth 卡 + error 帧乐观壳就地重试）+ `frontend/src/__tests__/shell-chrome.test.ts`（chrome 决策表） | 已覆盖 |
+| I16 | §5.8 步骤 1 + design §8（owner 需求 2026-10-14；reviewer 裁决 2026-10-15） | 管理台发放邀请（后端零改动，POST /staff/invitations 已有面）：邮箱门镜像后端最小形状（客户端拒绝值绝不发请求——20/时管理桶按请求数计）；一次性链接 = 页面 origin + 部署挂载前缀（apiBase，勿硬编码）+ /staff/invite/<token>，且链接可路由到真实接受页；token 仅创建响应返回一次（行内只存 hash，无再读端点）；错误文案按 code 分支（USERNAME_ALREADY_EXISTS=业务文案，RATE_LIMITED=限额文案，§29 不按 status）；顶栏昵称任意长度不破版（截断只在昵称元素，staff-role-tag 不参与裁切，title 全文） | 单测：`frontend/src/__tests__/staff-invitation-view.test.ts`（链接拼装双挂载形态/邮箱形状镜像/code 分支文案）+ `frontend/src/__tests__/admin-api.test.ts`（createStaffInvitation 线形钉：POST /staff/invitations + {email, role} + cookie 契约）；e2e：`frontend/e2e/admin-invitations.spec.ts`（发放成功拿到链接且实跳接受页设密码帧 + 非法邮箱客户端拒绝零 POST）；顶栏截断：visual 基线 + admin-invitations/admin-users 面零字节差（app-user 结构改动的等价性证明） | 已覆盖 |
 
 ## 缺口明细
 

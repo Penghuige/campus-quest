@@ -153,7 +153,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
             </nav>
             <div className="app-topbar-actions">
               <span className="app-user" title={state.me.nickname}>
-                {state.me.nickname}
+                <span className="app-user-name">{state.me.nickname}</span>
                 <span className="staff-role-tag">
                   {state.me.role === "ADMIN" ? "管理员" : "教师"}
                 </span>

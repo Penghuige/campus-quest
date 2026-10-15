@@ -211,6 +211,26 @@ export function toggleWhitelistEntry(
   );
 }
 
+// --- staff invitations (spec §5.8) ----------------------------------------------------------
+
+export type StaffInvitationCreateBody = Schemas["StaffInvitationCreateRequest"];
+export type StaffInvitationDto = Schemas["StaffInvitationResponse"];
+
+/**
+ * Issue one one-shot staff invitation (POST /staff/invitations). The
+ * plaintext token returns HERE AND ONLY HERE — the row stores its hash,
+ * and no listing endpoint re-exposes it — so the page renders the link
+ * exactly once and never refetches it.
+ */
+export function createStaffInvitation(
+  body: StaffInvitationCreateBody,
+): Promise<StaffInvitationDto> {
+  return apiRequest<StaffInvitationDto>("/api/v1/staff/invitations", {
+    method: "POST",
+    body,
+  });
+}
+
 // --- reward catalogue + review grants (spec §16) -------------------------------------------
 
 /**
