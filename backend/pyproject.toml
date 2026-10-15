@@ -26,6 +26,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "hypothesis>=6.168.5",
+    "import-linter>=2.15",
     "mypy>=2.3.1",
     "pip-audit>=2.10.1",
     "pytest>=8.0",
@@ -106,3 +107,156 @@ source = ["app"]
 # Module-level percentages feed coverage-ratchet.json; one decimal is
 # enough resolution to catch regressions without chasing noise.
 precision = 1
+
+[tool.importlinter]
+# Architecture contract gate (owner-approved 2026-10-16): turns the written
+# layering rules (docs/quality/backend-engineering.md §1 "router -> service ->
+# repository/query + ports -> adapters", §2 module shape) and the cross-module
+# port rule (docs/architecture/interfaces.md "Identity directory": outside
+# modules read identity facts only through the port, never its ORM models)
+# into machine-checked contracts. Run via `make arch-lint`.
+#
+# Scope decisions:
+# - import-linter layers do not support wildcards, so module-internal
+#   layering is one layers-contract per module with literal file names.
+#   Adding a new *_service.py / *_router.py to a module = add its name to
+#   that module's contract (the gate error names the missing layer).
+# - Contracts encode what the docs mandate AND what the tree already
+#   satisfies; known drift is waived explicitly below (rental-style, like
+#   pip-audit-exemptions.json) so tightening = deleting a waiver line.
+#   The as-built map (scripts/generate_as_built.py) reports the same drift
+#   without waivers — the gate forgives, the map tells the truth.
+root_packages = ["app"]
+
+[[tool.importlinter.contracts]]
+name = "audit: routers above services"
+type = "layers"
+containers = ["app.modules.audit"]
+layers = ["router", "service : repair_service"]
+
+[[tool.importlinter.contracts]]
+name = "community: routers above services"
+type = "layers"
+containers = ["app.modules.community"]
+layers = [
+    "router",
+    "comment_service : moderation_service : rating_service : reaction_service : report_service : vote_service",
+]
+
+[[tool.importlinter.contracts]]
+name = "identity: routers above services"
+type = "layers"
+containers = ["app.modules.identity"]
+layers = [
+    "admin_router : auth_router : profile_router : staff_router : users_router",
+    "account_admin_service : avatar_service : profile_service : service : session_service : staff_service",
+]
+
+[[tool.importlinter.contracts]]
+name = "notifications: routers above services"
+type = "layers"
+containers = ["app.modules.notifications"]
+layers = ["router", "delivery_service : inbox_service : service"]
+
+[[tool.importlinter.contracts]]
+name = "points: routers above services"
+type = "layers"
+containers = ["app.modules.points"]
+layers = [
+    "admin_router : router",
+    "admin_service : ledger_service : redemption_service",
+]
+
+[[tool.importlinter.contracts]]
+name = "rankings: routers above services"
+type = "layers"
+containers = ["app.modules.rankings"]
+layers = ["router", "growth_service : honor_service : service"]
+
+[[tool.importlinter.contracts]]
+name = "submissions: routers above services"
+type = "layers"
+containers = ["app.modules.submissions"]
+layers = [
+    "router",
+    "query_service : review_service : reward_lock_service : upload_service : validation_service",
+]
+
+[[tool.importlinter.contracts]]
+name = "system: routers above services"
+type = "layers"
+containers = ["app.modules.system"]
+layers = ["router", "service"]
+
+[[tool.importlinter.contracts]]
+name = "tasks: routers above services"
+type = "layers"
+containers = ["app.modules.tasks"]
+layers = [
+    "router",
+    "abandon_service : claim_service : collaborator_service : query_service : service",
+]
+
+# The files module has services but no router (cleanup jobs only), so it has
+# no layers contract; app/modules/files is covered by the package contracts.
+
+[[tool.importlinter.contracts]]
+name = "Identity ORM models stay behind the directory port (interfaces.md)"
+type = "forbidden"
+source_modules = ["app.modules"]
+forbidden_modules = ["app.modules.identity.models"]
+ignore_imports = [
+    # identity importing its own models is internal, not a cross-module read
+    "app.modules.identity.* -> app.modules.identity.models",
+    # DRIFT (2026-10-16, 5 files): notifications imports identity.models.User
+    # directly instead of the identity directory port. Refactor is an owner
+    # decision; delete these waivers after routing through directory.py.
+    "app.modules.notifications.port -> app.modules.identity.models",
+    "app.modules.notifications.service -> app.modules.identity.models",
+    "app.modules.notifications.delivery_service -> app.modules.identity.models",
+    "app.modules.notifications.deadline_scheduler -> app.modules.identity.models",
+    "app.modules.notifications.event_handlers -> app.modules.identity.models",
+]
+
+[[tool.importlinter.contracts]]
+name = "Modules must not import the worker runtime"
+type = "forbidden"
+source_modules = ["app.modules"]
+forbidden_modules = ["app.workers", "app.workers.*"]
+ignore_imports = [
+    # Composition seams: two routers construct the injected Celery dispatchers
+    # (backend-engineering §3 "resolve dependencies"); the jobs themselves own
+    # no domain logic. If more modules need dispatch, route via a module port.
+    "app.modules.submissions.router -> app.workers.jobs.validate_submission",
+    "app.modules.points.router -> app.workers.jobs.project_ranking_update",
+]
+
+[[tool.importlinter.contracts]]
+name = "core is a bottom layer (never imports modules)"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.modules", "app.modules.*"]
+
+[[tool.importlinter.contracts]]
+# Exact router modules (import-linter wildcards are trailing-only, so
+# app.modules.*.router is not expressible); update this list when a module
+# gains or renames a router file.
+name = "Workers are orchestration shells (never import module routers)"
+type = "forbidden"
+source_modules = ["app.workers"]
+forbidden_modules = [
+    "app.modules.audit.router",
+    "app.modules.community.router",
+    "app.modules.identity.admin_router",
+    "app.modules.identity.auth_router",
+    "app.modules.identity.profile_router",
+    "app.modules.identity.staff_router",
+    "app.modules.identity.users_router",
+    "app.modules.notifications.router",
+    "app.modules.points.admin_router",
+    "app.modules.points.router",
+    "app.modules.rankings.router",
+    "app.modules.submissions.router",
+    "app.modules.system.router",
+    "app.modules.tasks.router",
+]

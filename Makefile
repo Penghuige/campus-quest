@@ -2,7 +2,8 @@
 # Backend tool versions are committed in backend/pyproject.toml (dev group),
 # so `uv run` never drifts; frontend tooling is committed in frontend/package.json.
 
-.PHONY: test-backend test-integration lint-backend verify
+.PHONY: test-backend test-integration lint-backend verify \
+        arch-lint-backend arch-lint-frontend arch-lint
 # Plan 10 task 11's release steps are individually runnable and composed
 # by `release-gate` below; .NOTPARALLEL keeps prerequisite order
 # deterministic even under `make -j`.
@@ -19,7 +20,23 @@ lint-backend:
 	cd backend && uv run ruff check app tests alembic
 	cd backend && uv run mypy
 
-verify: lint-backend
+# Architecture contract gate (owner-approved addition 2026-10-16): the
+# written layering rules (docs/quality/backend-engineering.md §1-§2 and
+# the cross-module port rule in docs/architecture/interfaces.md) as
+# machine-checked import contracts in backend/pyproject.toml
+# [tool.importlinter], plus the frontend boundary rules in
+# frontend/.dependency-cruiser.cjs. Known drift is waived in-config
+# (rental-style); warn-level findings (cross-feature imports) do not
+# fail the gate.
+arch-lint-backend:
+	cd backend && uv run lint-imports
+
+arch-lint-frontend:
+	cd frontend && npm run arch:lint
+
+arch-lint: arch-lint-backend arch-lint-frontend
+
+verify: lint-backend arch-lint
 	cd backend && uv run pytest -v
 	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run build
 
@@ -27,35 +44,39 @@ verify: lint-backend
 #
 # `make release-gate` runs, in this order (plan 10 task 11 step 1):
 #
-#   0. coverage accumulation reset  (coverage-clean: rm backend/.coverage —
+#   0. architecture contract gate   (arch-lint; owner-approved addition
+#      2026-10-16 — runs FIRST so boundary violations fail before the
+#      expensive suites: backend import-linter contracts + frontend
+#      dependency-cruiser boundaries)
+#   1. coverage accumulation reset  (coverage-clean: rm backend/.coverage —
 #      --cov-append must not inherit an earlier local run's data)
 #      + test-database bootstrap     (release-test-db; idempotent
 #      `alembic upgrade head` on campusquest_test — the integration/e2e
 #      suites need a migrated schema and nothing else creates it on
 #      fresh compose volumes)
-#   1. backend unit tests            (backend-unit-cov; same suite as
-#      backend-unit plus the --cov-append chain feeding step 14)
-#   2. backend integration tests     (backend-integration-cov; real
+#   2. backend unit tests            (backend-unit-cov; same suite as
+#      backend-unit plus the --cov-append chain feeding step 15)
+#   3. backend integration tests     (backend-integration-cov; real
 #      PostgreSQL/Redis/MinIO, S3 + composition smokes ON)
-#   3. backend worker tests          (backend-worker-cov)
-#   4. backend e2e tests             (backend-e2e, CQ_E2E=1)
-#   5. migration verification        (migration-verify; dedicated
+#   4. backend worker tests          (backend-worker-cov)
+#   5. backend e2e tests             (backend-e2e, CQ_E2E=1)
+#   6. migration verification        (migration-verify; dedicated
 #      campusquest_migrate_test database: upgrade head -> schema
 #      assertions -> downgrade base -> re-upgrade)
-#   6. frontend typecheck            (frontend-typecheck)
-#   7. frontend lint                 (frontend-lint)
-#   8. frontend CSS integrity        (frontend-css-guard)
-#   9. frontend unit tests           (frontend-unit)
-#  10. frontend production build     (frontend-build)
-#  11. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
+#   7. frontend typecheck            (frontend-typecheck)
+#   8. frontend lint                 (frontend-lint)
+#   9. frontend CSS integrity        (frontend-css-guard)
+#  10. frontend unit tests           (frontend-unit)
+#  11. frontend production build     (frontend-build)
+#  12. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
 #      orchestrates both servers itself)
-#  12. ranking rebuild test          — inside backend-e2e:
+#  13. ranking rebuild test          — inside backend-e2e:
 #      tests/e2e/test_ranking_recovery.py
-#  13. concurrency gate              — inside backend-e2e:
+#  14. concurrency gate              — inside backend-e2e:
 #      tests/e2e/test_concurrency_gate.py
-#  14. coverage ratchet              (coverage-ratchet; owner-approved
+#  15. coverage ratchet              (coverage-ratchet; owner-approved
 #      addition — backend: the .coverage accumulated by the -cov legs
-#      of steps 1-3 vs coverage-ratchet.json floors; frontend: the
+#      of steps 2-4 vs coverage-ratchet.json floors; frontend: the
 #      native-coverage ratchet self-runs its unit suite)
 #
 # Prerequisites (quality-gates §15; docs/operations/release-checklist.md
@@ -185,7 +206,7 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: coverage-clean release-test-db backend-unit-cov \
+release-gate: arch-lint coverage-clean release-test-db backend-unit-cov \
               backend-integration-cov backend-worker-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e \
