@@ -36,6 +36,14 @@ export interface Shot {
 
 export const SHOTS: Shot[] = [
   { name: "auth-login", path: "/login", auth: "anon", masks: [] },
+  {
+    // The custom 404 (audit item B): a stable anonymous surface with no
+    // volatile content — the Chinese copy and the way home ARE the pin.
+    name: "not-found",
+    path: "/definitely-not-a-page",
+    auth: "anon",
+    masks: [],
+  },
   { name: "dev-gallery", path: "/dev/gallery", auth: "anon", masks: [] },
   {
     name: "student-dashboard",

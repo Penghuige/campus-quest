@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 21 | I1-I13, I15-I22 |
+| 已覆盖 | 22 | I1-I13, I15-I23 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | I14 |
@@ -52,3 +52,4 @@
 | I20 | V1.1 §2.2 | 记住设备自助：GET /me/devices 仅本人设备（DTO 显式枚举，hash 不可表示）；DELETE 全撤+OWN_DEVICES_REVOKED 同事务审计+stolen cookie 回落 TOTP 端到端；student 403（staff-only 面）；空列表 revoked:0 | `tests/integration/identity/test_own_devices_api.py::test_list_returns_only_caller_devices_without_hashes` / `::test_delete_revokes_every_device_and_kills_the_cookie` / `::test_student_token_is_denied` / `::test_unauthenticated_is_401` / `::test_delete_with_no_devices_reports_zero`；凭据生命周期单元：`test_device_c*.py` 全族 | 已覆盖 |
 | I21 | V1.1 §2.1（reviewer 2026-10-15 裁定） | 登录挑战哈希=共享 hmac_challenge_code 键控 HMAC（SMS 与邮箱同强）：库行 ≠ 裸 sha256(code)，dump 下 10^6 码空间不可暴；e2e 取码走 email-code 世界动作（probe 闭空间暴力，otp_probe 孪生） | `tests/integration/identity/test_email_login_service.py::test_request_code_stores_hashed_challenge_and_sends`（断言 ==HMAC 且 !=sha256）/ `::test_email_code_probe_recovers_the_mailed_code`（probe 恢复==寄出码）+ `tests/unit/identity/test_otp.py`（SMS 侧换芯不变形） | 已覆盖 |
 | I22 | design §8/§10（owner 生产反馈 2026-10-15，reviewer 热修指令） | ADMIN 登录/刷新落点=自身工作台：landingPathForRole 三分支（STUDENT→/、TEACHER→/teacher/reviews、ADMIN→/admin/users）；staff 登录表单以登录后 /me 的角色决定落点（提交前 state 可能是 anonymous，不得用）；studentWorkspaceGate 的 staff-guidance 链接按角色分流；teacherWorkspaceGate 不动（管理员访问教师台=合法跨舱，仅默认落点变更） | `frontend/src/__tests__/workspace-gate.test.ts`（回归 2 三分支落点+回归 3 按角色 guidance）+ e2e `frontend/e2e/admin.spec.ts::an admin login lands on the admin workspace, not the teacher cockpit`（beforeEach 登录后的页面 URL 即落点判决） | 已覆盖 |
+| I23 | 全站旧观感盘点 2026-10-15 裁决（A+B 项；design §8/§10 路由终态正确性） | staff×学生路由（/、/tasks、/rewards、/profile）=SSR 跳转占位壳（cq_shell=staff→极简几何+「正在前往工作台…」）+/me 应答后自动 replace 到 landingPathForRole——拒绝卡对该族退役、两段跳变归零形状跳变；/me 失败错误帧含重试+前往员工登录（不无限跳转）；学生乐观壳/匿名登录卡不变；404=中文自定义页（页面不存在+返回首页，产品语言一致性）；跨角色拒绝卡（student×staff 路由等）保留 | `frontend/e2e/staff-root-redirect.spec.ts`（teacher/admin 三帧时序+深链重定向+学生/匿名不变钉+/me 失败错误帧）+ `frontend/e2e/not-found.spec.ts`（中文 404+返家链）+ SHOTS not-found 面像素钉；盘点矩阵 44 格取证在案 | 已覆盖 |
