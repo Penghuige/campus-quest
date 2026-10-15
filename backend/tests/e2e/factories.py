@@ -66,6 +66,7 @@ from app.modules.community.models import (
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import (
     RecoveryCode,
+    RememberedDevice,
     StaffInvitation,
     StudentWhitelist,
     TotpCredential,
@@ -701,6 +702,13 @@ async def clean_world(
             delete(StaffInvitation).where(StaffInvitation.created_by.in_(users))
         )
         await db.execute(delete(UserSession).where(UserSession.user_id.in_(users)))
+        # V1.1's remembered-device rows (the email-code login spec arms
+        # one on the seeded admin) land BEFORE the users they name — the
+        # FK violation that aborted teardown and leaked whole worlds
+        # into the next battery (the two-suspended-students failure).
+        await db.execute(
+            delete(RememberedDevice).where(RememberedDevice.user_id.in_(users))
+        )
         await db.execute(
             delete(TotpCredential).where(TotpCredential.user_id.in_(users))
         )
