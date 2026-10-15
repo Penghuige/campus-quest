@@ -194,7 +194,6 @@ describe("TOTP setup calls (pending-session bearer)", () => {
   });
 });
 
-<<<<<<< HEAD
 describe("readMe (the post-login role source; owner report 2026-10-15)", () => {
   test("rides a bare GET /api/v1/me with cookie credentials", async () => {
     stubFetch(
