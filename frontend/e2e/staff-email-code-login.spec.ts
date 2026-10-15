@@ -48,7 +48,8 @@ function wrongNeighborOf(code: string): string {
 }
 
 async function requestCode(page: Page, email: string): Promise<string> {
-  await page.getByLabel("邮箱").fill(email);
+  // exact: the 邮箱 label must not substring-match 邮箱验证码.
+  await page.getByLabel("邮箱", { exact: true }).fill(email);
   await page.getByRole("button", { name: "重新发送", exact: true }).click();
   // The resend control enters its cooldown countdown (visible seconds).
   await expect(
