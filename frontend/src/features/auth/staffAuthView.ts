@@ -102,11 +102,12 @@ export function validateOptionalInvitePasswordRepeat(
 }
 
 /**
- * The accept-response branch discriminator (reviewer ruling
- * 2026-10-15): `totp_required:false` = TEACHER (full tokens, single
- * screen, done); `true` or MISSING = ADMIN (pending session, TotpSetup
- * two-step). The missing-field default keeps the pre-V1.1 contract's
- * shape on the admin leg until the backend's T7 lands.
+ * The accept-response branch discriminator: `totp_required:false` =
+ * TEACHER (full login, single screen, done); `true` = ADMIN (pending
+ * session, TotpSetup two-step). A body WITHOUT the field (an unknown
+ * shape) also lands on the admin leg — the defensive fail-closed
+ * default: an unadopted pending token errors loudly at the TOTP step
+ * instead of an unknown body ever being adopted as a login.
  */
 export function classifyInviteAccept(body: unknown): "teacher" | "admin" {
   if (

@@ -102,10 +102,13 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
   /** Mint one single-use invitation through the REAL admin API (the
    * route lives at /api/v1/staff/invitations — the identity admin
    * router's full-path convention). */
-  async function freshInvitationToken(email: string): Promise<string> {
+  async function freshInvitationToken(
+    email: string,
+    role: "TEACHER" | "ADMIN" = "TEACHER",
+  ): Promise<string> {
     const response = await api.post(`${API_URL}/staff/invitations`, {
       headers: { Authorization: `Bearer ${mintToken(ADMIN_ID!)}` },
-      data: { email, role: "TEACHER" },
+      data: { email, role },
     });
     expect(
       response.ok(),
@@ -116,16 +119,19 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     return body.token;
   }
 
-  test("invite -> password -> TOTP confirm -> recovery codes once -> done", async ({ page }) => {
+  test("admin invite -> password -> TOTP confirm -> recovery codes once -> done", async ({ page }) => {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
 
-    const token = await freshInvitationToken(`e2e-staff-${RUN}@school.edu`);
+    // V1.1 §2.3: TOTP onboarding belongs to ADMIN invitations — a
+    // TEACHER invite skips it entirely (the teacher test below).
+    const token = await freshInvitationToken(`e2e-admin-invite-${RUN}@school.edu`, "ADMIN");
     await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(token)}`);
 
-    // Password step: band mirror + repeat field.
+    // Password step: band mirror + repeat field (mandatory on the
+    // admin branch; the label marks it optional for teachers).
     await page.getByLabel("设置密码").fill("e2e-correct-horse");
     await page.getByLabel("确认密码").fill("e2e-correct-horse");
-    await page.getByRole("button", { name: "设置密码并继续" }).click();
+    await page.getByRole("button", { name: "激活账号" }).click();
 
     // Setup step: NO QR — the secret + otpauth URI render as copyable text.
     const secretLocator = page.getByTestId("totp-secret");
@@ -181,6 +187,25 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
       "href",
       "/staff/login",
     );
+  });
+
+  test("teacher invite: optional password, straight into the workspace (V1.1 §2.3)", async ({ page }) => {
+    const token = await freshInvitationToken(`e2e-teacher-invite-${RUN}@school.edu`);
+    await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(token)}`);
+
+    // The password is OPTIONAL for teachers — leave both fields EMPTY.
+    await page.getByRole("button", { name: "激活账号" }).click();
+
+    // No TOTP step anywhere: the accept response's totp_required:false
+    // lands the fresh full login directly on the teacher workspace.
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+    await expect(page.getByTestId("totp-secret")).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "恢复代码" })).toHaveCount(0);
+
+    // The staff nickname nudge greets the email-local-part nickname
+    // (the auto shape's staff arm — the student arm rides the nudge
+    // spec's registration flow).
+    await expect(page.getByText("把昵称改成好认的名字吧")).toBeVisible();
   });
 
   test("client validation: a too-short password never sends the one-time token", async ({ page }) => {

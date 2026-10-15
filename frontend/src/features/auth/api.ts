@@ -229,19 +229,12 @@ export async function loginStaff(
 // --- own remembered devices (V1.1 §2.2; plan Task 11) ---------------------------
 //
 // GET/DELETE /me/devices — self-service management of the 30-day
-// remember-device credentials. The row shape is the frozen contract
-// ({id, created_at, last_used_at, expires_at}); token hashes never
-// leave the server. The DTO is hand-shaped from that contract until the
-// backend PR's OpenAPI snapshot regen lands (then it flips to the
-// generated alias — the merge-time discipline, PR #72).
+// remember-device credentials. The row shape is the generated
+// RememberedDevicePublic (token hashes never leave the server); DELETE
+// answers OwnDevicesRevokedResponse's count.
 
-/** One remembered device row (V1.1 plan Task 11 frozen contract). */
-export interface MyDeviceDto {
-  id: string;
-  created_at: string;
-  last_used_at: string | null;
-  expires_at: string;
-}
+/** One remembered device row (the generated V1.1 contract). */
+export type MyDeviceDto = Schemas["RememberedDevicePublic"];
 
 /** The caller's remembered devices, newest first (server-ordered). */
 export function listMyDevices(): Promise<MyDeviceDto[]> {
