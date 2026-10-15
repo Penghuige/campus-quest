@@ -212,7 +212,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await page.goto(`${BASE_URL}/staff/invite/whatever-token`);
     await page.getByLabel("设置密码").fill("short");
     await page.getByLabel("确认密码").fill("short");
-    await page.getByRole("button", { name: "设置密码并继续" }).click();
+    await page.getByRole("button", { name: "激活账号" }).click();
     await expect(page.getByText(/密码长度需为 10-128 个字符/)).toBeVisible();
     // Still on the password step — no request left the browser.
     await expect(page.getByLabel("设置密码")).toBeVisible();
@@ -222,7 +222,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await page.goto(`${BASE_URL}/staff/invite/definitely-not-a-real-token`);
     await page.getByLabel("设置密码").fill("e2e-correct-horse");
     await page.getByLabel("确认密码").fill("e2e-correct-horse");
-    await page.getByRole("button", { name: "设置密码并继续" }).click();
+    await page.getByRole("button", { name: "激活账号" }).click();
     // Uniform for unknown/expired/used — the branch reason never leaks.
     // (.first(): Next's route announcer also carries role=alert.)
     await expect(page.getByRole("alert").first()).toContainText("邀请链接无效或已被使用");

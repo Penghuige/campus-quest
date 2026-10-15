@@ -147,7 +147,7 @@ test.describe("TOTP begin single-flight (E5 flake watch)", () => {
       await route.fulfill({ response });
     });
 
-    await page.getByRole("button", { name: "设置密码并继续" }).click();
+    await page.getByRole("button", { name: "激活账号" }).click();
 
     // Setup step renders the secret the page will confirm against.
     const secretLocator = page.getByTestId("totp-secret");
