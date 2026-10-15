@@ -247,3 +247,46 @@ def _masked_identifier(identifier: str) -> str:
     if identifier.isdigit():
         return mask_student_number(identifier)
     return identifier
+
+
+# --- e2e battery relief (CQ_E2E_LOGIN_RATELIMIT; opt-in per deployment) ------
+
+#: The login family the relief raises: both doors' identifier and IP
+#: buckets, including the email-code channel (the battery logs in staff
+#: per test; retry loops fed the IP bucket past 50/h — structural, not
+#: flaky). Anything NOT in this tuple is untouched by the relief.
+LOGIN_FAMILY_BUCKETS: tuple[str, ...] = (
+    "auth:login",
+    "auth:login-ip",
+    "auth:staff-login",
+    "auth:staff-login-ip",
+    "auth:staff-email-code",
+    "auth:staff-email-code-ip",
+)
+_E2E_LOGIN_LIMIT = 1000
+_E2E_LOGIN_WINDOW_SECONDS = 3600
+_DEFAULT_LOGIN_RULES: dict[str, RateLimitRule] = {
+    bucket: RATE_LIMIT_RULES[bucket] for bucket in LOGIN_FAMILY_BUCKETS
+}
+
+
+def apply_e2e_login_relief() -> None:
+    """Raise the login family to battery scale (idempotent).
+
+    Applied once at app assembly when Settings.e2e_login_ratelimit is
+    on — the local e2e orchestration stack only. Production and every
+    default deployment never call this: their limits stay
+    byte-identical (the default-shape pin lives in
+    tests/unit/integrations/test_e2e_login_relief.py).
+    """
+    for bucket in LOGIN_FAMILY_BUCKETS:
+        RATE_LIMIT_RULES[bucket] = RateLimitRule(
+            bucket=bucket,
+            limit=_E2E_LOGIN_LIMIT,
+            window_seconds=_E2E_LOGIN_WINDOW_SECONDS,
+        )
+
+
+def restore_default_login_rules() -> None:
+    """Return the login family to its shipped defaults (test hygiene)."""
+    RATE_LIMIT_RULES.update(_DEFAULT_LOGIN_RULES)
