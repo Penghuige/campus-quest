@@ -173,6 +173,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Own Devices
+         * @description The caller's remembered login devices (V1.1 §2.2 self-service).
+         *
+         *     Staff-only on purpose: the credential exists solely on the staff
+         *     email-code channel, and a student's answer would imply a capability
+         *     that does not exist. Rows map to the explicit DTO — hashes stay
+         *     server-side.
+         */
+        get: operations["list_own_devices_api_v1_me_devices_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Own Devices
+         * @description Drop every remembered device of the caller (V1.1 §2.2).
+         *
+         *     The stolen-cookie answer: after this, a login presenting a formerly
+         *     remembered device falls back to the full TOTP leg. The
+         *     ``OWN_DEVICES_REVOKED`` audit row joins the same transaction.
+         */
+        delete: operations["revoke_own_devices_api_v1_me_devices_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -398,6 +431,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/staff/email-code/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Staff Email Code
+         * @description Mail one 6-digit login code (V1.1 §2.1) — always 202, empty body.
+         *
+         *     The response is identical for every mailbox — unknown, student, or
+         *     staff — so the endpoint is not an existence oracle; the service's
+         *     60s cooldown is armed on the raw submitted email for all of them
+         *     alike, and only a cooldown/liter breach (429) differs.
+         */
+        post: operations["request_staff_email_code_api_v1_auth_staff_email_code_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/email-code/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Staff Email Code
+         * @description Trade the emailed code for a login (V1.1 §2.1/§2.2).
+         *
+         *     TEACHER completes here; ADMIN answers ``totp_required`` with a
+         *     pending session token — unless a valid remembered-device cookie
+         *     accompanies the request, in which case ADMIN finishes here too.
+         *     ``remember_device`` issues the 30-day cookie on whichever leg
+         *     completes the login.
+         */
+        post: operations["verify_staff_email_code_api_v1_auth_staff_email_code_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/email-code/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Staff Email Code Totp
+         * @description Finish an ADMIN email-code login with the TOTP leg (V1.1 §2.2).
+         *
+         *     ``pending_token`` is the verify leg's OPAQUE mid-login credential
+         *     (Redis, 30-minute TTL, consumed by this call) — it authenticates
+         *     nothing but this endpoint, so a half-finished login holds no session
+         *     power (final review F1).
+         */
+        post: operations["staff_email_code_totp_api_v1_auth_staff_email_code_totp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/staff/invitations/accept": {
         parameters: {
             query?: never;
@@ -409,12 +518,15 @@ export interface paths {
         put?: never;
         /**
          * Accept Staff Invitation
-         * @description Trade the single-use invitation token for a pending staff session.
+         * @description Trade the single-use invitation token for a staff session.
          *
-         *     The returned tokens are a real session confined to finishing TOTP
-         *     setup (§5.8); management endpoints stay closed until 2FA is confirmed.
-         *     The accept writes its durable audit row inside the service's
-         *     transaction, carrying this request's correlation pair (§30).
+         *     V1.1 §2.3: a TEACHER acceptance is a COMPLETE login (optional
+         *     password, no TOTP onboarding — ``totp_required: false``); an ADMIN
+         *     acceptance is the V1 pending-TOTP onboarding session
+         *     (``totp_required: true``; management endpoints stay closed until 2FA
+         *     is confirmed). The accept writes its durable audit row inside the
+         *     service's transaction, carrying this request's correlation pair
+         *     (§30).
          */
         post: operations["accept_staff_invitation_api_v1_auth_staff_invitations_accept_post"];
         delete?: never;
@@ -3356,6 +3468,14 @@ export interface components {
             template_body: string;
         };
         /**
+         * OwnDevicesRevokedResponse
+         * @description DELETE /me/devices result: how many credentials were dropped.
+         */
+        OwnDevicesRevokedResponse: {
+            /** Revoked */
+            revoked: number;
+        };
+        /**
          * OwnedHonorResponse
          * @description One honor the caller owns (the §19 已获得荣誉 row).
          */
@@ -3711,6 +3831,31 @@ export interface components {
             task_id: string;
             /** Availability Status */
             availability_status: string;
+        };
+        /**
+         * RememberedDevicePublic
+         * @description One remembered device of the caller (V1.1 §2.2 self-service).
+         *
+         *     Explicitly enumerated fields: the stored token hash is unrepresentable.
+         */
+        RememberedDevicePublic: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /**
          * ReportClosureResponse
@@ -4076,14 +4221,74 @@ export interface components {
          */
         Role: "STUDENT" | "TEACHER" | "ADMIN";
         /**
+         * StaffEmailCodePendingResponse
+         * @description The ADMIN mid-login state: a short-lived session token that may
+         *     finish the login via the totp leg (or TOTP onboarding endpoints),
+         *     and nothing else.
+         */
+        StaffEmailCodePendingResponse: {
+            /** Status */
+            status: string;
+            /** Pending Token */
+            pending_token: string;
+        };
+        /**
+         * StaffEmailCodeRequestRequest
+         * @description Ask for a 6-digit login code by email (V1.1 §2.1).
+         *
+         *     Always answered 202 with an empty body — staff existence is not an
+         *     answer this endpoint gives (anti-enumeration).
+         */
+        StaffEmailCodeRequestRequest: {
+            /** Email */
+            email: string;
+        };
+        /**
+         * StaffEmailCodeTotpRequest
+         * @description Finish an ADMIN email-code login with the TOTP second leg.
+         */
+        StaffEmailCodeTotpRequest: {
+            /** Pending Token */
+            pending_token: string;
+            /** Code */
+            code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
+         * StaffEmailCodeVerifyRequest
+         * @description Trade the emailed code for a login (V1.1 §2.1/§2.2).
+         *
+         *     TEACHER completes in one step; ADMIN gets ``totp_required`` (unless a
+         *     valid remembered-device cookie accompanies the request).
+         */
+        StaffEmailCodeVerifyRequest: {
+            /** Email */
+            email: string;
+            /** Code */
+            code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
          * StaffInvitationAcceptRequest
          * @description Trade the single-use invitation token for a staff account (§5.8).
+         *
+         *     ``password`` is OPTIONAL for TEACHER (V1.1 §2.3: blank = an
+         *     email-code-only account) and effectively mandatory for ADMIN (the
+         *     service rejects a blank one after the invitation lookup).
          */
         StaffInvitationAcceptRequest: {
             /** Token */
             token: string;
             /** Password */
-            password: string;
+            password?: string | null;
         };
         /**
          * StaffInvitationCreateRequest
@@ -4132,6 +4337,22 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code: string;
+        };
+        /**
+         * StaffSessionResponse
+         * @description A staff session plus the onboarding branch flag (V1.1 §2.3).
+         *
+         *     ``totp_required`` tells the client which screen follows: the ADMIN
+         *     pending-TOTP onboarding (True — the tokens are a real session
+         *     confined to finishing 2FA setup) or a complete login (False).
+         */
+        StaffSessionResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Csrf Token */
+            csrf_token: string;
+            /** Totp Required */
+            totp_required: boolean;
         };
         /**
          * SubmissionPublic
@@ -5263,6 +5484,46 @@ export interface operations {
             };
         };
     };
+    list_own_devices_api_v1_me_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RememberedDevicePublic"][];
+                };
+            };
+        };
+    };
+    revoke_own_devices_api_v1_me_devices_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnDevicesRevokedResponse"];
+                };
+            };
+        };
+    };
     read_me_api_v1_me_get: {
         parameters: {
             query?: never;
@@ -5614,6 +5875,105 @@ export interface operations {
             };
         };
     };
+    request_staff_email_code_api_v1_auth_staff_email_code_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffEmailCodeRequestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_staff_email_code_api_v1_auth_staff_email_code_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffEmailCodeVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"] | components["schemas"]["StaffEmailCodePendingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    staff_email_code_totp_api_v1_auth_staff_email_code_totp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffEmailCodeTotpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     accept_staff_invitation_api_v1_auth_staff_invitations_accept_post: {
         parameters: {
             query?: never;
@@ -5633,7 +5993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
+                    "application/json": components["schemas"]["StaffSessionResponse"];
                 };
             };
             /** @description Validation Error */

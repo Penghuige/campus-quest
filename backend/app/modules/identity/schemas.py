@@ -85,6 +85,45 @@ class StaffLoginRequest(BaseModel):
     totp_code: str
 
 
+class StaffEmailCodeRequestRequest(BaseModel):
+    """Ask for a 6-digit login code by email (V1.1 §2.1).
+
+    Always answered 202 with an empty body — staff existence is not an
+    answer this endpoint gives (anti-enumeration).
+    """
+
+    email: str
+
+
+class StaffEmailCodeVerifyRequest(BaseModel):
+    """Trade the emailed code for a login (V1.1 §2.1/§2.2).
+
+    TEACHER completes in one step; ADMIN gets ``totp_required`` (unless a
+    valid remembered-device cookie accompanies the request).
+    """
+
+    email: str
+    code: str
+    remember_device: bool = False
+
+
+class StaffEmailCodeTotpRequest(BaseModel):
+    """Finish an ADMIN email-code login with the TOTP second leg."""
+
+    pending_token: str
+    code: str
+    remember_device: bool = False
+
+
+class StaffEmailCodePendingResponse(BaseModel):
+    """The ADMIN mid-login state: a short-lived session token that may
+    finish the login via the totp leg (or TOTP onboarding endpoints),
+    and nothing else."""
+
+    status: str
+    pending_token: str
+
+
 class RefreshRequest(BaseModel):
     """Rotate one refresh session; the token may also arrive by cookie.
 
@@ -161,10 +200,28 @@ class PasswordResetRequest(BaseModel):
 
 
 class StaffInvitationAcceptRequest(BaseModel):
-    """Trade the single-use invitation token for a staff account (§5.8)."""
+    """Trade the single-use invitation token for a staff account (§5.8).
+
+    ``password`` is OPTIONAL for TEACHER (V1.1 §2.3: blank = an
+    email-code-only account) and effectively mandatory for ADMIN (the
+    service rejects a blank one after the invitation lookup).
+    """
 
     token: str
-    password: str
+    password: str | None = None
+
+
+class StaffSessionResponse(BaseModel):
+    """A staff session plus the onboarding branch flag (V1.1 §2.3).
+
+    ``totp_required`` tells the client which screen follows: the ADMIN
+    pending-TOTP onboarding (True — the tokens are a real session
+    confined to finishing 2FA setup) or a complete login (False).
+    """
+
+    access_token: str
+    csrf_token: str
+    totp_required: bool
 
 
 class StaffInvitationCreateRequest(BaseModel):
@@ -221,6 +278,24 @@ class UserPublic(BaseModel):
             status=UserStatus(user.status),
             has_avatar=user.avatar_object_key is not None,
         )
+
+
+class RememberedDevicePublic(BaseModel):
+    """One remembered device of the caller (V1.1 §2.2 self-service).
+
+    Explicitly enumerated fields: the stored token hash is unrepresentable.
+    """
+
+    id: UUID
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+
+
+class OwnDevicesRevokedResponse(BaseModel):
+    """DELETE /me/devices result: how many credentials were dropped."""
+
+    revoked: int
 
 
 class MePublic(UserPublic):

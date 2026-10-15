@@ -76,6 +76,13 @@ class ErrorCode(StrEnum):
     # illegal state transitions (account status, spec §5.7). Never a
     # substitute for a more specific code the registry already has.
     CONFLICT = "CONFLICT"
+    # Registered in interfaces.md (not a §29-listed name; V1.1 Wave 1):
+    # the staff email-code login channel (spec 2026-10-15 §2.1) — one
+    # uniform code for wrong/expired/exhausted codes (anti-enumeration),
+    # the account lockout envelope, and the mail-provider failure path.
+    EMAIL_CODE_INVALID = "EMAIL_CODE_INVALID"
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

@@ -123,6 +123,16 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
             limit=IP_HOURLY_LIMIT,
             window_seconds=HOURLY_WINDOW_SECONDS,
         ),
+        # The staff email-code channel (V1.1 §2.1: 邮箱+IP 双桶): every
+        # request mails a code for a staff mailbox, so the per-email cap
+        # matches the OTP-send posture (5/hour) — the 60s resend cooldown
+        # inside the service is the finer throttle, this is the bound.
+        RateLimitRule(bucket="auth:staff-email-code", limit=5, window_seconds=3600),
+        RateLimitRule(
+            bucket="auth:staff-email-code-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:register", limit=5, window_seconds=3600),
         RateLimitRule(bucket="auth:otp-send", limit=5, window_seconds=3600),
         RateLimitRule(

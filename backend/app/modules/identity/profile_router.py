@@ -25,6 +25,7 @@ from app.modules.identity.dependencies import (
     get_access_session_id,
     get_actor,
     require_active_actor,
+    require_active_staff_actor,
 )
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.events import Actor
@@ -47,12 +48,64 @@ from app.modules.identity.schemas import (
     EmailVerifyRequest,
     MePublic,
     NicknameUpdateRequest,
+    OwnDevicesRevokedResponse,
     PasswordChangeRequest,
     PhoneChangeConfirmRequest,
     PhoneChangeRequest,
+    RememberedDevicePublic,
 )
 
 router = APIRouter()
+
+
+@router.get("/me/devices", response_model=list[RememberedDevicePublic])
+async def list_own_devices(
+    actor: Annotated[Actor, Depends(require_active_staff_actor)],
+    db: DbSession,
+) -> list[RememberedDevicePublic]:
+    """The caller's remembered login devices (V1.1 §2.2 self-service).
+
+    Staff-only on purpose: the credential exists solely on the staff
+    email-code channel, and a student's answer would imply a capability
+    that does not exist. Rows map to the explicit DTO — hashes stay
+    server-side.
+    """
+    from app.modules.identity.device_credentials import list_for_user
+
+    rows = await list_for_user(db, actor.user_id)
+    return [
+        RememberedDevicePublic(
+            id=row.id,
+            created_at=row.created_at,
+            last_used_at=row.last_used_at,
+            expires_at=row.expires_at,
+        )
+        for row in rows
+    ]
+
+
+@router.delete("/me/devices", response_model=OwnDevicesRevokedResponse)
+async def revoke_own_devices(
+    request: Request,
+    actor: Annotated[Actor, Depends(require_active_staff_actor)],
+    db: DbSession,
+) -> OwnDevicesRevokedResponse:
+    """Drop every remembered device of the caller (V1.1 §2.2).
+
+    The stolen-cookie answer: after this, a login presenting a formerly
+    remembered device falls back to the full TOTP leg. The
+    ``OWN_DEVICES_REVOKED`` audit row joins the same transaction.
+    """
+    from app.modules.audit.context import AuditContext
+    from app.modules.identity.device_credentials import revoke_all_for_user
+
+    revoked = await revoke_all_for_user(
+        db,
+        user_id=actor.user_id,
+        actor=actor,
+        audit_context=AuditContext.from_request(request),
+    )
+    return OwnDevicesRevokedResponse(revoked=revoked)
 
 
 @router.get("/me", response_model=MePublic)

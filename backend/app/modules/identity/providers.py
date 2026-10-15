@@ -43,8 +43,10 @@ from app.modules.identity.dependencies import (
     get_access_token_codec,
     get_business_clock,
 )
+from app.modules.identity.email_login_service import EmailLoginService
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.events import DomainEventPublisher, LoggingEventPublisher
+from app.modules.identity.login_failure_guard import LoginFailureGuard
 from app.modules.identity.otp import OtpChallengeService, OtpPolicy
 from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.service import IdentityService
@@ -96,9 +98,38 @@ def get_email_sender(
 ) -> EmailSender:
     """Resolve the email adapter from `settings.email_provider`.
 
-    The fail-closed chain mirrors `get_sms_sender`.
+    The fail-closed chain mirrors `get_sms_sender` — including the
+    settings hand-off: without it the factory would refuse a real smtp
+    selection at composition in EVERY environment (the #69 wiring
+    lesson; providers must pass the deployment settings through).
     """
-    return build_email_sender(settings.email_provider)
+    return build_email_sender(settings.email_provider, settings)
+
+
+def get_login_failure_guard(
+    redis: RedisDep,
+) -> LoginFailureGuard:
+    """The per-account lockout counter on the module's shared Redis."""
+    return LoginFailureGuard(redis=redis)
+
+
+def get_email_login_service(
+    sender: Annotated[EmailSender, Depends(get_email_sender)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    redis: RedisDep,
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
+) -> EmailLoginService:
+    return EmailLoginService(
+        sender=sender,
+        redis=redis,
+        clock=clock,
+        sessions=sessions,
+        fernet=Fernet(settings.totp_encryption_key),
+        guard=guard,
+        hmac_secret=settings.otp_hmac_secret,
+    )
 
 
 def get_event_publisher() -> DomainEventPublisher:
@@ -125,6 +156,7 @@ def get_session_service(
     clock: Annotated[Clock, Depends(get_business_clock)],
     codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
     settings: Annotated[Settings, Depends(get_settings)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
 ) -> SessionService:
     return SessionService(
         clock=clock,
@@ -137,6 +169,8 @@ def get_session_service(
         replay_crypt=Fernet(settings.refresh_replay_encryption_key.encode())
         if settings.refresh_grace_seconds > 0
         else None,
+        # V1.1 §6: the per-account lockout rides the student login path.
+        guard=guard,
     )
 
 
@@ -180,6 +214,7 @@ def get_staff_service(
     sessions: Annotated[SessionService, Depends(get_session_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     events: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
 ) -> StaffService:
     # The notification recorder is the MERGE_CARRIES item 2 production
     # wiring for the identity-security producer: NotificationPort joins
@@ -203,6 +238,10 @@ def get_staff_service(
         # lifecycle actions (Plan 08 T2) — identical to the constructor
         # default, spelled out so the dependency is visible here.
         audit=AuditLogWriter(),
+        # V1.1 §6: the staff password+TOTP path shares the lockout
+        # counter (guard=None in the constructor would silently disable
+        # it — the #69 wiring lesson).
+        guard=guard,
     )
 
 

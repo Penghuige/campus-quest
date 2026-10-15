@@ -167,6 +167,21 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def hmac_challenge_code(secret: str, message: str) -> str:
+    """Keyed HMAC-SHA256 hex digest for challenge codes (V1.1 §2.1).
+
+    The shared primitive behind EVERY login-challenge digest at rest —
+    the SMS OTP hash (``{salt}:{code}`` messages) and the email login
+    code hash: both protect a small (10^6) code space, so both must be
+    keyed. A bare SHA-256 of a 6-digit code is brute-forceable from a
+    database dump in under a second; with the settings secret in the
+    key, the dump alone answers nothing. High-entropy lookup keys
+    (refresh tokens) deliberately do NOT use this — see
+    ``hash_refresh_token``.
+    """
+    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class AccessTokenClaims:
     """Typed view of a verified access token's claims (spec §5.6).

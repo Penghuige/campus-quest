@@ -293,10 +293,16 @@ class EmailVerificationService:
     @staticmethod
     def _require_current_password(user: User, password: str) -> None:
         """Re-auth before unbinding (the SessionService discipline)."""
-        try:
-            matched = verify_password(password, user.password_hash)
-        except ValueError:
+        if user.password_hash is None:
+            # A passwordless staff account (V1.1 §2.3) has no old
+            # password to re-authenticate with: the uniform failure,
+            # never the hasher's None-type crash (final review F2).
             matched = False
+        else:
+            try:
+                matched = verify_password(password, user.password_hash)
+            except ValueError:
+                matched = False
         if not matched:
             raise EmailVerificationService._authentication_required()
 

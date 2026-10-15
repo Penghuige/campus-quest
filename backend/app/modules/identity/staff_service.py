@@ -130,6 +130,7 @@ from app.modules.identity.events import (
     DomainEventPublisher,
     NotificationEventRecorder,
 )
+from app.modules.identity.login_failure_guard import LoginFailureGuard
 from app.modules.identity.models import (
     RecoveryCode,
     StaffInvitation,
@@ -252,6 +253,7 @@ class StaffService:
         invitation_ttl_hours: int = 48,
         notification_recorder: NotificationEventRecorder | None = None,
         audit: AuditLogWriter | None = None,
+        guard: LoginFailureGuard | None = None,
     ) -> None:
         # The clock is the only business-time source (expiry, verified-at,
         # confirmed-at); `sessions` shares the same instance at the
@@ -265,6 +267,9 @@ class StaffService:
         self._users = UserRepository()
         self._notification_recorder = notification_recorder
         self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
+        # Per-account lockout (V1.1 §6); optional for the same reason and
+        # with the same wiring-test pin as SessionService's guard.
+        self._guard = guard
 
     async def create_staff_invitation(
         self,
@@ -359,26 +364,34 @@ class StaffService:
         self,
         db: AsyncSession,
         token: str,
-        password: str,
+        password: str | None,
         *,
         audit_context: AuditContext | None = None,
     ) -> PendingStaffSession:
         """Trade the single-use invitation token for a staff account.
 
-        Validation order is load-bearing (the registration principle): the
-        password band is checked BEFORE the invitation is looked up, so a
-        malformed request never burns the one-time token. Unknown, expired,
-        and already-used tokens fail with one uniform error — the branch
-        reason never leaves the server.
+        Validation order is load-bearing (the registration principle): a
+        SUPPLIED password is band-checked BEFORE the invitation is looked
+        up, so a malformed request never burns the one-time token.
+        Unknown, expired, and already-used tokens fail with one uniform
+        error — the branch reason never leaves the server.
 
-        The consumption (``accepted_at``), the User insert, the pending
-        session mint, and the ``AUDIT_STAFF_INVITATION_ACCEPTED`` audit
+        V1.1 §2.3 role split: TEACHER accepts with an OPTIONAL password
+        (blank = no ``password_hash``; the email code becomes the only
+        login channel) and receives a COMPLETE session — no mandatory
+        TOTP, no recovery codes. ADMIN acceptance is unchanged: the
+        password stays mandatory (checked once the invitation's role is
+        known) and the session is the pending-TOTP onboarding state.
+
+        The consumption (``accepted_at``), the User insert, the session
+        mint, and the ``AUDIT_STAFF_INVITATION_ACCEPTED`` audit
         row (Plan 08 T2) share one transaction under the invitation row
         lock: single-use is atomic, and a crashed accept leaves neither
         a half-created account nor a consumed invitation — nor an audit
         row for an acceptance that never happened.
         """
-        self._require_usable_password(password)
+        if password is not None and password != "":
+            self._require_usable_password(password)
 
         now = self._clock.now()
         invitation = await db.scalar(
@@ -396,6 +409,22 @@ class StaffService:
             )
             raise self._invitation_rejected()
 
+        role = Role(invitation.role)
+        stored_password = password if (password or "").strip() else None
+        if role is Role.ADMIN and stored_password is None:
+            # ADMIN keeps the mandatory password (§5.8); blank is a
+            # validation answer, after the lookup because the rule is
+            # role-dependent.
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _VALIDATION_MESSAGE,
+                status_code=400,
+                details={
+                    "field": "password",
+                    "reason": "admin accounts require a password",
+                },
+            )
+
         email = invitation.email_normalized
         if await self._users.find_by_username(db, email) is not None:
             raise BusinessError(
@@ -406,7 +435,9 @@ class StaffService:
 
         user = User(
             username=email,
-            password_hash=hash_password(password),
+            password_hash=(
+                hash_password(stored_password) if stored_password is not None else None
+            ),
             nickname=self._nickname_for_email(email),
             email_normalized=email,
             email_verified_at=now,
@@ -429,7 +460,6 @@ class StaffService:
 
         _, tokens = await self._sessions.issue_session(db, user=user, now=now)
         invitation.accepted_at = now
-        role = Role(invitation.role)
         self._events.publish(
             DomainEvent(
                 event_type=STAFF_INVITATION_ACCEPTED,
@@ -470,7 +500,14 @@ class StaffService:
             user_id,
             invitation_id,
         )
-        return PendingStaffSession(user_id=user_id, role=role, tokens=tokens)
+        # V1.1 §2.3: only ADMIN acceptance is a pending-TOTP onboarding
+        # state; a TEACHER's session is complete on acceptance.
+        return PendingStaffSession(
+            user_id=user_id,
+            role=role,
+            tokens=tokens,
+            must_setup_totp=role is Role.ADMIN,
+        )
 
     async def begin_totp_setup(self, db: AsyncSession, user_id: UUID) -> TotpSetup:
         """Generate and store (encrypted, unconfirmed) a new TOTP secret.
@@ -634,11 +671,21 @@ class StaffService:
             # SessionService.login_student for the enumeration rationale).
             self._verify_shielded(password)
             raise self._staff_authentication_required()
-        try:
-            matched = verify_password(password, user.password_hash)
-        except ValueError:
+        if self._guard is not None:
+            await self._guard.ensure_not_locked(user.id)
+        if user.password_hash is None:
+            # A passwordless staff account (V1.1 §2.3) matches no
+            # password: the uniform authentication failure, never the
+            # hasher's None-type crash (final review F2).
             matched = False
+        else:
+            try:
+                matched = verify_password(password, user.password_hash)
+            except ValueError:
+                matched = False
         if not matched:
+            if self._guard is not None:
+                await self._guard.record_failure(user.id)
             raise self._staff_authentication_required()
         if user.status != UserStatus.ACTIVE:
             raise BusinessError(
@@ -662,6 +709,8 @@ class StaffService:
         if not verify_totp_code(
             secret, totp_code, at=now
         ) and not await self._consume_recovery_code(db, user.id, totp_code, now):
+            if self._guard is not None:
+                await self._guard.record_failure(user.id)
             logger.info(
                 "staff second factor rejected user_id=%s reason=totp_or_recovery",
                 user.id,
@@ -671,6 +720,8 @@ class StaffService:
         session_row, tokens = await self._sessions.issue_session(db, user=user, now=now)
         user_id, session_id = user.id, session_row.id
         await db.commit()
+        if self._guard is not None:
+            await self._guard.reset(user_id)
         logger.info(
             "staff session opened user_id=%s session_id=%s", user_id, session_id
         )

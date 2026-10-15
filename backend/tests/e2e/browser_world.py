@@ -885,6 +885,21 @@ async def _main(argv: list[str]) -> Any:
             return {"challenge_id": str(challenge_id), "code": code}
         finally:
             await broker.aclose()
+    if action == "email-code":
+        # The email login-code twin of otp-code: the challenge rests on
+        # the login_email_challenges table, so the probe reads it there
+        # (tests/e2e/email_code_probe.py for the honesty argument).
+        from tests.e2e.email_code_probe import recover_email_code
+
+        factory = _factory()
+        try:
+            async with factory() as db:
+                challenge_id, code = await recover_email_code(
+                    db, argv[1].strip().lower()
+                )
+                return {"challenge_id": str(challenge_id), "code": code}
+        finally:
+            await _dispose(factory)
     if action == "mint":
         return {"token": await _mint(uuid.UUID(argv[1]))}
     if action == "clean":
