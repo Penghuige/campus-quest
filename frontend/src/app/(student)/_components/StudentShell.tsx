@@ -28,7 +28,7 @@ import { BottomNav } from "@/components/shell/BottomNav";
 import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
 import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
-import { shellChromeFor } from "@/features/auth/shellChrome";
+import { shellChromeFor, type ShellHint } from "@/features/auth/shellChrome";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 
@@ -180,17 +180,22 @@ function MinimalShell({ state, children }: { state: string; children?: ReactNode
 export function StudentShell({
   children,
   sessionCookiePresent,
+  shellHint,
 }: {
   children: ReactNode;
   /** The layout's server-side probe: did the document request carry
    * the readable csrf cookie (session evidence)? */
   sessionCookiePresent: boolean;
+  /** The mint's coarse role hint (cq_shell), when present — routes a
+   * STAFF session's pre-resolve frames to the minimal chrome (their
+   * terminal geometry here) instead of the student workspace. */
+  shellHint: ShellHint | undefined;
 }) {
   const { state, refresh } = useSession();
   const pathname = usePathname();
 
   if (state.status === "loading") {
-    if (shellChromeFor("loading", sessionCookiePresent) === "workspace") {
+    if (shellChromeFor("loading", sessionCookiePresent, shellHint) === "workspace") {
       return (
         <OptimisticWorkspaceShell
           state="loading"
@@ -241,7 +246,7 @@ export function StudentShell({
 
   if (state.status === "error") {
     const errorCard = <SectionError error={state.error} onRetry={refresh} retryLabel="重新加载" />;
-    if (shellChromeFor("error", sessionCookiePresent) === "workspace") {
+    if (shellChromeFor("error", sessionCookiePresent, shellHint) === "workspace") {
       return <OptimisticWorkspaceShell state="error" main={errorCard} />;
     }
     return <MinimalShell state="error">{errorCard}</MinimalShell>;

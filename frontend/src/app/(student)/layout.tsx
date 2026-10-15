@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 
 import { StudentShell } from "./_components/StudentShell";
 import { CSRF_COOKIE_NAME } from "@/lib/csrf";
+import {
+  shellHintFromCookieValue,
+  SHELL_HINT_COOKIE_NAME,
+} from "@/features/auth/shellChrome";
 
 /**
  * Server frame for the student route group (patterns §2): the shell is one
@@ -19,11 +23,25 @@ import { CSRF_COOKIE_NAME } from "@/lib/csrf";
  * first server HTML. Reading it opts the (student) subtree into
  * dynamic rendering — these pages were never cacheable payloads
  * anyway (every datum is a per-user client fetch).
+ *
+ * Role-hint probe (the staff wrong-shell flash fix, plan A): csrf
+ * evidence is role-blind — a STAFF session refreshing this group
+ * SSR'd the student workspace and repainted to the guidance card. The
+ * mint's cq_shell hint cookie (HttpOnly; this SERVER-side read is its
+ * only consumer) routes staff sessions to the minimal pre-resolve
+ * chrome, their terminal geometry here. Absence keeps the legacy
+ * behavior (see shellChrome.ts's three-write-point lifecycle).
  */
 export default async function StudentLayout({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();
+  const shellHint = shellHintFromCookieValue(
+    cookieStore.get(SHELL_HINT_COOKIE_NAME)?.value,
+  );
   return (
-    <StudentShell sessionCookiePresent={cookieStore.has(CSRF_COOKIE_NAME)}>
+    <StudentShell
+      sessionCookiePresent={cookieStore.has(CSRF_COOKIE_NAME)}
+      shellHint={shellHint}
+    >
       {children}
     </StudentShell>
   );
