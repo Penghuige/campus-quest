@@ -9,9 +9,11 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
   claimsSummaryView,
+  nextActionView,
   pointsProgressView,
   rankSnapshotView,
   walletShelfView,
+  withoutClaimedTasks,
 } from "../features/dashboard/sections";
 import { listRewards, myWallet, type RewardItemDto } from "../features/points/api";
 import { monthlyBoard } from "../features/rankings/api";
@@ -254,5 +256,88 @@ describe("monthly rank snapshot", () => {
     stubFetch(board(1, 900));
     await monthlyBoard(5);
     assert.equal(recorded?.url, "/api/v1/rankings/monthly?limit=5");
+  });
+});
+
+describe("nextActionView (the hero's 当前最重要; brief §9)", () => {
+  const claim = (status: string, deadline: string, id: string) => ({
+    claim_id: id,
+    task_id: `${id}-task`,
+    task_title: `任务${id}`,
+    status,
+    platform: "小红书",
+    keyword: "图书馆",
+    claimed_at: "2026-09-20T08:00:00Z",
+    deadline_at: deadline,
+    grace_deadline_at: deadline,
+    base_reward_points_snapshot: 200,
+    latest_submission_id: null,
+    allowed_file_types: ["CSV"],
+  });
+
+  test("a teacher-returned revision outranks everything (someone waits on you)", () => {
+    const view = nextActionView([
+      claim("CLAIMED", "2026-09-20T18:00:00Z", "a"),
+      claim("REVISION_REQUIRED", "2026-09-21T18:00:00Z", "b"),
+    ]);
+    assert.equal(view?.kind, "revision");
+    assert.equal(view?.claimId, "b");
+    // The revision card carries no countdown — the deadline text below
+    // the hero speaks for it.
+    assert.equal(view?.deadlineAt, null);
+  });
+
+  test("otherwise the EARLIEST ISO deadline among active claims wins", () => {
+    const view = nextActionView([
+      claim("CLAIMED", "2026-09-22T00:00:00Z", "late"),
+      claim("CLAIMED", "2026-09-20T20:00:00Z", "early"),
+    ]);
+    assert.equal(view?.kind, "active");
+    assert.equal(view?.claimId, "early");
+    assert.equal(view?.deadlineAt, "2026-09-20T20:00:00Z");
+  });
+
+  test("no open work -> null (terminal claims only)", () => {
+    assert.equal(nextActionView([claim("COMPLETED", "2026-09-20T20:00:00Z", "done")]), null);
+    assert.equal(nextActionView([]), null);
+  });
+});
+
+describe("withoutClaimedTasks (dashboard discovery dedup)", () => {
+  const claim = (status: string, taskId: string) => ({
+    claim_id: `${status}-${taskId}`,
+    task_id: taskId,
+    task_title: "t",
+    status,
+    platform: "p",
+    keyword: "k",
+    claimed_at: "2026-09-20T08:00:00Z",
+    deadline_at: "2026-09-21T08:00:00Z",
+    grace_deadline_at: "2026-09-21T08:00:00Z",
+    base_reward_points_snapshot: 1,
+    latest_submission_id: null,
+    allowed_file_types: ["CSV"],
+  });
+
+  test("cards behind an OPEN or REVISION claim hide; terminal claims do not hide", () => {
+    const cards = [
+      { id: "t1", title: "A" },
+      { id: "t2", title: "B" },
+      { id: "t3", title: "C" },
+    ];
+    const kept = withoutClaimedTasks(cards, [
+      claim("CLAIMED", "t1"),
+      claim("REVISION_REQUIRED", "t2"),
+      claim("COMPLETED", "t3"),
+    ]);
+    assert.deepEqual(
+      kept.map((card) => card.id),
+      ["t3"],
+    );
+  });
+
+  test("no claims -> the cards pass through untouched", () => {
+    const cards = [{ id: "t1" }, { id: "t2" }];
+    assert.deepEqual(withoutClaimedTasks(cards, []), cards);
   });
 });
