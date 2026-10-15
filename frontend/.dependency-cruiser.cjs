@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports -- CommonJS config:
+   dependency-cruiser is loaded by its own runner, require() is the point. */
 /**
  * Architecture boundary gate (owner-approved 2026-10-16).
  *
