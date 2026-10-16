@@ -3676,6 +3676,10 @@ export interface components {
         /**
          * PlatformCreateRequest
          * @description POST /admin/platforms: code is immutable after creation.
+         *
+         *     Validation lives HERE (friendly-before-constraint, engineering §6):
+         *     the ASCII stable-code band and column lengths, so a paste error is
+         *     a 400 — never the 500 the DB truncation would answer.
          */
         PlatformCreateRequest: {
             /** Code */
@@ -3688,7 +3692,9 @@ export interface components {
         /**
          * PlatformPatchRequest
          * @description PATCH /admin/platforms/{code}: every field optional; code is not
-         *     representable here (immutable by construction).
+         *     representable here (immutable by construction). The name band
+         *     matches the create side (a blank-after-strip patch is the service's
+         *     400 — see update_platform).
          */
         PlatformPatchRequest: {
             /** Display Name */

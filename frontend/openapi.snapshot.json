@@ -8321,10 +8321,15 @@
         "properties": {
           "code": {
             "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
             "title": "Code"
           },
           "display_name": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Display Name"
           },
           "sort_order": {
@@ -8339,14 +8344,16 @@
           "sort_order"
         ],
         "title": "PlatformCreateRequest",
-        "description": "POST /admin/platforms: code is immutable after creation."
+        "description": "POST /admin/platforms: code is immutable after creation.\n\nValidation lives HERE (friendly-before-constraint, engineering §6):\nthe ASCII stable-code band and column lengths, so a paste error is\na 400 — never the 500 the DB truncation would answer."
       },
       "PlatformPatchRequest": {
         "properties": {
           "display_name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -8379,7 +8386,7 @@
         },
         "type": "object",
         "title": "PlatformPatchRequest",
-        "description": "PATCH /admin/platforms/{code}: every field optional; code is not\nrepresentable here (immutable by construction)."
+        "description": "PATCH /admin/platforms/{code}: every field optional; code is not\nrepresentable here (immutable by construction). The name band\nmatches the create side (a blank-after-strip patch is the service's\n400 — see update_platform)."
       },
       "PlatformPublic": {
         "properties": {
