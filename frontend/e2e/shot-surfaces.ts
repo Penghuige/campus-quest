@@ -180,6 +180,14 @@ export const SHOTS: Shot[] = [
     auth: "admin",
     masks: [],
   },
+  {
+    // The registry listing rides the seeded platforms (deterministic
+    // under fixed labels); no clock- or run-derived content.
+    name: "admin-platforms",
+    path: "/admin/platforms",
+    auth: "admin",
+    masks: [],
+  },
 ];
 
 export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
