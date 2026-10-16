@@ -118,6 +118,7 @@ __all__ = [
     "require_active_student_actor",
     "require_active_student_or_staff_management_actor",
     "require_admin_actor",
+    "require_active_except_pending_student",
     "require_approved_community_actor",
     "require_approved_student_actor",
     "require_staff_management_actor",
@@ -436,6 +437,38 @@ async def require_approved_community_actor(
         raise BusinessError(
             ErrorCode.PERMISSION_DENIED,
             _COMMUNITY_PARTICIPATION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE.value:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_active_except_pending_student(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """Any-ACTIVE-role gate with the PENDING_APPROVAL freeze: browsing
+    semantics for every role (staff never carries the state), used where
+    a surface serves all roles but a pending student must not write
+    (avatar: the ADMIN arm the community variant would drop)."""
+
+    user = await _resolve_user(credentials, db, codec, clock)
+    if (
+        user.role == Role.STUDENT.value
+        and user.status == UserStatus.PENDING_APPROVAL.value
+    ):
+        raise BusinessError(
+            ErrorCode.APPROVAL_PENDING,
+            _APPROVAL_PENDING_MESSAGE,
             status_code=403,
         )
     if user.status != UserStatus.ACTIVE.value:

@@ -298,7 +298,11 @@ class MobileLoginService:
         submitted_hash = self._hash_code(code.strip())
         if not hmac.compare_digest(submitted_hash, challenge.code_hash):
             challenge.attempts += 1
-            await db.flush()
+            # Persist the increment BEFORE raising (final review M-1):
+            # the request transaction rolls back on the error path, and
+            # without its own commit the attempts>=5 branch above is dead
+            # code that only the lockout guard happens to backstop.
+            await db.commit()
             await self._guard.record_failure(user.id)
             logger.info(
                 "mobile login verify rejected user_id=%s reason=wrong_code",

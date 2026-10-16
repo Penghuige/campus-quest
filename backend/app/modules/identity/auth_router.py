@@ -27,7 +27,11 @@ from app.modules.identity.device_credentials import (
     DEVICE_TTL_DAYS,
 )
 from app.modules.identity.mobile_login_service import MobileLoginService
-from app.modules.identity.otp import OtpPurpose, normalize_phone
+from app.modules.identity.otp import (
+    InvalidPhoneError,
+    OtpPurpose,
+    normalize_phone,
+)
 from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.providers import (
     AppSettings,
@@ -156,10 +160,17 @@ async def request_mobile_code(
     only a cooldown/liter breach (429) differs."""
     from fastapi.responses import JSONResponse
 
+    # The limiter key is the SAME E.164 form the service's cooldown
+    # uses (the OTP-send discipline): format variants of one number must
+    # not split the bucket (final review I-3).
+    try:
+        limiter_phone = normalize_phone(body.phone, "CN")
+    except InvalidPhoneError:
+        limiter_phone = body.phone.strip()
     await _enforce_rate_limit(
         limiter,
         "auth:mobile-code",
-        body.phone.strip(),
+        limiter_phone,
         client_ip=_client_ip(request),
     )
     await mobile_login.request_code(db, body.phone)

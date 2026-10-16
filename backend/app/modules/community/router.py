@@ -206,6 +206,7 @@ from app.modules.community.settings_emoji_whitelist import SystemEmojiWhitelistP
 from app.modules.community.vote_service import VoteService
 from app.modules.identity.dependencies import (
     get_business_clock,
+    require_active_community_actor,
     require_approved_community_actor,
     require_staff_management_actor,
 )
@@ -735,7 +736,7 @@ router = APIRouter()
 @router.get("/tasks/{task_id}/comments", response_model=CommentListResponse)
 async def list_task_comments(
     task_id: uuid.UUID,
-    actor: CommunityActor,
+    actor: Annotated[Actor, Depends(require_active_community_actor)],
     db: DbSession,
     comments: CommentServiceDep,
     clock: ClockDep,

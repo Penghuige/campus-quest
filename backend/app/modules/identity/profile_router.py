@@ -25,8 +25,8 @@ from app.modules.identity.dependencies import (
     get_access_session_id,
     get_actor,
     require_active_actor,
+    require_active_except_pending_student,
     require_active_staff_actor,
-    require_approved_community_actor,
 )
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.events import Actor
@@ -135,7 +135,7 @@ async def change_nickname(
 @router.post("/me/avatar", response_model=MePublic)
 async def upload_avatar(
     request: Request,
-    actor: Annotated[Actor, Depends(require_approved_community_actor)],
+    actor: Annotated[Actor, Depends(require_active_except_pending_student)],
     avatars: Annotated[AvatarService, Depends(get_avatar_service)],
     limiter: LimiterDep,
     db: DbSession,
@@ -156,7 +156,7 @@ async def upload_avatar(
 
 @router.delete("/me/avatar", response_model=MePublic)
 async def delete_avatar(
-    actor: Annotated[Actor, Depends(require_approved_community_actor)],
+    actor: Annotated[Actor, Depends(require_active_except_pending_student)],
     avatars: Annotated[AvatarService, Depends(get_avatar_service)],
     db: DbSession,
 ) -> MePublic:
