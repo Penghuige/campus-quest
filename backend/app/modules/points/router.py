@@ -523,6 +523,7 @@ async def list_redemption_queue(
         )
     return ReviewQueueResponse(items=items, total=total, limit=limit, offset=offset)
 
+
 @router.post(
     "/teacher/rewards/redemptions/{redemption_id}/approve",
     response_model=RedemptionReviewResponse,
