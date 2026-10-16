@@ -33,14 +33,14 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { isApiError } from "@/lib/errors";
-import { TEACHER_LANDING_PATH } from "@/features/auth/workspace";
 import { useSession } from "./session";
 
 import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import { TotpSetup } from "./TotpSetup";
-import { acceptStaffInvitation } from "./api";
+import { acceptStaffInvitation, readMe } from "./api";
+import { landAfterStaffLogin } from "./staffLoginFlow";
 import { NETWORK_ERROR_TEXT, withFieldErrorSummary, type AuthErrorView } from "./errors";
 import {
   describeStaffError,
@@ -87,11 +87,16 @@ export function StaffInviteAccept({ token }: StaffInviteAcceptProps) {
       setPassword("");
       setRepeat("");
       if (outcome.kind === "teacher") {
-        // Full login adopted by the wrapper — land on the workspace
-        // (the rename nudge greets digit-shaped nicknames there).
-        refreshSession();
-        router.replace(TEACHER_LANDING_PATH);
-        router.refresh();
+        // Full login adopted by the wrapper — land on the role's OWN
+        // cockpit via the post-login /me answer (the #84 rule; a
+        // teacher invitation today, but the landing never assumes it).
+        // The rename nudge greets digit-shaped nicknames there.
+        await landAfterStaffLogin({
+          login: async () => undefined,
+          refreshSession,
+          router,
+          readMe,
+        });
         return;
       }
       // ADMIN: PendingStaffSession, confined to /staff/totp/*.

@@ -31,14 +31,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
-import { TEACHER_LANDING_PATH } from "@/features/auth/workspace";
 import { isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
-import { emailLoginTotp, requestEmailLoginCode, verifyEmailLoginCode } from "./api";
+import { emailLoginTotp, readMe, requestEmailLoginCode, verifyEmailLoginCode } from "./api";
 import { NETWORK_ERROR_TEXT, resendButtonLabel, type AuthErrorView } from "./errors";
+import { landAfterStaffLogin } from "./staffLoginFlow";
 import { validateStaffEmail } from "./staffAuthView";
 import {
   describeEmailLoginError,
@@ -153,9 +153,15 @@ export function StaffEmailCodeLogin() {
   }
 
   function landOnWorkspace() {
-    refreshSession();
-    router.replace(TEACHER_LANDING_PATH); // Teacher landing: the review queue
-    router.refresh();
+    // Route by the POST-LOGIN /me answer (the #84 rule): an ADMIN's
+    // email-code login lands on the admin workspace, a teacher's on
+    // the review queue — never a fixed staff-wide destination.
+    void landAfterStaffLogin({
+      login: async () => undefined,
+      refreshSession,
+      router,
+      readMe,
+    });
   }
 
   function toSummary(cause: unknown, fallback: string): AuthErrorView {
