@@ -400,6 +400,8 @@ async def test_pending_student_survives_refresh_rotation(
 
     from app.modules.identity.routing_common import (
         CSRF_COOKIE_NAME as _CSRF_C,
+    )
+    from app.modules.identity.routing_common import (
         REFRESH_COOKIE_NAME as _RC,
     )
 
