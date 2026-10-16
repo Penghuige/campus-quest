@@ -25,8 +25,8 @@
  *                           the pending redemption, the suspend-target
  *                           student, and the review-queue row).
  *
- * Brief flow: privilege navigation (teacher denied on /admin/whitelist,
- * no admin data request fires), whitelist import preview/confirm,
+ * Brief flow: privilege navigation (teacher denied on /admin/approvals,
+ * no admin data request fires), user suspend, redemption decisions,
  * user suspend with mandatory reason, redemption decisions, and the
  * settings confirm dialog.
  */
@@ -122,7 +122,7 @@ async function loginAsStaff(
 }
 
 test.describe("admin workspace privilege navigation (plan step 1)", () => {
-  test("a teacher opening /admin/whitelist gets guidance and ZERO admin API calls", async ({
+  test("a teacher opening /admin/approvals gets guidance and ZERO admin API calls", async ({
     page,
   }) => {
     await loginAsStaff(page, TEACHER!, TEACHER_TOTP_SECRET!);
@@ -137,7 +137,7 @@ test.describe("admin workspace privilege navigation (plan step 1)", () => {
       }
     });
 
-    await page.goto(`${BASE_URL}/admin/whitelist`);
+    await page.goto(`${BASE_URL}/admin/approvals`);
     await expect(page.getByText("管理后台仅对管理员开放，当前账号是教师账号")).toBeVisible();
     await expect(page.getByRole("link", { name: "返回教师工作台" })).toBeVisible();
     // No admin data rendered and no admin API call fired.
@@ -147,7 +147,7 @@ test.describe("admin workspace privilege navigation (plan step 1)", () => {
   });
 });
 
-test.describe("admin workspace operations (brief: whitelist / users / redemptions / settings)", () => {
+test.describe("admin workspace operations (brief: users / redemptions / settings)", () => {
   test.beforeEach(async ({ page }) => {
     await loginAsStaff(page, ADMIN!, ADMIN_TOTP_SECRET!);
   });
@@ -159,35 +159,6 @@ test.describe("admin workspace operations (brief: whitelist / users / redemption
     page,
   }) => {
     await expect(page).toHaveURL(/\/admin\/users/);
-  });
-
-  test("whitelist import: preview classifies rows, confirm writes the importable set", async ({
-    page,
-  }) => {
-    await page.goto(`${BASE_URL}/admin/whitelist`);
-
-    const stamp = String(Date.now()).slice(-8);
-    const content = `${stamp}1\n${stamp}1\n${stamp}２\n${stamp}223456789012345`;
-    await page.getByLabel("导入内容").fill(content);
-    await page.getByRole("button", { name: "预览导入" }).click();
-
-    // Preview: counts line + per-row decisions (in-file duplicate,
-    // full-width digits, invalid length).
-    await expect(page.getByText(/共 4 行：可导入 1 行/)).toBeVisible();
-    await expect(page.getByText("文件内重复").first()).toBeVisible();
-    await expect(page.getByText("全角数字").first()).toBeVisible();
-    await expect(page.getByText("长度不合法").first()).toBeVisible();
-
-    await page.getByRole("button", { name: /确认导入 1 行/ }).click();
-    await expect(page.getByText(/已成功导入 1 个学号/)).toBeVisible();
-
-    // The import section and the entries listing are independent: the
-    // listing loads once on mount and does not auto-refresh on confirm
-    // (the toggle path's own refresh contract) — reload to read the
-    // durable row back.
-    await page.reload();
-    // The new entry appears in the listing with the 启用 badge.
-    await expect(page.locator("tr", { hasText: `${stamp}1` }).getByText("启用")).toBeVisible();
   });
 
   test("user suspend blocks on a blank reason, then applies with one", async ({ page }) => {
