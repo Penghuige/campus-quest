@@ -28,7 +28,6 @@ class ErrorCode(StrEnum):
     AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
     PERMISSION_DENIED = "PERMISSION_DENIED"
     ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE"
-    STUDENT_NOT_WHITELISTED = "STUDENT_NOT_WHITELISTED"
     PHONE_ALREADY_BOUND = "PHONE_ALREADY_BOUND"
     # Registered in interfaces.md (not a §29-listed code): a username/unique
     # violation means the account already exists — distinct from a whitelist

@@ -1,7 +1,8 @@
 # backend/tests/integration/identity/test_registration.py
 """Student registration transaction (spec §5.1-5.4; backend-engineering §5-7).
 
-Covers the atomic `IdentityService.register_student` use case: whitelist
+Covers the atomic `IdentityService.register_student` use case (open
+enrollment since V1.1 spec 2026-10-16): formerly whitelist
 re-check, phone-uniqueness, validator wiring, and the database constraints
 that adjudicate concurrent registrations (spec §5.4: 并发注册最终必须由
 数据库约束兜底 — the friendly checks are UX, the constraints are the law).
@@ -117,16 +118,19 @@ async def _count_users(db_session: AsyncSession, username: str) -> int:
 
 
 @pytest.mark.integration
-async def test_register_whitelisted_student_succeeds(db_session: AsyncSession) -> None:
-    await _seed_whitelist(db_session, _STUDENT_A)
-
+async def test_register_student_succeeds_pending_approval(
+    db_session: AsyncSession,
+) -> None:
+    """The open-enrollment world (V1.1 spec 2026-10-16 §1): no whitelist
+    prerequisite; the account lands PENDING_APPROVAL with the password
+    channel armed (a supplied password hashes; blank stays NULL)."""
     user = await _make_service(
         {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
     ).register_student(db_session, _command())
 
     assert user.username == _STUDENT_A
     assert user.role == Role.STUDENT
-    assert user.status == UserStatus.ACTIVE
+    assert user.status == UserStatus.PENDING_APPROVAL
     assert user.phone_e164 == _PHONE_A
     assert user.nickname == "测试同学"  # normalized: trimmed by T2 validator
     assert user.password_hash == _stub_hash(_PASSWORD)
@@ -135,37 +139,83 @@ async def test_register_whitelisted_student_succeeds(db_session: AsyncSession) -
     db_session.expunge_all()
     persisted = await db_session.scalar(select(User).where(User.username == _STUDENT_A))
     assert persisted is not None
-    assert persisted.status == UserStatus.ACTIVE
+    assert persisted.status == UserStatus.PENDING_APPROVAL
+    assert persisted.approved_at is None
+    assert persisted.rejected_reason is None
     assert persisted.phone_e164 == _PHONE_A
 
 
 @pytest.mark.integration
-async def test_register_absent_whitelist_rejected(db_session: AsyncSession) -> None:
-    with pytest.raises(BusinessError) as exc_info:
-        await _make_service(
-            {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
-        ).register_student(db_session, _command())
-
-    assert exc_info.value.code == ErrorCode.STUDENT_NOT_WHITELISTED
-    assert exc_info.value.status_code < 500
-    assert await _count_users(db_session, _STUDENT_A) == 0
-
-
-@pytest.mark.integration
-async def test_register_disabled_whitelist_rejected(db_session: AsyncSession) -> None:
-    await _seed_whitelist(db_session, _STUDENT_A, enabled=False)
-
-    with pytest.raises(BusinessError) as exc_info:
-        await _make_service(
-            {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
-        ).register_student(db_session, _command())
-
-    assert exc_info.value.code == ErrorCode.STUDENT_NOT_WHITELISTED
-    assert exc_info.value.status_code < 500
-    assert await _count_users(db_session, _STUDENT_A) == 0
+async def test_register_without_password_lands_null_hash(
+    db_session: AsyncSession,
+) -> None:
+    """Blank password = no password channel (spec 2026-10-16 §1)."""
+    command = RegisterStudent(
+        student_number=_STUDENT_A,
+        phone_token=_TOKEN_A,
+        nickname="测试同学",
+        password=None,
+    )
+    user = await _make_service(
+        {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
+    ).register_student(db_session, command)
+    assert user.password_hash is None
+    assert user.status == UserStatus.PENDING_APPROVAL
 
 
 @pytest.mark.integration
+async def test_register_blank_nickname_defaults_to_student_number(
+    db_session: AsyncSession,
+) -> None:
+    command = RegisterStudent(
+        student_number=_STUDENT_A,
+        phone_token=_TOKEN_A,
+        nickname=None,
+        password=_PASSWORD,
+    )
+    user = await _make_service(
+        {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
+    ).register_student(db_session, command)
+    assert user.nickname == _STUDENT_A
+
+
+@pytest.mark.integration
+async def test_register_blank_string_password_is_no_channel(
+    db_session: AsyncSession,
+) -> None:
+    """A blank STRING behaves like None: never a hashable password."""
+    command = RegisterStudent(
+        student_number=_STUDENT_A,
+        phone_token=_TOKEN_A,
+        password="",
+    )
+    user = await _make_service(
+        {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
+    ).register_student(db_session, command)
+    assert user.password_hash is None
+    assert user.nickname == _STUDENT_A
+
+
+@pytest.mark.integration
+async def test_register_supplied_bad_password_still_rejected(
+    db_session: AsyncSession,
+) -> None:
+    """Optional is not unvalidated: a SUPPLIED password must pass the
+    band before anything is hashed."""
+    command = RegisterStudent(
+        student_number=_STUDENT_A,
+        phone_token=_TOKEN_A,
+        password="short",
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await _make_service(
+            {_TOKEN_A: (_PHONE_A, OtpPurpose.REGISTER)}
+        ).register_student(db_session, command)
+
+    assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
+    assert await _count_users(db_session, _STUDENT_A) == 0
+
+
 async def test_register_rejects_invalid_student_number_format(
     db_session: AsyncSession,
 ) -> None:

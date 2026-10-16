@@ -41,9 +41,9 @@ class RegisterStudent:
     """
 
     student_number: str
-    nickname: str
     phone_token: str
-    password: str
+    nickname: str | None = None
+    password: str | None = None
 
 
 # --- Transport request models (raw caller input, validated by services)
@@ -65,9 +65,9 @@ class RegisterRequest(BaseModel):
     """Register one whitelisted student (spec §5.1-5.4)."""
 
     student_number: str
-    nickname: str
     phone_token: str
-    password: str
+    nickname: str | None = None
+    password: str | None = None
 
 
 class LoginRequest(BaseModel):

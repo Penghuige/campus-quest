@@ -76,7 +76,9 @@ class User(Base):
             name="role",
         ),
         CheckConstraint(
-            "status IN ('PENDING_PHONE', 'ACTIVE', 'SUSPENDED', 'BANNED')",
+            "status IN ("
+            "'PENDING_PHONE', 'ACTIVE', 'SUSPENDED', 'BANNED', "
+            "'PENDING_APPROVAL')",
             name="status",
         ),
         Index(
@@ -114,6 +116,11 @@ class User(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     role: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16))
+    # The admin verdict on a PENDING_APPROVAL account (V1.1 spec
+    # 2026-10-16 §2): set on approve/reject, NULL before and for every
+    # pre-approval-era row.
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_reason: Mapped[str | None] = mapped_column(String(255))
     # The user's chosen display honor (spec §18; the honors table is
     # rankings-owned, migration 0008). Plain nullable pointer; ownership
     # is set_display_honor's service rule — see the module docstring.
@@ -292,6 +299,29 @@ class RememberedDevice(Base):
     token_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+
+class LoginMobileChallenge(Base):
+    """Hashed 6-digit student login code, SMSed on request (V1.1 §3).
+
+    The exact mirror of LoginEmailChallenge — keyed digest
+    (hmac_challenge_code), one live row per phone (verify loads the
+    newest), 5-attempt cap — with the mailbox swapped for the E.164
+    phone.
+    """
+
+    __tablename__ = "login_mobile_challenges"
+
+    id: Mapped[UUID] = mapped_column(
+        server_default=text("gen_random_uuid()"), primary_key=True
+    )
+    phone_e164: Mapped[str] = mapped_column(String(32), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

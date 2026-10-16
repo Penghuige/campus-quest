@@ -22,3 +22,8 @@ class UserStatus(StrEnum):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
     BANNED = "BANNED"
+    # V1.1 auth-extension II (spec 2026-10-16 §1-§2): open enrollment
+    # lands students here — login and browsing allowed, every acting
+    # surface frozen until an admin approves (→ACTIVE) or rejects
+    # (→BANNED with reason).
+    PENDING_APPROVAL = "PENDING_APPROVAL"
