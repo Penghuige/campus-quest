@@ -1048,6 +1048,159 @@
         ]
       }
     },
+    "/api/v1/platforms": {
+      "get": {
+        "summary": "List Platforms",
+        "description": "The platform dictionary (V1.1 spec 2026-10-16 §3): every ACTIVE\nrole may read it; enabled entries only, ordered for the student\npicker. This is the surface the claim button and task cards render\ndisplay_name from.",
+        "operationId": "list_platforms_api_v1_platforms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformPublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Platforms Api V1 Platforms Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/platforms": {
+      "get": {
+        "summary": "List Admin Platforms",
+        "description": "The console list: every row including disabled ones.",
+        "operationId": "list_admin_platforms_api_v1_admin_platforms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformAdminPublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Admin Platforms Api V1 Admin Platforms Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create Platform",
+        "description": "Register a platform (spec §3): code+display_name+sort_order; the\ncode is immutable after this. PLATFORM_CREATED rides the same\ntransaction.",
+        "operationId": "create_platform_api_v1_admin_platforms_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAdminPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/platforms/{code}": {
+      "patch": {
+        "summary": "Patch Platform",
+        "description": "Patch display_name/sort_order/enabled (spec §3); the code in the\npath names the row and is never writable. PLATFORM_UPDATED carries\nthe before/after snapshot.",
+        "operationId": "patch_platform_api_v1_admin_platforms__code__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAdminPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "summary": "List Tasks",
@@ -8128,6 +8281,129 @@
         ],
         "title": "PhoneTokenResponse",
         "description": "The single-use proof minted by a verified challenge (spec §5.4)."
+      },
+      "PlatformAdminPublic": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "display_name",
+          "sort_order",
+          "enabled",
+          "created_at"
+        ],
+        "title": "PlatformAdminPublic",
+        "description": "The admin list/create/patch row (spec §3): the public fields plus\nthe lifecycle ones the console manages."
+      },
+      "PlatformCreateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "display_name",
+          "sort_order"
+        ],
+        "title": "PlatformCreateRequest",
+        "description": "POST /admin/platforms: code is immutable after creation."
+      },
+      "PlatformPatchRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "PlatformPatchRequest",
+        "description": "PATCH /admin/platforms/{code}: every field optional; code is not\nrepresentable here (immutable by construction)."
+      },
+      "PlatformPublic": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "display_name",
+          "sort_order"
+        ],
+        "title": "PlatformPublic",
+        "description": "The student-facing platform dictionary entry (spec §3).\n\nDeliberately code/display_name/sort_order only — no lifecycle or\nadmin fields on the public surface."
       },
       "PointsAdjustmentRequest": {
         "properties": {

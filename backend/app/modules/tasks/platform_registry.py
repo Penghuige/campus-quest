@@ -14,6 +14,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_codes import ErrorCode
+from app.core.errors import BusinessError
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.events import Actor
 from app.modules.tasks.models import Platform
 
 #: The shipped platforms (spec §1). Sort order groups the recruitment
@@ -35,3 +40,123 @@ async def enabled_codes(db: AsyncSession) -> set[str]:
     return set(
         await db.scalars(select(Platform.code).where(Platform.enabled.is_(True)))
     )
+
+
+AUDIT_PLATFORM_CREATED = "PLATFORM_CREATED"
+AUDIT_PLATFORM_UPDATED = "PLATFORM_UPDATED"
+_PLATFORM_NOT_FOUND = "平台不存在"
+_PLATFORM_CONFLICT = "该平台代码已存在"
+
+
+async def list_enabled(db: AsyncSession) -> list[Platform]:
+    """The public dictionary: enabled only, sort_order ascending with
+    code as the stable tiebreaker (spec §3)."""
+    return list(
+        await db.scalars(
+            select(Platform)
+            .where(Platform.enabled.is_(True))
+            .order_by(Platform.sort_order, Platform.code)
+        )
+    )
+
+
+async def list_all(db: AsyncSession) -> list[Platform]:
+    """The admin console list: every row, same ordering."""
+    return list(
+        await db.scalars(select(Platform).order_by(Platform.sort_order, Platform.code))
+    )
+
+
+async def create_platform(
+    db: AsyncSession,
+    *,
+    actor: Actor,
+    code: str,
+    display_name: str,
+    sort_order: int,
+    audit_context: AuditContext | None = None,
+    audit: AuditLogWriter | None = None,
+) -> Platform:
+    """Register one platform (admin self-service, zero-migration growth).
+
+    The row and its PLATFORM_CREATED audit line commit as one unit
+    (flush-only writer, the PR #80 discipline). A duplicate code is the
+    typed 409.
+    """
+    writer = audit if audit is not None else AuditLogWriter()
+    normalized = code.strip().lower()
+    if await db.get(Platform, normalized) is not None:
+        raise BusinessError(ErrorCode.CONFLICT, _PLATFORM_CONFLICT, status_code=409)
+    platform = Platform(
+        code=normalized, display_name=display_name.strip(), sort_order=sort_order
+    )
+    db.add(platform)
+    await db.flush()
+    await writer.append(
+        db,
+        actor=actor,
+        action=AUDIT_PLATFORM_CREATED,
+        target_type="platform",
+        target_id=normalized,
+        after_snapshot={
+            "display_name": platform.display_name,
+            "sort_order": platform.sort_order,
+            "enabled": True,
+        },
+        ip_address=audit_context.ip_address if audit_context else None,
+        request_id=audit_context.request_id if audit_context else None,
+    )
+    await db.commit()
+    return platform
+
+
+async def update_platform(
+    db: AsyncSession,
+    *,
+    actor: Actor,
+    code: str,
+    display_name: str | None = None,
+    sort_order: int | None = None,
+    enabled: bool | None = None,
+    audit_context: AuditContext | None = None,
+    audit: AuditLogWriter | None = None,
+) -> Platform:
+    """Patch the admin-managed knobs; code is immutable by signature.
+
+    The row's change and its PLATFORM_UPDATED audit line (before/after
+    snapshots) commit as one unit. An unknown code is the typed 404.
+    """
+    writer = audit if audit is not None else AuditLogWriter()
+    platform = await db.get(Platform, code)
+    if platform is None:
+        raise BusinessError(ErrorCode.NOT_FOUND, _PLATFORM_NOT_FOUND, status_code=404)
+    before = {
+        "display_name": platform.display_name,
+        "sort_order": platform.sort_order,
+        "enabled": platform.enabled,
+    }
+    if display_name is not None:
+        platform.display_name = display_name.strip()
+    if sort_order is not None:
+        platform.sort_order = sort_order
+    if enabled is not None:
+        platform.enabled = enabled
+    await db.flush()
+    after = {
+        "display_name": platform.display_name,
+        "sort_order": platform.sort_order,
+        "enabled": platform.enabled,
+    }
+    await writer.append(
+        db,
+        actor=actor,
+        action=AUDIT_PLATFORM_UPDATED,
+        target_type="platform",
+        target_id=platform.code,
+        before_snapshot=before,
+        after_snapshot=after,
+        ip_address=audit_context.ip_address if audit_context else None,
+        request_id=audit_context.request_id if audit_context else None,
+    )
+    await db.commit()
+    return platform

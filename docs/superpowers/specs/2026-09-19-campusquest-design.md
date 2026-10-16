@@ -1719,6 +1719,9 @@ Teacher 不允许任意修改全局短信模板。
   `EMAIL_LOGIN_TOTP_REQUIRED`——actor 即登录账号本人，行内不落邮箱（G11）。
 - 记住设备自助清退（V1.1 §2.2 随 Wave 1）：`OWN_DEVICES_REVOKED`，actor=清退
   本人，after 快照携带 revoked 计数。
+- 平台注册表管理动作（V1.1 2026-10-16 spec §3 随平台注册表落地）：
+  `PLATFORM_CREATED`（after 快照=显示名/排序/启用）与 `PLATFORM_UPDATED`
+  （before/after 快照），actor=操作管理员，target=平台 code。
 
 AuditLog 不允许通过普通管理后台删除。
 

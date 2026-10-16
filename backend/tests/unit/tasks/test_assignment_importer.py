@@ -38,7 +38,6 @@ from app.modules.audit.models import AuditLog
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
 from app.modules.tasks.importer import (
-    SUPPORTED_IMPORT_PLATFORMS,
     AssignmentImportPreview,
     AssignmentImportResult,
     AssignmentImportService,
@@ -204,10 +203,15 @@ def _service(
     }
     values.update(caps)
     redis_fake = redis or InMemoryRedis()
+
+    async def _closed_platform_codes(db: object) -> set[str]:
+        return {"xiaohongshu", "douyin", "zhihu"}
+
     return (
         AssignmentImportService(
             redis=redis_fake,  # type: ignore[arg-type]
             clock=clock or _FrozenClockProxy(),
+            platform_codes=_closed_platform_codes,
             **values,  # type: ignore[arg-type]
         ),
         redis_fake,
@@ -306,7 +310,20 @@ async def test_valid_rows_canonicalized_and_token_minted() -> None:
 
 
 async def test_platform_set_matches_spec_codes() -> None:
-    assert {"xiaohongshu", "douyin", "zhihu"} == SUPPORTED_IMPORT_PLATFORMS
+    """The registry era: the shipped seeds ARE the spec platform set —
+    imports are registry-driven (V1.1 spec 2026-10-16), so the pinned
+    constant is the seed list the migration bulk-inserts."""
+    from app.modules.tasks.platform_registry import SEED_PLATFORMS
+
+    assert {
+        "xiaohongshu",
+        "douyin",
+        "zhihu",
+        "boss-zhipin",
+        "zhaopin",
+        "58city",
+        "lietou",
+    } == {row["code"] for row in SEED_PLATFORMS}
 
 
 # --- preview: row-level errors (row number + stable code) --------------------------

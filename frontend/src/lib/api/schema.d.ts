@@ -575,6 +575,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platforms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Platforms
+         * @description The platform dictionary (V1.1 spec 2026-10-16 §3): every ACTIVE
+         *     role may read it; enabled entries only, ordered for the student
+         *     picker. This is the surface the claim button and task cards render
+         *     display_name from.
+         */
+        get: operations["list_platforms_api_v1_platforms_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/platforms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Platforms
+         * @description The console list: every row including disabled ones.
+         */
+        get: operations["list_admin_platforms_api_v1_admin_platforms_get"];
+        put?: never;
+        /**
+         * Create Platform
+         * @description Register a platform (spec §3): code+display_name+sort_order; the
+         *     code is immutable after this. PLATFORM_CREATED rides the same
+         *     transaction.
+         */
+        post: operations["create_platform_api_v1_admin_platforms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/platforms/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Platform
+         * @description Patch display_name/sort_order/enabled (spec §3); the code in the
+         *     path names the row and is never writable. PLATFORM_UPDATED carries
+         *     the before/after snapshot.
+         */
+        patch: operations["patch_platform_api_v1_admin_platforms__code__patch"];
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -3583,6 +3654,66 @@ export interface components {
             expires_at: string;
         };
         /**
+         * PlatformAdminPublic
+         * @description The admin list/create/patch row (spec §3): the public fields plus
+         *     the lifecycle ones the console manages.
+         */
+        PlatformAdminPublic: {
+            /** Code */
+            code: string;
+            /** Display Name */
+            display_name: string;
+            /** Sort Order */
+            sort_order: number;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PlatformCreateRequest
+         * @description POST /admin/platforms: code is immutable after creation.
+         */
+        PlatformCreateRequest: {
+            /** Code */
+            code: string;
+            /** Display Name */
+            display_name: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
+         * PlatformPatchRequest
+         * @description PATCH /admin/platforms/{code}: every field optional; code is not
+         *     representable here (immutable by construction).
+         */
+        PlatformPatchRequest: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
+        /**
+         * PlatformPublic
+         * @description The student-facing platform dictionary entry (spec §3).
+         *
+         *     Deliberately code/display_name/sort_order only — no lifecycle or
+         *     admin fields on the public surface.
+         */
+        PlatformPublic: {
+            /** Code */
+            code: string;
+            /** Display Name */
+            display_name: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /**
          * PointsAdjustmentRequest
          * @description One manual wallet correction through the ledger (never a direct
          *     wallet write): a non-zero amount, the mandatory reason, and the
@@ -6047,6 +6178,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TotpConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_platforms_api_v1_platforms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformPublic"][];
+                };
+            };
+        };
+    };
+    list_admin_platforms_api_v1_admin_platforms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAdminPublic"][];
+                };
+            };
+        };
+    };
+    create_platform_api_v1_admin_platforms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAdminPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_platform_api_v1_admin_platforms__code__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAdminPublic"];
                 };
             };
             /** @description Validation Error */
