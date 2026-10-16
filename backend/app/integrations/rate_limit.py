@@ -133,6 +133,16 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
             limit=IP_HOURLY_LIMIT,
             window_seconds=HOURLY_WINDOW_SECONDS,
         ),
+        # The student mobile-code channel (V1.1 2026-10-16 §3): every
+        # request SMSes a code for a student phone, so the caps mirror
+        # the OTP-send posture; the 60s cooldown inside the service is
+        # the finer throttle.
+        RateLimitRule(bucket="auth:mobile-code", limit=5, window_seconds=3600),
+        RateLimitRule(
+            bucket="auth:mobile-code-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:register", limit=5, window_seconds=3600),
         RateLimitRule(bucket="auth:otp-send", limit=5, window_seconds=3600),
         RateLimitRule(

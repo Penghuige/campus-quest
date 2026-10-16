@@ -10,7 +10,7 @@ owns no persistence logic. The design decisions that live here:
 Endpoints
 ---------
 
-Student surfaces (``require_active_student_actor`` — spec §4.1: the
+Student surfaces (``require_browsing_student_actor`` — spec §4.1: the
 leaderboard-and-growth strip is Student territory; staff analytics
 belong to Plan 08's admin surfaces, and a 403 pins that boundary
 instead of an empty answer):
@@ -69,7 +69,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.modules.identity.dependencies import (
     get_business_clock,
-    require_active_student_actor,
+    require_browsing_student_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
 from app.modules.identity.events import Actor
@@ -187,7 +187,7 @@ def get_growth_service(clock: ClockDep, settings: AppSettings) -> GrowthService:
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
+StudentActor = Annotated[Actor, Depends(require_browsing_student_actor)]
 RankingServiceDep = Annotated[RankingService, Depends(get_ranking_service)]
 GrowthServiceDep = Annotated[GrowthService, Depends(get_growth_service)]
 

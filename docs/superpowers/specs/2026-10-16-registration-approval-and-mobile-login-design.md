@@ -61,3 +61,18 @@
 ## 7. 非目标
 
 学生邮箱码（owner 拒）；修改手机号流程（现有，不动）；批量导入学号（白名单退役后无意义）；Wave 2a 权力包重叠部分（用户详情等）各自交付。
+
+
+## 附录 A：冻结面端点清单（实现核对表，2026-10-16 后端落地形态）
+
+| 面 | 端点族 | 守卫 |
+|---|---|---|
+| 任务领取 | `POST /tasks/{id}/claim`（及 abandon 族，同一 StudentActor 别名） | require_approved_student_actor |
+| 提交 | submissions 上传/学生臂（StudentActor 别名） | require_approved_student_actor |
+| 兑换 | points 兑换创建（StudentActor 别名） | require_approved_student_actor |
+| 社区写 | 评论/投票/表情/评分/举报（CommunityActor 与举报 StudentActor 别名） | require_approved_community_actor（教师臂不受影响） |
+| 头像 | `POST/DELETE /me/avatar` | require_approved_community_actor |
+| 浏览放行 | 任务广场/详情/排行/通知/`/me`（require_active_actor 放行 PENDING） | — |
+
+管理面（require_admin_actor）与员工面（require_active_staff_actor /
+management 族）不挂 approval gate——PENDING_APPROVAL 仅学生账号可处。

@@ -8,7 +8,6 @@
  *   different copy through `describeAdminMutationError`, branched on
  *   `error.code` ONLY (the §29 rule; the Chinese message is display
  *   material and never parsed);
- * - the whitelist import's collision list extraction
  *   (`details.student_numbers`) and counts/confirm derivation;
  * - the account-status action affordances mirror spec §5.7 (incl.
  *   PENDING_PHONE having no admin transition);
@@ -27,7 +26,6 @@ import type { RewardCatalogueDto } from "../features/admin/adminApi";
 import {
   accountActions,
   adminReasonReady,
-  canConfirmWhitelistImport,
   conflictStudentNumbers,
   describeAdminMutationError,
   parseAbandonLimitValue,
@@ -43,8 +41,6 @@ import {
   settingDiffText,
   settingValueText,
   userStatusView,
-  whitelistCodeView,
-  whitelistCountsText,
   EMPTY_REWARD_FORM,
   rewardFormFromCatalogue,
   type RewardFormValues,
@@ -134,92 +130,6 @@ describe("account directory affordances (spec §5.7)", () => {
   test("the blank-after-trim reason mirror", () => {
     assert.equal(adminReasonReady("  "), false);
     assert.equal(adminReasonReady(" 依据 "), true);
-  });
-});
-
-describe("whitelist preview views", () => {
-  test("row-code wording covers the backend WhitelistRowCode vocabulary", () => {
-    assert.deepEqual(whitelistCodeView("IMPORTABLE"), { label: "可导入", tone: "success" });
-    assert.deepEqual(whitelistCodeView("DUPLICATE_IN_FILE"), {
-      label: "文件内重复",
-      tone: "warning",
-    });
-    assert.deepEqual(whitelistCodeView("DUPLICATE_IN_DB"), {
-      label: "已在白名单",
-      tone: "muted",
-    });
-    assert.deepEqual(whitelistCodeView("FULL_WIDTH_DIGITS"), {
-      label: "全角数字",
-      tone: "warning",
-    });
-    assert.deepEqual(whitelistCodeView("INVALID_CHARACTERS"), {
-      label: "含非法字符",
-      tone: "danger",
-    });
-    assert.deepEqual(whitelistCodeView("INVALID_LENGTH"), {
-      label: "长度不合法",
-      tone: "warning",
-    });
-    // Drift degrades to the raw code, never a throw.
-    assert.deepEqual(whitelistCodeView("SOMETHING_NEW"), {
-      label: "SOMETHING_NEW",
-      tone: "muted",
-    });
-  });
-
-  test("counts text lists non-zero problem classes only", () => {
-    assert.equal(
-      whitelistCountsText({
-        total_rows: 12,
-        importable: 9,
-        duplicate_in_file: 1,
-        duplicate_in_db: 2,
-        full_width_digits: 0,
-        invalid_characters: 0,
-        invalid_length: 0,
-      }),
-      "共 12 行：可导入 9 行，文件内重复 1 行，已在白名单 2 行",
-    );
-    assert.equal(
-      whitelistCountsText({
-        total_rows: 2,
-        importable: 2,
-        duplicate_in_file: 0,
-        duplicate_in_db: 0,
-        full_width_digits: 0,
-        invalid_characters: 0,
-        invalid_length: 0,
-      }),
-      "共 2 行：可导入 2 行",
-    );
-  });
-
-  test("confirm needs a non-empty importable set bound by its digest", () => {
-    const base = {
-      total_rows: 1,
-      decisions: [],
-      counts: {
-        total_rows: 1,
-        importable: 1,
-        duplicate_in_file: 0,
-        duplicate_in_db: 0,
-        full_width_digits: 0,
-        invalid_characters: 0,
-        invalid_length: 0,
-      },
-    };
-    assert.equal(
-      canConfirmWhitelistImport({ ...base, importable: ["20260001"], confirm_token: "d" }),
-      true,
-    );
-    assert.equal(
-      canConfirmWhitelistImport({ ...base, importable: [], confirm_token: "d" }),
-      false,
-    );
-    assert.equal(
-      canConfirmWhitelistImport({ ...base, importable: ["20260001"], confirm_token: " " }),
-      false,
-    );
   });
 });
 

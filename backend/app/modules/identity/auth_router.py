@@ -21,7 +21,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from app.modules.identity.otp import OtpPurpose, normalize_phone
+from app.modules.audit.context import AuditContext
+from app.modules.identity.device_credentials import (
+    DEVICE_COOKIE_NAME,
+    DEVICE_TTL_DAYS,
+)
+from app.modules.identity.mobile_login_service import MobileLoginService
+from app.modules.identity.otp import (
+    InvalidPhoneError,
+    OtpPurpose,
+    normalize_phone,
+)
 from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.providers import (
     AppSettings,
@@ -30,6 +40,7 @@ from app.modules.identity.providers import (
     OtpServiceDep,
     SessionsDep,
     get_identity_service,
+    get_mobile_login_service,
     get_phone_region,
     get_profile_service,
 )
@@ -45,6 +56,8 @@ from app.modules.identity.schemas import (
     ChallengeResponse,
     LoginRequest,
     LogoutRequest,
+    MobileCodeRequestRequest,
+    MobileCodeVerifyRequest,
     PasswordForgotRequest,
     PasswordResetRequest,
     PhoneChallengeRequest,
@@ -132,6 +145,69 @@ async def register_student(
         ),
     )
     return UserPublic.from_user(user)
+
+
+@router.post("/auth/mobile-code/request", status_code=202)
+async def request_mobile_code(
+    body: MobileCodeRequestRequest,
+    request: Request,
+    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
+    limiter: LimiterDep,
+    db: DbSession,
+) -> Response:
+    """SMS one 6-digit student login code (V1.1 2026-10-16 §3) — always
+    202, empty body: phone/student existence is never an answer here;
+    only a cooldown/liter breach (429) differs."""
+    from fastapi.responses import JSONResponse
+
+    # The limiter key is the SAME E.164 form the service's cooldown
+    # uses (the OTP-send discipline): format variants of one number must
+    # not split the bucket (final review I-3).
+    try:
+        limiter_phone = normalize_phone(body.phone, "CN")
+    except InvalidPhoneError:
+        limiter_phone = body.phone.strip()
+    await _enforce_rate_limit(
+        limiter,
+        "auth:mobile-code",
+        limiter_phone,
+        client_ip=_client_ip(request),
+    )
+    await mobile_login.request_code(db, body.phone)
+    return JSONResponse({}, status_code=202)
+
+
+@router.post("/auth/mobile-code/verify", response_model=TokenPairResponse)
+async def verify_mobile_code(
+    body: MobileCodeVerifyRequest,
+    request: Request,
+    response: Response,
+    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
+    settings: AppSettings,
+    db: DbSession,
+) -> TokenPairResponse:
+    """Open a student session with the SMS code — or, with a valid
+    remembered-device cookie and NO code, with the cookie itself (it
+    re-issues a fresh 30-day value; the #87 craft, student edition)."""
+    tokens, device_cookie = await mobile_login.verify_code(
+        db,
+        phone=body.phone,
+        code=body.code,
+        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        remember_device=body.remember_device,
+        audit_context=AuditContext.from_request(request),
+    )
+    pair = _token_pair_response(response, tokens, settings)
+    if device_cookie is not None:
+        response.set_cookie(
+            DEVICE_COOKIE_NAME,
+            device_cookie,
+            max_age=DEVICE_TTL_DAYS * 24 * 3600,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+    return pair
 
 
 @router.post("/auth/login", response_model=TokenPairResponse)

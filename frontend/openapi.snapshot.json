@@ -133,6 +133,82 @@
         }
       }
     },
+    "/api/v1/auth/mobile-code/request": {
+      "post": {
+        "summary": "Request Mobile Code",
+        "description": "SMS one 6-digit student login code (V1.1 2026-10-16 §3) — always\n202, empty body: phone/student existence is never an answer here;\nonly a cooldown/liter breach (429) differs.",
+        "operationId": "request_mobile_code_api_v1_auth_mobile_code_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileCodeRequestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mobile-code/verify": {
+      "post": {
+        "summary": "Verify Mobile Code",
+        "description": "Open a student session with the SMS code — or, with a valid\nremembered-device cookie and NO code, with the cookie itself (it\nre-issues a fresh 30-day value; the #87 craft, student edition).",
+        "operationId": "verify_mobile_code_api_v1_auth_mobile_code_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileCodeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "summary": "Login",
@@ -4661,208 +4737,6 @@
         ]
       }
     },
-    "/api/v1/admin/whitelist": {
-      "get": {
-        "summary": "List Whitelist",
-        "description": "The whitelist page, ordered by student number (read-only listing\nbuilt inline — the community-router listing precedent).",
-        "operationId": "list_whitelist_api_v1_admin_whitelist_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 50,
-              "minimum": 1,
-              "default": 20,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WhitelistListResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/whitelist/preview": {
-      "post": {
-        "summary": "Preview Whitelist Import",
-        "description": "Classify every non-blank line; zero writes (preview-then-confirm,\nplan Global Constraints). The digest binds the confirm payload.",
-        "operationId": "preview_whitelist_import_api_v1_admin_whitelist_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WhitelistPreviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WhitelistPreviewResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/admin/whitelist/confirm": {
-      "post": {
-        "summary": "Confirm Whitelist Import",
-        "description": "Insert exactly the previewed set, all-or-nothing; a digest\nmismatch or a DB collision is the typed 409 ``CONFLICT``.",
-        "operationId": "confirm_whitelist_import_api_v1_admin_whitelist_confirm_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WhitelistConfirmRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WhitelistConfirmResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/admin/whitelist/{student_number}": {
-      "patch": {
-        "summary": "Toggle Whitelist Entry",
-        "description": "Flip one entry to enabled/disabled; an unknown number is the\ntyped 400 with the missing list, an idempotent flip changes\nnothing.",
-        "operationId": "toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "student_number",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Student Number"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WhitelistToggleRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WhitelistToggleResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/admin/users": {
       "get": {
         "summary": "List Users",
@@ -5105,6 +4979,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/approve": {
+      "post": {
+        "summary": "Approve Student",
+        "description": "PENDING_APPROVAL -> ACTIVE (V1.1 spec 2026-10-16 §2): approve a\nstudent registration; USER_APPROVED rides the same transaction.",
+        "operationId": "approve_student_api_v1_admin_users__user_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalVerdictResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/reject": {
+      "post": {
+        "summary": "Reject Student",
+        "description": "PENDING_APPROVAL -> BANNED with the optional reason (spec §2);\nUSER_REJECTED rides the same transaction.",
+        "operationId": "reject_student_api_v1_admin_users__user_id__reject_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalVerdictResponse"
                 }
               }
             }
@@ -6208,6 +6184,17 @@
           "status": {
             "$ref": "#/components/schemas/UserStatus"
           },
+          "phone_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Masked"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -6222,10 +6209,58 @@
           "nickname",
           "role",
           "status",
+          "phone_masked",
           "created_at"
         ],
         "title": "AdminUserResponse",
-        "description": "One account row for the governance listing (G11: governance\nfacts only — contact fields stay behind their own surfaces)."
+        "description": "One account row for the governance listing (G11: governance\nfacts plus the MASKED phone — the approval queue's identifying\ncontact fact, minimal-necessary form; the raw number stays behind\nits own surfaces)."
+      },
+      "ApprovalVerdictResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "rejected_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "status"
+        ],
+        "title": "ApprovalVerdictResponse",
+        "description": "The registration verdict's result row (V1.1 spec 2026-10-16 §2)."
       },
       "ApproveResponse": {
         "properties": {
@@ -7554,6 +7589,50 @@
         "title": "MePublic",
         "description": "The owner's own account page (spec §40): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
       },
+      "MobileCodeRequestRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "MobileCodeRequestRequest",
+        "description": "Ask for a 6-digit SMS login code (V1.1 2026-10-16 §3) — always\n202, staff/role existence is never an answer here."
+      },
+      "MobileCodeVerifyRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "MobileCodeVerifyRequest",
+        "description": "Trade the SMS code (or the remembered-device cookie, with ``code``\nomitted) for a student session."
+      },
       "ModerationCommentListResponse": {
         "properties": {
           "items": {
@@ -8825,28 +8904,59 @@
             "type": "string",
             "title": "Student Number"
           },
-          "nickname": {
-            "type": "string",
-            "title": "Nickname"
-          },
           "phone_token": {
             "type": "string",
             "title": "Phone Token"
           },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
           "password": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Password"
           }
         },
         "type": "object",
         "required": [
           "student_number",
-          "nickname",
-          "phone_token",
-          "password"
+          "phone_token"
         ],
         "title": "RegisterRequest",
         "description": "Register one whitelisted student (spec §5.1-5.4)."
+      },
+      "RejectRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "RejectRequest",
+        "description": "reason is optional; ≤255 chars (the column bound)."
       },
       "ReleaseOccupiedAssignmentRequest": {
         "properties": {
@@ -11327,7 +11437,8 @@
           "PENDING_PHONE",
           "ACTIVE",
           "SUSPENDED",
-          "BANNED"
+          "BANNED",
+          "PENDING_APPROVAL"
         ],
         "title": "UserStatus"
       },
@@ -11606,308 +11717,6 @@
         ],
         "title": "WalletResponse",
         "description": "The wallet strip (spec §15.1/§16.2): the projection's figures\nplus the spendable derivation, CLAMPED for display (see the module\ndocstring): available/spendable never render below 0 and the\noverdraft rides as the explicit ``point_debt``."
-      },
-      "WhitelistConfirmRequest": {
-        "properties": {
-          "confirm_token": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Confirm Token"
-          },
-          "enable": {
-            "type": "boolean",
-            "title": "Enable",
-            "default": true
-          },
-          "student_numbers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Student Numbers"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "confirm_token",
-          "student_numbers"
-        ],
-        "title": "WhitelistConfirmRequest",
-        "description": "The previewed importable set plus its digest (all-or-nothing)."
-      },
-      "WhitelistConfirmResponse": {
-        "properties": {
-          "created": {
-            "type": "integer",
-            "title": "Created"
-          },
-          "enable": {
-            "type": "boolean",
-            "title": "Enable"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "created",
-          "enable"
-        ],
-        "title": "WhitelistConfirmResponse"
-      },
-      "WhitelistCountsResponse": {
-        "properties": {
-          "total_rows": {
-            "type": "integer",
-            "title": "Total Rows"
-          },
-          "importable": {
-            "type": "integer",
-            "title": "Importable"
-          },
-          "duplicate_in_file": {
-            "type": "integer",
-            "title": "Duplicate In File"
-          },
-          "duplicate_in_db": {
-            "type": "integer",
-            "title": "Duplicate In Db"
-          },
-          "full_width_digits": {
-            "type": "integer",
-            "title": "Full Width Digits"
-          },
-          "invalid_characters": {
-            "type": "integer",
-            "title": "Invalid Characters"
-          },
-          "invalid_length": {
-            "type": "integer",
-            "title": "Invalid Length"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "total_rows",
-          "importable",
-          "duplicate_in_file",
-          "duplicate_in_db",
-          "full_width_digits",
-          "invalid_characters",
-          "invalid_length"
-        ],
-        "title": "WhitelistCountsResponse"
-      },
-      "WhitelistEntryResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "student_number": {
-            "type": "string",
-            "title": "Student Number"
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "disabled_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Disabled At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "student_number",
-          "enabled",
-          "created_at",
-          "disabled_at"
-        ],
-        "title": "WhitelistEntryResponse",
-        "description": "One whitelist row: the number plus its enabled state."
-      },
-      "WhitelistListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/WhitelistEntryResponse"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          },
-          "offset": {
-            "type": "integer",
-            "title": "Offset"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ],
-        "title": "WhitelistListResponse",
-        "description": "Offset-paginated whitelist page, number-ordered."
-      },
-      "WhitelistPreviewRequest": {
-        "properties": {
-          "content": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Content"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "content"
-        ],
-        "title": "WhitelistPreviewRequest",
-        "description": "The raw import text (one student number per line; the service\nowns decode, trimming, and every row verdict)."
-      },
-      "WhitelistPreviewResponse": {
-        "properties": {
-          "total_rows": {
-            "type": "integer",
-            "title": "Total Rows"
-          },
-          "decisions": {
-            "items": {
-              "$ref": "#/components/schemas/WhitelistRowDecisionResponse"
-            },
-            "type": "array",
-            "title": "Decisions"
-          },
-          "counts": {
-            "$ref": "#/components/schemas/WhitelistCountsResponse"
-          },
-          "importable": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Importable"
-          },
-          "confirm_token": {
-            "type": "string",
-            "title": "Confirm Token"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "total_rows",
-          "decisions",
-          "counts",
-          "importable",
-          "confirm_token"
-        ],
-        "title": "WhitelistPreviewResponse",
-        "description": "The preview verdict: per-row decisions, counts, and the digest\nthe confirm payload must carry back verbatim."
-      },
-      "WhitelistRowDecisionResponse": {
-        "properties": {
-          "row_number": {
-            "type": "integer",
-            "title": "Row Number"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "student_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Student Number"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "row_number",
-          "code",
-          "student_number"
-        ],
-        "title": "WhitelistRowDecisionResponse"
-      },
-      "WhitelistToggleRequest": {
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "title": "WhitelistToggleRequest",
-        "description": "Flip one entry (enable or disable); the free-text why rides the\nper-entry audit rows."
-      },
-      "WhitelistToggleResponse": {
-        "properties": {
-          "student_number": {
-            "type": "string",
-            "title": "Student Number"
-          },
-          "toggled": {
-            "type": "boolean",
-            "title": "Toggled"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "student_number",
-          "toggled"
-        ],
-        "title": "WhitelistToggleResponse"
       },
       "app__modules__points__router__ReviewQueueResponse": {
         "properties": {

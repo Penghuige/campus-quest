@@ -263,7 +263,6 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `AUTHENTICATION_REQUIRED` | §29 |
 | `PERMISSION_DENIED` | §29 |
 | `ACCOUNT_NOT_ACTIVE` | §29, §8.4 |
-| `STUDENT_NOT_WHITELISTED` | §29 |
 | `PHONE_ALREADY_BOUND` | §29 |
 | `USERNAME_ALREADY_EXISTS` | §5.2, §31.1 |
 | `TASK_NOT_CLAIMABLE` | §29, §8.4 |
@@ -298,6 +297,8 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `EMAIL_CODE_INVALID` | V1.1 §2.1 |
 | `ACCOUNT_LOCKED` | V1.1 §6 |
 | `EMAIL_DELIVERY_FAILED` | V1.1 §2.1 |
+| `MOBILE_CODE_INVALID` | V1.1 2026-10-16 §3 |
+| `APPROVAL_PENDING` | V1.1 2026-10-16 §2 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 

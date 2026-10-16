@@ -2,7 +2,7 @@
 """Identity use cases (spec §5; backend-engineering §4-7).
 
 ``IdentityService.register_student`` owns the registration transaction:
-validation, whitelist re-check, phone-uniqueness pre-check, and the User
+validation, phone-uniqueness pre-check, and the User
 insert all run inside one transaction whose final authority is the
 database constraints — spec §5.4 并发注册最终必须由数据库约束兜底. The
 pre-checks exist to produce friendly errors on the sequential path; the
@@ -24,7 +24,7 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
 from app.modules.identity.otp import InvalidTokenError, OtpPurpose
 from app.modules.identity.ports import PasswordHasher, PhoneVerificationPort
-from app.modules.identity.repository import StudentWhitelistRepository, UserRepository
+from app.modules.identity.repository import UserRepository
 from app.modules.identity.schemas import RegisterStudent
 from app.modules.identity.validation import normalize_nickname, validate_student_number
 
@@ -50,28 +50,37 @@ class IdentityService:
         # inject deterministic fakes through the same seams.
         self._hash_password = password_hasher
         self._phone_verification = phone_verification
-        self._whitelist = StudentWhitelistRepository()
         self._users = UserRepository()
 
     async def register_student(
         self, session: AsyncSession, command: RegisterStudent
     ) -> User:
-        """Register one whitelisted student atomically (spec §5.1-5.4).
+        """Register one student atomically (open enrollment, V1.1 spec
+        2026-10-16 §1 — the whitelist era ended).
 
         Ordering is load-bearing: pure validation runs before the phone
         token is resolved, so a malformed request never burns a single-use
-        token (spec §33.2). The whitelist entry is then re-checked with a
-        row lock inside this transaction, the phone gets its friendly
+        token (spec §33.2). The phone gets its friendly
         uniqueness check, and the insert flushes inside the transaction so
         ``uq_users_username`` / ``uq_users_phone_e164`` decide any race.
 
-        The account is created directly in ACTIVE status: the phone was
-        verified before registration by design (OTP verification precedes
-        account creation), so there is no PENDING_PHONE transit.
+        The account lands in PENDING_APPROVAL (spec 2026-10-16 §2): login
+        and browsing are open; every acting surface stays frozen until an
+        admin approves.
         """
         student_number = self._validated_student_number(command.student_number)
-        nickname = self._validated_nickname(command.nickname)
-        self._require_usable_password(command.password)
+        # Blank nickname defaults to the student number; a supplied one
+        # is validated exactly as before (spec 2026-10-16 §1).
+        nickname = (
+            student_number
+            if command.nickname is None or command.nickname.strip() == ""
+            else self._validated_nickname(command.nickname)
+        )
+        # Optional password: blank = no password channel (password_hash
+        # NULL — the mobile code is then the only login door).
+        password = command.password
+        if password is not None and password != "":
+            self._require_usable_password(password)
 
         verified_phone = await self._phone_verification.verify_phone_token(
             command.phone_token
@@ -82,8 +91,6 @@ class IdentityService:
             # the typed error is the router's OTP_TOKEN_INVALID.
             raise InvalidTokenError
 
-        await self._whitelist.require_enabled(session, student_number)
-
         if await self._users.find_by_phone_e164(session, verified_phone.phone_e164):
             raise BusinessError(
                 ErrorCode.PHONE_ALREADY_BOUND,
@@ -93,11 +100,15 @@ class IdentityService:
 
         user = User(
             username=student_number,
-            password_hash=self._hash_password(command.password),
+            password_hash=(
+                self._hash_password(password)
+                if password is not None and password != ""
+                else None
+            ),
             nickname=nickname,
             phone_e164=verified_phone.phone_e164,
             role=Role.STUDENT,
-            status=UserStatus.ACTIVE,
+            status=UserStatus.PENDING_APPROVAL,
         )
         session.add(user)
         try:

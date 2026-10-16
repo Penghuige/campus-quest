@@ -271,7 +271,7 @@ async def test_student_flow_whitelist_otp_register_login_me(
         "username": _STUDENT,
         "nickname": _NICKNAME,  # normalized by the service
         "role": "STUDENT",
-        "status": "ACTIVE",
+        "status": "PENDING_APPROVAL",
         # spec amendment D4: the avatar capability flag (never the key).
         "has_avatar": False,
     }

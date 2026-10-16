@@ -14,43 +14,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.error_codes import ErrorCode
-from app.core.errors import BusinessError
-from app.modules.identity.models import StudentWhitelist, User, UserSession
-
-_STUDENT_NOT_WHITELISTED_MESSAGE = "该学号不在注册白名单中，无法注册"
-
-
-class StudentWhitelistRepository:
-    """Queries over pre-imported student numbers (spec §5.1)."""
-
-    async def require_enabled(
-        self, session: AsyncSession, student_number: str
-    ) -> StudentWhitelist:
-        """Return the entry authorizing ``student_number`` to register.
-
-        Absent and disabled entries are deliberately indistinguishable in
-        the rejection (both raise ``STUDENT_NOT_WHITELISTED``): the code is
-        the frontend's stable branch and neither state may register now
-        (spec §5.1, §29).
-
-        The row is locked ``FOR UPDATE`` inside the caller's transaction so
-        an admin disabling an entry cannot slip past a registration that is
-        mid-flight (backend-engineering §6): the re-check and the insert
-        serialize on the whitelist row itself.
-        """
-        entry = await session.scalar(
-            select(StudentWhitelist)
-            .where(StudentWhitelist.student_number == student_number)
-            .with_for_update()
-        )
-        if entry is None or not entry.enabled:
-            raise BusinessError(
-                ErrorCode.STUDENT_NOT_WHITELISTED,
-                _STUDENT_NOT_WHITELISTED_MESSAGE,
-                status_code=403,
-            )
-        return entry
+from app.modules.identity.models import User, UserSession
 
 
 class UserRepository:

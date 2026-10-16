@@ -1,6 +1,6 @@
 # backend/app/modules/identity/admin_router.py
 """The Admin account-governance API (Plan 08 T9; spec §5.1, §5.7, §5.8,
-§33.4): whitelist administration, account status transitions, the staff
+§33.4): account status governance, the staff invitation family,
 directory, and staff invitation issuance — thin routes over the W2/W4
 services, never a second implementation of their rules.
 
@@ -31,14 +31,12 @@ Transport decisions:
   request correlation pair.
 - **Listings are offset-paginated with the family cap (limit <= 50)**
   and are read-only ``SELECT``s built inline (the community-router
-  precedent for listing endpoints): whitelist entries and the user
   directory need no stateful service logic, so the route owns the query
   and the explicit DTO the same way ``community``'s listings do.
 - **The user directory DTO is minimal (G11):** id, username, nickname,
   role, status, created_at — governance facts. Contact fields
   (phone/email) stay behind their own identity surfaces; the filters
   are role/status only.
-- **Whitelist preview carries the raw import text as a JSON string.**
   The service owns the byte-level decode contract (UTF-8, BOM
   tolerance, size/row caps); the route encodes the payload to UTF-8
   bytes and never inspects rows itself.
@@ -69,24 +67,20 @@ from app.core.admin_network_policy import (
     load_management_network_policy,
     require_management_network,
 )
-from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.db.session import get_db_session
+from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
 from app.modules.identity.account_admin_service import AccountAdminService
-from app.modules.identity.dependencies import get_business_clock, require_admin_actor
+from app.modules.identity.dependencies import require_admin_actor
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
-from app.modules.identity.models import StudentWhitelist, User
+from app.modules.identity.models import User
 from app.modules.identity.providers import DbSession, LimiterDep, get_staff_service
 from app.modules.identity.routing_common import _enforce_rate_limit
 from app.modules.identity.schemas import StaffInvitationCreateRequest
 from app.modules.identity.staff_service import StaffService
-from app.modules.identity.whitelist_admin import (
-    WhitelistAdminService,
-    WhitelistConfirmPayload,
-)
 from app.modules.system.service import (
     MANAGEMENT_NETWORK_CIDRS,
     MANAGEMENT_NETWORK_ENABLED,
@@ -192,20 +186,10 @@ router = APIRouter(
 # --- provider dependencies (module composition root) ---------------------
 
 
-def get_whitelist_admin_service(
-    clock: Annotated[Clock, Depends(get_business_clock)],
-) -> WhitelistAdminService:
-    # One business-time source per request, shared with the actor guard.
-    return WhitelistAdminService(clock=clock)
-
-
 def get_account_admin_service() -> AccountAdminService:
     return AccountAdminService()
 
 
-WhitelistAdminDep = Annotated[
-    WhitelistAdminService, Depends(get_whitelist_admin_service)
-]
 AccountAdminDep = Annotated[AccountAdminService, Depends(get_account_admin_service)]
 StaffServiceDep = Annotated[StaffService, Depends(get_staff_service)]
 AdminActor = Annotated[Actor, Depends(require_admin_actor)]
@@ -217,108 +201,11 @@ PageOffset = Annotated[int, Query(ge=0)]
 # --- transport DTOs (explicit field sets) --------------------------------
 
 
-class WhitelistEntryResponse(BaseModel):
-    """One whitelist row: the number plus its enabled state."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    student_number: str
-    enabled: bool
-    created_at: datetime
-    disabled_at: datetime | None
-
-
-class WhitelistListResponse(BaseModel):
-    """Offset-paginated whitelist page, number-ordered."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    items: list[WhitelistEntryResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class WhitelistPreviewRequest(BaseModel):
-    """The raw import text (one student number per line; the service
-    owns decode, trimming, and every row verdict)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    content: str = Field(min_length=1)
-
-
-class WhitelistRowDecisionResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    row_number: int
-    code: str
-    student_number: str | None
-
-
-class WhitelistCountsResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    total_rows: int
-    importable: int
-    duplicate_in_file: int
-    duplicate_in_db: int
-    full_width_digits: int
-    invalid_characters: int
-    invalid_length: int
-
-
-class WhitelistPreviewResponse(BaseModel):
-    """The preview verdict: per-row decisions, counts, and the digest
-    the confirm payload must carry back verbatim."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    total_rows: int
-    decisions: list[WhitelistRowDecisionResponse]
-    counts: WhitelistCountsResponse
-    importable: list[str]
-    confirm_token: str
-
-
-class WhitelistConfirmRequest(BaseModel):
-    """The previewed importable set plus its digest (all-or-nothing)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    confirm_token: str = Field(min_length=1)
-    enable: bool = True
-    student_numbers: list[str] = Field(min_length=1)
-
-
-class WhitelistConfirmResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    created: int
-    enable: bool
-
-
-class WhitelistToggleRequest(BaseModel):
-    """Flip one entry (enable or disable); the free-text why rides the
-    per-entry audit rows."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    reason: str | None = None
-
-
-class WhitelistToggleResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    student_number: str
-    toggled: bool
-
-
 class AdminUserResponse(BaseModel):
     """One account row for the governance listing (G11: governance
-    facts only — contact fields stay behind their own surfaces)."""
+    facts plus the MASKED phone — the approval queue's identifying
+    contact fact, minimal-necessary form; the raw number stays behind
+    its own surfaces)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -327,6 +214,7 @@ class AdminUserResponse(BaseModel):
     nickname: str
     role: Role
     status: UserStatus
+    phone_masked: str | None
     created_at: datetime
 
 
@@ -371,129 +259,6 @@ class StaffInvitationResponse(BaseModel):
     created_at: datetime
 
 
-# --- whitelist administration (spec §5.1; W2 services) -------------------
-
-
-@router.get("/admin/whitelist", response_model=WhitelistListResponse)
-async def list_whitelist(
-    db: DbSession,
-    limit: PageLimit = DEFAULT_PAGE_LIMIT,
-    offset: PageOffset = 0,
-) -> WhitelistListResponse:
-    """The whitelist page, ordered by student number (read-only listing
-    built inline — the community-router listing precedent)."""
-    total = int(await db.scalar(select(func.count()).select_from(StudentWhitelist)))
-    rows = await db.scalars(
-        select(StudentWhitelist)
-        .order_by(StudentWhitelist.student_number)
-        .limit(limit)
-        .offset(offset)
-    )
-    return WhitelistListResponse(
-        items=[
-            WhitelistEntryResponse(
-                id=str(entry.id),
-                student_number=entry.student_number,
-                enabled=entry.enabled,
-                created_at=entry.created_at,
-                disabled_at=entry.disabled_at,
-            )
-            for entry in rows
-        ],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
-
-
-@router.post("/admin/whitelist/preview", response_model=WhitelistPreviewResponse)
-async def preview_whitelist_import(
-    body: WhitelistPreviewRequest,
-    actor: AdminActor,
-    db: DbSession,
-    service: WhitelistAdminDep,
-) -> WhitelistPreviewResponse:
-    """Classify every non-blank line; zero writes (preview-then-confirm,
-    plan Global Constraints). The digest binds the confirm payload."""
-    preview = await service.preview_whitelist_import(
-        db, actor, body.content.encode("utf-8")
-    )
-    return WhitelistPreviewResponse(
-        total_rows=preview.total_rows,
-        decisions=[
-            WhitelistRowDecisionResponse(
-                row_number=decision.row_number,
-                code=decision.code.value,
-                student_number=decision.student_number,
-            )
-            for decision in preview.decisions
-        ],
-        counts=WhitelistCountsResponse(
-            total_rows=preview.counts.total_rows,
-            importable=preview.counts.importable,
-            duplicate_in_file=preview.counts.duplicate_in_file,
-            duplicate_in_db=preview.counts.duplicate_in_db,
-            full_width_digits=preview.counts.full_width_digits,
-            invalid_characters=preview.counts.invalid_characters,
-            invalid_length=preview.counts.invalid_length,
-        ),
-        importable=list(preview.importable),
-        confirm_token=preview.confirm_token,
-    )
-
-
-@router.post("/admin/whitelist/confirm", response_model=WhitelistConfirmResponse)
-async def confirm_whitelist_import(
-    body: WhitelistConfirmRequest,
-    actor: AdminActor,
-    db: DbSession,
-    service: WhitelistAdminDep,
-    request: Request,
-) -> WhitelistConfirmResponse:
-    """Insert exactly the previewed set, all-or-nothing; a digest
-    mismatch or a DB collision is the typed 409 ``CONFLICT``."""
-    payload = WhitelistConfirmPayload(
-        confirm_token=body.confirm_token,
-        enable=body.enable,
-        student_numbers=tuple(body.student_numbers),
-    )
-    result = await service.confirm_whitelist_import(
-        db,
-        actor,
-        payload,
-        audit_context=AuditContext.from_request(request),
-    )
-    return WhitelistConfirmResponse(created=result.created, enable=result.enable)
-
-
-@router.patch(
-    "/admin/whitelist/{student_number}", response_model=WhitelistToggleResponse
-)
-async def toggle_whitelist_entry(
-    student_number: str,
-    body: WhitelistToggleRequest,
-    actor: AdminActor,
-    db: DbSession,
-    service: WhitelistAdminDep,
-    request: Request,
-) -> WhitelistToggleResponse:
-    """Flip one entry to enabled/disabled; an unknown number is the
-    typed 400 with the missing list, an idempotent flip changes
-    nothing."""
-    result = await service.set_entries_enabled(
-        db,
-        actor,
-        [student_number],
-        enabled=body.enabled,
-        reason=body.reason,
-        audit_context=AuditContext.from_request(request),
-    )
-    return WhitelistToggleResponse(
-        student_number=student_number,
-        toggled=student_number in result.toggled,
-    )
-
-
 # --- account status governance (spec §5.7; W2 service) --------------------
 
 
@@ -530,6 +295,7 @@ async def list_users(
                 nickname=user.nickname,
                 role=Role(user.role),
                 status=UserStatus(user.status),
+                phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
                 created_at=user.created_at,
             )
             for user in rows
@@ -609,6 +375,71 @@ async def reactivate_user(
     """SUSPENDED/BANNED -> ACTIVE — the Admin unban included (§5.7)."""
     return await _transition_account_status(
         db, actor, service, user_id, body, request, "reactivate_user"
+    )
+
+
+class ApprovalVerdictResponse(BaseModel):
+    """The registration verdict's result row (V1.1 spec 2026-10-16 §2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    username: str
+    status: UserStatus
+    approved_at: datetime | None = None
+    rejected_reason: str | None = None
+
+
+class RejectRequest(BaseModel):
+    """reason is optional; ≤255 chars (the column bound)."""
+
+    reason: str | None = Field(default=None, max_length=255)
+
+
+@router.post("/admin/users/{user_id}/approve", response_model=ApprovalVerdictResponse)
+async def approve_student(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    service: AccountAdminDep,
+    request: Request,
+) -> ApprovalVerdictResponse:
+    """PENDING_APPROVAL -> ACTIVE (V1.1 spec 2026-10-16 §2): approve a
+    student registration; USER_APPROVED rides the same transaction."""
+    user = await service.approve_student(
+        db, actor, user_id, audit_context=AuditContext.from_request(request)
+    )
+    return ApprovalVerdictResponse(
+        id=str(user.id),
+        username=user.username,
+        status=UserStatus(user.status),
+        approved_at=user.approved_at,
+    )
+
+
+@router.post("/admin/users/{user_id}/reject", response_model=ApprovalVerdictResponse)
+async def reject_student(
+    user_id: UUID,
+    body: RejectRequest,
+    actor: AdminActor,
+    db: DbSession,
+    service: AccountAdminDep,
+    request: Request,
+) -> ApprovalVerdictResponse:
+    """PENDING_APPROVAL -> BANNED with the optional reason (spec §2);
+    USER_REJECTED rides the same transaction."""
+    user = await service.reject_student(
+        db,
+        actor,
+        user_id,
+        reason=body.reason or "",
+        audit_context=AuditContext.from_request(request),
+    )
+    return ApprovalVerdictResponse(
+        id=str(user.id),
+        username=user.username,
+        status=UserStatus(user.status),
+        rejected_reason=user.rejected_reason,
     )
 
 

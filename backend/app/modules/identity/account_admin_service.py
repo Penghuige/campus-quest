@@ -44,12 +44,14 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rbac
+from app.core.clock import Clock, SystemClock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.audit.context import AuditContext
@@ -61,6 +63,8 @@ from app.modules.identity.models import User
 __all__ = [
     "AUDIT_USER_BANNED",
     "AUDIT_USER_REACTIVATED",
+    "AUDIT_USER_APPROVED",
+    "AUDIT_USER_REJECTED",
     "AUDIT_USER_SUSPENDED",
     "AccountAdminService",
     "AccountAdminTargetNotFoundError",
@@ -76,6 +80,8 @@ logger = logging.getLogger(__name__)
 AUDIT_USER_SUSPENDED = "USER_SUSPENDED"
 AUDIT_USER_BANNED = "USER_BANNED"
 AUDIT_USER_REACTIVATED = "USER_REACTIVATED"
+AUDIT_USER_APPROVED = "USER_APPROVED"
+AUDIT_USER_REJECTED = "USER_REJECTED"
 
 _AUDIT_TARGET_TYPE = "user"
 
@@ -130,8 +136,16 @@ class AccountAdminService:
     auditing" (the ``StaffService`` wiring ruling).
     """
 
-    def __init__(self, *, audit: AuditLogWriter | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        audit: AuditLogWriter | None = None,
+        clock: Clock | None = None,
+    ) -> None:
         self._audit: AuditLogWriter = audit if audit is not None else AuditLogWriter()
+        # Business time for the verdict columns (approved_at); the
+        # SystemClock default matches the request-path composition.
+        self._clock = clock if clock is not None else SystemClock()
 
     async def suspend_user(
         self,
@@ -199,6 +213,58 @@ class AccountAdminService:
             audit_context=audit_context,
         )
 
+    async def approve_student(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        user_id: UUID,
+        *,
+        audit_context: AuditContext | None = None,
+    ) -> User:
+        """PENDING_APPROVAL -> ACTIVE (V1.1 spec 2026-10-16 §2): the
+        registration verdict lands — approved_at records it."""
+        now = self._clock.now()
+        return await self._transition(
+            db,
+            actor,
+            user_id,
+            operation="approve",
+            allowed_from=frozenset({UserStatus.PENDING_APPROVAL}),
+            to_status=UserStatus.ACTIVE,
+            action=AUDIT_USER_APPROVED,
+            reason="注册审批通过",
+            audit_context=audit_context,
+            before_extras={"approved_at": None},
+            after_extras={"approved_at": now.isoformat()},
+            apply=lambda user: setattr(user, "approved_at", now),
+        )
+
+    async def reject_student(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        user_id: UUID,
+        *,
+        reason: str,
+        audit_context: AuditContext | None = None,
+    ) -> User:
+        """PENDING_APPROVAL -> BANNED with the optional reason (spec §2)."""
+        stored = reason.strip() or None
+        return await self._transition(
+            db,
+            actor,
+            user_id,
+            operation="reject",
+            allowed_from=frozenset({UserStatus.PENDING_APPROVAL}),
+            to_status=UserStatus.BANNED,
+            action=AUDIT_USER_REJECTED,
+            reason=reason if reason.strip() else "注册审批未通过",
+            audit_context=audit_context,
+            before_extras={"rejected_reason": None},
+            after_extras={"rejected_reason": stored},
+            apply=lambda user: setattr(user, "rejected_reason", stored),
+        )
+
     # -- internals -------------------------------------------------------------
 
     async def _transition(
@@ -213,6 +279,9 @@ class AccountAdminService:
         action: str,
         reason: str,
         audit_context: AuditContext | None,
+        before_extras: dict[str, object] | None = None,
+        after_extras: dict[str, object] | None = None,
+        apply: Callable[[User], None] | None = None,
     ) -> User:
         """One audited status transition: gate -> lock -> check -> flip
         -> audit (flush-only) -> one commit (backend-engineering §5)."""
@@ -244,6 +313,8 @@ class AccountAdminService:
             )
 
         user.status = to_status
+        if apply is not None:
+            apply(user)
         await self._audit.append(
             db,
             actor=actor,
@@ -252,8 +323,8 @@ class AccountAdminService:
             target_id=str(user.id),
             reason=reason,
             # G11: the status migration only — no nickname/phone/email.
-            before_snapshot={"status": current.value},
-            after_snapshot={"status": to_status.value},
+            before_snapshot={"status": current.value, **(before_extras or {})},
+            after_snapshot={"status": to_status.value, **(after_extras or {})},
             ip_address=audit_context.ip_address if audit_context else None,
             request_id=audit_context.request_id if audit_context else None,
         )

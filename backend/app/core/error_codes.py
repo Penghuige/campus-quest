@@ -28,7 +28,6 @@ class ErrorCode(StrEnum):
     AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
     PERMISSION_DENIED = "PERMISSION_DENIED"
     ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE"
-    STUDENT_NOT_WHITELISTED = "STUDENT_NOT_WHITELISTED"
     PHONE_ALREADY_BOUND = "PHONE_ALREADY_BOUND"
     # Registered in interfaces.md (not a §29-listed code): a username/unique
     # violation means the account already exists — distinct from a whitelist
@@ -83,6 +82,11 @@ class ErrorCode(StrEnum):
     EMAIL_CODE_INVALID = "EMAIL_CODE_INVALID"
     ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
     EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED"
+    # V1.1 auth-extension II (spec 2026-10-16): the student mobile-code
+    # channel's uniform wrong/expired/exhausted answer, and the frozen-
+    # surface envelope for PENDING_APPROVAL accounts.
+    MOBILE_CODE_INVALID = "MOBILE_CODE_INVALID"
+    APPROVAL_PENDING = "APPROVAL_PENDING"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

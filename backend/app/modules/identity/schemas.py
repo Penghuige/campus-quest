@@ -41,9 +41,9 @@ class RegisterStudent:
     """
 
     student_number: str
-    nickname: str
     phone_token: str
-    password: str
+    nickname: str | None = None
+    password: str | None = None
 
 
 # --- Transport request models (raw caller input, validated by services)
@@ -65,9 +65,9 @@ class RegisterRequest(BaseModel):
     """Register one whitelisted student (spec §5.1-5.4)."""
 
     student_number: str
-    nickname: str
     phone_token: str
-    password: str
+    nickname: str | None = None
+    password: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -380,3 +380,19 @@ class EmailChallengeResponse(BaseModel):
     """Request-side view of one email-verification cycle (token-less)."""
 
     expires_at: datetime
+
+
+class MobileCodeRequestRequest(BaseModel):
+    """Ask for a 6-digit SMS login code (V1.1 2026-10-16 §3) — always
+    202, staff/role existence is never an answer here."""
+
+    phone: str
+
+
+class MobileCodeVerifyRequest(BaseModel):
+    """Trade the SMS code (or the remembered-device cookie, with ``code``
+    omitted) for a student session."""
+
+    phone: str
+    code: str | None = None
+    remember_device: bool = False

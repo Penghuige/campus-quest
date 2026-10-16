@@ -126,6 +126,7 @@ from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_student_actor,
+    require_approved_student_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
@@ -362,7 +363,9 @@ async def require_reward_review_actor(
 
 ClockDep = Annotated[Clock, Depends(get_business_clock)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
+
+StudentActor = Annotated[Actor, Depends(require_approved_student_actor)]
+ActiveStudentActor = Annotated[Actor, Depends(require_active_student_actor)]
 ReviewActor = Annotated[Actor, Depends(require_reward_review_actor)]
 LedgerServiceDep = Annotated[LedgerService, Depends(get_ledger_service)]
 RedemptionServiceDep = Annotated[RedemptionService, Depends(get_redemption_service)]
@@ -380,7 +383,7 @@ router = APIRouter()
 
 @router.get("/points/me", response_model=WalletResponse)
 async def my_wallet(
-    actor: StudentActor,
+    actor: ActiveStudentActor,
     db: DbSession,
     ledger: LedgerServiceDep,
 ) -> WalletResponse:
@@ -415,7 +418,7 @@ def _wallet_response(summary: WalletSummary) -> WalletResponse:
 
 @router.get("/rewards", response_model=RewardsListResponse)
 async def list_rewards(
-    actor: StudentActor,
+    actor: ActiveStudentActor,
     db: DbSession,
     redemptions: RedemptionServiceDep,
     clock: ClockDep,

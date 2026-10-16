@@ -47,6 +47,7 @@ from app.modules.identity.email_login_service import EmailLoginService
 from app.modules.identity.email_verification import EmailVerificationService
 from app.modules.identity.events import DomainEventPublisher, LoggingEventPublisher
 from app.modules.identity.login_failure_guard import LoginFailureGuard
+from app.modules.identity.mobile_login_service import MobileLoginService
 from app.modules.identity.otp import OtpChallengeService, OtpPolicy
 from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.service import IdentityService
@@ -286,3 +287,21 @@ OtpServiceDep = Annotated[OtpChallengeService, Depends(get_otp_service)]
 SessionsDep = Annotated[SessionService, Depends(get_session_service)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 StorageDep = Annotated[ObjectStorage, Depends(get_object_storage)]
+
+
+def get_mobile_login_service(
+    sms_sender: Annotated[SmsSender, Depends(get_sms_sender)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    redis: RedisDep,
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    guard: Annotated[LoginFailureGuard, Depends(get_login_failure_guard)],
+) -> MobileLoginService:
+    return MobileLoginService(
+        sms_sender=sms_sender,
+        redis=redis,
+        clock=clock,
+        sessions=sessions,
+        guard=guard,
+        hmac_secret=settings.otp_hmac_secret,
+    )

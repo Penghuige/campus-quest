@@ -182,7 +182,13 @@ class SessionService:
                 await self._guard.record_failure(user.id)
             raise self._authentication_required()
 
-        if user.status != UserStatus.ACTIVE:
+        if user.status not in (
+            UserStatus.ACTIVE,
+            # PENDING_APPROVAL logs in like an ACTIVE student (V1.1 spec
+            # 2026-10-16 §2: login and browsing are open; the freeze is
+            # per-acting-surface, not on the session).
+            UserStatus.PENDING_APPROVAL,
+        ):
             raise BusinessError(
                 ErrorCode.ACCOUNT_NOT_ACTIVE,
                 _ACCOUNT_NOT_ACTIVE_MESSAGE,

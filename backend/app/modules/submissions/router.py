@@ -130,8 +130,8 @@ from app.integrations.rate_limit import (
 from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import (
     get_business_clock,
-    require_active_student_actor,
     require_active_student_or_staff_management_actor,
+    require_approved_student_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.events import (
@@ -337,7 +337,8 @@ def get_query_service() -> SubmissionQueryService:
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
+
+StudentActor = Annotated[Actor, Depends(require_approved_student_actor)]
 # The download route is the one submissions path two populations share:
 # owning Students (plain §5.7 state gate) and reviewing staff (the
 # §33.4 management gate, confirmed TOTP) — the dual-population identity

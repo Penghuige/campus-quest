@@ -30,7 +30,7 @@ Coverage map:
   idempotent by the body's ``operation_id`` (replay returns the
   original entry; a reused id under a different decision is the typed
   409; a missing id is the 422).
-- **The assembled surfaces:** whitelist preview -> confirm -> toggle
+- **The assembled surfaces:** account status governance
   with audit rows; the audit-log search with filters and pagination;
   account status transitions with the typed 409 ``CONFLICT``; reward
   catalogue create/patch/disable; the review-grant lifecycle; the
@@ -224,22 +224,6 @@ def _endpoint_table(teacher_id: UUID, student_id: UUID, user_id: UUID) -> list[A
             "POST",
             f"{_API}/admin/repairs/force-fail-delivery",
             {"delivery_id": str(uuid4()), "reason": "wedged sender"},
-        ),
-        ("GET", f"{_API}/admin/whitelist", None),
-        ("POST", f"{_API}/admin/whitelist/preview", {"content": "30260001\n"}),
-        (
-            "POST",
-            f"{_API}/admin/whitelist/confirm",
-            {
-                "confirm_token": "0" * 64,
-                "enable": True,
-                "student_numbers": ["30260001"],
-            },
-        ),
-        (
-            "PATCH",
-            f"{_API}/admin/whitelist/30260001",
-            {"enabled": False, "reason": "毕业离校"},
         ),
         ("GET", f"{_API}/admin/users", None),
         ("POST", f"{_API}/admin/users/{user_id}/suspend", {"reason": "调查中"}),
@@ -703,79 +687,6 @@ async def test_settings_write_and_list_round_trip(
     assert bad.status_code == 422
 
 
-# --- whitelist administration ---------------------------------------------------------
-
-
-async def test_whitelist_preview_confirm_toggle_round_trip(
-    client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    admin_world: dict[str, Any],
-) -> None:
-    headers = admin_world["admin_headers"]
-    preview = await client.post(
-        f"{_API}/admin/whitelist/preview",
-        json={"content": "40260001\n40260002\n４０２６０００３\n"},
-        headers=headers,
-    )
-    assert preview.status_code == 200, preview.text
-    body = preview.json()
-    assert body["total_rows"] == 3
-    assert body["counts"]["importable"] == 2
-    assert body["counts"]["full_width_digits"] == 1
-    assert body["importable"] == ["40260001", "40260002"]
-
-    confirmed = await client.post(
-        f"{_API}/admin/whitelist/confirm",
-        json={
-            "confirm_token": body["confirm_token"],
-            "enable": True,
-            "student_numbers": body["importable"],
-        },
-        headers=headers,
-    )
-    assert confirmed.status_code == 200, confirmed.text
-    assert confirmed.json() == {"created": 2, "enable": True}
-    assert (
-        await _audit_count(
-            db_session, admin_world["admin"].id, "WHITELIST_IMPORT_CONFIRMED"
-        )
-        == 1
-    )
-
-    listed = await client.get(f"{_API}/admin/whitelist", headers=headers)
-    assert listed.status_code == 200
-    numbers = {item["student_number"] for item in listed.json()["items"]}
-    assert {"40260001", "40260002"} <= numbers
-
-    toggled = await client.patch(
-        f"{_API}/admin/whitelist/40260001",
-        json={"enabled": False, "reason": "毕业离校"},
-        headers=headers,
-    )
-    assert toggled.status_code == 200
-    assert toggled.json() == {"student_number": "40260001", "toggled": True}
-    assert (
-        await _audit_count(
-            db_session, admin_world["admin"].id, "WHITELIST_ENTRY_TOGGLED"
-        )
-        == 1
-    )
-
-    # A confirm whose payload was never previewed is the typed 409
-    # CONFLICT (the replay check).
-    mismatch = await client.post(
-        f"{_API}/admin/whitelist/confirm",
-        json={
-            "confirm_token": "0" * 64,
-            "enable": True,
-            "student_numbers": ["40260009"],
-        },
-        headers=headers,
-    )
-    assert mismatch.status_code == 409
-    assert mismatch.json()["error"]["code"] == ErrorCode.CONFLICT
-
-
 # --- audit search ---------------------------------------------------------------------
 
 
@@ -948,6 +859,7 @@ async def test_user_directory_lists_and_filters(
         "nickname",
         "role",
         "status",
+        "phone_masked",
         "created_at",
     }
 
