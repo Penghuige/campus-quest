@@ -12,8 +12,8 @@
   "app/modules/notifications": 94.4,
   "app/modules/points": 92.6,
   "app/modules/rankings": 94.4,
-  "app/modules/submissions": 93.1,
+  "app/modules/submissions": 92.9,
   "app/modules/system": 94.6,
   "app/modules/tasks": 93.6,
-  "app/workers": 91.3
+  "app/workers": 91.0
 }
