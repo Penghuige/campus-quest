@@ -5,6 +5,8 @@
  * we pin the STUDENT-visible behavior: the button on the upload panel
  * fetches a real CSV (BOM + headers) and hands the browser a download.
  */
+import assert from "node:assert/strict";
+
 import { expect, test } from "@playwright/test";
 
 import { ensureStudentLogin } from "./fixtures";
@@ -32,17 +34,23 @@ test("the upload panel's template button downloads the task's CSV", async ({ pag
     page.waitForEvent("download"),
     button.click(),
   ]);
-  const suggested = download.suggestedFilename();
-  expect(suggested.endsWith(".csv"), `filename=${suggested}`).toBe(true);
+  // The frozen disposition: attachment; filename="template.csv" (plain
+  // quoted ASCII — the backend's confirmed form).
+  assert.equal(download.suggestedFilename(), "template.csv");
 
-  // The payload is a BOM-prefixed UTF-8 CSV (Excel-safe Chinese).
+  // The payload: BOM + the schema-ordered header line + trailing CRLF
+  // (RFC 4180), no data rows — Excel-safe Chinese headers.
   const path = await download.path();
-  expect(path).toBeTruthy();
+  assert.ok(path);
   const fs = await import("node:fs");
-  const bytes = fs.readFileSync(path!);
-  expect(bytes.length).toBeGreaterThan(3);
-  expect(
+  const bytes = fs.readFileSync(path);
+  assert.ok(
     bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf,
     "the template carries the UTF-8 BOM",
-  ).toBe(true);
+  );
+  const text = bytes.subarray(3).toString("utf8");
+  assert.ok(text.includes("\r\n"), "RFC 4180 CRLF line ending");
+  const headerLine = text.trimEnd();
+  assert.ok(headerLine.includes(","), "comma-separated schema columns");
+  assert.equal(text.split("\r\n").filter((l) => l.length > 0).length, 1, "header row only, no data rows");
 });
