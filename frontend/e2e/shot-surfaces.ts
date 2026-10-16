@@ -36,6 +36,16 @@ export interface Shot {
 
 export const SHOTS: Shot[] = [
   { name: "auth-login", path: "/login", auth: "anon", masks: [] },
+  {
+    // The staff login page (V1.1 §2.1): the email-code channel is the
+    // DEFAULT tab — a new stable screen whose pristine form state (no
+    // volatile content) is the face. The password tab stays one toggle
+    // away and is e2e-pinned, not baselined.
+    name: "staff-login",
+    path: "/staff/login",
+    auth: "anon",
+    masks: [],
+  },
   { name: "dev-gallery", path: "/dev/gallery", auth: "anon", masks: [] },
   {
     name: "student-dashboard",
