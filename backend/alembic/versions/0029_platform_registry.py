@@ -64,7 +64,7 @@ def upgrade() -> None:
     )
     op.bulk_insert(
         platforms,
-        [dict(zip(_PLATFORMS_COLUMNS, row)) for row in _SEED_ROWS],
+        [dict(zip(_PLATFORMS_COLUMNS, row, strict=True)) for row in _SEED_ROWS],
     )
     # Order is load-bearing: the CHECK must drop BEFORE the backfill
     # writes codes outside the old closed set, and the FK lands last so
