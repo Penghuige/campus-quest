@@ -29,10 +29,13 @@ test.skip(
   "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
-/** A run-unique code so re-runs never collide with a prior create. */
-function freshCode(): string {
-  return `e2e-pf-${RUN!.slice(0, 8)}`;
-}
+/** Run-unique code AND display names — a prior run's registry rows are
+ * orphans the world teardown never sees (platforms are outside its
+ * scope), so repeated invocations must never collide on either. */
+const RUN_TAG = RUN!.slice(0, 8);
+const PF_CODE = `e2e-pf-${RUN_TAG}`;
+const NAME_CREATE = `端到端平台${RUN_TAG}`;
+const NAME_RENAMED = `端到端改名${RUN_TAG}`;
 
 async function adminOn(page: Page, path: string): Promise<void> {
   await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
@@ -51,20 +54,20 @@ test.describe("platform registry admin (spec §4)", () => {
     await expect(table.getByText("BOSS直聘")).toBeVisible();
 
     // Create: code + display name + sort.
-    const code = freshCode();
+    const code = PF_CODE;
     await page.getByRole("button", { name: "新建平台" }).click();
     await page.getByLabel("平台代码（创建后不可改）").fill(code);
-    await page.getByLabel("显示名").fill("端到端测试平台");
+    await page.getByLabel("显示名").fill(NAME_CREATE);
     await page.getByLabel("排序值").fill("500");
     await page.getByRole("button", { name: "创建平台" }).click();
-    await expect(table.getByText("端到端测试平台")).toBeVisible();
+    await expect(table.getByText(NAME_CREATE)).toBeVisible();
 
     // Rename via the edit dialog (code stays the path key).
     const row = table.locator("tr", { hasText: code });
     await row.getByRole("button", { name: "编辑" }).click();
-    await page.getByLabel("显示名").fill("端到端改名平台");
+    await page.getByLabel("显示名").fill(NAME_RENAMED);
     await page.getByRole("button", { name: "保存修改" }).click();
-    await expect(table.getByText("端到端改名平台")).toBeVisible();
+    await expect(table.getByText(NAME_RENAMED)).toBeVisible();
 
     // Toggle disabled: the badge flips; the row STAYS (no delete).
     await row.getByRole("button", { name: "停用" }).click();
@@ -77,7 +80,10 @@ test.describe("platform registry admin (spec §4)", () => {
     await adminOn(page, "/admin/platforms");
     const posts: string[] = [];
     page.on("request", (request) => {
-      if (request.url().includes("/api/v1/admin/platforms")) {
+      if (
+        request.url().includes("/api/v1/admin/platforms") &&
+        request.method() === "POST"
+      ) {
         posts.push(request.url());
       }
     });
