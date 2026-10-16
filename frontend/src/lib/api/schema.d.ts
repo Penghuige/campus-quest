@@ -711,6 +711,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/{task_id}/submission-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Submission Template
+         * @description The CSV submission template (V1.1 spec §5): header-only, BOM
+         *     first, columns in the schema's declared order (required then
+         *     optional) — a student's filled-in file passes the validator's header
+         *     check on the first try. CSV-family tasks only; any other family
+         *     (document tasks carry no schema by §10.1) answers the typed 404.
+         *     Browsing-grade: every ACTIVE role may download it.
+         */
+        get: operations["download_submission_template_api_v1_tasks__task_id__submission_template_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{task_id}": {
         parameters: {
             query?: never;
@@ -6319,6 +6344,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_submission_template_api_v1_tasks__task_id__submission_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
