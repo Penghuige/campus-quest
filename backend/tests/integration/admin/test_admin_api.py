@@ -843,16 +843,21 @@ async def test_user_directory_lists_and_filters(
     admin_world: dict[str, Any],
 ) -> None:
     headers = admin_world["admin_headers"]
-    listed = await client.get(f"{_API}/admin/users", headers=headers)
+    # The unfiltered first page is a shared-DB surface (the composition
+    # smoke's committed rows can push seeded users past the page on a
+    # local stack; CI's fresh DB cannot) — the shape freeze rides a
+    # filtered query this test fully owns, and each seeded user is
+    # asserted through its own role filter's containment.
+    listed = await client.get(
+        f"{_API}/admin/users",
+        params={"role": "ADMIN", "limit": 50},
+        headers=headers,
+    )
     assert listed.status_code == 200
     page = listed.json()
     usernames = {item["username"] for item in page["items"]}
-    assert {
-        "matrix-admin-0001",
-        "matrix-teacher-0002",
-        "matrix-student-0003",
-    } <= usernames
-    # G11: governance facts only — no contact columns exist to leak.
+    assert "matrix-admin-0001" in usernames
+    # G11: governance facts + the masked phone — no raw contact columns.
     assert set(page["items"][0]) == {
         "id",
         "username",
@@ -862,12 +867,26 @@ async def test_user_directory_lists_and_filters(
         "phone_masked",
         "created_at",
     }
+    assert {item["role"] for item in page["items"]} == {"ADMIN"}
 
     teachers = await client.get(
-        f"{_API}/admin/users", params={"role": "TEACHER"}, headers=headers
+        f"{_API}/admin/users",
+        params={"role": "TEACHER", "limit": 50},
+        headers=headers,
     )
     assert teachers.status_code == 200
-    assert {item["role"] for item in teachers.json()["items"]} == {"TEACHER"}
+    assert "matrix-teacher-0002" in {
+        item["username"] for item in teachers.json()["items"]
+    }
+    students = await client.get(
+        f"{_API}/admin/users",
+        params={"role": "STUDENT", "limit": 50},
+        headers=headers,
+    )
+    assert students.status_code == 200
+    assert "matrix-student-0003" in {
+        item["username"] for item in students.json()["items"]
+    }
 
 
 # --- reward catalogue + review grants -------------------------------------------------
