@@ -28,7 +28,7 @@ const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
 const NUDGE_NUMBER = process.env.CQ_E2E_NUDGE_NUMBER ?? `5${String(Date.now()).slice(-9)}`;
 
 test.skip(
-  !(E2E_ENABLED && RUN && ADMIN_ID),
+  !(E2E_ENABLED && RUN && ADMIN && ADMIN_TOTP_SECRET),
   "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
