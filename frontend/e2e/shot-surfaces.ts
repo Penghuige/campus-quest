@@ -197,19 +197,14 @@ export const SHOTS: Shot[] = [
     masks: [],
   },
   {
-    // The approvals queue rides the seeded PENDING rows under fixed
-    // labels; registered-at is masked (the time column carries
-    // run-clock instants).
+    // The approvals queue pins the PRISTINE world's face: the EMPTY
+    // state (the world seeds no PENDING_APPROVAL students — every
+    // pending row in a battery is a test's own creation, teardown
+    // residue). No masks: the empty state carries no clock content.
     name: "admin-approvals",
     path: "/admin/approvals",
     auth: "admin",
-    masks: [
-      {
-        id: "time",
-        why: "row created_at — absolute clock (ApprovalsAdmin.tsx)",
-        locate: (page: Page) => page.locator("time"),
-      },
-    ],
+    masks: [],
   },
 ];
 
