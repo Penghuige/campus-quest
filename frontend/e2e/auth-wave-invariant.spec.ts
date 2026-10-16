@@ -27,6 +27,7 @@ test("one rotation per cold-start wave; both tabs authed", async ({ browser }) =
   const student = process.env.CQ_E2E_STUDENT ?? "";
   const [username, password] = student.split(":");
   await boot.goto("/login");
+  await boot.getByRole("button", { name: "密码登录" }).click();
   await boot.getByLabel("学号").fill(username);
   await boot.getByLabel("密码").fill(password);
   await boot.getByRole("button", { name: "登录", exact: true }).click();

@@ -106,6 +106,9 @@ export async function loginThroughUi(
   account: SeededAccount,
 ): Promise<void> {
   await page.goto(`${BASE_URL}/login`);
+  // Auth extension II §4: the MOBILE channel is the student default;
+  // the student-number + password form lives behind the toggle.
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("学号").fill(account.username);
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();

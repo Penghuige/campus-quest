@@ -28,6 +28,7 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   // Tab A: student A logged in (form login = explicit transition).
   const pageA = await context.newPage();
   await pageA.goto("/login");
+  await pageA.getByRole("button", { name: "密码登录" }).click();
   await pageA.getByLabel("学号").fill(aName);
   await pageA.getByLabel("密码").fill(aPass);
   await pageA.getByRole("button", { name: "登录", exact: true }).click();
@@ -42,6 +43,7 @@ test("sibling explicit login fences this tab: bearer dropped, no replay as B", a
   // Tab B (same jar): explicit login as student B -> context reset.
   const pageB = await context.newPage();
   await pageB.goto("/login");
+  await pageB.getByRole("button", { name: "密码登录" }).click();
   await pageB.getByLabel("学号").fill(bName);
   await pageB.getByLabel("密码").fill(bPass);
   await pageB.getByRole("button", { name: "登录", exact: true }).click();
@@ -138,6 +140,7 @@ test("out-of-order /me: a straggler answering OLD identity after the reset NEVER
     }
   });
   await pageA.goto("/login");
+  await pageA.getByRole("button", { name: "密码登录" }).click();
   await pageA.getByLabel("学号").fill(aName);
   await pageA.getByLabel("密码").fill(aPass);
   await pageA.getByRole("button", { name: "登录", exact: true }).click();
@@ -182,6 +185,7 @@ test("out-of-order /me: a straggler answering OLD identity after the reset NEVER
   // drops to loading, and its NEW /me settles FIRST — as B.
   const pageB = await context.newPage();
   await pageB.goto("/login");
+  await pageB.getByRole("button", { name: "密码登录" }).click();
   await pageB.getByLabel("学号").fill(bName);
   await pageB.getByLabel("密码").fill(bPass);
   await pageB.getByRole("button", { name: "登录", exact: true }).click();

@@ -19,7 +19,6 @@ import { staffLogin } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
-const API_URL = process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
 const ADMIN = process.env.CQ_E2E_ADMIN;
 const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
 const RUN = process.env.CQ_E2E_RUN;

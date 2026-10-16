@@ -75,6 +75,7 @@ async function studentLoginTyped(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(`${BASE}/login`);
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("学号").pressSequentially(username, { delay: 2 });
   await page.getByLabel("密码").pressSequentially(password, { delay: 2 });
   await page.getByRole("button", { name: "登录", exact: true }).click();
