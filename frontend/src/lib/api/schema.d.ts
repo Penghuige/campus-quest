@@ -2642,7 +2642,9 @@ export interface components {
         /**
          * AdminUserResponse
          * @description One account row for the governance listing (G11: governance
-         *     facts only — contact fields stay behind their own surfaces).
+         *     facts plus the MASKED phone — the approval queue's identifying
+         *     contact fact, minimal-necessary form; the raw number stays behind
+         *     its own surfaces).
          */
         AdminUserResponse: {
             /** Id */
@@ -2653,6 +2655,8 @@ export interface components {
             nickname: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
+            /** Phone Masked */
+            phone_masked: string | null;
             /**
              * Created At
              * Format: date-time

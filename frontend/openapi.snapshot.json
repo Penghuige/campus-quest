@@ -6184,6 +6184,17 @@
           "status": {
             "$ref": "#/components/schemas/UserStatus"
           },
+          "phone_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Masked"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -6198,10 +6209,11 @@
           "nickname",
           "role",
           "status",
+          "phone_masked",
           "created_at"
         ],
         "title": "AdminUserResponse",
-        "description": "One account row for the governance listing (G11: governance\nfacts only — contact fields stay behind their own surfaces)."
+        "description": "One account row for the governance listing (G11: governance\nfacts plus the MASKED phone — the approval queue's identifying\ncontact fact, minimal-necessary form; the raw number stays behind\nits own surfaces)."
       },
       "ApprovalVerdictResponse": {
         "properties": {

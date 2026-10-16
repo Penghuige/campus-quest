@@ -310,3 +310,5 @@ async def test_pending_list_via_users_filter(
     assert listed.status_code == 200, listed.text
     items = listed.json()["items"]
     assert [item["username"] for item in items] == ["20250015555"]
+    # G11: the identifying contact fact arrives MASKED, never raw.
+    assert items[0]["phone_masked"].startswith("+86") and "****" in items[0]["phone_masked"]

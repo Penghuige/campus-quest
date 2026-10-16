@@ -70,6 +70,7 @@ from app.core.admin_network_policy import (
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.db.session import get_db_session
+from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
 from app.modules.identity.account_admin_service import AccountAdminService
 from app.modules.identity.dependencies import require_admin_actor
@@ -202,7 +203,9 @@ PageOffset = Annotated[int, Query(ge=0)]
 
 class AdminUserResponse(BaseModel):
     """One account row for the governance listing (G11: governance
-    facts only — contact fields stay behind their own surfaces)."""
+    facts plus the MASKED phone — the approval queue's identifying
+    contact fact, minimal-necessary form; the raw number stays behind
+    its own surfaces)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -211,6 +214,7 @@ class AdminUserResponse(BaseModel):
     nickname: str
     role: Role
     status: UserStatus
+    phone_masked: str | None
     created_at: datetime
 
 
@@ -291,6 +295,7 @@ async def list_users(
                 nickname=user.nickname,
                 role=Role(user.role),
                 status=UserStatus(user.status),
+                phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
                 created_at=user.created_at,
             )
             for user in rows
