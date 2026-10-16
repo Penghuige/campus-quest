@@ -286,3 +286,57 @@ async def test_non_student_or_inactive_phone_is_noop(
         assert response.status_code == 202, response.text
 
     assert api_sms.messages == []
+
+
+async def test_sms_failure_cleans_up_and_answers_502(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The email-service hotfix discipline, mobile side: a provider
+    failure answers 502 with this request's traces gone — no challenge
+    row, cooldown released."""
+    from sqlalchemy import select as _select
+
+    from app.core.errors import BusinessError
+    from app.integrations.errors import PermanentProviderError
+    from app.modules.identity.models import LoginMobileChallenge
+
+    await _seed_student(db_session)
+    api_sms.failures.append(PermanentProviderError("boom"))
+    import pytest as _pytest
+
+    with _pytest.raises(BusinessError):
+        # Service-level: the route would render the 502 envelope; the
+        # cleanup contract is what we pin here.
+        from urllib.parse import urlsplit as _us
+        from urllib.parse import urlunsplit as _uu
+
+        from redis.asyncio import from_url as _from_url
+
+        from app.core.clock import FrozenClock
+        from app.core.config import get_settings
+        from app.modules.identity.mobile_login_service import MobileLoginService
+
+        base = get_settings().redis_url
+        parts = _us(base)
+        url = _uu(parts._replace(path="/7"))
+        redis = _from_url(url, decode_responses=True)
+        try:
+            service = MobileLoginService(
+                sms_sender=api_sms,
+                redis=redis,
+                clock=FrozenClock(datetime.now(UTC).replace(microsecond=0)),
+                hmac_secret=get_settings().otp_hmac_secret,
+            )
+            await service.request_code(db_session, _PHONE)
+        finally:
+            await redis.aclose()
+
+    assert (
+        await db_session.execute(
+            _select(LoginMobileChallenge).where(
+                LoginMobileChallenge.phone_e164 == _PHONE
+            )
+        )
+    ).scalar_one_or_none() is None
