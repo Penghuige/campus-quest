@@ -99,7 +99,9 @@ test.describe("TOTP begin single-flight (E5 flake watch)", () => {
   async function freshInvitationToken(email: string): Promise<string> {
     const response = await api.post(`${API_URL}/staff/invitations`, {
       headers: { Authorization: `Bearer ${mintToken(ADMIN_ID!)}` },
-      data: { email, role: "TEACHER" },
+      // V1.1 §2.3: only the ADMIN branch walks the TOTP onboarding this
+      // spec drives — a TEACHER invitation completes without it.
+      data: { email, role: "ADMIN" },
     });
     expect(
       response.ok(),
@@ -147,7 +149,7 @@ test.describe("TOTP begin single-flight (E5 flake watch)", () => {
       await route.fulfill({ response });
     });
 
-    await page.getByRole("button", { name: "设置密码并继续" }).click();
+    await page.getByRole("button", { name: "激活账号" }).click();
 
     // Setup step renders the secret the page will confirm against.
     const secretLocator = page.getByTestId("totp-secret");

@@ -21,11 +21,15 @@ import {
   acceptStaffInvitation,
   beginTotpSetup,
   confirmTotpSetup,
+  emailLoginTotp,
   loginStaff,
   readMe,
+  requestEmailLoginCode,
+  verifyEmailLoginCode,
 } from "../features/auth/api";
 import { describeStaffError } from "../features/auth/staffAuthView";
 import { isApiError } from "../lib/errors";
+import { clearAccessToken, getAccessToken } from "../lib/accessToken";
 
 type RecordedRequest = {
   url: string;
@@ -77,16 +81,38 @@ afterEach(() => {
 });
 
 describe("acceptStaffInvitation", () => {
-  test("posts {token, password} with cookie credentials", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    const tokens = await acceptStaffInvitation("invite-token", "correct-horse");
-    assert.equal(tokens.access_token, "at");
+  test("posts {token, password} with cookie credentials; an old-shape body lands on the admin leg UNADOPTED", async () => {
+    clearAccessToken();
+    stubFetch(JSON.stringify({ access_token: "pending-at", csrf_token: "ct", token_type: "bearer" }), 200);
+    const outcome = await acceptStaffInvitation("invite-token", "correct-horse");
+    assert.deepEqual(outcome, { kind: "admin", pendingToken: "pending-at" });
+    assert.equal(getAccessToken(), null);
     assert.equal(recorded?.url, "/api/v1/auth/staff/invitations/accept");
     assert.equal(recorded?.method, "POST");
     assert.equal(recorded?.credentials, "include");
     assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
       token: "invite-token",
       password: "correct-horse",
+    });
+  });
+
+  test("totp_required:false adopts the TEACHER full login; an empty password posts null", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        totp_required: false,
+        access_token: "teacher-at",
+        csrf_token: "ct",
+        token_type: "bearer",
+      }),
+      200,
+    );
+    const outcome = await acceptStaffInvitation("invite-token", null);
+    assert.equal(outcome.kind, "teacher");
+    assert.equal(getAccessToken(), "teacher-at");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      token: "invite-token",
+      password: null,
     });
   });
 
@@ -190,5 +216,81 @@ describe("readMe (the post-login role source; owner report 2026-10-15)", () => {
     assert.equal(recorded?.url, "/api/v1/me");
     assert.equal(recorded?.method, "GET");
     assert.equal(recorded?.credentials, "include");
+  });
+});
+
+describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
+  test("request POSTs {email} and resolves the uniform 202 {}", async () => {
+    stubFetch("{}", 202);
+    await requestEmailLoginCode("teacher@school.edu");
+    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/request");
+    assert.equal(recorded?.method, "POST");
+    assert.equal(recorded?.credentials, "include");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      email: "teacher@school.edu",
+    });
+  });
+
+  test("verify POSTs {email, code} — NO remember_device from the code step — and records the teacher login", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({ access_token: "teacher-at", csrf_token: "ct", token_type: "bearer" }),
+      200,
+    );
+    const outcome = await verifyEmailLoginCode("teacher@school.edu", "234567");
+    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/verify");
+    assert.equal(recorded?.method, "POST");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      email: "teacher@school.edu",
+      code: "234567",
+    });
+    assert.equal(outcome.kind, "tokens");
+    assert.equal(getAccessToken(), "teacher-at");
+  });
+
+  test("verify classifies the ADMIN totp_required body and adopts NO token", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({ status: "totp_required", pending_token: "pending-at" }),
+      200,
+    );
+    const outcome = await verifyEmailLoginCode("admin@school.edu", "234567");
+    assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "pending-at" });
+    assert.equal(getAccessToken(), null);
+  });
+
+  test("the totp leg POSTs {pending_token, code, remember_device} IN THE BODY (T5 contract) and records the login", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
+      200,
+    );
+    const tokens = await emailLoginTotp("pending-at", "234567", true);
+    assert.equal(tokens.access_token, "admin-at");
+    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/totp");
+    assert.equal(recorded?.method, "POST");
+    // The pending token rides the BODY, never a Bearer header (the
+    // invitation flow's TOTP-setup endpoints differ — the contract
+    // divergence the e2e run caught).
+    assert.equal(recorded?.headers.get("Authorization"), null);
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      pending_token: "pending-at",
+      code: "234567",
+      remember_device: true,
+    });
+    assert.equal(getAccessToken(), "admin-at");
+  });
+
+  test("the totp leg omits remember_device when unchecked (presence-based)", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
+      200,
+    );
+    await emailLoginTotp("pending-at", "234567", false);
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      pending_token: "pending-at",
+      code: "234567",
+    });
   });
 });

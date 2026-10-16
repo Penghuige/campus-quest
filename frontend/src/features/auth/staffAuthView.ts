@@ -66,6 +66,60 @@ export function validateInvitePassword(password: string): string | null {
   return validatePassword(password);
 }
 
+/**
+ * V1.1 TEACHER branch (plan Task 7/9): the invitation password is
+ * OPTIONAL — empty means "email-code only" (no password_hash is set).
+ * A SUPPLIED value keeps the shared 10-128 band, which the backend
+ * checks before touching the one-time token (a client-rejected value
+ * never burns it).
+ */
+export function validateOptionalInvitePassword(password: string): string | null {
+  if (password.length === 0) {
+    return null;
+  }
+  return validatePassword(password);
+}
+
+/**
+ * The optional-password repeat rule: both empty passes (no password);
+ * a repeat without a password is a mismatch; otherwise the shared
+ * match rule.
+ */
+export function validateOptionalInvitePasswordRepeat(
+  password: string,
+  repeat: string,
+): string | null {
+  if (password.length === 0 && repeat.length === 0) {
+    return null;
+  }
+  if (repeat.length === 0) {
+    return "请再次输入密码";
+  }
+  if (password !== repeat) {
+    return "两次输入的密码不一致";
+  }
+  return null;
+}
+
+/**
+ * The accept-response branch discriminator: `totp_required:false` =
+ * TEACHER (full login, single screen, done); `true` = ADMIN (pending
+ * session, TotpSetup two-step). A body WITHOUT the field (an unknown
+ * shape) also lands on the admin leg — the defensive fail-closed
+ * default: an unadopted pending token errors loudly at the TOTP step
+ * instead of an unknown body ever being adopted as a login.
+ */
+export function classifyInviteAccept(body: unknown): "teacher" | "admin" {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    (body as Record<string, unknown>).totp_required === false
+  ) {
+    return "teacher";
+  }
+  return "admin";
+}
+
 /** The repeat field on the invitation form (client-only concern). */
 export function validateInvitePasswordRepeat(
   password: string,

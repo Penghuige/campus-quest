@@ -34,6 +34,7 @@ import {
   UserIcon,
 } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
+import { NicknameNudge } from "@/features/auth/NicknameNudge";
 import { adminWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
 
@@ -166,7 +167,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
-        <main className="app-main">{children}</main>
+        <main className="app-main">
+          <NicknameNudge me={state.me} />
+          {children}
+        </main>
       </div>
     </div>
   );

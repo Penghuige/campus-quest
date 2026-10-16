@@ -123,6 +123,7 @@ test.describe("cross-browser smoke (firefox + webkit subset)", () => {
     );
     const page = await browser.newPage();
     await page.goto(`${BASE}/staff/login`);
+    await page.getByRole("button", { name: "密码登录" }).click();
     await page.getByLabel("邮箱").pressSequentially(staff[0], { delay: 2 });
     await page.getByLabel("密码").pressSequentially(staff[1] ?? "", { delay: 2 });
     for (let attempt = 0; attempt < 3; attempt += 1) {

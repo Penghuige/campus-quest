@@ -14,8 +14,10 @@ import {
   changePassword,
   confirmEmailVerification,
   confirmPhoneChange,
+  listMyDevices,
   requestEmailVerification,
   requestPhoneChange,
+  revokeMyDevices,
   unbindEmail,
   updateNickname,
   type MeDto,
@@ -232,5 +234,37 @@ describe("own-account wrappers wire contract", () => {
       recorded?.body,
       JSON.stringify({ current_password: "current-pass", new_password: "new-strong-pass" }),
     );
+  });
+
+  // V1.1 (plan Task 11, frontend half): the remembered-devices surface.
+  // The row shape is the frozen contract ({id, created_at, last_used_at,
+  // expires_at} — never a token hash); DELETE revokes ALL of the
+  // caller's devices and answers the count.
+  test("devices list rides GET /me/devices with cookie credentials", async () => {
+    stubFetch(
+      JSON.stringify([
+        {
+          id: "d1",
+          created_at: "2030-01-01T00:00:00Z",
+          last_used_at: "2030-01-02T00:00:00Z",
+          expires_at: "2030-01-31T00:00:00Z",
+        },
+      ]),
+      200,
+    );
+    const devices = await listMyDevices();
+    assert.equal(devices.length, 1);
+    assert.equal(devices[0]?.id, "d1");
+    assert.equal(recorded?.url, "/api/v1/me/devices");
+    assert.equal(recorded?.method, "GET");
+  });
+
+  test("revoke-all rides DELETE /me/devices and answers the count", async () => {
+    stubFetch(JSON.stringify({ revoked: 2 }), 200);
+    const result = await revokeMyDevices();
+    assert.deepEqual(result, { revoked: 2 });
+    assert.equal(recorded?.url, "/api/v1/me/devices");
+    assert.equal(recorded?.method, "DELETE");
+    assert.equal(recorded?.body, null);
   });
 });

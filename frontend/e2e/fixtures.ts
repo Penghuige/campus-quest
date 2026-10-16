@@ -240,8 +240,10 @@ function base32Decode(input: string): Buffer {
   return Buffer.from(out);
 }
 
-/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits). */
-function totpCode(secret: string, atMs: number = Date.now()): string {
+/** The current RFC 6238 code for `secret` (SHA-1, 30s step, 6 digits).
+ * Exported since V1.1: the email-code login spec's ADMIN leg computes
+ * the same code this module's staffLogin does — ONE implementation. */
+export function totpCode(secret: string, atMs: number = Date.now()): string {
   const counter = Math.floor(atMs / 30_000);
   const block = Buffer.alloc(8);
   block.writeBigUInt64BE(BigInt(counter));
@@ -267,6 +269,11 @@ export async function staffLogin(
   const [email, password] = credentials.split(":");
   studentSessionContext = null;
   await page.goto(STAFF_LOGIN_URL);
+  // V1.1 §2.1 (plan T8): the email-code channel is the staff login
+  // page's DEFAULT tab; the password+TOTP form lives behind the visible
+  // 密码登录 toggle. This helper rides the password channel (the TOTP
+  // contract it pins), so switch first — one click, exactly like a user.
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -386,4 +393,11 @@ export function mintToken(userId: string): string {
 /** Recover the current SMS OTP code for a phone (the real Redis hash). */
 export function recoverOtpCode(phoneE164: string): string {
   return runWorldAction<{ code: string }>("otp-code", phoneE164).code;
+}
+
+/** Recover the current staff login email code for an address (V1.1
+ * Wave 1; world action `email-code` — the otp-code pattern). The FORM
+ * value passes as typed: the action strips/lowercases internally. */
+export function recoverEmailCode(email: string): string {
+  return runWorldAction<{ code: string }>("email-code", email).code;
 }
