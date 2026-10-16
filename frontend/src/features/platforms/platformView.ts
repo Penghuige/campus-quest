@@ -19,17 +19,11 @@ import type { components } from "@/lib/api/schema";
 
 type Schemas = components["schemas"];
 
-/** The student dictionary row (spec §3: enabled-only, read-only). */
-export interface PlatformDto {
-  code: string;
-  display_name: string;
-  sort_order: number;
-}
+/** The student dictionary row (the generated §3 contract: enabled-only, read-only). */
+export type PlatformDto = Schemas["PlatformPublic"];
 
-/** The admin row: the dictionary shape plus the lifecycle flag. */
-export interface AdminPlatformDto extends PlatformDto {
-  enabled: boolean;
-}
+/** The admin row (the generated admin contract: lifecycle flag + audit instants). */
+export type AdminPlatformDto = Schemas["PlatformAdminPublic"];
 
 export type PlatformDictionary = readonly PlatformDto[];
 
@@ -109,7 +103,3 @@ export function describePlatformAdminError(
   }
   return { message: error.message || fallback, requestId: error.requestId };
 }
-
-/** Unused today (schema types arrive with the backend PR); kept for the
- * generated-alias swap. */
-export type _GeneratedPlaceholder = Schemas["Role"];
