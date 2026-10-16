@@ -388,3 +388,51 @@ async def test_mobile_code_probe_recovers_the_smsed_code(
 
     with pytest.raises(LookupError):
         await recover_mobile_code(db_session, "+8613800099999")
+
+
+async def test_pending_student_survives_refresh_rotation(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    """The auth-II e2e catch: a hard refresh is the browse path's
+    foundation — the pending student's session must ROTATE, not die with
+    ACCOUNT_NOT_ACTIVE (spec 2026-10-16 §2)."""
+    import http.cookies as http_cookies
+
+    from app.modules.identity.routing_common import (
+        CSRF_COOKIE_NAME as _CSRF_C,
+        REFRESH_COOKIE_NAME as _RC,
+    )
+
+    await _seed_student(db_session)  # PENDING_APPROVAL
+    await _request(client, _PHONE)
+    login = await _verify(client, _PHONE, _last_code(api_sms))
+    assert login.status_code == 200, login.text
+    csrf = login.json()["csrf_token"]
+
+    jar = http_cookies.SimpleCookie()
+
+    def _from(response, name):
+        jar.load(
+            next(
+                h
+                for h in response.headers.get_list("set-cookie")
+                if h.startswith(f"{name}=")
+            )
+        )
+        return jar[name].value
+
+    cookies = {_RC: _from(login, _RC), _CSRF_C: csrf}
+    rotated = await client.post(
+        "/api/v1/auth/refresh",
+        cookies=cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert rotated.status_code == 200, rotated.text
+    assert rotated.json()["access_token"]
+
+    me = await client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {rotated.json()['access_token']}"},
+    )
+    assert me.status_code == 200, me.text
+    assert me.json()["status"] == "PENDING_APPROVAL"

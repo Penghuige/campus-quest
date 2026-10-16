@@ -279,7 +279,15 @@ class SessionService:
                 "session %s references missing user %s", current.id, current.user_id
             )
             raise self._authentication_required()
-        if user.status != UserStatus.ACTIVE:
+        if user.status not in (
+            UserStatus.ACTIVE,
+            # PENDING_APPROVAL rotates like an ACTIVE student (V1.1 spec
+            # 2026-10-16 §2: login and browsing are open — a hard refresh
+            # IS the browse path's foundation; the freeze lives on the
+            # acting guards, not on the session). Caught by the auth-II
+            # e2e: every reload logged the pending student out.
+            UserStatus.PENDING_APPROVAL,
+        ):
             logger.info(
                 "session rotate rejected session_id=%s reason=account_not_active",
                 current.id,
@@ -383,7 +391,13 @@ class SessionService:
             return None
 
         user = await db.scalar(select(User).where(User.id == row.user_id))
-        if user is None or user.status != UserStatus.ACTIVE:
+        if user is None or user.status not in (
+            UserStatus.ACTIVE,
+            # Same admission as the live rotate path (spec 2026-10-16
+            # §2): a pending student's grace-window replay resolves; the
+            # uniform-401 oracle discipline below applies to the rest.
+            UserStatus.PENDING_APPROVAL,
+        ):
             # Deliberate asymmetry vs the live path: a NON-ACTIVE account
             # gets a typed 403 on a LIVE presentation but a uniform 401
             # here — a replay must never become an account-state oracle

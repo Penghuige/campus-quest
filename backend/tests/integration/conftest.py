@@ -65,6 +65,38 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _loop_local_identity_redis() -> AsyncIterator[None]:
+    """Give every test a FRESH process-wide identity Redis client.
+
+    ``get_identity_redis`` is ``lru_cache``d for production (one event
+    loop per process), but pytest-asyncio gives every test its own loop.
+    The zero-override suites (composition smoke, several API tests) hit
+    routes whose dependency graph resolves the real client — since the
+    approval lockout wired ``guard.reset`` into the login success path
+    (#95), a plain student login in ANY no-override test binds the
+    cached client to that test's loop; the composition smoke running on
+    a later loop then dies with "Future attached to a different loop"
+    (CI, deterministic). Closing and re-caching per test keeps every
+    binding loop-local; production never runs two loops.
+    """
+    from app.modules.identity.providers import get_identity_redis
+
+    try:
+        client = get_identity_redis()
+        await client.aclose()
+    except Exception:
+        pass  # never created this process yet — nothing to close
+    get_identity_redis.cache_clear()
+    yield
+    try:
+        client = get_identity_redis()
+        await client.aclose()
+    except Exception:
+        pass
+    get_identity_redis.cache_clear()
+
+
 @pytest_asyncio.fixture
 async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     """Session joined to an outer transaction that always rolls back.
