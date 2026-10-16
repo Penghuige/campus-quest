@@ -479,3 +479,102 @@ async def test_import_rejects_disabled_and_unknown_platforms(
     assert (1, "UNSUPPORTED_PLATFORM") in codes
     assert (2, "UNSUPPORTED_PLATFORM") in codes
     assert len(preview.valid) == 1
+
+
+# --- final-review fixpass: input validation + the concurrent 409 -----------------
+
+
+async def test_create_validates_code_shape_and_lengths(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """I-1 pin: oversize/non-ASCII/blank inputs are 400 VALIDATION_ERROR
+    (friendly-before-constraint), never a 500 or a dirty row."""
+    admin = await _seed_admin(db_session)
+    bearer = await _mint_bearer(db_session, admin)
+
+    cases = [
+        {"code": "x" * 33, "display_name": "太长", "sort_order": 1},
+        {"code": "微博平台", "display_name": "非ASCII", "sort_order": 1},
+        {"code": "   ", "display_name": "空白码", "sort_order": 1},
+        {"code": "ok-code", "display_name": "x" * 65, "sort_order": 1},
+        {"code": "ok-code2", "display_name": "   ", "sort_order": 1},
+    ]
+    for body in cases:
+        response = await client.post(
+            "/api/v1/admin/platforms",
+            headers={"Authorization": f"Bearer {bearer}"},
+            json=body,
+        )
+        # 422 is the DTO band's envelope (RequestValidationError ->
+        # VALIDATION_ERROR); 400 would be the service band. Both are
+        # friendly; neither is the 500 the DB would answer.
+        assert response.status_code in (400, 422), (body, response.text)
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_patch_rejects_blank_display_name(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _seed_admin(db_session)
+    bearer = await _mint_bearer(db_session, admin)
+
+    response = await client.patch(
+        "/api/v1/admin/platforms/zhihu",
+        headers={"Authorization": f"Bearer {bearer}"},
+        json={"display_name": "   "},
+    )
+
+    assert response.status_code == 400, response.text
+    row = await db_session.get(Platform, "zhihu")
+    assert row is not None and row.display_name == "知乎"
+
+
+async def test_concurrent_duplicate_create_one_wins_one_409(
+    db_session: AsyncSession,
+) -> None:
+    """I-2 pin: two TRULY concurrent creates (independent sessions, the
+    production shape — one AsyncSession is not a concurrency unit) —
+    exactly one row lands; the loser answers the typed 409, never a raw
+    IntegrityError 500."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession as _Session
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.modules.identity.events import Actor
+    from app.modules.tasks.platform_registry import create_platform
+
+    admin = await _seed_admin(db_session)
+    actor = Actor(user_id=admin.id, role=Role.ADMIN)
+    await db_session.commit()  # the admin row must exist for both racers
+
+    engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
+
+    async def _racer(name: str):
+        async with _Session(engine) as session:
+            return await create_platform(
+                session,
+                actor=actor,
+                code="race",
+                display_name=name,
+                sort_order=1,
+            )
+
+    try:
+        results = await asyncio.gather(
+            _racer("竞态A"), _racer("竞态B"), return_exceptions=True
+        )
+    finally:
+        # sweep the row this race truly commits
+        async with _Session(engine) as cleaner:
+            from sqlalchemy import delete as _delete
+
+            await cleaner.execute(_delete(Platform).where(Platform.code == "race"))
+            await cleaner.commit()
+        await engine.dispose()
+
+    outcomes = sorted(
+        "ok" if not isinstance(r, BaseException) else r.code for r in results
+    )
+    assert outcomes == ["CONFLICT", "ok"], [repr(r) for r in results]

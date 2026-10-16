@@ -54,8 +54,6 @@ from app.core.rbac import is_admin
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.tasks import platform_registry
-
-#: Async view of the enabled platform codes (registry, V1.1 spec
 from app.modules.tasks.collaborator_service import CollaboratorPermission
 from app.modules.tasks.import_confirm import (
     AssignmentImportResult,

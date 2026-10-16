@@ -523,17 +523,28 @@ class PlatformAdminPublic(BaseModel):
 
 
 class PlatformCreateRequest(BaseModel):
-    """POST /admin/platforms: code is immutable after creation."""
+    """POST /admin/platforms: code is immutable after creation.
 
-    code: str
-    display_name: str
+    Validation lives HERE (friendly-before-constraint, engineering §6):
+    the ASCII stable-code band and column lengths, so a paste error is
+    a 400 — never the 500 the DB truncation would answer.
+    """
+
+    code: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+    display_name: str = Field(min_length=1, max_length=64)
     sort_order: int
 
 
 class PlatformPatchRequest(BaseModel):
     """PATCH /admin/platforms/{code}: every field optional; code is not
-    representable here (immutable by construction)."""
+    representable here (immutable by construction). The name band
+    matches the create side (a blank-after-strip patch is the service's
+    400 — see update_platform)."""
 
-    display_name: str | None = None
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
     sort_order: int | None = None
     enabled: bool | None = None

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
@@ -46,6 +47,7 @@ AUDIT_PLATFORM_CREATED = "PLATFORM_CREATED"
 AUDIT_PLATFORM_UPDATED = "PLATFORM_UPDATED"
 _PLATFORM_NOT_FOUND = "平台不存在"
 _PLATFORM_CONFLICT = "该平台代码已存在"
+_PLATFORM_INVALID_MESSAGE = "平台代码或显示名不能为空"
 
 
 async def list_enabled(db: AsyncSession) -> list[Platform]:
@@ -85,13 +87,29 @@ async def create_platform(
     """
     writer = audit if audit is not None else AuditLogWriter()
     normalized = code.strip().lower()
+    if not normalized or not display_name.strip():
+        # The DTO band already stops most of this; the service re-checks
+        # so a blank-after-strip value can never become a dirty row (the
+        # friendly-before-constraint rule, engineering §6).
+        raise BusinessError(
+            ErrorCode.VALIDATION_ERROR, _PLATFORM_INVALID_MESSAGE, status_code=400
+        )
     if await db.get(Platform, normalized) is not None:
         raise BusinessError(ErrorCode.CONFLICT, _PLATFORM_CONFLICT, status_code=409)
     platform = Platform(
         code=normalized, display_name=display_name.strip(), sort_order=sort_order
     )
     db.add(platform)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        # Two concurrent creates of the same code both pass the read
+        # check; the loser's PK violation is the typed 409 (the
+        # community rating_service race precedent), never a raw 500.
+        await db.rollback()
+        raise BusinessError(
+            ErrorCode.CONFLICT, _PLATFORM_CONFLICT, status_code=409
+        ) from exc
     await writer.append(
         db,
         actor=actor,
@@ -136,6 +154,12 @@ async def update_platform(
         "enabled": platform.enabled,
     }
     if display_name is not None:
+        if not display_name.strip():
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _PLATFORM_INVALID_MESSAGE,
+                status_code=400,
+            )
         platform.display_name = display_name.strip()
     if sort_order is not None:
         platform.sort_order = sort_order
