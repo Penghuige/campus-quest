@@ -52,6 +52,9 @@ export interface AssignmentImportProps {
   onImported?: (result: ImportConfirmDto) => void;
 }
 import { Button } from "@/components/ui/button";
+import { usePlatformNames } from "@/features/platforms/platformDictionary";
+import { platformDisplayName } from "@/features/platforms/platformView";
+
 
 type ImportPhase =
   | { kind: "idle" }
@@ -202,6 +205,7 @@ function ImportPreviewTable({
   confirming: boolean;
   onConfirm: () => void;
 }) {
+  const platformNames = usePlatformNames();
   const view = importPreviewView(preview);
   // Render cap (F4): a multi-thousand-row error list must not freeze the
   // page on table layout; the full list stays in `view.rowErrors`.
@@ -249,7 +253,7 @@ function ImportPreviewTable({
                 {capped.visible.map((row) => (
                   <tr key={row.key}>
                     <td>{row.where}</td>
-                    <td className="mono">{row.platform ?? "—"}</td>
+                    <td className="mono">{row.platform === null ? "—" : platformDisplayName(row.platform, platformNames)}</td>
                     <td className="mono">{row.keyword ?? "—"}</td>
                     <td>{row.message}</td>
                   </tr>
