@@ -132,7 +132,9 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
       await page.getByLabel("动态验证码").fill(totpCode(ADMIN_TOTP_SECRET!));
       await page.getByRole("button", { name: "完成登录" }).click();
       try {
-        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), {
+        // The #84 landing rule (hot-fix 2026-10-16): an ADMIN lands on
+        // the ADMIN workspace, never the teacher queue.
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
           timeout: 5_000,
         });
         landed = true;
@@ -156,7 +158,7 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
     const secondCode = await requestCode(second, adminEmail);
     await second.getByLabel("邮箱验证码", { exact: false }).fill(secondCode);
     await second.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
     await expect(second.getByTestId("email-login-totp-leg")).toHaveCount(0);
     await replay.close();
   });
@@ -197,4 +199,5 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
     await expect(page.getByText(/尝试次数过多，请 \d+ 分钟后再试/)).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
   });
+
 });
