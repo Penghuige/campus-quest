@@ -31,7 +31,6 @@ import {
 import type { PendingStudentDto } from "@/features/auth/mobileLoginApi";
 import {
   describeApprovalError,
-  maskPhone,
   validateRejectReason,
 } from "./approvalsView";
 import { Button } from "@/components/ui/button";
@@ -40,7 +39,8 @@ interface PendingRow {
   id: string;
   username: string;
   nickname: string;
-  phone: string | null;
+  /** The backend's project-uniform mask, rendered verbatim. */
+  phoneMasked: string | null;
   createdAt: string;
 }
 
@@ -49,7 +49,7 @@ function toRow(user: PendingStudentDto): PendingRow {
     id: user.id,
     username: user.username,
     nickname: user.nickname,
-    phone: user.phone_e164 ?? null,
+    phoneMasked: user.phone_masked ?? null,
     createdAt: user.created_at,
   };
 }
@@ -187,7 +187,7 @@ export function ApprovalsAdmin() {
                 <tr key={row.id}>
                   <td className="mono">{row.username}</td>
                   <td>{row.nickname}</td>
-                  <td className="mono">{maskPhone(row.phone)}</td>
+                  <td className="mono">{row.phoneMasked ?? "—"}</td>
                   <td>
                     <time dateTime={row.createdAt}>
                       {formatDeadlineDateTime(parseServerInstant(row.createdAt))}

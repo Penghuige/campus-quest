@@ -92,7 +92,7 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
     // gone on the next load and the frozen copy with it.
     await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
     await page.goto(`${BASE_URL}/admin/approvals`);
-    const row = page.locator("tr", { hasText: `139****${phone.slice(7)}` });
+    const row = page.locator("tr", { hasText: `+86${phone.slice(0, 1)}****${phone.slice(7)}` });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "通过" }).click();
     await expect(row).toHaveCount(0);
@@ -105,7 +105,7 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
     const { phone } = await registerThroughUi(page, { withPassword: false });
     await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
     await page.goto(`${BASE_URL}/admin/approvals`);
-    const row = page.locator("tr", { hasText: `139****${phone.slice(7)}` });
+    const row = page.locator("tr", { hasText: `+86${phone.slice(0, 1)}****${phone.slice(7)}` });
     await row.getByRole("button", { name: "拒绝" }).click();
     await page.getByLabel(/拒绝理由/).fill("端到端拒绝用例");
     await page.getByRole("button", { name: "确认拒绝" }).click();

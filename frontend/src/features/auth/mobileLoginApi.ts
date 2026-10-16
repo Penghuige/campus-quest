@@ -21,17 +21,17 @@ type Schemas = components["schemas"];
 
 /**
  * The pending-approval row (hand-written contract): the admin users
- * listing's governance shape PLUS the masked-phone surface spec §5
- * requires — the generated AdminUserResponse deliberately carries no
- * contact field (G11), so the backend PR will either extend the
- * status-filtered listing or add the field; this shape flips to the
- * generated alias when that lands.
+ * listing's governance shape PLUS `phone_masked` — the backend's
+ * project-uniform mask (+861****5555, backend mask_phone; G11 minimal
+ * necessity) which the approvals page renders verbatim (the client
+ * never re-masks). Flips to the generated alias when the backend PR
+ * merges.
  */
 export interface PendingStudentDto {
   id: string;
   username: string;
   nickname: string;
-  phone_e164: string | null;
+  phone_masked: string | null;
   created_at: string;
 }
 

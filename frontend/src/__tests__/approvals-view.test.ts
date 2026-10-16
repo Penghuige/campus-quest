@@ -10,21 +10,8 @@ import { ApiError } from "../lib/errors";
 
 import {
   describeApprovalError,
-  maskPhone,
   validateRejectReason,
 } from "../features/admin/approvalsView";
-
-describe("maskPhone (the admin-eye privacy rule)", () => {
-  test("CN mobile keeps first 3 + last 4, masks the middle", () => {
-    assert.equal(maskPhone("13800138000"), "138****8000");
-  });
-
-  test("null renders the em dash; odd shapes never leak raw", () => {
-    assert.equal(maskPhone(null), "—");
-    assert.equal(maskPhone("ab"), "**");
-    assert.equal(maskPhone("+1234567"), "******67");
-  });
-});
 
 describe("validateRejectReason (optional but bounded)", () => {
   test("empty is valid (transport-optional); long is refused", () => {

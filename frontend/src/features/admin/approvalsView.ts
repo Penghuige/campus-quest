@@ -17,18 +17,6 @@ export interface PendingStudentDto {
   created_at: string;
 }
 
-/** CN mobile mask: keep the first 3 and last 4, mask the middle 4. */
-export function maskPhone(phone: string | null): string {
-  if (phone === null) {
-    return "—";
-  }
-  if (/^1[3-9]\d{9}$/.test(phone)) {
-    return `${phone.slice(0, 3)}****${phone.slice(7)}`;
-  }
-  // Non-CN shapes: mask all but the last 2 (never render a raw contact).
-  return phone.length <= 2 ? "**" : `${"*".repeat(phone.length - 2)}${phone.slice(-2)}`;
-}
-
 /** The reject reason is transport-OPTIONAL but admin-encouraged. */
 export function validateRejectReason(reason: string): string | undefined {
   if (reason.trim().length > 200) {
