@@ -31,6 +31,12 @@ Feature components own product composition. components/ui owns generic primitive
 
 Do not put product logic into copied shadcn primitive files.
 
+The bottom-layer boundaries are machine-checked by `make arch-lint`
+(dependency-cruiser rules in `frontend/.dependency-cruiser.cjs`, since
+2026-10-16): `components/ui` and `lib` never reach into features/app, and
+features never import `app/`. Cross-feature imports are warn-level
+visibility, not errors.
+
 ## 2. Server/client boundary
 
 Default to Server Components for:

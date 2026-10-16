@@ -51,3 +51,6 @@ frontend/e2e/.certs/
 
 # e2e-only MinIO TLS cert (infra/scripts/gen-e2e-minio-cert.sh output)
 infra/e2e-certs/
+
+# architecture visual artifacts (make arch-city; derived, not committed)
+build/

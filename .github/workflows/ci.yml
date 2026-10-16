@@ -110,6 +110,14 @@ jobs:
         working-directory: backend
         run: uv run mypy
 
+      # Architecture contract gate (owner-approved addition 2026-10-16):
+      # import-linter contracts in backend/pyproject.toml [tool.importlinter]
+      # enforce the layering rules (backend-engineering §1-§2, the
+      # identity directory-port rule in docs/architecture/interfaces.md).
+      - name: import-linter (architecture contracts)
+        working-directory: backend
+        run: uv run lint-imports
+
       # Contract-freshness gate, backend half (PR #4 review P1): the
       # committed openapi.snapshot.json must match what the CURRENT
       # backend serves. The frontend job regenerates the TS types from
@@ -244,6 +252,13 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      # Architecture contract gate, frontend half (owner-approved addition
+      # 2026-10-16): dependency-cruiser boundaries in
+      # .dependency-cruiser.cjs — errors fail the job; warn-level
+      # cross-feature imports stay visible without failing.
+      - name: dependency-cruiser (architecture boundaries)
+        run: npm run arch:lint
 
       - name: CSS integrity
         run: npm run check:css

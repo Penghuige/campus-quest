@@ -10,6 +10,12 @@ Each domain module should be understandable in isolation:
 
 router -> application/domain service -> repository/query + ports -> PostgreSQL/Redis/external adapters
 
+The layering direction above is machine-checked by `make arch-lint`
+(import-linter contracts in `backend/pyproject.toml`, since 2026-10-16);
+adding a `*_router.py` / `*_service.py` file to a module means adding its
+name to that module's contract. The derived map
+`docs/architecture/as-built.md` shows the real cross-module coupling.
+
 The important boundary is ownership, not a mandatory class count.
 
 A small use case does not need ceremonial layers. A high-risk multi-table transition does need one clear service transaction.
