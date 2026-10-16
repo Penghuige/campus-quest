@@ -1336,6 +1336,50 @@
         }
       }
     },
+    "/api/v1/tasks/{task_id}/submission-template": {
+      "get": {
+        "summary": "Download Submission Template",
+        "description": "The CSV submission template (V1.1 spec §5): header-only, BOM\nfirst, columns in the schema's declared order (required then\noptional) — a student's filled-in file passes the validator's header\ncheck on the first try. CSV-family tasks only; any other family\n(document tasks carry no schema by §10.1) answers the typed 404.\nBrowsing-grade: every ACTIVE role may download it.",
+        "operationId": "download_submission_template_api_v1_tasks__task_id__submission_template_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}": {
       "get": {
         "summary": "Get Task",

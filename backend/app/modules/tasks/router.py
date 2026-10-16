@@ -149,7 +149,7 @@ from functools import lru_cache
 from typing import Annotated
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
@@ -157,7 +157,7 @@ from starlette.requests import Request as StarletteRequest
 from app.core.clock import Clock
 from app.core.config import Settings, get_settings
 from app.core.error_codes import ErrorCode
-from app.core.errors import error_envelope
+from app.core.errors import BusinessError, error_envelope
 from app.core.observability import REQUEST_ID_HEADER
 from app.db.session import get_db_session
 from app.integrations.rate_limit import (
@@ -515,6 +515,39 @@ async def list_tasks(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/tasks/{task_id}/submission-template")
+async def download_submission_template(
+    task_id: uuid.UUID,
+    actor: ActiveActor,
+    db: DbSession,
+) -> Response:
+    """The CSV submission template (V1.1 spec §5): header-only, BOM
+    first, columns in the schema's declared order (required then
+    optional) — a student's filled-in file passes the validator's header
+    check on the first try. CSV-family tasks only; any other family
+    (document tasks carry no schema by §10.1) answers the typed 404.
+    Browsing-grade: every ACTIVE role may download it."""
+    from fastapi.responses import Response as _Response
+
+    task = await db.get(Task, task_id)
+    if task is None or "CSV" not in (task.allowed_file_types or []):
+        raise BusinessError(
+            ErrorCode.NOT_FOUND, "该任务不提供 CSV 模板", status_code=404
+        )
+    raw_schema = task.submission_schema or {}
+    columns = list(raw_schema.get("required_columns") or [])
+    columns += list(raw_schema.get("optional_columns") or [])
+    header = ",".join(str(column["name"]) for column in columns)
+    # utf-8-sig writes the BOM Excel needs to decode CJK headers; the
+    # trailing \r\n is the RFC 4180 record terminator.
+    body = ("\ufeff" + header + "\r\n").encode("utf-8")
+    return _Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template.csv"'},
     )
 
 
