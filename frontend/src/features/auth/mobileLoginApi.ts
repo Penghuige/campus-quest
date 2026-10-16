@@ -19,7 +19,21 @@ import type { components } from "@/lib/api/schema";
 
 type Schemas = components["schemas"];
 
-export type AdminUserDto = Schemas["AdminUserResponse"];
+/**
+ * The pending-approval row (hand-written contract): the admin users
+ * listing's governance shape PLUS the masked-phone surface spec §5
+ * requires — the generated AdminUserResponse deliberately carries no
+ * contact field (G11), so the backend PR will either extend the
+ * status-filtered listing or add the field; this shape flips to the
+ * generated alias when that lands.
+ */
+export interface PendingStudentDto {
+  id: string;
+  username: string;
+  nickname: string;
+  phone_e164: string | null;
+  created_at: string;
+}
 
 /** Ask for a 6-digit SMS login code. 202 always (anti-enumeration). */
 export function requestMobileLoginCode(phone: string): Promise<void> {
@@ -64,15 +78,15 @@ export function fastLoginRememberedDevice(
 }
 
 /** The pending-approval queue (the admin users list, status-filtered). */
-export function listPendingStudents(): Promise<{ items: AdminUserDto[] }> {
-  return apiRequest<{ items: AdminUserDto[] }>(
+export function listPendingStudents(): Promise<{ items: PendingStudentDto[] }> {
+  return apiRequest<{ items: PendingStudentDto[] }>(
     "/api/v1/admin/users?status=PENDING_APPROVAL",
   );
 }
 
 /** Approve one student (audit USER_APPROVED server-side). */
-export function approveStudent(userId: string): Promise<AdminUserDto> {
-  return apiRequest<AdminUserDto>(
+export function approveStudent(userId: string): Promise<PendingStudentDto> {
+  return apiRequest<PendingStudentDto>(
     `/api/v1/admin/users/${encodeURIComponent(userId)}/approve`,
     { method: "POST" },
   );
@@ -82,8 +96,8 @@ export function approveStudent(userId: string): Promise<AdminUserDto> {
 export function rejectStudent(
   userId: string,
   reason: string | null,
-): Promise<AdminUserDto> {
-  return apiRequest<AdminUserDto>(
+): Promise<PendingStudentDto> {
+  return apiRequest<PendingStudentDto>(
     `/api/v1/admin/users/${encodeURIComponent(userId)}/reject`,
     { method: "POST", body: { reason } },
   );
