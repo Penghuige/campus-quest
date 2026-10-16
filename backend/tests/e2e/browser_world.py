@@ -885,6 +885,20 @@ async def _main(argv: list[str]) -> Any:
             return {"challenge_id": str(challenge_id), "code": code}
         finally:
             await broker.aclose()
+    if action == "mobile-code":
+        # The SMS login-code twin of email-code: the student challenge
+        # rests on login_mobile_challenges (tests/e2e/mobile_code_probe.py
+        # for the honesty argument — same keyed-digest closed-space
+        # arithmetic as the email and OTP probes).
+        from tests.e2e.mobile_code_probe import recover_mobile_code
+
+        factory = _factory()
+        try:
+            async with factory() as db:
+                challenge_id, code = await recover_mobile_code(db, argv[1].strip())
+                return {"challenge_id": str(challenge_id), "code": code}
+        finally:
+            await _dispose(factory)
     if action == "email-code":
         # The email login-code twin of otp-code: the challenge rests on
         # the login_email_challenges table, so the probe reads it there
