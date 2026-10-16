@@ -206,9 +206,11 @@ from app.modules.community.settings_emoji_whitelist import SystemEmojiWhitelistP
 from app.modules.community.vote_service import VoteService
 from app.modules.identity.dependencies import (
     get_business_clock,
-    require_active_community_actor,
-    require_active_student_actor,
+    require_approved_community_actor,
     require_staff_management_actor,
+)
+from app.modules.identity.dependencies import (
+    require_approved_student_actor as require_approved_student_for_reports,
 )
 from app.modules.identity.events import (
     Actor,
@@ -397,8 +399,8 @@ def get_moderation_service(
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-CommunityActor = Annotated[Actor, Depends(require_active_community_actor)]
-StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
+CommunityActor = Annotated[Actor, Depends(require_approved_community_actor)]
+StudentActor = Annotated[Actor, Depends(require_approved_student_for_reports)]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 CommentServiceDep = Annotated[CommentService, Depends(get_comment_service)]

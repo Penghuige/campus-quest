@@ -118,6 +118,8 @@ __all__ = [
     "require_active_student_actor",
     "require_active_student_or_staff_management_actor",
     "require_admin_actor",
+    "require_approved_community_actor",
+    "require_approved_student_actor",
     "require_staff_management_actor",
     "resolve_access_token",
 ]
@@ -129,6 +131,7 @@ _STUDENT_ACTION_PERMISSION_MESSAGE = "仅学生账号可执行该操作"
 _COMMUNITY_PARTICIPATION_PERMISSION_MESSAGE = "仅学生或教师账号可参与社区互动"
 _ADMIN_ACTION_PERMISSION_MESSAGE = "只有管理员可以执行该操作"
 _TOTP_SETUP_REQUIRED_MESSAGE = "必须先完成 TOTP 两步验证才能使用管理功能"
+_APPROVAL_PENDING_MESSAGE = "账号待管理员审核，期间可浏览但不能执行该操作"
 
 # auto_error=False: a missing or malformed Authorization header is OUR
 # AUTHENTICATION_REQUIRED business error (401, §29 envelope), not
@@ -248,7 +251,13 @@ async def require_active_actor(
     anything the client carries.
     """
     user = await _resolve_user(credentials, db, codec, clock)
-    if user.status != UserStatus.ACTIVE:
+    if user.status not in (
+        UserStatus.ACTIVE,
+        # PENDING_APPROVAL browses (V1.1 spec 2026-10-16 §2: login and
+        # the reading surfaces are open; the acting surfaces use the
+        # approved guards).
+        UserStatus.PENDING_APPROVAL,
+    ):
         raise BusinessError(
             ErrorCode.ACCOUNT_NOT_ACTIVE,
             _ACCOUNT_NOT_ACTIVE_MESSAGE,
@@ -348,6 +357,88 @@ async def require_active_staff_actor(
             status_code=403,
         )
     if user.status != UserStatus.ACTIVE:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_approved_student_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The Student ACTING surface under the approval regime (V1.1 spec
+    2026-10-16 §2): every require_active_student_actor check plus the
+    PENDING_APPROVAL freeze — a pending student may log in and browse,
+    but claim/submit/redeem/engage answers 403 APPROVAL_PENDING until an
+    admin approves. Staff never carries the state, so nothing changes
+    for them by construction."""
+
+    async def _pending_gate(user: User) -> None:
+        if (
+            user.role == Role.STUDENT.value
+            and user.status == UserStatus.PENDING_APPROVAL.value
+        ):
+            raise BusinessError(
+                ErrorCode.APPROVAL_PENDING,
+                _APPROVAL_PENDING_MESSAGE,
+                status_code=403,
+            )
+
+    user = await _resolve_user(credentials, db, codec, clock)
+    await _pending_gate(user)
+    if not rbac.is_student(user.role):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _STUDENT_ACTION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE.value:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_approved_community_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The community WRITE surface under the approval regime: the
+    require_active_community_actor checks plus the PENDING_APPROVAL
+    freeze for the Student arm — a pending student reads the square but
+    cannot comment/vote/react/rate/report; the Teacher arm is untouched
+    (staff never carries the state)."""
+
+    user = await _resolve_user(credentials, db, codec, clock)
+    if (
+        user.role == Role.STUDENT.value
+        and user.status == UserStatus.PENDING_APPROVAL.value
+    ):
+        raise BusinessError(
+            ErrorCode.APPROVAL_PENDING,
+            _APPROVAL_PENDING_MESSAGE,
+            status_code=403,
+        )
+    if not rbac.has_any_role(user.role, Role.STUDENT, Role.TEACHER):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _COMMUNITY_PARTICIPATION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status != UserStatus.ACTIVE.value:
         raise BusinessError(
             ErrorCode.ACCOUNT_NOT_ACTIVE,
             _ACCOUNT_NOT_ACTIVE_MESSAGE,

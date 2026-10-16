@@ -58,7 +58,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -370,6 +370,71 @@ async def reactivate_user(
     """SUSPENDED/BANNED -> ACTIVE — the Admin unban included (§5.7)."""
     return await _transition_account_status(
         db, actor, service, user_id, body, request, "reactivate_user"
+    )
+
+
+class ApprovalVerdictResponse(BaseModel):
+    """The registration verdict's result row (V1.1 spec 2026-10-16 §2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    username: str
+    status: UserStatus
+    approved_at: datetime | None = None
+    rejected_reason: str | None = None
+
+
+class RejectRequest(BaseModel):
+    """reason is optional; ≤255 chars (the column bound)."""
+
+    reason: str | None = Field(default=None, max_length=255)
+
+
+@router.post("/admin/users/{user_id}/approve", response_model=ApprovalVerdictResponse)
+async def approve_student(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    service: AccountAdminDep,
+    request: Request,
+) -> ApprovalVerdictResponse:
+    """PENDING_APPROVAL -> ACTIVE (V1.1 spec 2026-10-16 §2): approve a
+    student registration; USER_APPROVED rides the same transaction."""
+    user = await service.approve_student(
+        db, actor, user_id, audit_context=AuditContext.from_request(request)
+    )
+    return ApprovalVerdictResponse(
+        id=str(user.id),
+        username=user.username,
+        status=UserStatus(user.status),
+        approved_at=user.approved_at,
+    )
+
+
+@router.post("/admin/users/{user_id}/reject", response_model=ApprovalVerdictResponse)
+async def reject_student(
+    user_id: UUID,
+    body: RejectRequest,
+    actor: AdminActor,
+    db: DbSession,
+    service: AccountAdminDep,
+    request: Request,
+) -> ApprovalVerdictResponse:
+    """PENDING_APPROVAL -> BANNED with the optional reason (spec §2);
+    USER_REJECTED rides the same transaction."""
+    user = await service.reject_student(
+        db,
+        actor,
+        user_id,
+        reason=body.reason or "",
+        audit_context=AuditContext.from_request(request),
+    )
+    return ApprovalVerdictResponse(
+        id=str(user.id),
+        username=user.username,
+        status=UserStatus(user.status),
+        rejected_reason=user.rejected_reason,
     )
 
 

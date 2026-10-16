@@ -171,8 +171,8 @@ from app.modules.community.adapters import CommunityRatingSummaryAdapter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
-    require_active_student_actor,
     require_admin_actor,
+    require_approved_student_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
@@ -368,7 +368,8 @@ def get_task_query_service() -> TaskQueryService:
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 ActiveActor = Annotated[Actor, Depends(require_active_actor)]
-StudentActor = Annotated[Actor, Depends(require_active_student_actor)]
+
+StudentActor = Annotated[Actor, Depends(require_approved_student_actor)]
 StaffActor = Annotated[Actor, Depends(require_staff_management_actor)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 RatingPortDep = Annotated[RatingSummaryPort, Depends(get_rating_summary_port)]
