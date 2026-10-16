@@ -337,6 +337,7 @@ function ClaimDetailReady({
         <>
           <UploadPanel
             claimId={claim.claim_id}
+            taskId={claim.task_id}
             onClaimChanged={onClaimChanged}
             allowedTypes={claim.allowed_file_types}
           />
