@@ -46,6 +46,23 @@ export function verifyMobileLoginCode(
   );
 }
 
+/**
+ * The remembered-device FAST LOGIN (the backend contract's no-code
+ * verify): {phone} + the HttpOnly cq_staff_device cookie answers a
+ * full login and ROTATES the cookie (a 30-day re-issue — the natural
+ * renewal for an already-trusted device). A refusal means the cookie
+ * is absent/expired: the caller falls back to the code form (the
+ * honest-fallback button, never an error state of its own).
+ */
+export function fastLoginRememberedDevice(
+  phone: string,
+): Promise<Schemas["TokenPairResponse"]> {
+  return apiRequest<Schemas["TokenPairResponse"]>(
+    "/api/v1/auth/mobile-code/verify",
+    { method: "POST", body: { phone } },
+  );
+}
+
 /** The pending-approval queue (the admin users list, status-filtered). */
 export function listPendingStudents(): Promise<{ items: AdminUserDto[] }> {
   return apiRequest<{ items: AdminUserDto[] }>(

@@ -21,7 +21,7 @@ import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import { LoginForm } from "./LoginForm";
-import { requestMobileLoginCode, verifyMobileLoginCode } from "./mobileLoginApi";
+import { requestMobileLoginCode, fastLoginRememberedDevice, verifyMobileLoginCode } from "./mobileLoginApi";
 import {
   describeMobileLoginError,
   validateMobileCode,
@@ -245,7 +245,49 @@ function MobileLoginForm({
           记住此设备 30 天（下次登录免发短信）
         </label>
         <SubmitButton loading={verifying}>登录</SubmitButton>
+        {/* The honest-fallback fast path (the backend contract's no-code
+         * verify): the cookie is HttpOnly so its presence is NOT
+         * detectable — the button shows unconditionally, and a
+         * cookie-less click simply falls back to this code form. */}
+        <Button
+          variant="ghost"
+          block
+          onClick={() => void onFastLogin()}
+          disabled={verifying || sending}
+        >
+          快速登录（已记住的设备）
+        </Button>
       </form>
     </>
   );
+
+  async function onFastLogin() {
+    if (verifying) {
+      return;
+    }
+    setSummary(null);
+    const error = validateMobileLoginPhone(phone) ?? undefined;
+    setPhoneError(error);
+    if (error !== undefined) {
+      return;
+    }
+    setVerifying(true);
+    try {
+      await fastLoginRememberedDevice(phone.trim());
+      refreshSession();
+      router.replace("/");
+      router.refresh();
+    } catch {
+      // No trusted cookie (absent/expired) — the honest fallback is the
+      // code form itself; a quiet hint, never an error state.
+      setSentNote(false);
+      setSummary({
+        summary: "该设备尚未记住或已过期，请获取短信验证码登录",
+        fieldErrors: {},
+        requestId: null,
+      });
+    } finally {
+      setVerifying(false);
+    }
+  }
 }

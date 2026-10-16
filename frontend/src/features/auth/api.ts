@@ -33,7 +33,16 @@ export type ChallengeView = Schemas["ChallengeResponse"];
 export type PhoneTokenView = Schemas["PhoneTokenResponse"];
 
 /** `RegisterRequest` body. */
-export type RegisterPayload = Schemas["RegisterRequest"];
+/**
+ * Auth-extension-II §1: the password is OPTIONAL (null/absent/blank =
+ * no password channel — the account logs in by mobile code only). The
+ * generated RegisterRequest still carries the required field until the
+ * backend PR's OpenAPI regen; this local widening keeps the honest
+ * contract until then.
+ */
+export type RegisterPayload = Omit<Schemas["RegisterRequest"], "password"> & {
+  password?: string | null;
+};
 
 /** `UserPublic` — the created account view. */
 export type RegisteredUser = Schemas["UserPublic"];
