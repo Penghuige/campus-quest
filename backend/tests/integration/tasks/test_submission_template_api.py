@@ -204,9 +204,10 @@ async def test_template_streams_bom_csv_with_schema_columns(
     assert body == "标题,链接,点赞数\r\n"
     # The disposition: plain quoted filename (the contract the frontend
     # pins its parser on).
-    assert response.headers.get(
-        "content-disposition"
-    ) == 'attachment; filename="template.csv"'
+    assert (
+        response.headers.get("content-disposition")
+        == 'attachment; filename="template.csv"'
+    )
 
 
 async def test_template_requires_no_optional_columns_when_absent(
