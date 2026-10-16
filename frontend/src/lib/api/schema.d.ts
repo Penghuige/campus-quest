@@ -68,6 +68,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/mobile-code/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Mobile Code
+         * @description SMS one 6-digit student login code (V1.1 2026-10-16 §3) — always
+         *     202, empty body: phone/student existence is never an answer here;
+         *     only a cooldown/liter breach (429) differs.
+         */
+        post: operations["request_mobile_code_api_v1_auth_mobile_code_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mobile-code/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Mobile Code
+         * @description Open a student session with the SMS code — or, with a valid
+         *     remembered-device cookie and NO code, with the cookie itself (it
+         *     re-issues a fresh 30-day value; the #87 craft, student edition).
+         */
+        post: operations["verify_mobile_code_api_v1_auth_mobile_code_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -2052,91 +2096,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/whitelist": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Whitelist
-         * @description The whitelist page, ordered by student number (read-only listing
-         *     built inline — the community-router listing precedent).
-         */
-        get: operations["list_whitelist_api_v1_admin_whitelist_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/whitelist/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Whitelist Import
-         * @description Classify every non-blank line; zero writes (preview-then-confirm,
-         *     plan Global Constraints). The digest binds the confirm payload.
-         */
-        post: operations["preview_whitelist_import_api_v1_admin_whitelist_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/whitelist/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm Whitelist Import
-         * @description Insert exactly the previewed set, all-or-nothing; a digest
-         *     mismatch or a DB collision is the typed 409 ``CONFLICT``.
-         */
-        post: operations["confirm_whitelist_import_api_v1_admin_whitelist_confirm_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/whitelist/{student_number}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Toggle Whitelist Entry
-         * @description Flip one entry to enabled/disabled; an unknown number is the
-         *     typed 400 with the missing list, an idempotent flip changes
-         *     nothing.
-         */
-        patch: operations["toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch"];
-        trace?: never;
-    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -2213,6 +2172,48 @@ export interface paths {
          * @description SUSPENDED/BANNED -> ACTIVE — the Admin unban included (§5.7).
          */
         post: operations["reactivate_user_api_v1_admin_users__user_id__reactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Student
+         * @description PENDING_APPROVAL -> ACTIVE (V1.1 spec 2026-10-16 §2): approve a
+         *     student registration; USER_APPROVED rides the same transaction.
+         */
+        post: operations["approve_student_api_v1_admin_users__user_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Student
+         * @description PENDING_APPROVAL -> BANNED with the optional reason (spec §2);
+         *     USER_REJECTED rides the same transaction.
+         */
+        post: operations["reject_student_api_v1_admin_users__user_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2657,6 +2658,21 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ApprovalVerdictResponse
+         * @description The registration verdict's result row (V1.1 spec 2026-10-16 §2).
+         */
+        ApprovalVerdictResponse: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            status: components["schemas"]["UserStatus"];
+            /** Approved At */
+            approved_at?: string | null;
+            /** Rejected Reason */
+            rejected_reason?: string | null;
         };
         /**
          * ApproveResponse
@@ -3275,6 +3291,31 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * MobileCodeRequestRequest
+         * @description Ask for a 6-digit SMS login code (V1.1 2026-10-16 §3) — always
+         *     202, staff/role existence is never an answer here.
+         */
+        MobileCodeRequestRequest: {
+            /** Phone */
+            phone: string;
+        };
+        /**
+         * MobileCodeVerifyRequest
+         * @description Trade the SMS code (or the remembered-device cookie, with ``code``
+         *     omitted) for a student session.
+         */
+        MobileCodeVerifyRequest: {
+            /** Phone */
+            phone: string;
+            /** Code */
+            code?: string | null;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
         };
         /** ModerationCommentListResponse */
         ModerationCommentListResponse: {
@@ -3939,12 +3980,20 @@ export interface components {
         RegisterRequest: {
             /** Student Number */
             student_number: string;
-            /** Nickname */
-            nickname: string;
             /** Phone Token */
             phone_token: string;
+            /** Nickname */
+            nickname?: string | null;
             /** Password */
-            password: string;
+            password?: string | null;
+        };
+        /**
+         * RejectRequest
+         * @description reason is optional; ≤255 chars (the column bound).
+         */
+        RejectRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * ReleaseOccupiedAssignmentRequest
@@ -5089,7 +5138,7 @@ export interface components {
          * UserStatus
          * @enum {string}
          */
-        UserStatus: "PENDING_PHONE" | "ACTIVE" | "SUSPENDED" | "BANNED";
+        UserStatus: "PENDING_PHONE" | "ACTIVE" | "SUSPENDED" | "BANNED" | "PENDING_APPROVAL";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -5200,130 +5249,6 @@ export interface components {
             spendable_points: number;
             /** Point Debt */
             point_debt: number;
-        };
-        /**
-         * WhitelistConfirmRequest
-         * @description The previewed importable set plus its digest (all-or-nothing).
-         */
-        WhitelistConfirmRequest: {
-            /** Confirm Token */
-            confirm_token: string;
-            /**
-             * Enable
-             * @default true
-             */
-            enable: boolean;
-            /** Student Numbers */
-            student_numbers: string[];
-        };
-        /** WhitelistConfirmResponse */
-        WhitelistConfirmResponse: {
-            /** Created */
-            created: number;
-            /** Enable */
-            enable: boolean;
-        };
-        /** WhitelistCountsResponse */
-        WhitelistCountsResponse: {
-            /** Total Rows */
-            total_rows: number;
-            /** Importable */
-            importable: number;
-            /** Duplicate In File */
-            duplicate_in_file: number;
-            /** Duplicate In Db */
-            duplicate_in_db: number;
-            /** Full Width Digits */
-            full_width_digits: number;
-            /** Invalid Characters */
-            invalid_characters: number;
-            /** Invalid Length */
-            invalid_length: number;
-        };
-        /**
-         * WhitelistEntryResponse
-         * @description One whitelist row: the number plus its enabled state.
-         */
-        WhitelistEntryResponse: {
-            /** Id */
-            id: string;
-            /** Student Number */
-            student_number: string;
-            /** Enabled */
-            enabled: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Disabled At */
-            disabled_at: string | null;
-        };
-        /**
-         * WhitelistListResponse
-         * @description Offset-paginated whitelist page, number-ordered.
-         */
-        WhitelistListResponse: {
-            /** Items */
-            items: components["schemas"]["WhitelistEntryResponse"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
-        };
-        /**
-         * WhitelistPreviewRequest
-         * @description The raw import text (one student number per line; the service
-         *     owns decode, trimming, and every row verdict).
-         */
-        WhitelistPreviewRequest: {
-            /** Content */
-            content: string;
-        };
-        /**
-         * WhitelistPreviewResponse
-         * @description The preview verdict: per-row decisions, counts, and the digest
-         *     the confirm payload must carry back verbatim.
-         */
-        WhitelistPreviewResponse: {
-            /** Total Rows */
-            total_rows: number;
-            /** Decisions */
-            decisions: components["schemas"]["WhitelistRowDecisionResponse"][];
-            counts: components["schemas"]["WhitelistCountsResponse"];
-            /** Importable */
-            importable: string[];
-            /** Confirm Token */
-            confirm_token: string;
-        };
-        /** WhitelistRowDecisionResponse */
-        WhitelistRowDecisionResponse: {
-            /** Row Number */
-            row_number: number;
-            /** Code */
-            code: string;
-            /** Student Number */
-            student_number: string | null;
-        };
-        /**
-         * WhitelistToggleRequest
-         * @description Flip one entry (enable or disable); the free-text why rides the
-         *     per-entry audit rows.
-         */
-        WhitelistToggleRequest: {
-            /** Enabled */
-            enabled: boolean;
-            /** Reason */
-            reason?: string | null;
-        };
-        /** WhitelistToggleResponse */
-        WhitelistToggleResponse: {
-            /** Student Number */
-            student_number: string;
-            /** Toggled */
-            toggled: boolean;
         };
         /** ReviewQueueResponse */
         app__modules__points__router__ReviewQueueResponse: {
@@ -5447,6 +5372,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_mobile_code_api_v1_auth_mobile_code_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileCodeRequestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_mobile_code_api_v1_auth_mobile_code_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileCodeVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8446,139 +8437,6 @@ export interface operations {
             };
         };
     };
-    list_whitelist_api_v1_admin_whitelist_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WhitelistListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_whitelist_import_api_v1_admin_whitelist_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WhitelistPreviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WhitelistPreviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    confirm_whitelist_import_api_v1_admin_whitelist_confirm_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WhitelistConfirmRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WhitelistConfirmResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    toggle_whitelist_entry_api_v1_admin_whitelist__student_number__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                student_number: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WhitelistToggleRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WhitelistToggleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: {
@@ -8705,6 +8563,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_student_api_v1_admin_users__user_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalVerdictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_student_api_v1_admin_users__user_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalVerdictResponse"];
                 };
             };
             /** @description Validation Error */

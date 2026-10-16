@@ -1719,6 +1719,10 @@ Teacher 不允许任意修改全局短信模板。
   `EMAIL_LOGIN_TOTP_REQUIRED`——actor 即登录账号本人，行内不落邮箱（G11）。
 - 记住设备自助清退（V1.1 §2.2 随 Wave 1）：`OWN_DEVICES_REVOKED`，actor=清退
   本人，after 快照携带 revoked 计数。
+- 注册审批裁决（V1.1 2026-10-16 认证扩展 II spec §2）：`USER_APPROVED`
+  （approved_at 快照）与 `USER_REJECTED`（rejected_reason 快照），actor=裁决
+  管理员，目标=学生账号；学生手机码登录成功 `MOBILE_LOGIN_SUCCEEDED`
+  （channel=mobile_code / +device 快照，行内不落手机号 G11）。
 - 平台注册表管理动作（V1.1 2026-10-16 spec §3 随平台注册表落地）：
   `PLATFORM_CREATED`（after 快照=显示名/排序/启用）与 `PLATFORM_UPDATED`
   （before/after 快照），actor=操作管理员，target=平台 code。
