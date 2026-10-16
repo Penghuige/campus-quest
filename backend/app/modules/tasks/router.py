@@ -166,11 +166,13 @@ from app.integrations.rate_limit import (
     RateLimitExceededError,
     RedisFixedWindowLimiter,
 )
+from app.modules.audit.context import AuditContext
 from app.modules.community.adapters import CommunityRatingSummaryAdapter
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
     require_active_student_actor,
+    require_admin_actor,
     require_staff_management_actor,
 )
 from app.modules.identity.directory import SqlAlchemyUserDirectory
@@ -181,6 +183,7 @@ from app.modules.identity.events import (
 )
 from app.modules.notifications.port import NotificationPort
 from app.modules.system.service import ABANDON_DAILY_LIMIT, SystemSettingService
+from app.modules.tasks import platform_registry
 from app.modules.tasks.abandon_service import AbandonService, SystemDailyAbandonLimit
 from app.modules.tasks.claim_service import ClaimService
 from app.modules.tasks.collaborator_service import TaskCollaboratorService
@@ -203,6 +206,10 @@ from app.modules.tasks.transport_schemas import (
     ImportPreviewResponse,
     MyClaimResponse,
     MyClaimsResponse,
+    PlatformAdminPublic,
+    PlatformCreateRequest,
+    PlatformPatchRequest,
+    PlatformPublic,
     TaskCardResponse,
     TaskCreateRequest,
     TaskDetailResponse,
@@ -393,6 +400,99 @@ async def _enforce_rate_limit(
 # --- student surfaces (spec §28, §42) -----------------------------------------------
 
 router = APIRouter()
+
+
+@router.get("/platforms", response_model=list[PlatformPublic])
+async def list_platforms(
+    actor: Annotated[Actor, Depends(require_active_actor)],
+    db: DbSession,
+) -> list[PlatformPublic]:
+    """The platform dictionary (V1.1 spec 2026-10-16 §3): every ACTIVE
+    role may read it; enabled entries only, ordered for the student
+    picker. This is the surface the claim button and task cards render
+    display_name from."""
+    rows = await platform_registry.list_enabled(db)
+    return [
+        PlatformPublic(
+            code=row.code, display_name=row.display_name, sort_order=row.sort_order
+        )
+        for row in rows
+    ]
+
+
+@router.get("/admin/platforms", response_model=list[PlatformAdminPublic])
+async def list_admin_platforms(
+    actor: Annotated[Actor, Depends(require_admin_actor)],
+    db: DbSession,
+) -> list[PlatformAdminPublic]:
+    """The console list: every row including disabled ones."""
+    rows = await platform_registry.list_all(db)
+    return [
+        PlatformAdminPublic(
+            code=row.code,
+            display_name=row.display_name,
+            sort_order=row.sort_order,
+            enabled=row.enabled,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/admin/platforms", response_model=PlatformAdminPublic, status_code=201)
+async def create_platform(
+    body: PlatformCreateRequest,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_admin_actor)],
+    db: DbSession,
+) -> PlatformAdminPublic:
+    """Register a platform (spec §3): code+display_name+sort_order; the
+    code is immutable after this. PLATFORM_CREATED rides the same
+    transaction."""
+    platform = await platform_registry.create_platform(
+        db,
+        actor=actor,
+        code=body.code,
+        display_name=body.display_name,
+        sort_order=body.sort_order,
+        audit_context=AuditContext.from_request(request),
+    )
+    return PlatformAdminPublic(
+        code=platform.code,
+        display_name=platform.display_name,
+        sort_order=platform.sort_order,
+        enabled=platform.enabled,
+        created_at=platform.created_at,
+    )
+
+
+@router.patch("/admin/platforms/{code}", response_model=PlatformAdminPublic)
+async def patch_platform(
+    code: str,
+    body: PlatformPatchRequest,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_admin_actor)],
+    db: DbSession,
+) -> PlatformAdminPublic:
+    """Patch display_name/sort_order/enabled (spec §3); the code in the
+    path names the row and is never writable. PLATFORM_UPDATED carries
+    the before/after snapshot."""
+    platform = await platform_registry.update_platform(
+        db,
+        actor=actor,
+        code=code,
+        display_name=body.display_name,
+        sort_order=body.sort_order,
+        enabled=body.enabled,
+        audit_context=AuditContext.from_request(request),
+    )
+    return PlatformAdminPublic(
+        code=platform.code,
+        display_name=platform.display_name,
+        sort_order=platform.sort_order,
+        enabled=platform.enabled,
+        created_at=platform.created_at,
+    )
 
 
 @router.get("/tasks", response_model=TaskListResponse)

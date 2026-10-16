@@ -497,3 +497,54 @@ class TaskStatisticsResponse(BaseModel):
             ),
             submission_counts=dict(statistics.submission_counts),
         )
+
+
+class PlatformPublic(BaseModel):
+    """The student-facing platform dictionary entry (spec §3).
+
+    Deliberately code/display_name/sort_order only — no lifecycle or
+    admin fields on the public surface.
+    """
+
+    code: str
+    display_name: str
+    sort_order: int
+
+
+class PlatformAdminPublic(BaseModel):
+    """The admin list/create/patch row (spec §3): the public fields plus
+    the lifecycle ones the console manages."""
+
+    code: str
+    display_name: str
+    sort_order: int
+    enabled: bool
+    created_at: datetime
+
+
+class PlatformCreateRequest(BaseModel):
+    """POST /admin/platforms: code is immutable after creation.
+
+    Validation lives HERE (friendly-before-constraint, engineering §6):
+    the ASCII stable-code band and column lengths, so a paste error is
+    a 400 — never the 500 the DB truncation would answer.
+    """
+
+    code: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+    display_name: str = Field(min_length=1, max_length=64)
+    sort_order: int
+
+
+class PlatformPatchRequest(BaseModel):
+    """PATCH /admin/platforms/{code}: every field optional; code is not
+    representable here (immutable by construction). The name band
+    matches the create side (a blank-after-strip patch is the service's
+    400 — see update_platform)."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    sort_order: int | None = None
+    enabled: bool | None = None

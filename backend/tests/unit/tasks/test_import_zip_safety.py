@@ -23,6 +23,7 @@ _CAPS = {
     "max_file_bytes": 2 * 1024 * 1024,
     "max_rows": 5000,
     "keyword_max_length": 200,
+    "allowed_platforms": frozenset({"xiaohongshu", "douyin", "zhihu"}),
 }
 
 

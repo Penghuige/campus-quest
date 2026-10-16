@@ -59,11 +59,11 @@ from app.integrations.zip_safety import (
     preflight,
 )
 
-# Canonical platform codes (spec §7): case-insensitive input, exact output.
-# Parity with the assignments CHECK constraint set is pinned by tests.
-SUPPORTED_IMPORT_PLATFORMS: frozenset[str] = frozenset(
-    {"xiaohongshu", "douyin", "zhihu"}
-)
+# The platform domain is the REGISTRY (V1.1 spec 2026-10-16 §3): the
+# caller passes the enabled-code set it read from the platforms table,
+# so imports accept admin-registered platforms with zero code changes
+# and reject disabled ones for NEW tasks. Case-insensitive input, exact
+# output. (The shipped seeds live in platform_registry.SEED_PLATFORMS.)
 
 # Dialect sniffing: restrict the candidate delimiters so a one-column file
 # cannot be sniffed as something odd, and bound the sample size.
@@ -385,6 +385,7 @@ def parse_upload(
     max_file_bytes: int,
     max_rows: int,
     keyword_max_length: int,
+    allowed_platforms: frozenset[str],
 ) -> ParsedImport:
     """Byte-cap, decode, parse, and classify every data row (spec §7.1
     steps 2-3). File-level failures are validation outcomes — a
@@ -424,6 +425,7 @@ def parse_upload(
             rows,
             max_rows=max_rows,
             keyword_max_length=keyword_max_length,
+            allowed_platforms=allowed_platforms,
         )
 
     try:
@@ -444,6 +446,7 @@ def parse_upload(
         rows,
         max_rows=max_rows,
         keyword_max_length=keyword_max_length,
+        allowed_platforms=allowed_platforms,
     )
 
 
@@ -452,6 +455,7 @@ def _classify_rows(
     *,
     max_rows: int,
     keyword_max_length: int,
+    allowed_platforms: frozenset[str],
 ) -> ParsedImport:
     """Shared row validation over canonicalized cells (both readers)."""
     valid: list[AssignmentPreviewRow] = []
@@ -492,7 +496,7 @@ def _classify_rows(
             )
             continue
         platform = platform_input.lower()
-        if platform not in SUPPORTED_IMPORT_PLATFORMS:
+        if platform not in allowed_platforms:
             errors.append(
                 AssignmentImportError(
                     ImportErrorCode.UNSUPPORTED_PLATFORM,
