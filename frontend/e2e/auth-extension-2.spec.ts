@@ -36,6 +36,21 @@ function freshPhone(): string {
   return `139${String(Date.now()).slice(-8)}`;
 }
 
+/** Settle-verified phone fill (the hydration-wipe lesson: a fill that
+ * lands before the client island hydrates is wiped by React's state
+ * init; verify after a beat, refill until it sticks). */
+async function fillPhoneVerified(page: Page, phone: string): Promise<void> {
+  const field = page.getByLabel("手机号", { exact: true });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await field.fill(phone);
+    await page.waitForTimeout(400);
+    if ((await field.inputValue()) === phone) {
+      return;
+    }
+  }
+  await expect(field).toHaveValue(phone);
+}
+
 async function registerThroughUi(
   page: Page,
   options: { withPassword: boolean },
@@ -46,7 +61,7 @@ async function registerThroughUi(
   await page.goto(`${BASE_URL}/register`);
   await page.getByLabel("学号").fill(studentNumber);
   await page.getByLabel("昵称").fill(`端到端待审${RUN!.slice(0, 4)}`);
-  await page.getByLabel("手机号").fill(phone);
+  await fillPhoneVerified(page, phone);
   await page.getByRole("button", { name: "获取验证码" }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
   const { recoverOtpCode } = await import("./fixtures");
@@ -63,11 +78,11 @@ async function loginMobileThroughUi(page: Page, phone: string): Promise<void> {
   await page.goto(`${BASE_URL}/login`);
   // The mobile tab is the default.
   await expect(page.getByRole("button", { name: "手机验证码登录" })).toBeVisible();
-  await page.getByLabel("手机号").fill(phone);
+  await fillPhoneVerified(page, phone);
   await page.getByRole("button", { name: "重新发送", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-  const { recoverOtpCode } = await import("./fixtures");
-  const code = recoverOtpCode(`+86${phone}`);
+  const { recoverMobileCode } = await import("./fixtures");
+  const code = recoverMobileCode(`+86${phone}`);
   await page.getByLabel("短信验证码").fill(code);
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -79,9 +94,15 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
   }) => {
     const { phone } = await registerThroughUi(page, { withPassword: false });
 
-    // The PENDING banner greets the mobile-code login.
+    // The PENDING banner greets the mobile-code login. 15s: this is
+    // the battery's FIRST hit on the student home — the dev server's
+    // cold compile of "/" can outlast the default 5s window (the
+    // workspace shell + banner land once compilation settles; the
+    // same flow with a settled server renders within ~2s).
     await loginMobileThroughUi(page, phone);
-    await expect(page.getByText("账号待管理员审核。")).toBeVisible();
+    await expect(page.getByText("账号待管理员审核。")).toBeVisible({
+      timeout: 15_000,
+    });
 
     // A frozen action answers the typed copy (the claim button is the
     // canonical acting surface on the square).
@@ -92,7 +113,7 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
     // gone on the next load and the frozen copy with it.
     await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
     await page.goto(`${BASE_URL}/admin/approvals`);
-    const row = page.locator("tr", { hasText: `+86${phone.slice(0, 1)}****${phone.slice(7)}` });
+    const row = page.locator("tr", { hasText: `+86****${phone.slice(-4)}` });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "通过" }).click();
     await expect(row).toHaveCount(0);
@@ -105,7 +126,7 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
     const { phone } = await registerThroughUi(page, { withPassword: false });
     await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
     await page.goto(`${BASE_URL}/admin/approvals`);
-    const row = page.locator("tr", { hasText: `+86${phone.slice(0, 1)}****${phone.slice(7)}` });
+    const row = page.locator("tr", { hasText: `+86****${phone.slice(-4)}` });
     await row.getByRole("button", { name: "拒绝" }).click();
     await page.getByLabel(/拒绝理由/).fill("端到端拒绝用例");
     await page.getByRole("button", { name: "确认拒绝" }).click();
@@ -135,11 +156,11 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     const { phone } = await registerThroughUi(page, { withPassword: false });
     // First login WITH the remember checkbox: arms the cookie.
     await page.goto(`${BASE_URL}/login`);
-    await page.getByLabel("手机号").fill(phone);
+    await fillPhoneVerified(page, phone);
     await page.getByRole("button", { name: "重新发送", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-    const { recoverOtpCode } = await import("./fixtures");
-    await page.getByLabel("短信验证码").fill(recoverOtpCode(`+86${phone}`));
+    const { recoverMobileCode } = await import("./fixtures");
+    await page.getByLabel("短信验证码").fill(recoverMobileCode(`+86${phone}`));
     await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -149,7 +170,7 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     const replay = await browser.newContext({ storageState: state });
     const second = await replay.newPage();
     second.goto(`${BASE_URL}/login`);
-    await second.getByLabel("手机号").fill(phone);
+    await fillPhoneVerified(second, phone);
     await second.getByRole("button", { name: "快速登录（已记住的设备）" }).click();
     await expect(second).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 8_000 });
     await replay.close();

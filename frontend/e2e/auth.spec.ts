@@ -26,7 +26,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { recoverOtpCode } from "./fixtures";
+import { recoverOtpCode, recoverMobileCode } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -94,7 +94,7 @@ test.describe("student registration and login", () => {
     await page.getByLabel("手机号").fill(phone);
     await page.getByRole("button", { name: "重新发送", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-    const loginCode = recoverOtpCode(`+86${phone}`);
+    const loginCode = recoverMobileCode(`+86${phone}`);
     await page.getByLabel("短信验证码").fill(loginCode);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));

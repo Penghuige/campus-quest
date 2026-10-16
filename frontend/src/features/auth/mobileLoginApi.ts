@@ -15,6 +15,8 @@
  *   listing rides the admin users list's status filter.
  */
 import { apiRequest } from "@/lib/api";
+
+import { adoptFullLogin } from "./api";
 import type { components } from "@/lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -34,12 +36,12 @@ export function requestMobileLoginCode(phone: string): Promise<void> {
 }
 
 /** Trade the SMS code for a full student login. */
-export function verifyMobileLoginCode(
+export async function verifyMobileLoginCode(
   phone: string,
   code: string,
   rememberDevice: boolean,
 ): Promise<Schemas["TokenPairResponse"]> {
-  return apiRequest<Schemas["TokenPairResponse"]>(
+  const tokens = await apiRequest<Schemas["TokenPairResponse"]>(
     "/api/v1/auth/mobile-code/verify",
     {
       method: "POST",
@@ -48,6 +50,8 @@ export function verifyMobileLoginCode(
         : { phone, code },
     },
   );
+  adoptFullLogin(tokens);
+  return tokens;
 }
 
 /**
@@ -58,13 +62,15 @@ export function verifyMobileLoginCode(
  * is absent/expired: the caller falls back to the code form (the
  * honest-fallback button, never an error state of its own).
  */
-export function fastLoginRememberedDevice(
+export async function fastLoginRememberedDevice(
   phone: string,
 ): Promise<Schemas["TokenPairResponse"]> {
-  return apiRequest<Schemas["TokenPairResponse"]>(
+  const tokens = await apiRequest<Schemas["TokenPairResponse"]>(
     "/api/v1/auth/mobile-code/verify",
     { method: "POST", body: { phone } },
   );
+  adoptFullLogin(tokens);
+  return tokens;
 }
 
 /** The pending-approval queue (the admin users list, status-filtered). */
