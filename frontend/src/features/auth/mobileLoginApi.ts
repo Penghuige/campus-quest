@@ -19,21 +19,11 @@ import type { components } from "@/lib/api/schema";
 
 type Schemas = components["schemas"];
 
-/**
- * The pending-approval row (hand-written contract): the admin users
- * listing's governance shape PLUS `phone_masked` — the backend's
- * project-uniform mask (+861****5555, backend mask_phone; G11 minimal
- * necessity) which the approvals page renders verbatim (the client
- * never re-masks). Flips to the generated alias when the backend PR
- * merges.
- */
-export interface PendingStudentDto {
-  id: string;
-  username: string;
-  nickname: string;
-  phone_masked: string | null;
-  created_at: string;
-}
+/** The pending-approval row: the generated admin listing shape — its
+ * phone_masked is the project-uniform mask (+861****5555, backend
+ * mask_phone; G11 minimal necessity) which the approvals page renders
+ * verbatim (the client never re-masks). */
+export type PendingStudentDto = Schemas["AdminUserResponse"];
 
 /** Ask for a 6-digit SMS login code. 202 always (anti-enumeration). */
 export function requestMobileLoginCode(phone: string): Promise<void> {
