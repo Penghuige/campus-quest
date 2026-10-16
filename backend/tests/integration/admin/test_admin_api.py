@@ -859,6 +859,7 @@ async def test_user_directory_lists_and_filters(
         "nickname",
         "role",
         "status",
+        "phone_masked",
         "created_at",
     }
 

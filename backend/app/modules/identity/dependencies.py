@@ -119,6 +119,7 @@ __all__ = [
     "require_active_student_or_staff_management_actor",
     "require_admin_actor",
     "require_active_except_pending_student",
+    "require_browsing_student_actor",
     "require_approved_community_actor",
     "require_approved_student_actor",
     "require_staff_management_actor",
@@ -440,6 +441,38 @@ async def require_approved_community_actor(
             status_code=403,
         )
     if user.status != UserStatus.ACTIVE.value:
+        raise BusinessError(
+            ErrorCode.ACCOUNT_NOT_ACTIVE,
+            _ACCOUNT_NOT_ACTIVE_MESSAGE,
+            status_code=403,
+        )
+    return Actor(user_id=user.id, role=Role(user.role))
+
+
+async def require_browsing_student_actor(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    codec: Annotated[AccessTokenCodec, Depends(get_access_token_codec)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> Actor:
+    """The student READING surfaces that stay role-gated (rankings,
+    growth, notifications — spec §4.1): the student-role check of
+    require_active_student_actor with PENDING_APPROVAL admitted (spec
+    2026-10-16 §2 — a pending student browses the boards and the bell)."""
+
+    user = await _resolve_user(credentials, db, codec, clock)
+    if not rbac.is_student(user.role):
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            _STUDENT_ACTION_PERMISSION_MESSAGE,
+            status_code=403,
+        )
+    if user.status not in (
+        UserStatus.ACTIVE,
+        UserStatus.PENDING_APPROVAL,
+    ):
         raise BusinessError(
             ErrorCode.ACCOUNT_NOT_ACTIVE,
             _ACCOUNT_NOT_ACTIVE_MESSAGE,

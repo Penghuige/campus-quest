@@ -55,8 +55,8 @@ from app.db.session import get_db_session
 from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import (
     get_business_clock,
-    require_active_actor,
     require_admin_actor,
+    require_browsing_student_actor,
 )
 from app.modules.identity.events import Actor
 from app.modules.notifications.inbox_service import InboxService
@@ -130,7 +130,7 @@ def get_inbox_service(
 
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-StudentActor = Annotated[Actor, Depends(require_active_actor)]
+StudentActor = Annotated[Actor, Depends(require_browsing_student_actor)]
 AdminActor = Annotated[Actor, Depends(require_admin_actor)]
 InboxServiceDep = Annotated[InboxService, Depends(get_inbox_service)]
 PageLimit = Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)]
