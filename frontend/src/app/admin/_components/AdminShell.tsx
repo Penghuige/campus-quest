@@ -44,6 +44,7 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
   { href: "/admin/invitations", label: "员工邀请", icon: <InboxIcon /> },
   { href: "/admin/platforms", label: "平台管理", icon: <TasksIcon /> },
+  { href: "/admin/approvals", label: "注册审批", icon: <ReviewIcon /> },
   { href: "/admin/rewards", label: "奖励目录", icon: <GiftIcon /> },
   { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },
   { href: "/admin/audit", label: "审计日志", icon: <InboxIcon /> },

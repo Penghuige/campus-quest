@@ -322,7 +322,9 @@ export async function emailLoginTotp(
 }
 
 /** The shared explicit-login adoption (loginStaff's dance verbatim). */
-function adoptFullLogin(tokens: LoginTokens): void {
+/** The shared explicit-login adoption (exported for the auth-II
+ * mobile channel — the same dance every login walks). */
+export function adoptFullLogin(tokens: LoginTokens): void {
   recordLogin(tokens.access_token);
   invalidateSessionCache();
   invalidateDataCache();

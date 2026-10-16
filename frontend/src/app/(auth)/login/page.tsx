@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-import { LoginForm } from "@/features/auth/LoginForm";
+import { StudentLoginPanel } from "@/features/auth/StudentLoginPanel";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
@@ -34,7 +34,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <p>密码已重置，请使用新密码登录。</p>
         </div>
       ) : null}
-      <LoginForm />
+      {/* Auth extension II §4: the mobile-code channel is the student
+       * default; the password form rides the panel's toggle. */}
+      <StudentLoginPanel />
       <p className="auth-alt-action">
         还没有账号？
         <Link className="link" href="/register">

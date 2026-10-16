@@ -237,6 +237,7 @@ test.describe("visual capture — admin workstation", () => {
     await capture(page, "admin-redemptions", "/admin/redemptions", account);
     await capture(page, "admin-audit", "/admin/audit", account);
     await capture(page, "admin-system", "/admin/system", account);
+    await capture(page, "admin-approvals", "/admin/approvals", account);
   });
 });
 

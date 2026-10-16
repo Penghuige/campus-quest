@@ -248,6 +248,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     const studentPage = await context.newPage();
     const [username, password] = (process.env.CQ_E2E_STUDENT ?? "").split(":");
     await studentPage.goto(`${BASE_URL}/login`);
+    await studentPage.getByRole("button", { name: "密码登录" }).click();
     await studentPage.getByLabel("学号").fill(username);
     await studentPage.getByLabel("密码").fill(password);
     await studentPage.getByRole("button", { name: "登录", exact: true }).click();

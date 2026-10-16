@@ -155,7 +155,10 @@ export function RegisterForm() {
       nickname: validateNickname(values.nickname) ?? undefined,
       phone: validatePhone(values.phone) ?? undefined,
       code: otp === null ? "请先获取验证码" : (validateOtpCode(values.code) ?? undefined),
-      password: validatePassword(values.password) ?? undefined,
+      password:
+        values.password.length === 0
+          ? undefined
+          : validatePassword(values.password) ?? undefined,
     };
     setFieldErrors(errors);
     setSummary(null);
@@ -184,7 +187,7 @@ export function RegisterForm() {
         student_number: values.student_number,
         nickname: values.nickname,
         phone_token: phoneToken,
-        password: values.password,
+        password: values.password.length === 0 ? null : values.password,
       });
       router.replace("/login?registered=1");
     } catch (error) {
@@ -224,7 +227,7 @@ export function RegisterForm() {
       <AuthField
         name="student_number"
         label="学号"
-        hint="只有在老师导入的白名单中的学号可以注册。"
+        hint="注册后账号需管理员审核，审核期间可浏览。"
         error={fieldErrors.student_number}
         inputProps={{
           value: values.student_number,
@@ -324,8 +327,8 @@ export function RegisterForm() {
       />
       <AuthField
         name="password"
-        label="密码"
-        hint="10-128 个字符，无其他限制。"
+        label="密码（可选）"
+        hint="10-128 个字符。留空则仅用手机验证码登录，之后可在设置中自行设置密码。"
         error={fieldErrors.password}
         inputProps={{
           value: values.password,

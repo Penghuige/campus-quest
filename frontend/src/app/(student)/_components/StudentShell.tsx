@@ -29,6 +29,7 @@ import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSid
 import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { NicknameNudge } from "@/features/auth/NicknameNudge";
+import { ApprovalPendingBanner } from "@/features/auth/ApprovalPendingBanner";
 import { shellChromeFor, type ShellHint } from "@/features/auth/shellChrome";
 import { StaffRouteRedirect } from "@/features/auth/StaffRouteRedirect";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
@@ -334,6 +335,7 @@ export function StudentShell({
           </div>
         </header>
         <main className="app-main">
+          <ApprovalPendingBanner me={state.me} />
           <NicknameNudge me={state.me} />
           {children}
         </main>

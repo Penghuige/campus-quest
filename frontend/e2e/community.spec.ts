@@ -82,6 +82,7 @@ async function loginAs(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(LOGIN_URL);
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("学号").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录", exact: true }).click();

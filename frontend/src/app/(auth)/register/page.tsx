@@ -5,7 +5,7 @@ import { RegisterForm } from "@/features/auth/RegisterForm";
 
 export const metadata: Metadata = {
   title: "注册 · CampusQuest",
-  description: "注册 CampusQuest 学生账号（需要白名单学号和手机验证码）",
+  description: "注册 CampusQuest 学生账号（学号 + 手机验证码，密码可选）",
 };
 
 export default function RegisterPage() {
@@ -13,7 +13,7 @@ export default function RegisterPage() {
     <>
       <div className="auth-head">
         <h1 className="auth-title">注册学生账号</h1>
-        <p className="auth-subtitle">使用白名单内的学号注册，手机号用于验证</p>
+        <p className="auth-subtitle">使用学号与手机验证码注册；注册后待管理员审核</p>
       </div>
       <RegisterForm />
       <p className="auth-alt-action">

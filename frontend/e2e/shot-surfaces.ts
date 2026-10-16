@@ -196,6 +196,16 @@ export const SHOTS: Shot[] = [
     auth: "admin",
     masks: [],
   },
+  {
+    // The approvals queue pins the PRISTINE world's face: the EMPTY
+    // state (the world seeds no PENDING_APPROVAL students — every
+    // pending row in a battery is a test's own creation, teardown
+    // residue). No masks: the empty state carries no clock content.
+    name: "admin-approvals",
+    path: "/admin/approvals",
+    auth: "admin",
+    masks: [],
+  },
 ];
 
 export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {

@@ -106,6 +106,9 @@ export async function loginThroughUi(
   account: SeededAccount,
 ): Promise<void> {
   await page.goto(`${BASE_URL}/login`);
+  // Auth extension II §4: the MOBILE channel is the student default;
+  // the student-number + password form lives behind the toggle.
+  await page.getByRole("button", { name: "密码登录" }).click();
   await page.getByLabel("学号").fill(account.username);
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -400,4 +403,11 @@ export function recoverOtpCode(phoneE164: string): string {
  * value passes as typed: the action strips/lowercases internally. */
 export function recoverEmailCode(email: string): string {
   return runWorldAction<{ code: string }>("email-code", email).code;
+}
+
+/** Recover the student login mobile code (auth extension II §3; world
+ * action `mobile-code`, the email-code twin — login_mobile_challenges
+ * newest row + closed-space brute force). The address passes E.164. */
+export function recoverMobileCode(phoneE164: string): string {
+  return runWorldAction<{ code: string }>("mobile-code", phoneE164).code;
 }
