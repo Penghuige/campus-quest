@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import {
   approveRedemption,
   banAdminUser,
-  confirmWhitelistImport,
   createNotificationTemplate,
   createRewardItem,
   createStaffInvitation,
@@ -39,8 +38,6 @@ import {
   listRedemptionQueue,
   listRewardCatalogue,
   listSystemSettings,
-  listWhitelist,
-  previewWhitelistImport,
   putAbandonDailyLimit,
   putCurrentAcademicTerm,
   putEmojiWhitelist,
@@ -52,7 +49,6 @@ import {
   revealCommentIdentity,
   revokeRewardReview,
   suspendAdminUser,
-  toggleWhitelistEntry,
   updateNotificationTemplate,
   updateRewardItem,
 } from "../features/admin/adminApi";
@@ -130,65 +126,6 @@ describe("account directory (spec §5.7)", () => {
       assert.equal(typeof body.reason, "string");
       assert.notEqual(body.reason.trim(), "");
     }
-  });
-});
-
-describe("whitelist (spec §5.1)", () => {
-  test("listing paginates over GET /admin/whitelist", async () => {
-    stubFetch(emptyPage());
-    await listWhitelist({ limit: 10, offset: 5 });
-    assert.equal(recorded?.url, "/api/v1/admin/whitelist?limit=10&offset=5");
-  });
-
-  test("preview POSTs the raw text as {content}", async () => {
-    stubFetch(
-      JSON.stringify({
-        total_rows: 1,
-        decisions: [],
-        counts: {
-          total_rows: 1,
-          importable: 1,
-          duplicate_in_file: 0,
-          duplicate_in_db: 0,
-          full_width_digits: 0,
-          invalid_characters: 0,
-          invalid_length: 0,
-        },
-        importable: ["20260001"],
-        confirm_token: "digest",
-      }),
-    );
-    await previewWhitelistImport("20260001\n");
-    assert.equal(recorded?.url, "/api/v1/admin/whitelist/preview");
-    assert.equal(recorded?.method, "POST");
-    assert.deepEqual(JSON.parse(String(recorded?.body)), { content: "20260001\n" });
-  });
-
-  test("confirm POSTs the digest-bound set verbatim (all-or-nothing)", async () => {
-    stubFetch(JSON.stringify({ created: 2, enable: true }));
-    const result = await confirmWhitelistImport({
-      confirm_token: "digest",
-      enable: true,
-      student_numbers: ["20260001", "20260002"],
-    });
-    assert.equal(result.created, 2);
-    assert.equal(recorded?.url, "/api/v1/admin/whitelist/confirm");
-    assert.deepEqual(JSON.parse(String(recorded?.body)), {
-      confirm_token: "digest",
-      enable: true,
-      student_numbers: ["20260001", "20260002"],
-    });
-  });
-
-  test("toggle PATCHes {enabled, reason} on the student-number path", async () => {
-    stubFetch(JSON.stringify({ student_number: "20260001", toggled: true }));
-    await toggleWhitelistEntry("20260001", { enabled: false, reason: "毕业离校" });
-    assert.equal(recorded?.url, "/api/v1/admin/whitelist/20260001");
-    assert.equal(recorded?.method, "PATCH");
-    assert.deepEqual(JSON.parse(String(recorded?.body)), {
-      enabled: false,
-      reason: "毕业离校",
-    });
   });
 });
 

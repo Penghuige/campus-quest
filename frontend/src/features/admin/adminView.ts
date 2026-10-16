@@ -23,8 +23,6 @@ import type {
   RewardCatalogueDto,
   RewardCreateBody,
   RewardUpdateBody,
-  WhitelistCountsDto,
-  WhitelistPreviewDto,
 } from "./adminApi";
 import type { StaffTone } from "./teacherView";
 
@@ -183,50 +181,6 @@ export function accountActionView(kind: AccountActionKind): AccountActionView {
 /** Blank-after-trim mirror of the transport rule (reason mandatory at §5.7). */
 export function adminReasonReady(reason: string): boolean {
   return reason.trim().length > 0;
-}
-
-// --- whitelist import preview ------------------------------------------------------------
-
-export interface WhitelistCodeView {
-  label: string;
-  tone: StaffTone;
-}
-
-const WHITELIST_CODE_VIEWS: Record<string, WhitelistCodeView> = {
-  IMPORTABLE: { label: "可导入", tone: "success" },
-  DUPLICATE_IN_FILE: { label: "文件内重复", tone: "warning" },
-  DUPLICATE_IN_DB: { label: "已在白名单", tone: "muted" },
-  FULL_WIDTH_DIGITS: { label: "全角数字", tone: "warning" },
-  INVALID_CHARACTERS: { label: "含非法字符", tone: "danger" },
-  INVALID_LENGTH: { label: "长度不合法", tone: "warning" },
-};
-
-/** Row-code wording (the backend `WhitelistRowCode` vocabulary, T9's renderer). */
-export function whitelistCodeView(code: string): WhitelistCodeView {
-  return WHITELIST_CODE_VIEWS[code] ?? { label: code, tone: "muted" };
-}
-
-/** "共 12 行：可导入 9 行，文件内重复 1 行…" — non-zero problem classes only. */
-export function whitelistCountsText(counts: WhitelistCountsDto): string {
-  const parts = [`可导入 ${counts.importable} 行`];
-  const problems: [string, number][] = [
-    ["文件内重复", counts.duplicate_in_file],
-    ["已在白名单", counts.duplicate_in_db],
-    ["全角数字", counts.full_width_digits],
-    ["非法字符", counts.invalid_characters],
-    ["长度不合法", counts.invalid_length],
-  ];
-  for (const [label, value] of problems) {
-    if (value > 0) {
-      parts.push(`${label} ${value} 行`);
-    }
-  }
-  return `共 ${counts.total_rows} 行：${parts.join("，")}`;
-}
-
-/** Confirm requires a non-empty previewed importable set bound by its digest. */
-export function canConfirmWhitelistImport(preview: WhitelistPreviewDto): boolean {
-  return preview.importable.length > 0 && preview.confirm_token.trim().length > 0;
 }
 
 // --- redemption queue (spec §16.1/§16.2) ----------------------------------------------------

@@ -41,13 +41,6 @@ export type AdminUserDto = Schemas["AdminUserResponse"];
 export type AdminUserPageDto = Schemas["AdminUserListResponse"];
 export type AccountStatusDto = Schemas["AccountStatusResponse"];
 
-export type WhitelistEntryDto = Schemas["WhitelistEntryResponse"];
-export type WhitelistPageDto = Schemas["WhitelistListResponse"];
-export type WhitelistPreviewDto = Schemas["WhitelistPreviewResponse"];
-export type WhitelistRowDecisionDto = Schemas["WhitelistRowDecisionResponse"];
-export type WhitelistCountsDto = Schemas["WhitelistCountsResponse"];
-export type WhitelistConfirmDto = Schemas["WhitelistConfirmResponse"];
-export type WhitelistToggleDto = Schemas["WhitelistToggleResponse"];
 
 /** The student-view catalogue row the admin listing reads (see module note). */
 export type RewardCatalogueDto = Schemas["RewardItemResponse"];
@@ -155,59 +148,6 @@ export function reactivateAdminUser(
   return apiRequest<AccountStatusDto>(
     `/api/v1/admin/users/${encodeId(userId)}/reactivate`,
     { method: "POST", body: { reason } },
-  );
-}
-
-// --- whitelist (spec §5.1) -----------------------------------------------------------------
-
-/** The whitelist page, student-number ordered (GET /admin/whitelist). */
-export function listWhitelist(query: PageQuery = {}): Promise<WhitelistPageDto> {
-  return apiRequest<WhitelistPageDto>(
-    `/api/v1/admin/whitelist${pagination(query)}`,
-    { signal: query.signal },
-  );
-}
-
-/**
- * Classify every non-blank line, zero writes (POST /admin/whitelist/preview).
- * The body is the RAW import TEXT as JSON `{content}` — the service owns
- * decode, trimming, and every row verdict; the digest binds the confirm.
- */
-export function previewWhitelistImport(content: string): Promise<WhitelistPreviewDto> {
-  return apiRequest<WhitelistPreviewDto>("/api/v1/admin/whitelist/preview", {
-    method: "POST",
-    body: { content },
-  });
-}
-
-/**
- * Insert exactly the previewed set, all-or-nothing (POST
- * /admin/whitelist/confirm). A digest mismatch or DB collision is the
- * typed 409 `CONFLICT` (details carry the colliding `student_numbers`).
- */
-export function confirmWhitelistImport(payload: {
-  confirm_token: string;
-  enable: boolean;
-  student_numbers: string[];
-}): Promise<WhitelistConfirmDto> {
-  return apiRequest<WhitelistConfirmDto>("/api/v1/admin/whitelist/confirm", {
-    method: "POST",
-    body: payload,
-  });
-}
-
-/**
- * Flip one entry (PATCH /admin/whitelist/{student_number}). The reason is
- * transport-OPTIONAL (it rides the per-entry audit rows when present);
- * an unknown number is the typed 400 with the missing list.
- */
-export function toggleWhitelistEntry(
-  studentNumber: string,
-  payload: { enabled: boolean; reason?: string | null },
-): Promise<WhitelistToggleDto> {
-  return apiRequest<WhitelistToggleDto>(
-    `/api/v1/admin/whitelist/${encodeId(studentNumber)}`,
-    { method: "PATCH", body: payload },
   );
 }
 
