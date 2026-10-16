@@ -10,7 +10,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 8 | S1-S8（S6 为行为级覆盖，行内注记） |
+| 已覆盖 | 9 | S1-S9（S6 为行为级覆盖，行内注记） |
 | 缺口（轻，列出不补） | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 0 | — |
@@ -28,3 +28,4 @@
 | S7 | §6.2 + §42 | 公开列表仅 PUBLISHED；DRAFT 不可见 | `tests/integration/tasks/test_task_api.py::test_task_list_pagination_and_draft_invisibility`（total 不含 DRAFT；DRAFT id 经详情路由 404） | 已覆盖 |
 | S8 | §28 + 路由分页界 | offset 分页：limit 1..50 / offset ≥ 0，total 为全目录而非页 | 同 S7 + `tests/integration/tasks/test_marketplace_ordering.py::test_page_boundaries_keep_group_order_across_pages`（total==5） | 已覆盖 |
 | S9 | §30（owner 2026-10-11 扩列） | 任务生命周期七动作（publish/pause/resume/close/archive/协作者增删/导入确认）在各自服务事务内各写一行 AuditLog：before/after status 快照、协作者权限集、导入 inserted 计数；拒绝的转移不写行（同事务回滚）、重复动作不重复记 | `tests/integration/tasks/test_lifecycle_audit.py::test_lifecycle_verbs_each_append_one_audited_row`（五动作各一行+publish/resume 区分）+ `::test_rejected_transition_leaves_no_audit_row`（事务性）+ `::test_repeated_pause_writes_exactly_one_row`（幂等不重复）+ `::test_collaborator_add_and_remove_are_audited` + `::test_import_confirm_appends_one_row_with_count` + 单元侧 `tests/unit/tasks/test_assignment_importer.py::test_confirm_imports_previewed_rows_in_one_commit`（同 commit 断言） | 已覆盖 |
+| S9 | 平台注册表 spec 2026-10-16 §3/§4（owner 已批；前端半契约先行） | 学生端 claim/assignment 展示渲染注册表 display_name（字典 /platforms 登录后只读+缓存；未知 code=原码回退不空白不猜名）；管理台 /admin/platforms CRUD 全链（code 不可改/无删除/启停翻转/409 重复 code 业务文案）；导入预览 platform 列同步显示名 | 单测：`frontend/src/__tests__/platform-view.test.ts`（显示规则+校验带 8 钉，红先行）；e2e：`frontend/e2e/platform-registry.spec.ts`（CRUD 全链+客户端拒绝零 POST，等后端合并终跑）；像素基线 admin-platforms 面待终跑轮 | 已覆盖 |

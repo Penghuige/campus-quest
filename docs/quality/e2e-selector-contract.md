@@ -36,8 +36,12 @@ authoritative record.
 | 设置密码 / 确认密码 / 设置密码并继续 | register, staff invite activation |
 | 昵称 / 手机号 | register, profile binding |
 | 受邀人邮箱 / 角色 / 创建邀请 / 复制邀请链接 | admin staff invitations (`/admin/invitations`; the one-time issuance surface) |
+<<<<<<< HEAD
 | 正在前往工作台… / 前往员工登录 | the staff-on-student-route redirect placeholder + its /me-failure exit (staff-root-redirect.spec pins the frame sequence; copy is the locator) |
 | 页面不存在 / 返回首页 | the custom 404 (not-found.spec + the not-found SHOTS face) |
+=======
+| 平台代码（创建后不可改） / 显示名 / 排序值 / 新建平台 / 创建平台 / 编辑 / 保存修改 | admin platform registry (`/admin/platforms`; platform-registry.spec pins the CRUD chain and the client-refusal zero-POST) |
+>>>>>>> 8d98783 (test(platforms): the registry e2e draft + matrix row + contract faces)
 | 任务评论 / 发布评论 / 发布回复 / 回复 | task-detail comment thread |
 | 通知收件箱 / 标为已读 | notifications |
 | 积分余额 (`getByLabel` + `[aria-label='积分余额']`) | student shell points readout |
