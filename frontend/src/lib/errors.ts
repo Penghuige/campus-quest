@@ -60,6 +60,12 @@ export const BUSINESS_ERROR_CODES = [
   // server) and the per-account lockout envelope.
   "EMAIL_CODE_INVALID",
   "ACCOUNT_LOCKED",
+  // Auth extension II (spec 2026-10-16 §2/§3): the student mobile-code
+  // uniform verdict (same shape as the email-code family) and the
+  // approval-freeze typed 403 (PENDING_APPROVAL accounts: browsable,
+  // every acting endpoint refused).
+  "MOBILE_CODE_INVALID",
+  "APPROVAL_PENDING",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];
