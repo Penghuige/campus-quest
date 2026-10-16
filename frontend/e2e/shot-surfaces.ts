@@ -196,6 +196,21 @@ export const SHOTS: Shot[] = [
     auth: "admin",
     masks: [],
   },
+  {
+    // The approvals queue rides the seeded PENDING rows under fixed
+    // labels; registered-at is masked (the time column carries
+    // run-clock instants).
+    name: "admin-approvals",
+    path: "/admin/approvals",
+    auth: "admin",
+    masks: [
+      {
+        id: "time",
+        why: "row created_at — absolute clock (ApprovalsAdmin.tsx)",
+        locate: (page: Page) => page.locator("time"),
+      },
+    ],
+  },
 ];
 
 export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {
