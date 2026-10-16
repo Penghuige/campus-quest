@@ -42,6 +42,8 @@ export interface ClaimButtonProps {
   onClaimed?: () => void;
 }
 import { Button } from "@/components/ui/button";
+import { usePlatformNames } from "@/features/platforms/platformDictionary";
+import { platformDisplayName } from "@/features/platforms/platformView";
 
 export function ClaimButton({
   taskId,
@@ -132,6 +134,7 @@ export function ClaimButton({
  * display-only (§42; the authoritative boundary check is the backend's).
  */
 function AssignedClaimPanel({ claim, nowMs }: { claim: ClaimDto; nowMs: number }) {
+  const platformNames = usePlatformNames();
   const status = claimStatusView(claim.status);
   const deadlineMs = parseServerInstant(claim.deadline_at);
   const graceMs = parseServerInstant(claim.grace_deadline_at);
@@ -144,7 +147,7 @@ function AssignedClaimPanel({ claim, nowMs }: { claim: ClaimDto; nowMs: number }
       <div className="assignment-grid">
         <div className="assignment-item">
           <span className="assignment-label">平台</span>
-          <span className="assignment-value">{claim.platform}</span>
+          <span className="assignment-value">{platformDisplayName(claim.platform, platformNames)}</span>
         </div>
         <div className="assignment-item">
           <span className="assignment-label">关键词</span>
