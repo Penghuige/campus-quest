@@ -279,10 +279,9 @@ class Assignment(Base):
 
     __tablename__ = "assignments"
     __table_args__ = (
-        CheckConstraint(
-            "platform IN ('xiaohongshu', 'douyin', 'zhihu')",
-            name="platform",
-        ),
+        # platform is registry-bound (V1.1 spec 2026-10-16): the closed
+        # CHECK set became the platforms FK — growth is admin rows, not
+        # migrations.
         CheckConstraint(
             "availability_status IN ('AVAILABLE', 'OCCUPIED', 'COMPLETED', 'RETIRED')",
             name="availability_status",
@@ -299,7 +298,7 @@ class Assignment(Base):
         server_default=text("gen_random_uuid()"), primary_key=True
     )
     task_id: Mapped[UUID] = mapped_column(ForeignKey("tasks.id"), index=True)
-    platform: Mapped[str] = mapped_column(String(32))
+    platform: Mapped[str] = mapped_column(String(32), ForeignKey("platforms.code"))
     keyword: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     availability_status: Mapped[str] = mapped_column(String(16))
@@ -395,4 +394,26 @@ class AssignmentClaim(Base):
             "The daily abandon cap counts ABANDONED rows by this instant "
             "inside the BUSINESS_TIMEZONE natural day (spec §8.5)."
         ),
+    )
+
+
+class Platform(Base):
+    """One row of the platform registry (V1.1 spec 2026-10-16 §1).
+
+    ``code`` is the stable ASCII key assignments reference (FK) —
+    immutable after creation; ``display_name``/``sort_order``/``enabled``
+    are admin-managed presentation/lifecycle knobs. ``enabled=False``
+    bars the platform from NEW tasks and imports; existing assignment
+    references are untouched (no delete surface exists — the FK IS the
+    lifecycle guard).
+    """
+
+    __tablename__ = "platforms"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(64))
+    sort_order: Mapped[int] = mapped_column(default=0)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
     )
