@@ -340,3 +340,51 @@ async def test_sms_failure_cleans_up_and_answers_502(
             )
         )
     ).scalar_one_or_none() is None
+
+
+async def test_mobile_code_probe_recovers_the_smsed_code(
+    db_session: AsyncSession,
+) -> None:
+    """The e2e recovery channel (tests/e2e/mobile_code_probe.py): the
+    probe rediscovers the code from the stored keyed digest alone."""
+    from tests.e2e.mobile_code_probe import recover_mobile_code
+
+    await _seed_student(db_session)
+
+    from app.core.clock import FrozenClock
+    from app.core.config import get_settings
+    from app.modules.identity.mobile_login_service import MobileLoginService
+
+    class _Redis:
+        def __init__(self) -> None:
+            self.strings: dict[str, str] = {}
+
+        async def set(self, key, value, ex=None, nx=False):
+            if nx and key in self.strings:
+                return None
+            self.strings[key] = value
+            return True
+
+        async def get(self, key):
+            return self.strings.get(key)
+
+        async def delete(self, *keys):
+            for key in keys:
+                self.strings.pop(key, None)
+            return len(keys)
+
+    sms = FakeSmsSender()
+    service = MobileLoginService(
+        sms_sender=sms,
+        redis=_Redis(),
+        clock=FrozenClock(_T0),
+        hmac_secret=get_settings().otp_hmac_secret,
+    )
+    await service.request_code(db_session, _PHONE)
+    mailed = sms.messages[-1].variables["code"]
+
+    challenge_id, recovered = await recover_mobile_code(db_session, _PHONE)
+    assert recovered == str(mailed)
+
+    with pytest.raises(LookupError):
+        await recover_mobile_code(db_session, "+8613800099999")
