@@ -13,9 +13,10 @@
  * - CQ_E2E_RUN / CQ_E2E_REGISTER_NUMBER / CQ_E2E_ADMIN_ID — the seeded
  *   world's contract (e2e/global-setup.ts + backend browser_world.py):
  *   a run-unique student number to register and the admin id used to
- *   mint the whitelist-import token.
+ *   recover the register-time SMS OTP.
  *
- * Plan 10 wiring: the whitelist is seeded through the REAL admin API
+ * Auth extension II wiring: registration needs no seeding (the
+ * whitelist gate is retired).
  * (preview -> confirm, a minted admin bearer — the two-step the admin
  * surface owns), and the SMS code is recovered from the REAL Redis OTP
  * challenge record (browser_world.py otp-code: the production service
