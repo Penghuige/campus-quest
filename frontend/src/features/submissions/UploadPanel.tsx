@@ -41,6 +41,7 @@ import {
   type UploadFlowState,
 } from "./uploadFlow";
 import { ValidationReport } from "./ValidationReport";
+import { downloadSubmissionTemplate } from "./templateDownload";
 
 const BUSY_PHASES: ReadonlySet<UploadFlowState["phase"]> = new Set([
   "preparing",
@@ -67,10 +68,13 @@ import { Button } from "@/components/ui/button";
 
 export function UploadPanel({
   claimId,
+  taskId,
   onClaimChanged,
   allowedTypes,
 }: {
   claimId: string;
+  /** The task the claim belongs to — the submission template rides it. */
+  taskId: string;
   /** Boundary hook: the parent refetches claim state after transitions. */
   onClaimChanged: () => void;
   /** The task's upload gate (MyClaimResponse.allowed_file_types,
@@ -81,6 +85,7 @@ export function UploadPanel({
   const [state, dispatch] = useReducer(uploadFlowReducer, initialUploadFlowState);
   const [preCheckMessage, setPreCheckMessage] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
+  const [templateBusy, setTemplateBusy] = useState(false);
 
   // The picked File (a browser object) stays OUT of the pure reducer; the
   // run controller below is the only consumer.
@@ -209,6 +214,35 @@ export function UploadPanel({
     [beginRun, claimId, finalize],
   );
 
+  /**
+   * The submission-template download: fetch the authenticated blob, hand
+   * the browser an object URL, revoke it after the click. A failure
+   * surfaces the shared upload copy (the template is an aid, never a
+   * blocker — the picker keeps working).
+   */
+  const onDownloadTemplate = useCallback(async () => {
+    if (templateBusy) {
+      return;
+    }
+    setTemplateBusy(true);
+    setPreCheckMessage(null);
+    try {
+      const download = await downloadSubmissionTemplate(taskId);
+      const url = URL.createObjectURL(download.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = download.filename;
+      anchor.rel = "noopener";
+      anchor.click();
+      // The browser has the blob once the click lands; the URL can go.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      setPreCheckMessage("模板下载失败，请稍后重试；不影响直接上传。");
+    } finally {
+      setTemplateBusy(false);
+    }
+  }, [taskId, templateBusy]);
+
   const onFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     // Keep the raw value so the picker re-arms (same file re-selectable).
@@ -311,6 +345,18 @@ export function UploadPanel({
       <p className="field-hint">
         支持格式：{allowedFormats}；单个文件最大 {formatFileSize(DEFAULT_MAX_UPLOAD_BYTES)}
         （任务如有更严格的限制，以上传时的校验结果为准）。
+      </p>
+
+      <p className="field-hint">
+        <Button
+          variant="ghost"
+          disabled={templateBusy}
+          aria-busy={templateBusy}
+          onClick={() => void onDownloadTemplate()}
+        >
+          {templateBusy ? <span className="spinner" aria-hidden="true" /> : null}
+          <span>下载本任务的提交模板（CSV）</span>
+        </Button>
       </p>
 
       <div className="field">
