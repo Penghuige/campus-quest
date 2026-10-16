@@ -76,6 +76,8 @@ async function findOwnClaim(claimId: string): Promise<MyClaimDto | null> {
   return null;
 }
 import { Button } from "@/components/ui/button";
+import { usePlatformNames } from "@/features/platforms/platformDictionary";
+import { platformDisplayName } from "@/features/platforms/platformView";
 
 export function ClaimDetailView({ claimId }: { claimId: string }) {
   const [claim, setClaim] = useState<MyClaimDto | null>(null);
@@ -228,6 +230,7 @@ function ClaimDetailReady({
   nowMs: number;
   onClaimChanged: () => void;
 }) {
+  const platformNames = usePlatformNames();
   const status = claimStatusView(claim.status);
   const deadlineMs = parseServerInstant(claim.deadline_at);
   const graceMs = parseServerInstant(claim.grace_deadline_at);
@@ -307,7 +310,7 @@ function ClaimDetailReady({
         <div className="assignment-grid">
           <div className="assignment-item">
             <span className="assignment-label">平台</span>
-            <span className="assignment-value">{claim.platform}</span>
+            <span className="assignment-value">{platformDisplayName(claim.platform, platformNames)}</span>
           </div>
           <div className="assignment-item">
             <span className="assignment-label">关键词</span>

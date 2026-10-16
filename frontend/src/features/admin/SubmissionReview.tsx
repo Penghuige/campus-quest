@@ -57,6 +57,9 @@ import {
   versionText,
 } from "./teacherView";
 import { Button } from "@/components/ui/button";
+import { usePlatformNames } from "@/features/platforms/platformDictionary";
+import { platformDisplayName } from "@/features/platforms/platformView";
+
 
 const PAGE_SIZE = 20;
 
@@ -229,6 +232,7 @@ function QueueRow({
   onSelect: () => void;
 }) {
   const claim = claimStatusView(item.claim_status);
+  const platformNames = usePlatformNames();
   const review = reviewStatusView(item.review_status);
   const validation = validationSummary(item.validation);
   return (
@@ -242,7 +246,7 @@ function QueueRow({
       <span className="review-item-head">
         <strong className="review-item-title">{item.task_title}</strong>
         <span className="mono review-pair">
-          {item.platform} / {item.keyword}
+          {platformDisplayName(item.platform, platformNames)} / {item.keyword}
         </span>
       </span>
       <span className="review-item-meta">
@@ -290,6 +294,7 @@ function ReviewDetail({
   versions: ReviewQueueItemDto[];
   onDecided: (decision: Outcome) => void;
 }) {
+  const platformNames = usePlatformNames();
   const [dialog, setDialog] = useState<"approve" | "revision" | "invalidate" | null>(
     null,
   );
@@ -338,7 +343,7 @@ function ReviewDetail({
         <div className="fact-row">
           <dt className="fact-label">平台 / 关键词</dt>
           <dd className="fact-value mono">
-            {item.platform} / {item.keyword}
+            {platformDisplayName(item.platform, platformNames)} / {item.keyword}
           </dd>
         </div>
         <div className="fact-row">
@@ -378,7 +383,7 @@ function ReviewDetail({
                 <div className="comment-meta">
                   <span className="badge badge-info">{versionText(version.version)}</span>
                   <span className="mono review-pair">
-                    {version.platform} / {version.keyword}
+                    {platformDisplayName(version.platform, platformNames)} / {version.keyword}
                   </span>
                   <time className="notif-time" dateTime={version.submitted_at}>
                     {formatDeadlineDateTime(parseServerInstant(version.submitted_at))}
