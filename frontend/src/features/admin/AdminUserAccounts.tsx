@@ -13,6 +13,7 @@
  * `describeAdminMutationError` and suggests a refresh.
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import {
   Dialog,
@@ -292,7 +293,12 @@ function UserRow({
   const status = userStatusView(user.status);
   return (
     <tr>
-      <td className="staff-cell-title mono">{user.username}</td>
+      <td className="staff-cell-title mono">
+        {/* Wave 2a (spec §3.1): the row's entry into the detail page. */}
+        <Link className="link" href={`/admin/users/${encodeURIComponent(user.id)}`}>
+          {user.username}
+        </Link>
+      </td>
       <td>{user.nickname}</td>
       <td>{roleLabel(user.role)}</td>
       <td>
