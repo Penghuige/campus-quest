@@ -218,6 +218,17 @@ jobs:
         working-directory: backend
         run: uv run python scripts/coverage_ratchet.py
 
+      # Cross-talk diagnosis (B-item root fix, 2026-10-17): the raw
+      # coverage data, uploaded on EVERY outcome so a failed ratchet
+      # hands us the exact arcs for analysis. Retire with the root fix.
+      - name: Upload coverage data (cross-talk diagnosis)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: backend/.coverage*
+          retention-days: 7
+
   frontend:
     name: Frontend (Node 22)
     runs-on: ubuntu-latest
