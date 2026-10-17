@@ -86,7 +86,11 @@ from app.core.security import (
     validate_password_length,
     verify_password,
 )
+from app.integrations.masking import mask_phone
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.enums import Role
+from app.modules.identity.events import Actor
 from app.modules.identity.models import User
 from app.modules.identity.otp import (
     ChallengePublic,
@@ -104,9 +108,14 @@ logger = logging.getLogger(__name__)
 
 _PHONE_UNIQUE_CONSTRAINT = "uq_users_phone_e164"
 
+#: Staff first-bind audit action (V1.1 login iteration item 1); the
+#: snapshot carries only the masked phone (G11).
+AUDIT_PHONE_BOUND = "PHONE_BOUND"
+
 _VALIDATION_MESSAGE = "资料修改校验失败"
 _AUTHENTICATION_MESSAGE = "密码错误或登录状态已失效"
 _PHONE_ALREADY_BOUND_MESSAGE = "该手机号已绑定其他账号"
+_STUDENT_BIND_REFUSED_MESSAGE = "学生账号使用改绑手机流程"
 
 
 class ProfileService:
@@ -120,6 +129,7 @@ class ProfileService:
         otp_policy: OtpPolicy,
         sessions: SessionService,
         phone_default_region: str = "CN",
+        audit: AuditLogWriter | None = None,
     ) -> None:
         # The decoy challenge in `request_password_reset` derives its expiry
         # window from the SAME `OtpPolicy` that shapes real challenges: an
@@ -130,6 +140,7 @@ class ProfileService:
         self._otp_policy = otp_policy
         self._sessions = sessions
         self._phone_region = phone_default_region
+        self._audit = audit if audit is not None else AuditLogWriter()
         self._challenge_ttl = timedelta(seconds=otp_policy.ttl_seconds)
         self._users = UserRepository()
 
@@ -189,6 +200,92 @@ class ProfileService:
         return await self._otp.request_phone_challenge(
             new_phone, OtpPurpose.PHONE_CHANGE, client_ip=client_ip
         )
+
+    async def request_phone_bind(
+        self, db: AsyncSession, user_id: UUID, raw_phone: str, *, client_ip: str
+    ) -> ChallengePublic:
+        """Staff first-bind (V1.1 login iteration item 1): issue a
+        PHONE_BIND challenge to the phone the staff member is adopting.
+
+        Same craft as the student flows — E.164 normalization, the
+        friendly bound-elsewhere pre-check BEFORE any SMS burns, then the
+        purpose-bound challenge (60s cooldown inside the OTP service).
+        No password re-authentication: the caller is an authenticated
+        ACTIVE staff session and the confirm step audits PHONE_BOUND.
+        """
+        user = await self._require_user(db, user_id)
+        if user.role == Role.STUDENT:
+            # Students own a registration phone; their surface is the
+            # change flow (the router refuses earlier — this is the
+            # service-side backstop).
+            raise BusinessError(
+                ErrorCode.PERMISSION_DENIED,
+                _STUDENT_BIND_REFUSED_MESSAGE,
+                status_code=403,
+            )
+        new_phone = normalize_phone(raw_phone, self._phone_region)
+        if await self._users.find_by_phone_e164(db, new_phone) is not None:
+            raise BusinessError(
+                ErrorCode.PHONE_ALREADY_BOUND,
+                _PHONE_ALREADY_BOUND_MESSAGE,
+                status_code=409,
+            )
+        return await self._otp.request_phone_challenge(
+            new_phone, OtpPurpose.PHONE_BIND, client_ip=client_ip
+        )
+
+    async def confirm_phone_bind(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        challenge_id: uuid.UUID,
+        code: str,
+        *,
+        audit_context: AuditContext | None = None,
+    ) -> User:
+        """Consume the PHONE_BIND proof, write `phone_e164`, audit.
+
+        Mirrors `confirm_phone_change`'s locking and IntegrityError
+        mapping; the difference is the audit row (PHONE_BOUND with the
+        MASKED phone in the snapshot — G11: no full contact data in
+        audit payloads) and the staff-only proof purpose.
+        """
+        user = await self._require_user(db, actor.user_id)
+        new_phone = await self._consume_phone_proof(
+            challenge_id, code, OtpPurpose.PHONE_BIND
+        )
+        locked = await db.scalar(
+            select(User).where(User.id == user.id).with_for_update()
+        )
+        if locked is None:
+            raise self._authentication_required()
+        locked.phone_e164 = new_phone
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            await db.rollback()
+            violation = str(exc.orig) if exc.orig is not None else str(exc)
+            if _PHONE_UNIQUE_CONSTRAINT not in violation:
+                raise
+            logger.info("phone bind rejected user_id=%s reason=already_bound", user.id)
+            raise BusinessError(
+                ErrorCode.PHONE_ALREADY_BOUND,
+                _PHONE_ALREADY_BOUND_MESSAGE,
+                status_code=409,
+            ) from exc
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_PHONE_BOUND,
+            target_type="user",
+            target_id=str(user.id),
+            after_snapshot={"phone": mask_phone(new_phone)},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        logger.info("phone bound user_id=%s", user.id)
+        return locked
 
     async def confirm_phone_change(
         self, db: AsyncSession, user_id: UUID, challenge_id: uuid.UUID, code: str

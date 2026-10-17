@@ -168,6 +168,20 @@ class PhoneChangeConfirmRequest(BaseModel):
     code: str
 
 
+class PhoneBindRequest(BaseModel):
+    """Staff first-bind (V1.1 login iteration item 1): the phone the
+    ACTIVE staff account is adopting. Students use the change flow."""
+
+    phone: str
+
+
+class PhoneBindConfirmRequest(BaseModel):
+    """Confirm a staff phone bind with the phone's OTP code."""
+
+    challenge_id: UUID
+    code: str
+
+
 class EmailBindRequest(BaseModel):
     """Bind (or re-bind) an email and send its verification token (§5.5)."""
 
@@ -420,4 +434,33 @@ class MobileCodeVerifyRequest(BaseModel):
 
     phone: str | None = None
     code: str | None = None
+    remember_device: bool = False
+
+
+class StaffMobileCodeRequestRequest(BaseModel):
+    """Ask for a staff SMS login code (V1.1 login iteration item 1) —
+    always 202, and a phone bound to a student (or nobody) never
+    actually receives one: staff existence is never an answer."""
+
+    phone: str
+
+
+class StaffMobileCodeVerifyRequest(BaseModel):
+    """Trade the staff SMS code for a staff session.
+
+    TEACHER completes in one step; ADMIN gets ``totp_required`` with an
+    opaque pending token — unless a valid remembered-device cookie
+    accompanies the (empty-body) request, in which case the cookie
+    replaces BOTH factors' second leg (the #87 craft)."""
+
+    phone: str | None = None
+    code: str | None = None
+    remember_device: bool = False
+
+
+class StaffMobileCodeTotpRequest(BaseModel):
+    """Finish an ADMIN mobile-code login with the TOTP second leg."""
+
+    pending_token: str
+    code: str
     remember_device: bool = False

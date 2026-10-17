@@ -20,6 +20,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
+from app.modules.audit.context import AuditContext
 from app.modules.identity.avatar_service import AvatarService, read_avatar_body
 from app.modules.identity.dependencies import (
     get_access_session_id,
@@ -51,6 +52,8 @@ from app.modules.identity.schemas import (
     NicknameUpdateRequest,
     OwnDevicesRevokedResponse,
     PasswordChangeRequest,
+    PhoneBindConfirmRequest,
+    PhoneBindRequest,
     PhoneChangeConfirmRequest,
     PhoneChangeRequest,
     RememberedDevicePublic,
@@ -200,6 +203,52 @@ async def confirm_phone_change(
 ) -> MePublic:
     user = await profile.confirm_phone_change(
         db, actor.user_id, body.challenge_id, body.code
+    )
+    return MePublic.from_user(user)
+
+
+@router.post("/me/phone/bind", response_model=ChallengeResponse)
+async def request_phone_bind(
+    body: PhoneBindRequest,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_active_staff_actor)],
+    profile: Annotated[ProfileService, Depends(get_profile_service)],
+    limiter: LimiterDep,
+    region: Annotated[str, Depends(get_phone_region)],
+    db: DbSession,
+) -> ChallengeResponse:
+    """Staff first-bind: OTP-challenge the phone being adopted (V1.1
+    login iteration item 1). Staff-only surface — students keep the
+    change flow (their registration phone is structural)."""
+    new_phone = normalize_phone(body.phone, region)
+    await _enforce_rate_limit(limiter, "me:phone-bind", new_phone)
+    challenge = await profile.request_phone_bind(
+        db,
+        actor.user_id,
+        body.phone,
+        client_ip=_client_ip(request),
+    )
+    return ChallengeResponse(
+        challenge_id=challenge.challenge_id, expires_at=challenge.expires_at
+    )
+
+
+@router.post("/me/phone/bind/confirm", response_model=MePublic)
+async def confirm_phone_bind(
+    body: PhoneBindConfirmRequest,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_active_staff_actor)],
+    profile: Annotated[ProfileService, Depends(get_profile_service)],
+    db: DbSession,
+) -> MePublic:
+    """Consume the PHONE_BIND proof; the audit row (masked snapshot)
+    rides the same transaction."""
+    user = await profile.confirm_phone_bind(
+        db,
+        actor,
+        body.challenge_id,
+        body.code,
+        audit_context=AuditContext.from_request(request),
     )
     return MePublic.from_user(user)
 

@@ -670,6 +670,94 @@
         ]
       }
     },
+    "/api/v1/me/phone/bind": {
+      "post": {
+        "summary": "Request Phone Bind",
+        "description": "Staff first-bind: OTP-challenge the phone being adopted (V1.1\nlogin iteration item 1). Staff-only surface — students keep the\nchange flow (their registration phone is structural).",
+        "operationId": "request_phone_bind_api_v1_me_phone_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneBindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/phone/bind/confirm": {
+      "post": {
+        "summary": "Confirm Phone Bind",
+        "description": "Consume the PHONE_BIND proof; the audit row (masked snapshot)\nrides the same transaction.",
+        "operationId": "confirm_phone_bind_api_v1_me_phone_bind_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneBindConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/email": {
       "post": {
         "summary": "Request Email Verification",
@@ -1006,6 +1094,129 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/StaffEmailCodeTotpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/staff/mobile-code/request": {
+      "post": {
+        "summary": "Request Staff Mobile Code",
+        "description": "SMS one staff login code (V1.1 login iteration item 1) — always\n202, empty body. The response is identical for every phone —\nunknown, student-bound, or staff — so the endpoint is not an\nexistence oracle; a phone that binds no ACTIVE staff account never\nreceives a code, and only a cooldown/liter breach (429) differs.",
+        "operationId": "request_staff_mobile_code_api_v1_auth_staff_mobile_code_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffMobileCodeRequestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/staff/mobile-code/verify": {
+      "post": {
+        "summary": "Verify Staff Mobile Code",
+        "description": "Trade the staff SMS code for a login (V1.1 login iteration item 1).\n\nTEACHER completes here; ADMIN answers ``totp_required`` with the\nopaque pending token — unless a valid remembered-device cookie\naccompanies the (empty-body) request, in which case ADMIN finishes\nhere too (the #87 craft). ``remember_device`` issues the 30-day\ncookie on whichever leg completes the login.",
+        "operationId": "verify_staff_mobile_code_api_v1_auth_staff_mobile_code_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffMobileCodeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TokenPairResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StaffEmailCodePendingResponse"
+                    }
+                  ],
+                  "title": "Response Verify Staff Mobile Code Api V1 Auth Staff Mobile Code Verify Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/staff/mobile-code/totp": {
+      "post": {
+        "summary": "Staff Mobile Code Totp",
+        "description": "Finish an ADMIN mobile-code login with the TOTP leg — the same\nopaque, single-use, 30-minute pending credential the email-code\nfamily uses (final review F1 discipline).",
+        "operationId": "staff_mobile_code_totp_api_v1_auth_staff_mobile_code_totp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffMobileCodeTotpRequest"
               }
             }
           },
@@ -8340,6 +8551,40 @@
         "title": "PasswordResetRequest",
         "description": "Confirm a password reset with the OTP code and a new password."
       },
+      "PhoneBindConfirmRequest": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Challenge Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "code"
+        ],
+        "title": "PhoneBindConfirmRequest",
+        "description": "Confirm a staff phone bind with the phone's OTP code."
+      },
+      "PhoneBindRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "PhoneBindRequest",
+        "description": "Staff first-bind (V1.1 login iteration item 1): the phone the\nACTIVE staff account is adopting. Students use the change flow."
+      },
       "PhoneChallengeRequest": {
         "properties": {
           "phone": {
@@ -10140,6 +10385,78 @@
         ],
         "title": "StaffLoginRequest",
         "description": "Staff login: verified email + password + TOTP/recovery code (§5.8).\n\n``totp_code`` may be EMPTY (or omitted) when a valid remembered-\ndevice cookie accompanies the request — the cookie is the second\nfactor for the 30-day re-login (V1.1 login iteration item 2); empty\nwithout one is the uniform authentication failure. ``remember_device``\nmints that cookie on a successful full login."
+      },
+      "StaffMobileCodeRequestRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "StaffMobileCodeRequestRequest",
+        "description": "Ask for a staff SMS login code (V1.1 login iteration item 1) —\nalways 202, and a phone bound to a student (or nobody) never\nactually receives one: staff existence is never an answer."
+      },
+      "StaffMobileCodeTotpRequest": {
+        "properties": {
+          "pending_token": {
+            "type": "string",
+            "title": "Pending Token"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending_token",
+          "code"
+        ],
+        "title": "StaffMobileCodeTotpRequest",
+        "description": "Finish an ADMIN mobile-code login with the TOTP second leg."
+      },
+      "StaffMobileCodeVerifyRequest": {
+        "properties": {
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "StaffMobileCodeVerifyRequest",
+        "description": "Trade the staff SMS code for a staff session.\n\nTEACHER completes in one step; ADMIN gets ``totp_required`` with an\nopaque pending token — unless a valid remembered-device cookie\naccompanies the (empty-body) request, in which case the cookie\nreplaces BOTH factors' second leg (the #87 craft)."
       },
       "StaffSessionResponse": {
         "properties": {

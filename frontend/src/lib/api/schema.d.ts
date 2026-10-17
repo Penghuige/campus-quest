@@ -392,6 +392,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/phone/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Phone Bind
+         * @description Staff first-bind: OTP-challenge the phone being adopted (V1.1
+         *     login iteration item 1). Staff-only surface — students keep the
+         *     change flow (their registration phone is structural).
+         */
+        post: operations["request_phone_bind_api_v1_me_phone_bind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/phone/bind/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Phone Bind
+         * @description Consume the PHONE_BIND proof; the audit row (masked snapshot)
+         *     rides the same transaction.
+         */
+        post: operations["confirm_phone_bind_api_v1_me_phone_bind_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/email": {
         parameters: {
             query?: never;
@@ -586,6 +629,78 @@ export interface paths {
          *     power (final review F1).
          */
         post: operations["staff_email_code_totp_api_v1_auth_staff_email_code_totp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/mobile-code/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Staff Mobile Code
+         * @description SMS one staff login code (V1.1 login iteration item 1) — always
+         *     202, empty body. The response is identical for every phone —
+         *     unknown, student-bound, or staff — so the endpoint is not an
+         *     existence oracle; a phone that binds no ACTIVE staff account never
+         *     receives a code, and only a cooldown/liter breach (429) differs.
+         */
+        post: operations["request_staff_mobile_code_api_v1_auth_staff_mobile_code_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/mobile-code/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Staff Mobile Code
+         * @description Trade the staff SMS code for a login (V1.1 login iteration item 1).
+         *
+         *     TEACHER completes here; ADMIN answers ``totp_required`` with the
+         *     opaque pending token — unless a valid remembered-device cookie
+         *     accompanies the (empty-body) request, in which case ADMIN finishes
+         *     here too (the #87 craft). ``remember_device`` issues the 30-day
+         *     cookie on whichever leg completes the login.
+         */
+        post: operations["verify_staff_mobile_code_api_v1_auth_staff_mobile_code_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/staff/mobile-code/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Staff Mobile Code Totp
+         * @description Finish an ADMIN mobile-code login with the TOTP leg — the same
+         *     opaque, single-use, 30-minute pending credential the email-code
+         *     family uses (final review F1 discipline).
+         */
+        post: operations["staff_mobile_code_totp_api_v1_auth_staff_mobile_code_totp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3718,6 +3833,28 @@ export interface components {
             new_password: string;
         };
         /**
+         * PhoneBindConfirmRequest
+         * @description Confirm a staff phone bind with the phone's OTP code.
+         */
+        PhoneBindConfirmRequest: {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /** Code */
+            code: string;
+        };
+        /**
+         * PhoneBindRequest
+         * @description Staff first-bind (V1.1 login iteration item 1): the phone the
+         *     ACTIVE staff account is adopting. Students use the change flow.
+         */
+        PhoneBindRequest: {
+            /** Phone */
+            phone: string;
+        };
+        /**
          * PhoneChallengeRequest
          * @description Request one registration OTP for ``phone`` (spec §5.4, §33.2).
          */
@@ -4619,6 +4756,51 @@ export interface components {
              * @default
              */
             totp_code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
+         * StaffMobileCodeRequestRequest
+         * @description Ask for a staff SMS login code (V1.1 login iteration item 1) —
+         *     always 202, and a phone bound to a student (or nobody) never
+         *     actually receives one: staff existence is never an answer.
+         */
+        StaffMobileCodeRequestRequest: {
+            /** Phone */
+            phone: string;
+        };
+        /**
+         * StaffMobileCodeTotpRequest
+         * @description Finish an ADMIN mobile-code login with the TOTP second leg.
+         */
+        StaffMobileCodeTotpRequest: {
+            /** Pending Token */
+            pending_token: string;
+            /** Code */
+            code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
+         * StaffMobileCodeVerifyRequest
+         * @description Trade the staff SMS code for a staff session.
+         *
+         *     TEACHER completes in one step; ADMIN gets ``totp_required`` with an
+         *     opaque pending token — unless a valid remembered-device cookie
+         *     accompanies the (empty-body) request, in which case the cookie
+         *     replaces BOTH factors' second leg (the #87 craft).
+         */
+        StaffMobileCodeVerifyRequest: {
+            /** Phone */
+            phone?: string | null;
+            /** Code */
+            code?: string | null;
             /**
              * Remember Device
              * @default false
@@ -5932,6 +6114,72 @@ export interface operations {
             };
         };
     };
+    request_phone_bind_api_v1_me_phone_bind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_phone_bind_api_v1_me_phone_bind_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneBindConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     request_email_verification_api_v1_me_email_post: {
         parameters: {
             query?: never;
@@ -6200,6 +6448,105 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["StaffEmailCodeTotpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_staff_mobile_code_api_v1_auth_staff_mobile_code_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffMobileCodeRequestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_staff_mobile_code_api_v1_auth_staff_mobile_code_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffMobileCodeVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairResponse"] | components["schemas"]["StaffEmailCodePendingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    staff_mobile_code_totp_api_v1_auth_staff_mobile_code_totp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffMobileCodeTotpRequest"];
             };
         };
         responses: {
