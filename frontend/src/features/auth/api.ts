@@ -82,23 +82,17 @@ export function verifyPhoneChallenge(
 }
 
 /**
- * The register outcome (owner feedback ④, 2026-10-17; frozen backend
- * contract): the 201 body is the envelope `{user, tokens}` — every
+ * The register outcome (owner feedback ④, 2026-10-17; live contract
+ * since #100): the 201 body is the envelope `{user, tokens}` — every
  * successful registration IS a login (PENDING_APPROVAL included; the
  * browse-frozen home is the landing), so the wrapper walks the full
- * explicit-login dance on the envelope's tokens. The transitional
- * bare-UserPublic body (pre-envelope backend) resolves `legacy` and
- * adopts nothing — the form keeps its old redirect until the backend
- * half lands, and the branch dies with it.
+ * explicit-login dance on the envelope's tokens. A 201 WITHOUT the
+ * envelope is a broken contract and throws — no silent token-less
+ * downgrade (the transitional legacy branch retired with #100).
  */
-export type RegisterOutcome =
-  | { kind: "session"; user: RegisteredUser }
-  | { kind: "legacy"; user: RegisteredUser };
-
-/** Register one whitelisted student (201 -> the {user, tokens} envelope). */
 export async function registerStudent(
   payload: RegisterPayload,
-): Promise<RegisterOutcome> {
+): Promise<{ kind: "session"; user: RegisteredUser }> {
   await beginAuthTransition();
   let body: unknown;
   try {
@@ -114,15 +108,15 @@ export async function registerStudent(
   }
   const envelope = body as { user?: unknown; tokens?: unknown };
   if (
-    envelope !== null &&
-    typeof envelope === "object" &&
-    "user" in envelope &&
-    "tokens" in envelope
+    envelope === null ||
+    typeof envelope !== "object" ||
+    !("user" in envelope) ||
+    !("tokens" in envelope)
   ) {
-    adoptFullLogin(envelope.tokens as LoginTokens);
-    return { kind: "session", user: envelope.user as RegisteredUser };
+    throw new Error("register: the 201 body is not the {user, tokens} envelope");
   }
-  return { kind: "legacy", user: body as RegisteredUser };
+  adoptFullLogin(envelope.tokens as LoginTokens);
+  return { kind: "session", user: envelope.user as RegisteredUser };
 }
 
 /**

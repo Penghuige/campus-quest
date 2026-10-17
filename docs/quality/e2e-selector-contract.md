@@ -95,15 +95,16 @@ Error/validation copy: 退回说明不能为空 · 判无效原因不能为空 �
 keyword 组合） · 第 2 行
 
 Status/confirmation copy: 已提交，等待老师审核 · 重试完成提交 · 任务已完成，
-积分已发放。 · 注册成功，请使用学号登录。 (transitional: only the legacy
-register redirect sends it; retires with the {user, tokens} envelope's
-backend half) · 继续以 … 登录 (the fast-login banner's masked-phone offer,
-owner feedback ③) · 该设备尚未记住或已过期，请使用下方短信验证码登录。 (the
-banner's stale-click honest fallback) · 恢复代码只显示这一次 · 已复制 ·
-动态口令绑定完成，员工账号已激活。 · 已成功导入 1 个任务单元 · 已发布 · 草稿 ·
-已批准 · 待发放 · 已发放 · 已停用 · 启用 · 正常 · 累计获得 · 可花费/当前可花费/
-消耗积分 · 匿名用户 · 暂无通知 · 暂无附近排名 · 判无效将取消该学生当前锁定的
-奖励档位与积分
+积分已发放。 · 注册成功，请使用学号登录。 (RETIRED with ④ going live — #100
+made the register envelope the login, nothing routes to /login after
+registration; removed in the post-merge cleanup) · 继续以 … 登录 (the
+fast-login banner's masked-phone offer, owner feedback ③) · 该设备尚未记住
+或已过期，请使用下方短信验证码登录。 (the banner's stale-click honest
+fallback) · 手机号已绑定。 (the staff phone-binding success note, item ①) ·
+恢复代码只显示这一次 · 已复制 · 动态口令绑定完成，员工账号已激活。 ·
+已成功导入 1 个任务单元 · 已发布 · 草稿 · 已批准 · 待发放 · 已发放 · 已停用 ·
+启用 · 正常 · 累计获得 · 可花费/当前可花费/消耗积分 · 匿名用户 · 暂无通知 ·
+暂无附近排名 · 判无效将取消该学生当前锁定的奖励档位与积分
 
 Access-denied copy (RBAC proofs): 教师工作台仅对教师与管理员开放 ·
 管理后台仅对管理员开放，当前账号是教师账号 · 任务不存在，或您不是该任务的

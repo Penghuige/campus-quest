@@ -214,8 +214,12 @@ describe("registration OTP chain", () => {
     });
   });
 
-  test("the legacy bare-UserPublic register body (pre-envelope backend) stays session-less", async () => {
+  test("a NON-envelope register body is a contract violation that throws (the post-#100 cleanup)", async () => {
     clearAccessToken();
+    // The bare-UserPublic shape retired with the backend half (#100 on
+    // main): a 201 without the {user, tokens} envelope means the
+    // contract broke — the wrapper fails loudly instead of silently
+    // downgrading to a token-less "success".
     stubFetch(
       JSON.stringify({
         id: "22222222-2222-4222-8222-222222222222",
@@ -226,14 +230,14 @@ describe("registration OTP chain", () => {
       }),
       201,
     );
-    const outcome = await registerStudent({
-      student_number: "20240001",
-      nickname: "小明",
-      phone_token: "proof-token",
-      password: null,
-    });
-    assert.equal(outcome.kind, "legacy");
-    assert.equal(outcome.user.status, "PENDING_APPROVAL");
+    await assert.rejects(
+      registerStudent({
+        student_number: "20240001",
+        nickname: "小明",
+        phone_token: "proof-token",
+        password: null,
+      }),
+    );
     assert.equal(getAccessToken(), null);
   });
 
