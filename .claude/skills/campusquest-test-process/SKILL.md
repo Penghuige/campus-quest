@@ -43,3 +43,5 @@ e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，300
 覆盖漂移/flake 排查工具箱（PR #36 先例）：单模块漂移而其余分毫不差 = 单测分支覆盖 flake，非系统噪声。定位法——同一套件 N 轮独立 `COVERAGE_FILE` 运行 + coverage json 差分，找出偶走偶不走的分支；修法——确定性单测钉住该契约的全形态（不靠竞态运气拿覆盖），源码不动。
 
 **async 行归类缺陷（B 项专项，2026-10-17 定案）**：SQLAlchemy AsyncSession 走 greenlet 桥接同步 core；`[tool.coverage.run]` 未声明 `concurrency = ["greenlet", "thread"]` 时，tracer 的 arc 记账在 greenlet 切换处跨 frame——await 行的 arc 落到 SQLAlchemy 内部行号（越界 arc），报告层静默丢弃后物理执行过的行被记 missing（#88/#91/#95 等四发作）。修复=配置声明（已落 pyproject）；`coverage_ratchet.py` 的越界 arc 护栏（`_undeclared_concurrency_signatures`）在数据带此指纹时拒绝比对并直接红。新增并发库（gevent/eventlet/multiprocessing）时同理必须声明，护栏会兜底报错。
+
+**发码/挑战类 service 的跨连接持久性断言（#85+#101 二犯制度，2026-10-17）**：request 类方法（短信/邮箱码、OTP 挑战）的 202 前必须落 commit（挑战行跨连接可见）；**savepoint harness 的集成测试看不见该缺陷**（同事务内未提交行可读=假绿），只有 e2e 真形态能抓——晚一层。新写此类 service 测试**必带一条生产式会话断言**：`AsyncSession(db_engine)` 独立会话跑 request→另开新会话 SELECT 挑战行存在（先例：`test_staff_mobile_code_login_api.py::test_request_leaves_the_challenge_durable_across_sessions`；注意真提交行的 cleanup 责任在测试自己）。

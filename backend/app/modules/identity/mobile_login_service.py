@@ -442,6 +442,9 @@ class MobileLoginService:
         except ProviderError as exc:
             await db.delete(challenge)
             await db.commit()
+            # The failed attempt burns no cooldown (the student leg's
+            # discipline): release the arm so the retry is not 429-blocked.
+            await self._redis.delete(_STAFF_COOLDOWN_KEY_PREFIX + normalized)
             logger.warning(
                 "staff mobile code send failed phone=%s", mask_phone(normalized)
             )
@@ -450,6 +453,18 @@ class MobileLoginService:
                 _DELIVERY_FAILED_MESSAGE,
                 status_code=502,
             ) from exc
+
+        # COMMIT BOUNDARY: the 202 must leave the challenge durable for
+        # the next request/connection (the email-service hotfix lesson —
+        # the e2e-caught second instance; the suite's savepoint sessions
+        # cannot see this defect, only a fresh connection can).
+        challenge_id = challenge.id
+        await db.commit()
+        logger.info(
+            "staff mobile code issued phone=%s challenge_id=%s",
+            mask_phone(normalized),
+            challenge_id,
+        )
 
     async def verify_staff_code(
         self,
