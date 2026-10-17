@@ -375,6 +375,69 @@ export function adoptFullLogin(tokens: LoginTokens): void {
   invalidateDataCache();
 }
 
+// --- staff mobile-code login (login-iteration item ①; plan-frozen
+// contract, backend PR #101) ----------------------------------------------
+//
+// The mobile channel mirrors the email-code family endpoint-for-
+// endpoint (202-always request; verify = tokens OR the ADMIN
+// totp_required pending leg; body-carried totp completion). The
+// TERMINAL remember-device ruling (2026-10-15) applies verbatim: the
+// verify leg a TEACHER can complete never carries remember_device
+// from this client — the checkbox lives ONLY on the totp leg (a
+// remembered device must never exempt a sole factor).
+
+/**
+ * Ask for a 6-digit staff login SMS. 202 with an empty body for every
+ * phone (anti-enumeration); only the 60s cooldown / limiter breach
+ * answers 429.
+ */
+export function requestStaffMobileCode(phone: string): Promise<void> {
+  return apiRequest<void>(`${BASE}/staff/mobile-code/request`, {
+    method: "POST",
+    body: { phone },
+  });
+}
+
+/**
+ * Trade the staff SMS code for a session — the email-code verify's
+ * exact outcome union (TEACHER tokens / ADMIN totp_required pending).
+ */
+export async function verifyStaffMobileCode(
+  phone: string,
+  code: string,
+): Promise<EmailCodeVerifyResult> {
+  const body = await apiRequest<unknown>(`${BASE}/staff/mobile-code/verify`, {
+    method: "POST",
+    body: { phone, code },
+  });
+  const outcome = classifyVerifyResponse(body);
+  if (outcome.kind === "totp_required") {
+    return outcome;
+  }
+  adoptFullLogin(body as LoginTokens);
+  return { kind: "tokens", tokens: body as LoginTokens };
+}
+
+/**
+ * Complete the ADMIN mobile-code login's TOTP leg — the pending token
+ * rides the BODY (the family's frozen shape), remember_device
+ * presence-based (the ONLY leg the checkbox lives on).
+ */
+export async function staffMobileCodeTotp(
+  pendingToken: string,
+  code: string,
+  rememberDevice: boolean,
+): Promise<LoginTokens> {
+  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/mobile-code/totp`, {
+    method: "POST",
+    body: rememberDevice
+      ? { pending_token: pendingToken, code, remember_device: true }
+      : { pending_token: pendingToken, code },
+  });
+  adoptFullLogin(tokens);
+  return tokens;
+}
+
 /**
  * Revoke the presented session server-side (204) and forget the
  * memory-only access token. The memory clears in a `finally` even when
@@ -460,6 +523,38 @@ export function confirmPhoneChange(
   code: string,
 ): Promise<MeDto> {
   return apiRequest<MeDto>(`${ME}/phone/change/confirm`, {
+    method: "POST",
+    body: { challenge_id: challengeId, code },
+  });
+}
+
+// --- staff phone binding (login-iteration item ①; /me/phone/bind) --------
+//
+// STAFF-only surface (TEACHER/ADMIN; students keep the password-
+// re-authenticated /me/phone/change family — their phone is the
+// register-time identity). First bind and re-bind walk the SAME two
+// steps: challenge the phone, confirm with its SMS code; no password
+// re-auth (the staff session itself is the authority — the email
+// binding's precedent). A phone owned by any other account answers
+// 409 PHONE_ALREADY_BOUND (the shared copy family).
+
+/**
+ * Bind (or re-bind) the staff account's phone: POST /me/phone/bind
+ * {phone} challenges the number (202 + challenge view).
+ */
+export function requestPhoneBind(phone: string): Promise<ChallengeView> {
+  return apiRequest<ChallengeView>(`${ME}/phone/bind`, {
+    method: "POST",
+    body: { phone },
+  });
+}
+
+/**
+ * Confirm the binding with the SMS code (POST /me/phone/bind/confirm);
+ * returns the updated account view (phone_e164 set).
+ */
+export function confirmPhoneBind(challengeId: string, code: string): Promise<MeDto> {
+  return apiRequest<MeDto>(`${ME}/phone/bind/confirm`, {
     method: "POST",
     body: { challenge_id: challengeId, code },
   });

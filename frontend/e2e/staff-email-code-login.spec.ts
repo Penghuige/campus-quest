@@ -78,7 +78,7 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
     const [teacherEmail] = STAFF!.split(":");
     await page.goto(`${BASE_URL}/staff/login`);
     // The code channel is the default; the password channel one toggle away.
-    await expect(page.getByRole("button", { name: "验证码登录" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "邮箱验证码登录" })).toBeVisible();
     await expect(page.getByRole("button", { name: "密码登录" })).toBeVisible();
 
     const code = await requestCode(page, teacherEmail);

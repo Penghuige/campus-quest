@@ -1,40 +1,54 @@
 "use client";
 /**
- * The staff login page's channel tabs (V1.1 §2.1; plan Task 8): the
- * email-code flow is the DEFAULT channel; the password+TOTP form (the
- * pre-V1.1 channel, still first-class for accounts that set a
- * password — spec §2.4's compatibility clause) sits one visible toggle
- * away, untouched.
+ * The staff login page's channel tabs (V1.1 §2.1 + login-iteration
+ * item ①): the email-code flow stays the DEFAULT channel; the
+ * mobile-code flow (the staff account's BOUND phone, item ①) and the
+ * password+TOTP form (the pre-V1.1 channel, still first-class for
+ * accounts that set a password — spec §2.4's compatibility clause)
+ * sit one visible toggle away.
  *
- * The toggle is a real button pair with aria-pressed (a tablist would
- * promise arrow-key navigation these two lightweight tabs don't
- * implement; the pressed state + visible labels carry the same
- * information accessibly).
+ * The labels disambiguate the two code channels explicitly
+ * (邮箱验证码登录 / 手机验证码登录) — item ① added the confusable
+ * sibling, so the email tab's bare 验证码登录 copy retired with it.
+ *
+ * The toggle is a real button row with aria-pressed (a tablist would
+ * promise arrow-key navigation these lightweight tabs don't implement;
+ * the pressed state + visible labels carry the same information
+ * accessibly).
  */
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
-type Channel = "code" | "password";
+type Channel = "code" | "mobile" | "password";
 
 const CHANNEL_LABELS: Record<Channel, string> = {
-  code: "验证码登录",
+  code: "邮箱验证码登录",
+  mobile: "手机验证码登录",
   password: "密码登录",
 };
 
 export function StaffLoginPanel({
   codeChannel,
+  mobileChannel,
   passwordChannel,
 }: {
   codeChannel: ReactNode;
+  mobileChannel: ReactNode;
   passwordChannel: ReactNode;
 }) {
   const [channel, setChannel] = useState<Channel>("code");
 
+  const channels: Record<Channel, ReactNode> = {
+    code: codeChannel,
+    mobile: mobileChannel,
+    password: passwordChannel,
+  };
+
   return (
     <>
       <div className="login-channel-toggle" role="group" aria-label="登录方式">
-        {(["code", "password"] as const).map((option) => (
+        {(Object.keys(CHANNEL_LABELS) as Channel[]).map((option) => (
           <Button
             key={option}
             variant={channel === option ? "secondary" : "ghost"}
@@ -45,7 +59,7 @@ export function StaffLoginPanel({
           </Button>
         ))}
       </div>
-      {channel === "code" ? codeChannel : passwordChannel}
+      {channels[channel]}
     </>
   );
 }

@@ -67,6 +67,37 @@ export function describeEmailLoginError(
   return { message: error.message || fallback, requestId: error.requestId };
 }
 
+/**
+ * The mobile channel's mirror (login-iteration item ①): the same
+ * verdict-code branches with the SMS family's invalid-code key — the
+ * lockout and cooldown copy are the family's verbatim text.
+ */
+export function describeMobileStaffLoginError(
+  error: unknown,
+  fallback: string,
+): EmailLoginErrorView {
+  if (!isApiError(error)) {
+    return { message: NETWORK_ERROR_TEXT, requestId: null };
+  }
+  if (error.code === "MOBILE_CODE_INVALID") {
+    return { message: "验证码错误或已过期", requestId: error.requestId };
+  }
+  if (error.code === "ACCOUNT_LOCKED") {
+    const retry = retryAfterSeconds(error);
+    return {
+      message:
+        retry === null
+          ? "尝试次数过多，请稍后再试"
+          : `尝试次数过多，请 ${lockedWaitMinutes(retry)} 分钟后再试`,
+      requestId: error.requestId,
+    };
+  }
+  if (error.code === "RATE_LIMITED") {
+    return { message: "发送过于频繁，请 1 分钟后再试", requestId: error.requestId };
+  }
+  return { message: error.message || fallback, requestId: error.requestId };
+}
+
 function retryAfterSeconds(error: { details: unknown }): number | null {
   if (
     typeof error.details === "object" &&
