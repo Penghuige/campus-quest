@@ -58,6 +58,13 @@ arch-city:
 	npx -y codecharta-analysis@latest merge -f -nc build/cc-churn.cc.json build/cc-be.cc.json build/cc-fe.cc.json -o build/code-city.cc.json
 	@echo "open: npx codecharta-visualization -p build/code-city.cc.json"
 
+# Browser-based viewer for the code city (no Electron, no DISPLAY):
+# serves the visualization web assets locally and loads the map via the
+# ?file= URL parameter. Ctrl+C to stop; port defaults to 8190.
+.PHONY: arch-city-view
+arch-city-view:
+	bash scripts/view_code_city.sh
+
 verify: lint-backend arch-lint
 	cd backend && uv run pytest -v
 	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run build

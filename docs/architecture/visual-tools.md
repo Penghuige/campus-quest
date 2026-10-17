@@ -34,8 +34,14 @@ GitHub-rendered) + boundary-debt tables for both trees.
 
 - `make arch-city` → `build/code-city.cc.json` (gitignored; churn metrics
   from git history + code metrics from tree-sitter parsing, merged)
-- Open: `npx codecharta-visualization -p build/code-city.cc.json`
-  (local Electron app)
+- **View in the browser (recommended): `make arch-city-view`** → open the
+  printed URL (`http://localhost:8190/?file=code-city.cc.json`), Ctrl+C to
+  stop. This path avoids the Electron app entirely: its postinstall
+  downloads a ~100MB binary from GitHub (fails on slow/blocked links) and
+  it needs `DISPLAY` set when launched from tmux. If you do want the
+  desktop app: `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+  npx codecharta-visualization` and launch from a terminal with a display
+  (its CLI ignores `-p`; pick the file in the app's upload dialog).
 - Reading it: map height to `complexity`/`max_complexity_per_function` and
   color to `number_of_commits` — tall + hot buildings are the refactoring
   hotspots (complexity × churn, the "crime scene" signal)
