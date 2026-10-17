@@ -42,6 +42,15 @@ _RATCHET_PATH = _BACKEND_ROOT / "coverage-ratchet.json"
 #: can only SOMETIMES meet is broken by construction — floors are the
 #: CI-reproducible minimum, and single-module drift on identical code
 #: is a coverage flake to hunt, never a reason to widen epsilon.
+#: Cross-environment MARGIN convention (reviewer ruling 2026-10-17, the
+#: first post-B-item CI measurement): community measured 97.3 local vs
+#: 96.9 CI on identical code — every OTHER module matched to the digit,
+#: the PR #36 single-module coverage-flake signature (an order-sensitive
+#: branch CI's random order only sometimes exercises). A flake that
+#: exceeds epsilon is NOT hunted under a red main: the floor drops to
+#: min(local, CI) - epsilon (97.3/96.9 -> 96.7) in the same PR, the
+#: flake-hunt itself is a separate item, and the floor re-tightens to
+#: the deterministic value once that hunt lands.
 _EPSILON = 0.15
 
 #: Researched residuals waived from the cross-talk guard (rental-style,
