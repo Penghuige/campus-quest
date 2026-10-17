@@ -237,3 +237,76 @@ async def test_resend_inside_cooldown_is_429(
 
     assert first.status_code == 200, first.text
     assert again.status_code == 429, again.text
+
+
+async def test_phone_taken_between_request_and_confirm_is_409(
+    db_session: AsyncSession,
+    api_redis: aioredis.Redis,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The race the FOR-UPDATE lock and the unique index adjudicate: the
+    challenge was issued, then ANOTHER account claims the phone first —
+    confirm surfaces the friendly PHONE_ALREADY_BOUND (the change-flow
+    race precedent's direct-call shape; the HTTP route is the same
+    service call)."""
+    from app.core.errors import BusinessError
+    from app.core.security import AccessTokenCodec
+    from app.modules.identity.events import Actor
+    from app.modules.identity.otp import OtpChallengeService, OtpPolicy
+    from app.modules.identity.profile_service import ProfileService
+    from app.modules.identity.session_service import SessionService
+
+    teacher, student = await _seed_world(db_session)
+    await db_session.commit()
+
+    policy = OtpPolicy(
+        ttl_seconds=300,
+        max_verify_attempts=5,
+        resend_cooldown_seconds=60,
+        verified_token_ttl_seconds=600,
+        phone_hourly_request_limit=5,
+        phone_daily_request_limit=20,
+        ip_hourly_request_limit=50,
+        ip_daily_request_limit=200,
+        hmac_secret="integration-test-otp-hmac-secret",
+        default_region="CN",
+    )
+    service = ProfileService(
+        clock=api_clock,
+        otp=OtpChallengeService(
+            redis=api_redis,
+            clock=api_clock,
+            sms_sender=api_sms,
+            policy=policy,
+        ),
+        otp_policy=policy,
+        sessions=SessionService(
+            clock=api_clock,
+            access_codec=AccessTokenCodec(secret="test-secret", ttl_minutes=15),
+            refresh_token_ttl_days=30,
+        ),
+    )
+    challenge = await service.request_phone_bind(
+        db_session, teacher.id, _PHONE_RAW, client_ip="127.0.0.1"
+    )
+    code = api_sms.messages[0].variables["code"]
+
+    # The interloper claims the phone first — flush (not commit) keeps
+    # the claim inside this savepoint, the change-flow race precedent.
+    student.phone_e164 = "+8613800169999"
+    await db_session.flush()
+
+    with pytest.raises(BusinessError) as exc_info:
+        await service.confirm_phone_bind(
+            db_session,
+            Actor(user_id=teacher.id, role=Role.TEACHER),
+            challenge.challenge_id,
+            code,
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.code.value == "PHONE_ALREADY_BOUND"
+    # (The fail-closed persistence re-read is omitted here: after the
+    # service's savepoint rollback, re-reading through the SAME session
+    # replays the interloper's flush inside this test's own savepoint —
+    # the mapping itself, pinned above, is what this leg owns.)

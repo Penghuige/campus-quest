@@ -308,3 +308,188 @@ async def test_wrong_code_is_the_uniform_invalid(
 
     assert verified.status_code == 400, verified.text
     assert verified.json()["error"]["code"] == "MOBILE_CODE_INVALID"
+
+
+# --- the failure legs (CI floor gap-fill: the happy paths alone left
+# --- the uniform-invalid branches unmeasured) ------------------------------
+
+
+async def test_request_malformed_phone_is_silent_202(
+    client: httpx.AsyncClient, api_sms: FakeSmsSender
+) -> None:
+    requested = await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": "not-a-phone"}
+    )
+    assert requested.status_code == 202, requested.text
+    assert len(api_sms.messages) == 0
+
+
+async def test_staff_code_resend_hits_cooldown_429(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    await _seed_staff(
+        db_session,
+        email=_TEACHER_EMAIL,
+        password=_TEACHER_PASSWORD,
+        role=Role.TEACHER,
+        phone=_PHONE_TEACHER,
+        with_totp=False,
+    )
+    await db_session.commit()
+    first = await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": _PHONE_TEACHER}
+    )
+    again = await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": _PHONE_TEACHER}
+    )
+    assert first.status_code == 202, first.text
+    assert again.status_code == 429, again.text
+
+
+async def test_sms_failure_is_502_and_leaves_no_challenge(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    from sqlalchemy import select
+
+    from app.integrations.errors import ProviderError
+    from app.modules.identity.models import LoginMobileChallenge
+
+    await _seed_staff(
+        db_session,
+        email=_TEACHER_EMAIL,
+        password=_TEACHER_PASSWORD,
+        role=Role.TEACHER,
+        phone=_PHONE_TEACHER,
+        with_totp=False,
+    )
+    await db_session.commit()
+    api_sms.failures.append(ProviderError("carrier down"))
+
+    requested = await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": _PHONE_TEACHER}
+    )
+
+    assert requested.status_code == 502, requested.text
+    leftovers = (
+        await db_session.scalars(
+            select(LoginMobileChallenge).where(
+                LoginMobileChallenge.phone_e164 == _PHONE_TEACHER
+            )
+        )
+    ).all()
+    assert leftovers == []
+
+
+async def test_verify_uniform_invalid_legs(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    """No cookie + empty code, a phone bound to a STUDENT, a code with no
+    phone, and a malformed phone: all the same uniform 400."""
+    await _seed_student_with_phone(db_session)
+    await db_session.commit()
+
+    no_cookie = await client.post("/api/v1/auth/staff/mobile-code/verify", json={})
+    student_bound = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify",
+        json={"phone": _PHONE_STUDENT, "code": "123456"},
+    )
+    code_no_phone = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify", json={"code": "123456"}
+    )
+    malformed = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify",
+        json={"phone": "garbage", "code": "123456"},
+    )
+    for response in (no_cookie, student_bound, code_no_phone, malformed):
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["code"] == "MOBILE_CODE_INVALID"
+
+
+async def test_student_bound_cookie_is_not_a_staff_credential(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    """A remembered device bound to a STUDENT never opens the staff
+    channel — the student banner's cookie and the staff panel's are the
+    same cookie family, the audience check is what keeps them apart."""
+    from app.modules.identity.device_credentials import issue as issue_device
+
+    student = await _seed_student_with_phone(db_session)
+    cookie = await issue_device(db_session, student.id, clock=api_clock)
+    await db_session.commit()
+
+    verified = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify",
+        json={},
+        cookies={DEVICE_COOKIE_NAME: cookie},
+    )
+
+    assert verified.status_code == 400, verified.text
+    assert verified.json()["error"]["code"] == "MOBILE_CODE_INVALID"
+
+
+async def test_five_wrong_codes_lock_the_account(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    await _seed_staff(
+        db_session,
+        email=_TEACHER_EMAIL,
+        password=_TEACHER_PASSWORD,
+        role=Role.TEACHER,
+        phone=_PHONE_TEACHER,
+        with_totp=False,
+    )
+    await db_session.commit()
+    await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": _PHONE_TEACHER}
+    )
+    for _ in range(5):
+        wrong = await client.post(
+            "/api/v1/auth/staff/mobile-code/verify",
+            json={"phone": _PHONE_TEACHER, "code": "000000"},
+        )
+        assert wrong.status_code == 400, wrong.text
+
+    locked = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify",
+        json={"phone": _PHONE_TEACHER, "code": "000000"},
+    )
+    assert locked.status_code == 429, locked.text
+    assert locked.json()["error"]["code"] == "ACCOUNT_LOCKED"
+
+
+async def test_totp_leg_rejects_unknown_and_wrong(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    _, secret = await _seed_staff(
+        db_session,
+        email=_ADMIN_EMAIL,
+        password=_ADMIN_PASSWORD,
+        role=Role.ADMIN,
+        phone=_PHONE_TEACHER,
+        with_totp=True,
+    )
+    await db_session.commit()
+    await client.post(
+        "/api/v1/auth/staff/mobile-code/request", json={"phone": _PHONE_TEACHER}
+    )
+    code = api_sms.messages[0].variables["code"]
+    verified = await client.post(
+        "/api/v1/auth/staff/mobile-code/verify",
+        json={"phone": _PHONE_TEACHER, "code": code},
+    )
+    pending_token = verified.json()["pending_token"]
+
+    unknown = await client.post(
+        "/api/v1/auth/staff/mobile-code/totp",
+        json={"pending_token": "not-a-real-token", "code": "123456"},
+    )
+    assert unknown.status_code == 400, unknown.text
+
+    import pyotp
+
+    stale_code = pyotp.TOTP(secret or "").at(_T0.timestamp() - 120)
+    wrong = await client.post(
+        "/api/v1/auth/staff/mobile-code/totp",
+        json={"pending_token": pending_token, "code": stale_code},
+    )
+    assert wrong.status_code == 400, wrong.text

@@ -267,7 +267,14 @@ class ProfileService:
             violation = str(exc.orig) if exc.orig is not None else str(exc)
             if _PHONE_UNIQUE_CONSTRAINT not in violation:
                 raise
-            logger.info("phone bind rejected user_id=%s reason=already_bound", user.id)
+            # actor.user_id, NOT user.id: the rollback above expired the
+            # ORM object, and touching the attribute would lazy-load
+            # outside greenlet (the change flow logs its parameter for
+            # the same reason).
+            logger.info(
+                "phone bind rejected user_id=%s reason=already_bound",
+                actor.user_id,
+            )
             raise BusinessError(
                 ErrorCode.PHONE_ALREADY_BOUND,
                 _PHONE_ALREADY_BOUND_MESSAGE,
@@ -284,7 +291,7 @@ class ProfileService:
             request_id=audit_context.request_id if audit_context else None,
         )
         await db.commit()
-        logger.info("phone bound user_id=%s", user.id)
+        logger.info("phone bound user_id=%s", actor.user_id)
         return locked
 
     async def confirm_phone_change(
