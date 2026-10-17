@@ -60,8 +60,44 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register Student */
+        /**
+         * Register Student
+         * @description Register one student — and land LOGGED IN (V1.1 login iteration
+         *     item 4): the freshly proved phone makes an immediate re-login (and
+         *     its 60s SMS cooldown) pure friction. The response pairs the account
+         *     view with the same session body/cookie set the login path answers
+         *     (PENDING_APPROVAL accounts browse the frozen home per #96).
+         */
         post: operations["register_student_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mobile-code/remembered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Probe Remembered Device
+         * @description Is a remembered device alive for the login banner? (V1.1 login
+         *     iteration item 3.)
+         *
+         *     The banner renders only when this answers a masked phone — but
+         *     cq_staff_device is HttpOnly, so the browser cannot look itself.
+         *     200 {phone_masked} ONLY for the banner's audience: a cookie bound
+         *     to a STUDENT (ACTIVE or PENDING_APPROVAL) with a bound phone. Every
+         *     other shape — no cookie, unknown or expired value, a staff binding
+         *     — answers the same empty 204: existence is never an answer. The
+         *     click leg is the cookie-only POST /auth/mobile-code/verify.
+         */
+        get: operations["probe_remembered_device_api_v1_auth_mobile_code_remembered_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -467,6 +503,11 @@ export interface paths {
          *     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
          *     finish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):
          *     per email and per transport peer.
+         *
+         *     V1.1 login iteration item 2: an EMPTY ``totp_code`` completes the
+         *     login when a valid remembered-device cookie rides the request (the
+         *     30-day re-login); ``remember_device`` mints that cookie on a
+         *     successful login.
          */
         post: operations["staff_login_api_v1_auth_staff_login_post"];
         delete?: never;
@@ -3332,12 +3373,17 @@ export interface components {
         };
         /**
          * MobileCodeVerifyRequest
-         * @description Trade the SMS code (or the remembered-device cookie, with ``code``
-         *     omitted) for a student session.
+         * @description Trade the SMS code (or the remembered-device cookie) for a student
+         *     session.
+         *
+         *     Three shapes: ``phone``+``code`` (the SMS leg), ``phone`` with
+         *     ``code`` omitted (the cookie must match that phone's user), or an
+         *     EMPTY body (the login-banner click: the device row alone resolves
+         *     the user — the banner only ever has the masked phone).
          */
         MobileCodeVerifyRequest: {
             /** Phone */
-            phone: string;
+            phone?: string | null;
             /** Code */
             code?: string | null;
             /**
@@ -4017,6 +4063,18 @@ export interface components {
             password?: string | null;
         };
         /**
+         * RegisterResponse
+         * @description Registration ends logged in (V1.1 login iteration item 4): the
+         *     account view beside the freshly minted session — the same body the
+         *     login path answers, so the client lands directly in the frozen-home
+         *     browsing mode instead of bouncing through a second login (and the
+         *     60s SMS cooldown) right after proving the phone.
+         */
+        RegisterResponse: {
+            user: components["schemas"]["UserPublic"];
+            tokens: components["schemas"]["TokenPairResponse"];
+        };
+        /**
          * RejectRequest
          * @description reason is optional; ≤255 chars (the column bound).
          */
@@ -4544,14 +4602,28 @@ export interface components {
         /**
          * StaffLoginRequest
          * @description Staff login: verified email + password + TOTP/recovery code (§5.8).
+         *
+         *     ``totp_code`` may be EMPTY (or omitted) when a valid remembered-
+         *     device cookie accompanies the request — the cookie is the second
+         *     factor for the 30-day re-login (V1.1 login iteration item 2); empty
+         *     without one is the uniform authentication failure. ``remember_device``
+         *     mints that cookie on a successful full login.
          */
         StaffLoginRequest: {
             /** Email */
             email: string;
             /** Password */
             password: string;
-            /** Totp Code */
+            /**
+             * Totp Code
+             * @default
+             */
             totp_code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
         };
         /**
          * StaffSessionResponse
@@ -5400,7 +5472,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserPublic"];
+                    "application/json": components["schemas"]["RegisterResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5410,6 +5482,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_remembered_device_api_v1_auth_mobile_code_remembered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

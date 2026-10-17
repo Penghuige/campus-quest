@@ -78,6 +78,11 @@ async def staff_login(
     error, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to
     finish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):
     per email and per transport peer.
+
+    V1.1 login iteration item 2: an EMPTY ``totp_code`` completes the
+    login when a valid remembered-device cookie rides the request (the
+    30-day re-login); ``remember_device`` mints that cookie on a
+    successful login.
     """
     await _enforce_rate_limit(
         limiter,
@@ -85,10 +90,25 @@ async def staff_login(
         body.email.strip().lower(),
         client_ip=_client_ip(request),
     )
-    tokens = await staff.authenticate_staff(
-        db, body.email, body.password, body.totp_code
+    tokens, device_cookie = await staff.authenticate_staff(
+        db,
+        body.email,
+        body.password,
+        body.totp_code,
+        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        remember_device=body.remember_device,
     )
-    return _token_pair_response(response, tokens, settings)
+    pair = _token_pair_response(response, tokens, settings)
+    if device_cookie is not None:
+        response.set_cookie(
+            DEVICE_COOKIE_NAME,
+            device_cookie,
+            max_age=DEVICE_TTL_DAYS * 24 * 3600,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+    return pair
 
 
 @router.post("/auth/staff/email-code/request", status_code=202)

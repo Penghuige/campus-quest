@@ -78,11 +78,19 @@ class LoginRequest(BaseModel):
 
 
 class StaffLoginRequest(BaseModel):
-    """Staff login: verified email + password + TOTP/recovery code (§5.8)."""
+    """Staff login: verified email + password + TOTP/recovery code (§5.8).
+
+    ``totp_code`` may be EMPTY (or omitted) when a valid remembered-
+    device cookie accompanies the request — the cookie is the second
+    factor for the 30-day re-login (V1.1 login iteration item 2); empty
+    without one is the uniform authentication failure. ``remember_device``
+    mints that cookie on a successful full login.
+    """
 
     email: str
     password: str
-    totp_code: str
+    totp_code: str = ""
+    remember_device: bool = False
 
 
 class StaffEmailCodeRequestRequest(BaseModel):
@@ -363,6 +371,17 @@ class TokenPairResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class RegisterResponse(BaseModel):
+    """Registration ends logged in (V1.1 login iteration item 4): the
+    account view beside the freshly minted session — the same body the
+    login path answers, so the client lands directly in the frozen-home
+    browsing mode instead of bouncing through a second login (and the
+    60s SMS cooldown) right after proving the phone."""
+
+    user: UserPublic
+    tokens: TokenPairResponse
+
+
 class TotpSetupResponse(BaseModel):
     """A freshly generated TOTP credential, displayed exactly once (§5.8)."""
 
@@ -390,9 +409,15 @@ class MobileCodeRequestRequest(BaseModel):
 
 
 class MobileCodeVerifyRequest(BaseModel):
-    """Trade the SMS code (or the remembered-device cookie, with ``code``
-    omitted) for a student session."""
+    """Trade the SMS code (or the remembered-device cookie) for a student
+    session.
 
-    phone: str
+    Three shapes: ``phone``+``code`` (the SMS leg), ``phone`` with
+    ``code`` omitted (the cookie must match that phone's user), or an
+    EMPTY body (the login-banner click: the device row alone resolves
+    the user — the banner only ever has the masked phone).
+    """
+
+    phone: str | None = None
     code: str | None = None
     remember_device: bool = False

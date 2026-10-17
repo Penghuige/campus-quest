@@ -61,7 +61,7 @@ from app.modules.identity.email_login_service import (
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.login_failure_guard import LoginFailureGuard
-from app.modules.identity.models import LoginMobileChallenge
+from app.modules.identity.models import LoginMobileChallenge, User
 from app.modules.identity.otp import InvalidPhoneError, normalize_phone
 from app.modules.identity.repository import UserRepository
 from app.modules.identity.session_service import SessionService, SessionTokens
@@ -206,7 +206,7 @@ class MobileLoginService:
         self,
         db: AsyncSession,
         *,
-        phone: str,
+        phone: str | None,
         code: str | None,
         device_cookie: str | None = None,
         remember_device: bool = False,
@@ -219,63 +219,86 @@ class MobileLoginService:
         30-day value when the login should set one (remember_device on
         the code leg, or ALWAYS on the cookie leg — the rotation is the
         renewal), else None.
+
+        The user is resolved by the LEG's own key: the code leg by the
+        phone; the cookie leg by the device row alone (the login-banner
+        click has no phone — only the masked form, which is not a
+        locator). A phone still accompanying the cookie leg is accepted
+        for the pre-iteration callers and must agree with the device's
+        user, exactly as before.
         """
         assert self._sessions is not None and self._guard is not None, (
             "verify legs require sessions and guard wiring"
         )
-        try:
-            normalized = normalize_phone(phone, "CN")
-        except InvalidPhoneError as exc:
-            raise BusinessError(
-                ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE
-            ) from exc
 
-        user = await self._users.find_by_phone_e164(db, normalized)
-        if (
-            user is None
-            or user.role != Role.STUDENT.value
-            or user.status
-            not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
-        ):
-            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+        def _invalid() -> BusinessError:
+            return BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+
+        empty_code = code is None or code.strip() == ""
+        if not empty_code:
+            assert code is not None  # empty_code is False, for the type reader
+            if phone is None:
+                # A code with no phone has no challenge to match.
+                raise _invalid()
+            try:
+                normalized = normalize_phone(phone, "CN")
+            except InvalidPhoneError as exc:
+                raise _invalid() from exc
+            user = await self._users.find_by_phone_e164(db, normalized)
+            if (
+                user is None
+                or user.role != Role.STUDENT.value
+                or user.status
+                not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
+            ):
+                raise _invalid()
+        else:
+            # The remembered-device leg: a valid cookie is a full
+            # credential — no code, no SMS, no phone needed — and a
+            # fresh 30-day value (the rotation is the renewal).
+            device_user_id = (
+                await validate_device(db, device_cookie, clock=self._clock)
+                if device_cookie is not None
+                else None
+            )
+            if device_user_id is None:
+                raise _invalid()
+            user = await db.get(User, device_user_id)
+            if (
+                user is None
+                or user.role != Role.STUDENT.value
+                or user.status
+                not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
+            ):
+                raise _invalid()
 
         now = self._clock.now()
 
-        # The remembered-device leg: a valid cookie matching THIS user is
-        # a full credential — no code, no SMS, and a fresh 30-day value.
-        if code is None or code.strip() == "":
-            if (
-                device_cookie is not None
-                and (await validate_device(db, device_cookie, clock=self._clock))
-                == user.id
-            ):
-                _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-                new_cookie: str | None = await issue_device(
-                    db, user.id, clock=self._clock
-                )
-                await self._audit.append(
-                    db,
-                    actor=Actor(user_id=user.id, role=Role.STUDENT),
-                    action=AUDIT_MOBILE_LOGIN_SUCCEEDED,
-                    target_type=_AUDIT_TARGET_TYPE,
-                    target_id=str(user.id),
-                    after_snapshot={"channel": "mobile_code+device"},
-                    ip_address=audit_context.ip_address if audit_context else None,
-                    request_id=audit_context.request_id if audit_context else None,
-                )
-                await db.commit()
-                await self._guard.reset(user.id)
-                logger.info(
-                    "mobile login succeeded user_id=%s channel=mobile_code+device",
-                    user.id,
-                )
-                return tokens, new_cookie
-            # No code and no valid cookie: the uniform invalid answer.
-            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+        if empty_code:
+            _, tokens = await self._sessions.issue_session(db, user=user, now=now)
+            new_cookie: str | None = await issue_device(db, user.id, clock=self._clock)
+            await self._audit.append(
+                db,
+                actor=Actor(user_id=user.id, role=Role.STUDENT),
+                action=AUDIT_MOBILE_LOGIN_SUCCEEDED,
+                target_type=_AUDIT_TARGET_TYPE,
+                target_id=str(user.id),
+                after_snapshot={"channel": "mobile_code+device"},
+                ip_address=audit_context.ip_address if audit_context else None,
+                request_id=audit_context.request_id if audit_context else None,
+            )
+            await db.commit()
+            await self._guard.reset(user.id)
+            logger.info(
+                "mobile login succeeded user_id=%s channel=mobile_code+device",
+                user.id,
+            )
+            return tokens, new_cookie
 
         if await self._guard.is_locked(user.id):
             raise await self._account_locked(user.id)
 
+        assert code is not None and normalized is not None  # the code leg
         challenge = (
             await db.scalars(
                 select(LoginMobileChallenge)
