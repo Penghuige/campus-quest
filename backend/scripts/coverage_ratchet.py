@@ -61,8 +61,21 @@ _EPSILON = 0.15
 #: matches the arc fingerprint on ANY host file (the recorded host is
 #: provenance, not a match key). Any drift (one new arc, a different
 #: line) falls through and fails the gate again, so the list cannot
-#: silently rot into a global pass. Root-fixing the greenlet patch leak
-#: itself is the B-item backlog entry; the waiver retires with it.
+#: silently rot into a global pass.
+#:
+#: WAIVER POLICY (owner-approved 2026-10-17, the saga's closing ruling):
+#: the greenlet cross-talk is a timing-shaped defect in coverage's own
+#: greenlet patch — sysmon/ctrace both reproduce it and 7.16.2 is the
+#: latest release, so the configuration layer has no fix (the
+#: three-way falsification lives in the B-item report). The waivers ARE
+#: the long-term defense: a NEW signature fails the gate red, gets its
+#: fingerprint registered here with provenance, and the CI artifact
+#: (coverage-diagnosis.bin, uploaded always) carries the arcs for the
+#: analysis. REVALIDATION CLAUSE: every coverage version bump (lock
+#: update) re-checks both registered signatures — if one stops
+#: appearing, retire its waiver entry and file the upstream report with
+#: the material already collected (the PR trail holds the six-shape
+#: reproduction matrix and the arc anatomy).
 _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
     {
         "beyond": frozenset({1910, 1971, 1988}),
