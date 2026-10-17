@@ -102,6 +102,17 @@ ignore_missing_imports = true
 # definition — the ratchet measures shipped code.
 branch = true
 source = ["app"]
+# SQLAlchemy AsyncSession bridges to the sync core over greenlet. Without
+# declaring it, the tracer's arc bookkeeping crosses frames at every
+# greenlet switch: an awaited line's arc lands on a SQLAlchemy-internal
+# line number inside THIS file's data, the out-of-range arc is dropped at
+# report time, and physically-executed lines come back "missing" — the
+# ratchet's four async misclassification incidents (B item, 2026-10-17:
+# #88 lines 335-337, #91 platform_registry, #95 mobile_login_service,
+# identity/tasks floors). "thread" must be listed explicitly once any
+# concurrency value is set (it stops being implicit); asyncio needs no
+# entry.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 # Module-level percentages feed coverage-ratchet.json; one decimal is

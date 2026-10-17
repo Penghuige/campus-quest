@@ -41,3 +41,5 @@ e2e 电池与像素回归必须用 3000（MinIO CORS 白名单唯一端口，300
 前后端各有地板文件（frontend/coverage-ratchet.json、backend/coverage-ratchet.json）。降覆盖→同 PR 走 `--update`/`coverage:update` 给理由；地板以 CI 实测为准（权威环境；CI 配额暂停期以本地 coverage-ratchet 实测 + epsilon 为准，配额恢复后自动回落 CI），跨环境噪声由 epsilon 吸收（实测漂移 0.1pp → epsilon 0.15）。coverage-ratchet 已进入 `make release-gate` 依赖链（2026-10-10 owner 批准）。
 
 覆盖漂移/flake 排查工具箱（PR #36 先例）：单模块漂移而其余分毫不差 = 单测分支覆盖 flake，非系统噪声。定位法——同一套件 N 轮独立 `COVERAGE_FILE` 运行 + coverage json 差分，找出偶走偶不走的分支；修法——确定性单测钉住该契约的全形态（不靠竞态运气拿覆盖），源码不动。
+
+**async 行归类缺陷（B 项专项，2026-10-17 定案）**：SQLAlchemy AsyncSession 走 greenlet 桥接同步 core；`[tool.coverage.run]` 未声明 `concurrency = ["greenlet", "thread"]` 时，tracer 的 arc 记账在 greenlet 切换处跨 frame——await 行的 arc 落到 SQLAlchemy 内部行号（越界 arc），报告层静默丢弃后物理执行过的行被记 missing（#88/#91/#95 等四发作）。修复=配置声明（已落 pyproject）；`coverage_ratchet.py` 的越界 arc 护栏（`_undeclared_concurrency_signatures`）在数据带此指纹时拒绝比对并直接红。新增并发库（gevent/eventlet/multiprocessing）时同理必须声明，护栏会兜底报错。
