@@ -34,6 +34,8 @@ from app.main import create_app
 from app.modules.identity.dependencies import get_business_clock
 from app.modules.identity.device_credentials import (
     DEVICE_COOKIE_NAME,
+)
+from app.modules.identity.device_credentials import (
     issue as issue_device,
 )
 from app.modules.identity.enums import Role, UserStatus

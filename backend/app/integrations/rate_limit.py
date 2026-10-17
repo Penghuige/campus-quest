@@ -166,9 +166,7 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         # The staff mobile-code channel (V1.1 login iteration item 1):
         # the SMS-send posture mirrored — the 60s service cooldown is
         # the finer throttle.
-        RateLimitRule(
-            bucket="auth:staff-mobile-code", limit=5, window_seconds=3600
-        ),
+        RateLimitRule(bucket="auth:staff-mobile-code", limit=5, window_seconds=3600),
         RateLimitRule(
             bucket="auth:staff-mobile-code-ip",
             limit=IP_HOURLY_LIMIT,

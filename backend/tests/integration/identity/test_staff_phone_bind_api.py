@@ -182,13 +182,10 @@ async def test_teacher_binds_phone_with_audit(
     assert confirmed.json()["phone_e164"] == "+8613800169999"
 
     audit_rows = (
-        (
-            await db_session.scalars(
-                select(AuditLog).where(AuditLog.action == "PHONE_BOUND")
-            )
+        await db_session.scalars(
+            select(AuditLog).where(AuditLog.action == "PHONE_BOUND")
         )
-        .all()
-    )
+    ).all()
     assert len(audit_rows) == 1
     snapshot = audit_rows[0].after_snapshot or {}
     assert re.fullmatch(r"\+\d{2,3}\*{4}\d{4}", str(snapshot.get("phone")))
