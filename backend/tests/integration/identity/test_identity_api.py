@@ -264,10 +264,14 @@ async def test_student_flow_whitelist_otp_register_login_me(
         },
     )
     assert registered.status_code == 201, registered.text
-    # The register surface stays UserPublic (no created_at — the
-    # owner-only figure rides /me); the #17 amendment is MePublic's.
-    assert registered.json() == {
-        "id": registered.json()["id"],
+    # The register surface is the login-in envelope (V1.1 login iteration
+    # item 4): the UserPublic view (no created_at — the owner-only figure
+    # rides /me; the #17 amendment is MePublic's) beside a TokenPairResponse
+    # minted on the spot.
+    body = registered.json()
+    assert set(body) == {"user", "tokens"}
+    assert body["user"] == {
+        "id": body["user"]["id"],
         "username": _STUDENT,
         "nickname": _NICKNAME,  # normalized by the service
         "role": "STUDENT",
@@ -275,6 +279,7 @@ async def test_student_flow_whitelist_otp_register_login_me(
         # spec amendment D4: the avatar capability flag (never the key).
         "has_avatar": False,
     }
+    assert set(body["tokens"]) == {"access_token", "csrf_token", "token_type"}
 
     logged_in = await client.post(
         "/api/v1/auth/login",

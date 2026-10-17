@@ -98,6 +98,7 @@
     "/api/v1/auth/register": {
       "post": {
         "summary": "Register Student",
+        "description": "Register one student — and land LOGGED IN (V1.1 login iteration\nitem 4): the freshly proved phone makes an immediate re-login (and\nits 60s SMS cooldown) pure friction. The response pairs the account\nview with the same session body/cookie set the login path answers\n(PENDING_APPROVAL accounts browse the frozen home per #96).",
         "operationId": "register_student_api_v1_auth_register_post",
         "requestBody": {
           "content": {
@@ -115,7 +116,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserPublic"
+                  "$ref": "#/components/schemas/RegisterResponse"
                 }
               }
             }
@@ -127,6 +128,23 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mobile-code/remembered": {
+      "get": {
+        "summary": "Probe Remembered Device",
+        "description": "Is a remembered device alive for the login banner? (V1.1 login\niteration item 3.)\n\nThe banner renders only when this answers a masked phone — but\ncq_staff_device is HttpOnly, so the browser cannot look itself.\n200 {phone_masked} ONLY for the banner's audience: a cookie bound\nto a STUDENT (ACTIVE or PENDING_APPROVAL) with a bound phone. Every\nother shape — no cookie, unknown or expired value, a staff binding\n— answers the same empty 204: existence is never an answer. The\nclick leg is the cookie-only POST /auth/mobile-code/verify.",
+        "operationId": "probe_remembered_device_api_v1_auth_mobile_code_remembered_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -858,7 +876,7 @@
     "/api/v1/auth/staff/login": {
       "post": {
         "summary": "Staff Login",
-        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):\nper email and per transport peer.",
+        "description": "Staff login: verified email + password + TOTP-or-recovery (§5.8).\n\nA correct password without a confirmed TOTP raises the typed setup\nerror, rendered as 403 ``TOTP_SETUP_REQUIRED`` — the client's signal to\nfinish ``/staff/totp/*`` first. Two limiter layers (hardening A-1):\nper email and per transport peer.\n\nV1.1 login iteration item 2: an EMPTY ``totp_code`` completes the\nlogin when a valid remembered-device cookie rides the request (the\n30-day re-login); ``remember_device`` mints that cookie on a\nsuccessful login.",
         "operationId": "staff_login_api_v1_auth_staff_login_post",
         "requestBody": {
           "content": {
@@ -7650,7 +7668,14 @@
       "MobileCodeVerifyRequest": {
         "properties": {
           "phone": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Phone"
           },
           "code": {
@@ -7671,11 +7696,8 @@
           }
         },
         "type": "object",
-        "required": [
-          "phone"
-        ],
         "title": "MobileCodeVerifyRequest",
-        "description": "Trade the SMS code (or the remembered-device cookie, with ``code``\nomitted) for a student session."
+        "description": "Trade the SMS code (or the remembered-device cookie) for a student\nsession.\n\nThree shapes: ``phone``+``code`` (the SMS leg), ``phone`` with\n``code`` omitted (the cookie must match that phone's user), or an\nEMPTY body (the login-banner click: the device row alone resolves\nthe user — the banner only ever has the masked phone)."
       },
       "ModerationCommentListResponse": {
         "properties": {
@@ -8983,6 +9005,23 @@
         "title": "RegisterRequest",
         "description": "Register one whitelisted student (spec §5.1-5.4)."
       },
+      "RegisterResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserPublic"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenPairResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "tokens"
+        ],
+        "title": "RegisterResponse",
+        "description": "Registration ends logged in (V1.1 login iteration item 4): the\naccount view beside the freshly minted session — the same body the\nlogin path answers, so the client lands directly in the frozen-home\nbrowsing mode instead of bouncing through a second login (and the\n60s SMS cooldown) right after proving the phone."
+      },
       "RejectRequest": {
         "properties": {
           "reason": {
@@ -10085,17 +10124,22 @@
           },
           "totp_code": {
             "type": "string",
-            "title": "Totp Code"
+            "title": "Totp Code",
+            "default": ""
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "email",
-          "password",
-          "totp_code"
+          "password"
         ],
         "title": "StaffLoginRequest",
-        "description": "Staff login: verified email + password + TOTP/recovery code (§5.8)."
+        "description": "Staff login: verified email + password + TOTP/recovery code (§5.8).\n\n``totp_code`` may be EMPTY (or omitted) when a valid remembered-\ndevice cookie accompanies the request — the cookie is the second\nfactor for the 30-day re-login (V1.1 login iteration item 2); empty\nwithout one is the uniform authentication failure. ``remember_device``\nmints that cookie on a successful full login."
       },
       "StaffSessionResponse": {
         "properties": {

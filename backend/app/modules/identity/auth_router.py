@@ -20,13 +20,22 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse
 
+from app.core.clock import Clock
+from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
+from app.modules.identity.dependencies import get_business_clock
 from app.modules.identity.device_credentials import (
     DEVICE_COOKIE_NAME,
     DEVICE_TTL_DAYS,
 )
+from app.modules.identity.device_credentials import (
+    validate as validate_device,
+)
+from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.mobile_login_service import MobileLoginService
+from app.modules.identity.models import User
 from app.modules.identity.otp import (
     InvalidPhoneError,
     OtpPurpose,
@@ -65,6 +74,7 @@ from app.modules.identity.schemas import (
     PhoneTokenResponse,
     RefreshRequest,
     RegisterRequest,
+    RegisterResponse,
     RegisterStudent,
     TokenPairResponse,
     UserPublic,
@@ -127,13 +137,22 @@ async def verify_phone_challenge(
     )
 
 
-@router.post("/auth/register", response_model=UserPublic, status_code=201)
+@router.post("/auth/register", response_model=RegisterResponse, status_code=201)
 async def register_student(
     body: RegisterRequest,
+    response: Response,
     identity: Annotated[IdentityService, Depends(get_identity_service)],
+    sessions: SessionsDep,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    settings: AppSettings,
     limiter: LimiterDep,
     db: DbSession,
-) -> UserPublic:
+) -> RegisterResponse:
+    """Register one student — and land LOGGED IN (V1.1 login iteration
+    item 4): the freshly proved phone makes an immediate re-login (and
+    its 60s SMS cooldown) pure friction. The response pairs the account
+    view with the same session body/cookie set the login path answers
+    (PENDING_APPROVAL accounts browse the frozen home per #96)."""
     await _enforce_rate_limit(limiter, "auth:register", body.student_number.strip())
     user = await identity.register_student(
         db,
@@ -144,7 +163,48 @@ async def register_student(
             password=body.password,
         ),
     )
-    return UserPublic.from_user(user)
+    _, tokens = await sessions.issue_session(db, user=user, now=clock.now())
+    await db.commit()
+    return RegisterResponse(
+        user=UserPublic.from_user(user),
+        tokens=_token_pair_response(response, tokens, settings),
+    )
+
+
+@router.get(
+    "/auth/mobile-code/remembered",
+    status_code=200,
+    response_model=None,
+)
+async def probe_remembered_device(
+    request: Request,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    db: DbSession,
+) -> Response:
+    """Is a remembered device alive for the login banner? (V1.1 login
+    iteration item 3.)
+
+    The banner renders only when this answers a masked phone — but
+    cq_staff_device is HttpOnly, so the browser cannot look itself.
+    200 {phone_masked} ONLY for the banner's audience: a cookie bound
+    to a STUDENT (ACTIVE or PENDING_APPROVAL) with a bound phone. Every
+    other shape — no cookie, unknown or expired value, a staff binding
+    — answers the same empty 204: existence is never an answer. The
+    click leg is the cookie-only POST /auth/mobile-code/verify.
+    """
+    cookie = request.cookies.get(DEVICE_COOKIE_NAME)
+    if cookie is not None:
+        user_id = await validate_device(db, cookie, clock=clock)
+        if user_id is not None:
+            user = await db.get(User, user_id)
+            if (
+                user is not None
+                and user.role == Role.STUDENT
+                and user.status in (UserStatus.ACTIVE, UserStatus.PENDING_APPROVAL)
+                and user.phone_e164
+            ):
+                return JSONResponse({"phone_masked": mask_phone(user.phone_e164)})
+    return Response(status_code=204)
 
 
 @router.post("/auth/mobile-code/request", status_code=202)
@@ -158,8 +218,6 @@ async def request_mobile_code(
     """SMS one 6-digit student login code (V1.1 2026-10-16 §3) — always
     202, empty body: phone/student existence is never an answer here;
     only a cooldown/liter breach (429) differs."""
-    from fastapi.responses import JSONResponse
-
     # The limiter key is the SAME E.164 form the service's cooldown
     # uses (the OTP-send discipline): format variants of one number must
     # not split the bucket (final review I-3).

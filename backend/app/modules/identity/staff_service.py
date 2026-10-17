@@ -120,6 +120,7 @@ from app.core.security import (
 )
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
+from app.modules.identity import device_credentials
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import (
     STAFF_INVITATION_ACCEPTED,
@@ -650,8 +651,15 @@ class StaffService:
         return codes
 
     async def authenticate_staff(
-        self, db: AsyncSession, identifier: str, password: str, totp_code: str
-    ) -> SessionTokens:
+        self,
+        db: AsyncSession,
+        identifier: str,
+        password: str,
+        totp_code: str,
+        *,
+        device_cookie: str | None = None,
+        remember_device: bool = False,
+    ) -> tuple[SessionTokens, str | None]:
         """Staff login: verified email + password + valid second factor.
 
         ``totp_code`` accepts a current RFC 6238 code or one unused
@@ -662,6 +670,15 @@ class StaffService:
         accounts answer with the uniform authentication failure (they have
         no staff second factor by design, and a setup-required signal
         would leak the account's role).
+
+        V1.1 login iteration item 2: an EMPTY ``totp_code`` plus a valid
+        remembered-device cookie bound to this account completes the
+        login (the 30-day re-login: the cookie IS the second factor,
+        mirroring the email-code ADMIN leg); an empty code without one
+        is the uniform authentication failure. ``remember_device`` mints
+        a fresh cookie on any successful login. Returns
+        ``(tokens, device_cookie)`` — the cookie value is None unless
+        the response should set one.
         """
         now = self._clock.now()
         email = identifier.strip().lower()
@@ -696,36 +713,67 @@ class StaffService:
         if user.role == Role.STUDENT:
             raise self._staff_authentication_required()
 
-        credential = await db.get(TotpCredential, user.id)
-        if credential is None or credential.confirmed_at is None:
-            raise TotpSetupRequiredError("该账号必须先绑定 TOTP 动态验证码")
+        # The 30-day re-login leg (V1.1 item 2): an empty second factor
+        # is accepted ONLY when the remembered-device cookie resolves to
+        # this account — the cookie replaces the factor. Anything else
+        # empty is the uniform failure, decided BEFORE the credential
+        # lookup so the setup-required signal never leaks.
+        empty_code = totp_code is None or totp_code.strip() == ""
+        cookie_user_id: UUID | None = None
+        if empty_code:
+            if device_cookie is not None:
+                cookie_user_id = await device_credentials.validate(
+                    db, device_cookie, clock=self._clock
+                )
+            if cookie_user_id != user.id:
+                if self._guard is not None:
+                    await self._guard.record_failure(user.id)
+                logger.info(
+                    "staff second factor rejected user_id=%s "
+                    "reason=empty_code_without_valid_device",
+                    user.id,
+                )
+                raise self._staff_authentication_required()
+        else:
+            credential = await db.get(TotpCredential, user.id)
+            if credential is None or credential.confirmed_at is None:
+                raise TotpSetupRequiredError("该账号必须先绑定 TOTP 动态验证码")
 
-        secret = decrypt_totp_secret(self._fernet, credential.secret_encrypted)
-        # The second factor is a current TOTP code, or — as the documented
-        # lockout path — one unused recovery code. Neither matching is the
-        # uniform authentication failure; the rejection log line below is
-        # the server-side count (rate limiting is the endpoint limiter's
-        # job — see the module docstring).
-        if not verify_totp_code(
-            secret, totp_code, at=now
-        ) and not await self._consume_recovery_code(db, user.id, totp_code, now):
-            if self._guard is not None:
-                await self._guard.record_failure(user.id)
-            logger.info(
-                "staff second factor rejected user_id=%s reason=totp_or_recovery",
-                user.id,
-            )
-            raise self._staff_authentication_required()
+            secret = decrypt_totp_secret(self._fernet, credential.secret_encrypted)
+            # The second factor is a current TOTP code, or — as the
+            # documented lockout path — one unused recovery code. Neither
+            # matching is the uniform authentication failure; the
+            # rejection log line below is the server-side count (rate
+            # limiting is the endpoint limiter's job — see the module
+            # docstring).
+            if not verify_totp_code(
+                secret, totp_code, at=now
+            ) and not await self._consume_recovery_code(db, user.id, totp_code, now):
+                if self._guard is not None:
+                    await self._guard.record_failure(user.id)
+                logger.info(
+                    "staff second factor rejected user_id=%s reason=totp_or_recovery",
+                    user.id,
+                )
+                raise self._staff_authentication_required()
 
         session_row, tokens = await self._sessions.issue_session(db, user=user, now=now)
         user_id, session_id = user.id, session_row.id
+        new_cookie: str | None = None
+        if remember_device or cookie_user_id == user.id:
+            # Checkbox mint, or the renewal-on-use rotation (the #87
+            # discipline: every successful cookie login re-issues).
+            new_cookie = await device_credentials.issue(db, user.id, clock=self._clock)
         await db.commit()
         if self._guard is not None:
             await self._guard.reset(user_id)
         logger.info(
-            "staff session opened user_id=%s session_id=%s", user_id, session_id
+            "staff session opened user_id=%s session_id=%s channel=%s",
+            user_id,
+            session_id,
+            "password+device" if empty_code else "password+totp",
         )
-        return tokens
+        return tokens, new_cookie
 
     async def _consume_recovery_code(
         self, db: AsyncSession, user_id: UUID, code: str, now: datetime
