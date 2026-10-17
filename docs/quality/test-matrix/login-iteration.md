@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 16 | LI1-LI16 |
+| 已覆盖 | 18 | LI1-LI18 |
 | 缺口（轻，列出不补） | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 0 | — |
@@ -33,3 +33,5 @@
 | LI14 | ① TEACHER 一步 | verify{phone,code}→200 TokenPairResponse（挑战 HMAC/5 次/锁定 guard 同学生工艺） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_teacher_completes_in_one_step` / `::test_wrong_code_is_the_uniform_invalid` | 已覆盖 |
 | LI15 | ① ADMIN pending | ADMIN verify→200 {status:"totp_required", pending_token}（不透明 Redis 单用 30 分钟，F1 工艺）；totp 腿 {pending_token, code} 完成→TokenPairResponse | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_gets_pending_totp_leg_and_completes` | 已覆盖 |
 | LI16 | ① ADMIN 免腿 | ADMIN 空体 verify+有效 cq_staff_device→直答 tokens（cookie 替代码+TOTP 双腿，与②密码重登共享 30 天凭据） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_with_remembered_device_skips_totp_leg` | 已覆盖 |
+| LI17 | ① 挑战持久性 | request_staff_code 的 202 前挑战行必须跨连接可见（commit boundary；e2e 抓到的 #101 缺陷回归钉——savepoint 集成形态不可见） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_request_leaves_the_challenge_durable_across_sessions` | 已覆盖 |
+| LI18 | ① 冷却释放 | 发送失败（502）释放 Redis 冷却键：重试不被 429 拦 60s（学生腿同纪律） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_failed_send_releases_the_cooldown` | 已覆盖 |

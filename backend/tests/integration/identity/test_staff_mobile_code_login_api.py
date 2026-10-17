@@ -24,10 +24,12 @@ import pytest_asyncio
 import redis.asyncio as aioredis
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.clock import FrozenClock
 from app.core.config import get_settings
+from app.core.errors import BusinessError
 from app.core.security import hash_password
 from app.db.session import get_db_session
 from app.main import create_app
@@ -493,3 +495,126 @@ async def test_totp_leg_rejects_unknown_and_wrong(
         json={"pending_token": pending_token, "code": stale_code},
     )
     assert wrong.status_code == 400, wrong.text
+
+
+# --- the durability legs (the e2e-caught defect's regression pins) ---------
+
+
+async def test_request_leaves_the_challenge_durable_across_sessions(
+    db_engine: AsyncEngine,
+    api_redis: aioredis.Redis,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The 202 must leave the challenge durable (#85 lesson, the student
+    leg's commit boundary): the savepoint-wrapped suite sessions CANNOT
+    see this defect (an uncommitted row is visible inside the same
+    transaction), so this pin runs on a REAL commit — a fresh session
+    must find the row after request_staff_code returns."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.modules.identity.mobile_login_service import MobileLoginService
+    from app.modules.identity.models import LoginMobileChallenge, User
+
+    async with AsyncSession(db_engine) as session:
+        session.add(
+            User(
+                username="durable-smc@campus.example.edu",
+                password_hash=None,
+                nickname="durable",
+                email_normalized=_TEACHER_EMAIL,
+                email_verified_at=_T0,
+                phone_e164=_PHONE_TEACHER,
+                role=Role.TEACHER,
+                status=UserStatus.ACTIVE,
+            )
+        )
+        await session.commit()
+
+    service = MobileLoginService(
+        sms_sender=api_sms,
+        redis=api_redis,
+        clock=api_clock,
+        hmac_secret=get_settings().otp_hmac_secret,
+    )
+    async with AsyncSession(db_engine) as session:
+        await service.request_staff_code(session, _PHONE_TEACHER)
+
+    async with AsyncSession(db_engine) as verify:
+        rows = (
+            await verify.scalars(
+                select(LoginMobileChallenge).where(
+                    LoginMobileChallenge.phone_e164 == _PHONE_TEACHER
+                )
+            )
+        ).all()
+        assert len(rows) == 1, "the challenge row died with the transaction"
+    # cleanup the committed rows (the suite's outer rollback cannot)
+    async with AsyncSession(db_engine) as cleanup:
+        await cleanup.execute(
+            delete(LoginMobileChallenge).where(
+                LoginMobileChallenge.phone_e164 == _PHONE_TEACHER
+            )
+        )
+        await cleanup.execute(
+            delete(User).where(User.username == "durable-smc@campus.example.edu")
+        )
+        await cleanup.commit()
+
+
+async def test_failed_send_releases_the_cooldown(
+    db_engine: AsyncEngine,
+    api_redis: aioredis.Redis,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """A carrier failure burns no cooldown: the arm is released so the
+    retry is not 429-blocked for 60s (the student leg's discipline)."""
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.integrations.errors import ProviderError
+    from app.modules.identity.mobile_login_service import MobileLoginService
+    from app.modules.identity.models import LoginMobileChallenge, User
+
+    async with AsyncSession(db_engine) as session:
+        session.add(
+            User(
+                username="cooldown-smc@campus.example.edu",
+                password_hash=None,
+                nickname="cooldown",
+                email_normalized=_TEACHER_EMAIL,
+                email_verified_at=_T0,
+                phone_e164=_PHONE_TEACHER,
+                role=Role.TEACHER,
+                status=UserStatus.ACTIVE,
+            )
+        )
+        await session.commit()
+
+    service = MobileLoginService(
+        sms_sender=api_sms,
+        redis=api_redis,
+        clock=api_clock,
+        hmac_secret=get_settings().otp_hmac_secret,
+    )
+    api_sms.failures.append(ProviderError("carrier down"))
+    async with AsyncSession(db_engine) as session:
+        with pytest.raises(BusinessError):
+            await service.request_staff_code(session, _PHONE_TEACHER)
+
+    async with AsyncSession(db_engine) as session:
+        # The retry goes through — the failed attempt armed no cooldown.
+        await service.request_staff_code(session, _PHONE_TEACHER)
+    assert len(api_sms.messages) == 1
+    async with AsyncSession(db_engine) as cleanup:
+        await cleanup.execute(
+            delete(LoginMobileChallenge).where(
+                LoginMobileChallenge.phone_e164 == _PHONE_TEACHER
+            )
+        )
+        await cleanup.execute(
+            delete(User).where(User.username == "cooldown-smc@campus.example.edu")
+        )
+        await cleanup.commit()
