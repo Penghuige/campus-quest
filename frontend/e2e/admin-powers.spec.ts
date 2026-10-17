@@ -1,0 +1,134 @@
+/**
+ * Wave 2a admin power-pack e2e (V1.1 spec §3/§4) — contract-first
+ * against the 2026-10-18 frozen shapes; rides the merged backend at
+ * the final battery run (the reviewer's sequencing).
+ *
+ * Coverage: the dashboard landing, the detail page's three actions
+ * (one-time reset link / kick-then-401 on a second context / the role
+ * round-trip), the invitation lifecycle panel, and the batch verbs.
+ *
+ * State discipline (the battery is one world, serial): every mutation
+ * restores its subject — the role flips back, the suspended rows
+ * reactivate, the kick only burns sessions (re-login is the next
+ * spec's own business).
+ */
+import { expect, test, type Page } from "@playwright/test";
+
+import { staffLogin } from "./fixtures";
+
+const E2E_ENABLED = process.env.CQ_E2E === "1";
+const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
+const ADMIN = process.env.CQ_E2E_ADMIN;
+const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
+const STAFF = process.env.CQ_E2E_STAFF;
+const STAFF_TOTP_SECRET = process.env.CQ_E2E_STAFF_TOTP_SECRET;
+
+test.skip(
+  !(E2E_ENABLED && ADMIN && ADMIN_TOTP_SECRET && STAFF && STAFF_TOTP_SECRET),
+  "set CQ_E2E=1 (and the CQ_E2E_ADMIN/STAFF + TOTP vars) to run this suite.",
+);
+
+test("the dashboard landing renders the overview census", async ({ page }) => {
+  await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+  await expect(page.getByRole("heading", { name: "管理台概览" })).toBeVisible();
+  await expect(page.getByText("今日新增用户")).toBeVisible();
+  await expect(page.getByText("待审提交")).toBeVisible();
+  await expect(page.getByText("任务状态分布")).toBeVisible();
+  await expect(page.getByText("已归档")).toBeVisible(); // a zero-valued fixed key still renders
+});
+
+test("the user detail: reset link once, kick answers 401, the role round-trips", async ({
+  page,
+  browser,
+}) => {
+  const [staffEmail] = STAFF!.split(":");
+
+  // A second context holds the victim teacher's session BEFORE the
+  // kick; its post-kick request must answer 401 (the spec's verdict).
+  const victim = await browser.newContext({ ignoreHTTPSErrors: true } as never);
+  const victimPage = await victim.newPage();
+  await staffLogin(victimPage, STAFF!, STAFF_TOTP_SECRET!);
+  const victimState = await victim.storageState();
+
+  await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
+  // The listing's username links into the detail page.
+  await page.goto(`${BASE_URL}/admin/users`);
+  const row = page.locator("tr", { hasText: staffEmail });
+  await row.getByRole("link", { name: staffEmail }).click();
+  await expect(page.getByRole("heading", { name: "用户详情" })).toBeVisible();
+  await expect(page.getByText("钱包余额")).toBeVisible();
+  await expect(page.getByText("最近提交")).toBeVisible();
+
+  // 代重置密码: the ONE-TIME link renders with the copy affordance.
+  await page.getByRole("button", { name: "代重置密码" }).click();
+  const linkBox = page.getByText("一次性重置链接（48 小时内有效");
+  await expect(linkBox).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "复制重置链接" })).toBeVisible();
+
+  // 踢线: the count note answers; the victim's held session dies.
+  await page.getByRole("button", { name: "踢出全部会话" }).click();
+  await expect(page.getByText(/已撤销 \d+ 项会话与设备凭据/)).toBeVisible({
+    timeout: 10_000,
+  });
+  const probe = await victim.newPage();
+  await probe.context().addCookies(victimState.cookies);
+  const me = await probe.request.get(`${BASE_URL}/api/v1/me`);
+  expect(me.status()).toBe(401);
+
+  // 角色升降 round-trip: TEACHER → ADMIN → TEACHER (restore).
+  await page.getByRole("button", { name: "提升为管理员" }).click();
+  await expect(page.getByText("角色已调整为管理员")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "降级为教师" }).click();
+  await expect(page.getByText("角色已调整为教师")).toBeVisible({ timeout: 10_000 });
+  await victim.close();
+});
+
+test("the invitation panel: create → revoke → resend a one-time link", async ({ page }) => {
+  await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
+  await page.goto(`${BASE_URL}/admin/invitations`);
+
+  // A fresh PENDING row through the existing create form.
+  const email = `e2e-wave2a-invite-${Date.now()}@school.edu`;
+  await page.getByLabel("受邀人邮箱").fill(email);
+  await page.getByRole("button", { name: "创建邀请" }).click();
+  await expect(page.getByTestId("invitation-link")).toBeVisible();
+  await page.getByRole("button", { name: "再发一个邀请" }).click();
+
+  // The lifecycle list carries it as 待接受.
+  const row = page.locator("tr", { hasText: email });
+  await expect(row.getByText("待接受")).toBeVisible({ timeout: 10_000 });
+
+  // 撤销 (dialog confirm) flips the state; the token dies server-side.
+  await row.getByRole("button", { name: "撤销" }).click();
+  await page.getByRole("button", { name: "确认撤销" }).click();
+  await expect(page.getByText(/已撤销 .* 的邀请/)).toBeVisible();
+  await expect(row.getByText("已撤销")).toBeVisible();
+
+  // 重发 mints a fresh one-time link (the old token is dead).
+  await row.getByRole("button", { name: "重发" }).click();
+  await expect(page.getByTestId("resend-link")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(`重发给 ${email}`)).toBeVisible();
+});
+
+test("batch suspend/reactivate flips the selected rows", async ({ page }) => {
+  await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
+  await page.goto(`${BASE_URL}/admin/users`);
+  // The first two student rows (deterministic order: the listing is
+  // created_at-desc, the seeded accounts lead).
+  const boxes = page.locator("tbody input[type=checkbox]");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await expect(page.getByText("已选 2 项")).toBeVisible();
+
+  await page.getByRole("button", { name: "批量停用" }).click();
+  await page.getByRole("button", { name: "确认执行" }).click();
+  await expect(page.getByText(/批量操作完成：2 项成功/)).toBeVisible({ timeout: 10_000 });
+
+  // Restore (state discipline): the same selection reactivates.
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.getByRole("button", { name: "批量恢复" }).click();
+  await page.getByRole("button", { name: "确认执行" }).click();
+  await expect(page.getByText(/批量操作完成：\d+ 项成功/)).toBeVisible({ timeout: 10_000 });
+});
