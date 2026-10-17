@@ -44,6 +44,81 @@ _RATCHET_PATH = _BACKEND_ROOT / "coverage-ratchet.json"
 #: is a coverage flake to hunt, never a reason to widen epsilon.
 _EPSILON = 0.15
 
+#: Researched residuals waived from the cross-talk guard (rental-style,
+#: like the import-linter waivers): the exact out-of-range endpoint set
+#: of a KNOWN coverage-limitation fingerprint. A waiver matches only on
+#: full set equality AND path suffix — any drift (one new arc, a
+#: different line) falls through and fails the gate again, so the list
+#: cannot silently rot into a file-level pass.
+_CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
+    {
+        "path_suffix": "app/modules/submissions/upload_service.py",
+        "beyond": frozenset({1910, 1971, 1988}),
+        "reason": (
+            "coverage's greenlet patch still leaks three arcs at "
+            "upload_service:761 (await db.scalar) in full-suite "
+            "combination runs even with concurrency declared; the anchor "
+            "line itself stays covered, so the cost is at most one "
+            "partial branch (B item, 2026-10-17)"
+        ),
+    },
+)
+
+
+def _waived(measured: str, beyond: set[int]) -> bool:
+    for waiver in _CROSSTALK_WAIVERS:
+        if measured.endswith(str(waiver["path_suffix"])) and beyond == set(
+            waiver["beyond"]  # type: ignore[arg-type]
+        ):
+            return True
+    return False
+
+
+def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str]:
+    """Out-of-range arc endpoints in the raw data — cross-talk evidence.
+
+    When a concurrency library rides outside the tracer's model (the B
+    item, 2026-10-17: SQLAlchemy AsyncSession's greenlet bridge with
+    ``concurrency`` undeclared), arcs land in this file's data carrying
+    line numbers of a DIFFERENT file — endpoints beyond this file's line
+    count. The report layer drops those arcs silently and the lost lines
+    come back "missing"; this check surfaces the fingerprint so the gate
+    fails loudly instead of measuring garbage. Empty result = the data
+    is fit to compare against floors.
+    """
+    from coverage import CoverageData
+
+    data = CoverageData(data_file or str(_BACKEND_ROOT / ".coverage"))
+    data.read()
+    hits: list[str] = []
+    for measured in data.measured_files():
+        arcs = data.arcs(measured) or []
+        try:
+            with open(measured, encoding="utf-8") as handle:
+                # An empty module still executes its (empty) code object,
+                # whose implicit line 1 is legitimate — floor at 1.
+                total_lines = max(1, sum(1 for _ in handle))
+        except OSError:
+            continue  # source gone (branch switched mid-run) — not evidence
+        beyond = sorted(
+            {
+                endpoint
+                for arc in arcs
+                for endpoint in (abs(arc[0]), abs(arc[1]))
+                if endpoint > total_lines
+            }
+        )
+        if beyond and _waived(measured, set(beyond)):
+            print(f"WAIVED cross-talk residual: {measured} {beyond}")
+            continue
+        if beyond:
+            hits.append(
+                f"{measured}: arc endpoints beyond EOF {beyond[:5]} — an "
+                "undeclared concurrency library is corrupting the trace "
+                "(pyproject [tool.coverage.run] concurrency)"
+            )
+    return hits
+
 
 def _coverage_json() -> dict:
     result = subprocess.run(
@@ -113,6 +188,21 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args()
 
     report = _coverage_json()
+
+    # Guard (B item): refuse to measure — or rewrite floors from — data
+    # carrying the cross-talk fingerprint. Measuring a corrupted trace
+    # is how four phantom-miss incidents shipped (2026-10-17).
+    signatures = _undeclared_concurrency_signatures()
+    if signatures:
+        for signature in signatures[:10]:
+            print(f"CROSS-TALK: {signature}")
+        print(
+            f"\n{len(signatures)} file(s) show arcs beyond EOF — fix the "
+            "tracer setup (declared concurrency) and re-run the suites; "
+            "this data will not be compared or written to floors."
+        )
+        return 1
+
     current = {
         module: _percent(stats) for module, stats in _current_by_module(report).items()
     }
