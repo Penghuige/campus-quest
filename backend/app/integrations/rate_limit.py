@@ -163,6 +163,18 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         RateLimitRule(bucket="auth:password-reset", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:email-verify", limit=5, window_seconds=3600),
         RateLimitRule(bucket="me:phone-change", limit=5, window_seconds=3600),
+        # The staff mobile-code channel (V1.1 login iteration item 1):
+        # the SMS-send posture mirrored — the 60s service cooldown is
+        # the finer throttle.
+        RateLimitRule(bucket="auth:staff-mobile-code", limit=5, window_seconds=3600),
+        RateLimitRule(
+            bucket="auth:staff-mobile-code-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
+        # Staff first-bind (item 1): the OTP-send posture, same as the
+        # student change flow beside it.
+        RateLimitRule(bucket="me:phone-bind", limit=5, window_seconds=3600),
         # The avatar write (spec amendment D2): per authenticated user
         # id — bytes land on the API, so this is the anti-abuse bound.
         RateLimitRule(bucket="me:avatar-upload", limit=1, window_seconds=600),

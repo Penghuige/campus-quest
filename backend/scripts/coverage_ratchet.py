@@ -55,32 +55,37 @@ _EPSILON = 0.15
 
 #: Researched residuals waived from the cross-talk guard (rental-style,
 #: like the import-linter waivers): the exact out-of-range endpoint set
-#: of a KNOWN coverage-limitation fingerprint. A waiver matches only on
-#: full set equality AND path suffix — any drift (one new arc, a
-#: different line) falls through and fails the gate again, so the list
-#: cannot silently rot into a file-level pass.
+#: of a KNOWN coverage-limitation fingerprint. Cross-talk is inherently
+#: MISFILED: the same fingerprint landed in upload_service.py locally
+#: and validation_service.py on CI (#101, 2026-10-17) — the waiver
+#: matches the arc fingerprint on ANY host file (the recorded host is
+#: provenance, not a match key). Any drift (one new arc, a different
+#: line) falls through and fails the gate again, so the list cannot
+#: silently rot into a global pass. Root-fixing the greenlet patch leak
+#: itself is the B-item backlog entry; the waiver retires with it.
 _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
     {
-        "path_suffix": "app/modules/submissions/upload_service.py",
         "beyond": frozenset({1910, 1971, 1988}),
+        "seen_in": (
+            "app/modules/submissions/upload_service.py",
+            "app/modules/submissions/validation_service.py",
+        ),
         "reason": (
-            "coverage's greenlet patch still leaks three arcs at "
-            "upload_service:761 (await db.scalar) in full-suite "
-            "combination runs even with concurrency declared; the anchor "
-            "line itself stays covered, so the cost is at most one "
-            "partial branch (B item, 2026-10-17)"
+            "coverage's greenlet patch still leaks this three-arc "
+            "signature in full-suite combination runs even with "
+            "concurrency declared (B item, 2026-10-17; resurfaced on a "
+            "different host in #101 CI) — the anchor line stays "
+            "covered, the cost is at most one partial branch"
         ),
     },
 )
 
 
-def _waived(measured: str, beyond: set[int]) -> bool:
-    for waiver in _CROSSTALK_WAIVERS:
-        if measured.endswith(str(waiver["path_suffix"])) and beyond == set(
-            waiver["beyond"]  # type: ignore[arg-type]
-        ):
-            return True
-    return False
+def _waived(beyond: set[int]) -> bool:
+    return any(
+        beyond == set(waiver["beyond"])  # type: ignore[arg-type]
+        for waiver in _CROSSTALK_WAIVERS
+    )
 
 
 def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str]:
@@ -117,7 +122,7 @@ def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str
                 if endpoint > total_lines
             }
         )
-        if beyond and _waived(measured, set(beyond)):
+        if beyond and _waived(set(beyond)):
             print(f"WAIVED cross-talk residual: {measured} {beyond}")
             continue
         if beyond:

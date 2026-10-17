@@ -119,16 +119,15 @@ def test_missing_source_file_is_skipped(tmp_path: Path) -> None:
 
 
 def test_known_residual_fingerprint_is_waived(tmp_path: Path) -> None:
-    """The one researched residual (upload_service, B item 2026-10-17):
-    coverage's greenlet patch still leaks three arcs at one db.scalar
-    await (line 761) in full-suite combination runs, even with
-    concurrency declared. The anchor line itself stays covered, so the
-    arcs cost at most one partial branch. The EXACT fingerprint set is
-    waived; any drift (a new arc, a different line) stays a violation."""
+    """The one researched residual (B item 2026-10-17): coverage's
+    greenlet patch still leaks a three-arc signature in full-suite
+    combination runs, even with concurrency declared. Cross-talk is
+    inherently misfiled: the SAME fingerprint set landed in
+    upload_service.py locally and validation_service.py on CI (#101) —
+    the waiver matches the arc fingerprint on ANY host file, and any
+    drift (a new arc, a different line) stays a violation."""
     ratchet = _load_ratchet_module()
-    waiver = ratchet._CROSSTALK_WAIVERS[0]
-    source = tmp_path / str(waiver["path_suffix"])
-    source.parent.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "any_host_file.py"
     source.write_text("x = 1\n" * 12, encoding="utf-8")
     data_file = tmp_path / ".coverage"
     # the waived arcs + the sane arcs the real data also carries
@@ -145,11 +144,10 @@ def test_known_residual_fingerprint_is_waived(tmp_path: Path) -> None:
 
 def test_waiver_requires_exact_fingerprint_match(tmp_path: Path) -> None:
     """One extra arc beyond the waived set must still be flagged — the
-    waiver is a registry of known residuals, not a file-level pass."""
+    waiver is a registry of known residuals, not a file-level (let
+    alone global) pass."""
     ratchet = _load_ratchet_module()
-    waiver = ratchet._CROSSTALK_WAIVERS[0]
-    source = tmp_path / str(waiver["path_suffix"])
-    source.parent.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "any_host_file.py"
     source.write_text("x = 1\n" * 12, encoding="utf-8")
     data_file = tmp_path / ".coverage"
     _write_data(

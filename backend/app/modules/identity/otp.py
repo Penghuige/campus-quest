@@ -100,6 +100,11 @@ class OtpPurpose(StrEnum):
     REGISTER = "REGISTER"
     PHONE_CHANGE = "PHONE_CHANGE"
     PASSWORD_RESET = "PASSWORD_RESET"
+    # Staff first-bind (V1.1 login iteration item 1): staff accounts are
+    # born phoneless; this proof authorizes writing phone_e164. Kept
+    # distinct from PHONE_CHANGE so a change proof can never bind a
+    # staff account and vice versa (single-purpose proofs, §33.2).
+    PHONE_BIND = "PHONE_BIND"
 
 
 @dataclass(frozen=True, slots=True)

@@ -304,4 +304,8 @@ def get_mobile_login_service(
         sessions=sessions,
         guard=guard,
         hmac_secret=settings.otp_hmac_secret,
+        # The staff channel's ADMIN totp leg decrypts the credential
+        # (V1.1 login iteration item 1) — the same key the staff service
+        # and the email login use.
+        fernet=Fernet(settings.totp_encryption_key),
     )

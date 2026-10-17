@@ -31,6 +31,7 @@ import asyncio
 import hmac
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
@@ -79,6 +80,35 @@ _DELIVERY_FAILED_MESSAGE = "验证码短信发送失败，请稍后重试"
 _SMS_TTL_MINUTES = "5"
 AUDIT_MOBILE_LOGIN_SUCCEEDED = "MOBILE_LOGIN_SUCCEEDED"
 _AUDIT_TARGET_TYPE = "user"
+
+#: The staff channel's cooldown namespace (a phone can arm both a
+#: student and a staff request independently) and the ADMIN mid-login
+#: pending credential (opaque, single-use, 30 minutes — the email-login
+#: F1 discipline mirrored).
+_STAFF_COOLDOWN_KEY_PREFIX = "staffmobilecode:cooldown:"
+_STAFF_PENDING_KEY_PREFIX = "staffmobilecode:pending:"
+STAFF_PENDING_TTL_SECONDS = 30 * 60
+
+
+def _hash_text(value: str) -> str:
+    from hashlib import sha256
+
+    return sha256(value.encode()).hexdigest()
+
+
+def _staff_pending_key(token_hash: str) -> str:
+    return _STAFF_PENDING_KEY_PREFIX + token_hash
+
+
+@dataclass(frozen=True, slots=True)
+class StaffMobileCodeOutcome:
+    """Exactly one of ``tokens`` / ``pending_token`` is set: the pending
+    token is the ADMIN mid-login state (the totp leg finishes it), the
+    tokens mean the login is complete."""
+
+    tokens: SessionTokens | None = None
+    device_cookie: str | None = None
+    pending_token: str | None = None
 
 
 class MobileLoginService:
@@ -355,3 +385,267 @@ class MobileLoginService:
         await db.commit()
         logger.info("mobile login succeeded user_id=%s channel=mobile_code", user.id)
         return tokens, new_cookie
+
+    # --- the staff channel (V1.1 login iteration item 1) ------------------
+
+    async def request_staff_code(self, db: AsyncSession, phone: str) -> None:
+        """SMS one login code to a STAFF-bound phone — or nothing at all.
+
+        The router answers the constant 202; this method decides what
+        actually happens: the cooldown arms for EVERY phone (same NX
+        discipline as the student channel), and a code is minted and
+        sent only when the phone binds an ACTIVE TEACHER/ADMIN. A
+        student-bound or unknown phone stays silent — staff existence is
+        never an answer.
+        """
+        try:
+            normalized = normalize_phone(phone, "CN")
+        except InvalidPhoneError:
+            return
+        cooldown_key = _STAFF_COOLDOWN_KEY_PREFIX + normalized
+        armed = await self._redis.set(cooldown_key, "1", ex=COOLDOWN_SECONDS, nx=True)
+        if not armed:
+            raise BusinessError(
+                ErrorCode.RATE_LIMITED,
+                "验证码请求过于频繁，请稍后再试",
+                status_code=429,
+            )
+        user = await self._users.find_by_phone_e164(db, normalized)
+        if (
+            user is None
+            or user.role == Role.STUDENT.value
+            or user.status != UserStatus.ACTIVE.value
+        ):
+            return  # silent: the same 202, nothing stored or sent
+
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        now = self._clock.now()
+        await db.execute(
+            delete(LoginMobileChallenge).where(
+                LoginMobileChallenge.phone_e164 == normalized
+            )
+        )
+        challenge = LoginMobileChallenge(
+            phone_e164=normalized,
+            code_hash=self._hash_code(code),
+            expires_at=now + timedelta(minutes=CODE_TTL_MINUTES),
+        )
+        db.add(challenge)
+        await db.flush()
+        try:
+            await asyncio.to_thread(
+                self._sms.send,
+                to=normalized,
+                template=_SMS_TEMPLATE,
+                variables={"code": code, "ttl_minutes": _SMS_TTL_MINUTES},
+            )
+        except ProviderError as exc:
+            await db.delete(challenge)
+            await db.commit()
+            logger.warning(
+                "staff mobile code send failed phone=%s", mask_phone(normalized)
+            )
+            raise BusinessError(
+                ErrorCode.EMAIL_DELIVERY_FAILED,  # the shared delivery-failure code
+                _DELIVERY_FAILED_MESSAGE,
+                status_code=502,
+            ) from exc
+
+    async def verify_staff_code(
+        self,
+        db: AsyncSession,
+        *,
+        phone: str | None,
+        code: str | None,
+        device_cookie: str | None = None,
+        remember_device: bool = False,
+        audit_context: AuditContext | None = None,
+    ) -> StaffMobileCodeOutcome:
+        """Trade the staff SMS code (or the remembered-device cookie)
+        for a staff session — or, for an ADMIN, the pending TOTP leg.
+
+        The cookie leg mirrors the student channel's: a valid cookie
+        bound to an ACTIVE staff account is a full credential (for an
+        ADMIN it also replaces the TOTP leg — the #87 craft shared with
+        the password re-login). The code leg is the student channel's
+        craft with a staff filter; TEACHER completes in one step, ADMIN
+        gets the opaque single-use pending token (30 minutes, Redis,
+        hashed at rest — the email-login F1 discipline). Every failure
+        is the uniform MOBILE_CODE_INVALID.
+        """
+        assert self._sessions is not None and self._guard is not None, (
+            "verify legs require sessions and guard wiring"
+        )
+
+        def _invalid() -> BusinessError:
+            return BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+
+        empty_code = code is None or code.strip() == ""
+        if empty_code:
+            device_user_id = (
+                await validate_device(db, device_cookie, clock=self._clock)
+                if device_cookie is not None
+                else None
+            )
+            if device_user_id is None:
+                raise _invalid()
+            user = await db.get(User, device_user_id)
+            if (
+                user is None
+                or user.role == Role.STUDENT.value
+                or user.status != UserStatus.ACTIVE.value
+            ):
+                raise _invalid()
+            return await self._staff_login_succeeded(
+                db,
+                user,
+                remember_device=True,  # renewal on use, the rotation craft
+                channel="staff_mobile_code+device",
+                audit_context=audit_context,
+            )
+
+        assert code is not None
+        if phone is None:
+            raise _invalid()
+        try:
+            normalized = normalize_phone(phone, "CN")
+        except InvalidPhoneError as exc:
+            raise _invalid() from exc
+        user = await self._users.find_by_phone_e164(db, normalized)
+        if (
+            user is None
+            or user.role == Role.STUDENT.value
+            or user.status != UserStatus.ACTIVE.value
+        ):
+            raise _invalid()
+        if await self._guard.is_locked(user.id):
+            raise await self._account_locked(user.id)
+
+        now = self._clock.now()
+        challenge = (
+            await db.scalars(
+                select(LoginMobileChallenge)
+                .where(LoginMobileChallenge.phone_e164 == normalized)
+                .order_by(
+                    LoginMobileChallenge.created_at.desc(),
+                    LoginMobileChallenge.id,
+                )
+                .limit(1)
+            )
+        ).first()
+        if (
+            challenge is None
+            or challenge.expires_at <= now
+            or challenge.attempts >= MAX_VERIFY_ATTEMPTS
+        ):
+            await self._guard.record_failure(user.id)
+            raise _invalid()
+        submitted_hash = self._hash_code(code.strip())
+        if not hmac.compare_digest(submitted_hash, challenge.code_hash):
+            challenge.attempts += 1
+            await db.commit()  # the M-1 discipline: persist before raising
+            await self._guard.record_failure(user.id)
+            logger.info(
+                "staff mobile code rejected user_id=%s reason=wrong_code", user.id
+            )
+            raise _invalid()
+
+        await db.delete(challenge)
+        await db.flush()
+        await self._guard.reset(user.id)
+
+        if Role(user.role) is Role.ADMIN:
+            pending_token = secrets.token_urlsafe(32)
+            await self._redis.set(
+                _staff_pending_key(_hash_text(pending_token)),
+                str(user.id),
+                ex=STAFF_PENDING_TTL_SECONDS,
+            )
+            logger.info("staff mobile login pending totp user_id=%s", user.id)
+            return StaffMobileCodeOutcome(pending_token=pending_token)
+        return await self._staff_login_succeeded(
+            db,
+            user,
+            remember_device=remember_device,
+            channel="staff_mobile_code",
+            audit_context=audit_context,
+        )
+
+    async def complete_staff_totp(
+        self,
+        db: AsyncSession,
+        *,
+        pending_token: str,
+        code: str,
+        remember_device: bool = False,
+        audit_context: AuditContext | None = None,
+    ) -> tuple[SessionTokens, str | None]:
+        """The ADMIN second leg: opaque pending token + a current TOTP
+        (or recovery — the authenticate_staff discipline) opens the
+        session. The pending credential is single-use (GETDEL)."""
+        assert self._sessions is not None
+        user_id_raw = await self._redis.getdel(
+            _staff_pending_key(_hash_text(pending_token))
+        )
+        if not isinstance(user_id_raw, str):
+            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+        user = await db.get(User, UUID(user_id_raw))
+        if user is None or user.status != UserStatus.ACTIVE.value:
+            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+
+        from app.modules.identity.models import TotpCredential
+        from app.modules.identity.totp import decrypt_totp_secret, verify_totp_code
+
+        credential = await db.get(TotpCredential, user.id)
+        if credential is None or credential.confirmed_at is None:
+            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+        assert self._fernet is not None, "staff totp leg requires fernet wiring"
+        secret = decrypt_totp_secret(self._fernet, credential.secret_encrypted)
+        if not verify_totp_code(secret, code, at=self._clock.now()):
+            # The pending token was consumed by the GETDEL above — the
+            # client restarts from verify (fail closed, like the OTP
+            # proofs: no refund of single-use credentials).
+            logger.info("staff mobile totp rejected user_id=%s", user.id)
+            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+
+        outcome = await self._staff_login_succeeded(
+            db,
+            user,
+            remember_device=remember_device,
+            channel="staff_mobile_code+totp",
+            audit_context=audit_context,
+        )
+        assert outcome.tokens is not None
+        return outcome.tokens, outcome.device_cookie
+
+    async def _staff_login_succeeded(
+        self,
+        db: AsyncSession,
+        user: User,
+        *,
+        remember_device: bool,
+        channel: str,
+        audit_context: AuditContext | None,
+    ) -> StaffMobileCodeOutcome:
+        assert self._sessions is not None
+        _, tokens = await self._sessions.issue_session(
+            db, user=user, now=self._clock.now()
+        )
+        new_cookie = (
+            await issue_device(db, user.id, clock=self._clock)
+            if remember_device
+            else None
+        )
+        await self._audit.append(
+            db,
+            actor=Actor(user_id=user.id, role=Role(user.role)),
+            action=AUDIT_MOBILE_LOGIN_SUCCEEDED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(user.id),
+            after_snapshot={"channel": channel},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        logger.info("mobile login succeeded user_id=%s channel=%s", user.id, channel)
+        return StaffMobileCodeOutcome(tokens=tokens, device_cookie=new_cookie)
