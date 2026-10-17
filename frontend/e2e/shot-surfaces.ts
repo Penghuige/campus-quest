@@ -206,6 +206,26 @@ export const SHOTS: Shot[] = [
     auth: "admin",
     masks: [],
   },
+  {
+    // Wave 2a (spec §4.1): the dashboard landing — all numbers are
+    // server-owned census facts of the pristine seed (fixed keys,
+    // deterministic under fixed labels); no clock content.
+    name: "admin-dashboard",
+    path: "/admin",
+    auth: "admin",
+    masks: [],
+  },
+  {
+    // Wave 2a (spec §3.1): the SELF view of the detail page (the
+    // seeded admin's own id — deterministic; the self view carries no
+    // action buttons, the calmest face). The deep link rides the
+    // world's export; without it the shot skips (the envPath
+    // discipline, exemption in noskip-exemptions.mjs).
+    name: "admin-user-detail",
+    envPath: "CQ_E2E_ADMIN_DETAIL_PATH",
+    auth: "admin",
+    masks: [],
+  },
 ];
 
 export async function authenticate(page: Page, auth: ShotAuth): Promise<void> {

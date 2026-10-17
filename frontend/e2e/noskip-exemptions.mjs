@@ -64,6 +64,8 @@ export const NOSKIP_EXEMPTIONS = [
     }),
   ),
   ...[
+    "admin-dashboard",
+    "admin-user-detail",
     "admin-users",
     "auth-login",
     "dev-gallery",
@@ -82,4 +84,15 @@ export const NOSKIP_EXEMPTIONS = [
     reason:
       "The pixel suite is its own battery/CI stage (`make visual-regression` + the CI visual job), skipped in the functional battery on purpose.",
   })),
+  {
+    // Wave 2a's detail shot: the deep link rides the world's
+    // CQ_E2E_ADMIN_DETAIL_PATH export (the backend session's wave2a
+    // PR adds it beside ADMIN_ID); before that lands the shot skips
+    // on the missing export — the same conditional discipline as the
+    // claim/task-detail deep links.
+    file: "accessibility.spec.ts",
+    title: "axe: admin-user-detail",
+    gate: "CQ_E2E_ADMIN_DETAIL_PATH",
+    reason: "World-export deep link (the seeded admin's own detail page).",
+  },
 ];

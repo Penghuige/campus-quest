@@ -26,7 +26,7 @@ import type { ReactNode } from "react";
 import { SectionError } from "@/components/ui/sectionStates";
 import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
-import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
+import { navItemActive, WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import { StaffShellSkeleton } from "@/components/shell/StaffShellSkeleton";
 import {
   GiftIcon,
@@ -41,6 +41,9 @@ import { adminWorkspaceGate } from "@/features/auth/workspace";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
+  // Wave 2a (spec §4.1): the dashboard IS the /admin root — the exact
+  // anchor below keeps startsWith from marking every child page active.
+  { href: "/admin", label: "概览", icon: <TasksIcon /> },
   { href: "/admin/users", label: "用户与账户", icon: <UserIcon /> },
   { href: "/admin/invitations", label: "员工邀请", icon: <InboxIcon /> },
   { href: "/admin/platforms", label: "平台管理", icon: <TasksIcon /> },
@@ -154,7 +157,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+                  aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
                 >
                   {item.label}
                 </Link>
