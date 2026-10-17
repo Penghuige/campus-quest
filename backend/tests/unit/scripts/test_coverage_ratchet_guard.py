@@ -118,7 +118,10 @@ def test_missing_source_file_is_skipped(tmp_path: Path) -> None:
     assert hits == []
 
 
-def test_known_residual_fingerprint_is_waived(tmp_path: Path) -> None:
+@pytest.mark.parametrize("waiver_index", [0, 1])
+def test_known_residual_fingerprint_is_waived(
+    tmp_path: Path, waiver_index: int
+) -> None:
     """The one researched residual (B item 2026-10-17): coverage's
     greenlet patch still leaks a three-arc signature in full-suite
     combination runs, even with concurrency declared. Cross-talk is
@@ -127,15 +130,15 @@ def test_known_residual_fingerprint_is_waived(tmp_path: Path) -> None:
     the waiver matches the arc fingerprint on ANY host file, and any
     drift (a new arc, a different line) stays a violation."""
     ratchet = _load_ratchet_module()
+    arcs = sorted(int(n) for n in ratchet._CROSSTALK_WAIVERS[waiver_index]["beyond"])  # type: ignore[index]
+    chain = [(1, 2), (2, arcs[0])] + [
+        (a, b) for a, b in zip(arcs, arcs[1:], strict=False)
+    ]
+    chain.append((arcs[-1], -(arcs[0])))
     source = tmp_path / "any_host_file.py"
     source.write_text("x = 1\n" * 12, encoding="utf-8")
     data_file = tmp_path / ".coverage"
-    # the waived arcs + the sane arcs the real data also carries
-    _write_data(
-        data_file,
-        source,
-        [(1, 2), (2, 3), (3, 1971), (1971, 1988), (1988, -1910)],
-    )
+    _write_data(data_file, source, chain)
 
     hits = ratchet._undeclared_concurrency_signatures(str(data_file))
 

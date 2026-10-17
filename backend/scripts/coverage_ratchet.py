@@ -78,6 +78,22 @@ _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
             "covered, the cost is at most one partial branch"
         ),
     },
+    {
+        # The second signature, a WORKERS-job host (main 4ecd77d CI,
+        # 2026-10-17): three hosts/two signatures = a widening surface,
+        # so the root fix (the eager worker-test execution shape x the
+        # tracer's thread/greenlet bookkeeping) is pulled FORWARD from
+        # the backlog into its own PR — this waiver unblocks main and
+        # retires with that fix.
+        "beyond": frozenset({465, 623, 651, 683, 684}),
+        "seen_in": ("app/workers/jobs/validate_submission.py",),
+        "reason": (
+            "the workers-job host of the greenlet cross-talk: the "
+            "eager-mode worker tests' execution shape (suspected "
+            "thread-pool job runs) leaks a five-arc signature; root "
+            "fix in flight (reviewer directive 2026-10-17)"
+        ),
+    },
 )
 
 
