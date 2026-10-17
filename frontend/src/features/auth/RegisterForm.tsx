@@ -8,7 +8,10 @@
  *      or the 60s default);
  *   2. submit -> POST /auth/phone/challenges/{id}/verify (the SMS code
  *      becomes the single-use `phone_token`, the challenge is spent);
- *   3. POST /auth/register with that token -> redirect to /login.
+ *   3. POST /auth/register with that token -> the {user, tokens} envelope
+ *      IS the login (owner feedback ④, 2026-10-17): straight to the
+ *      student home, no login-page round trip; the transitional legacy
+ *      body keeps the old /login?registered=1 redirect.
  *
  * Proof lifecycle (identity/otp.py + service.py ordering, mirrored here):
  * - a wrong code does NOT consume the challenge — retry keeps the OTP;
@@ -21,6 +24,8 @@
  */
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+
+import { useSession } from "@/features/auth/session";
 
 import { isApiError } from "@/lib/errors";
 
@@ -72,6 +77,7 @@ import { Button } from "@/components/ui/button";
 
 export function RegisterForm() {
   const router = useRouter();
+  const { refresh: refreshSession } = useSession();
   const [values, setValues] = useState({
     student_number: "",
     nickname: "",
@@ -183,12 +189,22 @@ export function RegisterForm() {
         // VALIDATION_ERROR (the backend has not consumed it yet).
         setOtp({ challengeId: currentOtp.challengeId, phoneToken });
       }
-      await registerStudent({
+      const outcome = await registerStudent({
         student_number: values.student_number,
         nickname: values.nickname,
         phone_token: phoneToken,
         password: values.password.length === 0 ? null : values.password,
       });
+      if (outcome.kind === "session") {
+        // The envelope's tokens ARE the login (owner feedback ④):
+        // land on the student home directly — no login-page round trip
+        // (which would immediately hit the 60s SMS cooldown).
+        refreshSession();
+        router.replace("/");
+        router.refresh();
+        return;
+      }
+      // The pre-envelope backend: the old registered-notice redirect.
       router.replace("/login?registered=1");
     } catch (error) {
       if (!isApiError(error)) {

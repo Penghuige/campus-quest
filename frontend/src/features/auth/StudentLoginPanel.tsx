@@ -21,7 +21,12 @@ import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import { LoginForm } from "./LoginForm";
-import { requestMobileLoginCode, fastLoginRememberedDevice, verifyMobileLoginCode } from "./mobileLoginApi";
+import {
+  fastLoginCookieOnly,
+  fetchRememberedHint,
+  requestMobileLoginCode,
+  verifyMobileLoginCode,
+} from "./mobileLoginApi";
 import {
   describeMobileLoginError,
   validateMobileCode,
@@ -45,6 +50,7 @@ export function StudentLoginPanel() {
 
   return (
     <>
+      <FastLoginHint />
       <div className="login-channel-toggle" role="group" aria-label="登录方式">
         {(["mobile", "password"] as const).map((option) => (
           <Button
@@ -245,49 +251,84 @@ function MobileLoginForm({
           记住此设备 30 天（下次登录免发短信）
         </label>
         <SubmitButton loading={verifying}>登录</SubmitButton>
-        {/* The honest-fallback fast path (the backend contract's no-code
-         * verify): the cookie is HttpOnly so its presence is NOT
-         * detectable — the button shows unconditionally, and a
-         * cookie-less click simply falls back to this code form. */}
-        <Button
-          variant="ghost"
-          block
-          onClick={() => void onFastLogin()}
-          disabled={verifying || sending}
-        >
-          快速登录（已记住的设备）
-        </Button>
       </form>
     </>
   );
+}
 
-  async function onFastLogin() {
-    if (verifying) {
+/**
+ * The login page's CONDITIONAL fast-login banner (owner feedback ③,
+ * 2026-10-17): one anonymous probe on mount decides everything — a
+ * remembered STUDENT device answers its masked phone and the banner
+ * offers the one-click continuation; every other answer renders
+ * NOTHING (无 cookie 时登录页零多余元素 — the page is byte-identical to
+ * the pre-banner login). A click rides the cookie-only verify leg; a
+ * refusal (the probe's answer went stale mid-session) swaps the offer
+ * for the honest code-form guidance, never an error state.
+ */
+function FastLoginHint() {
+  const router = useRouter();
+  const { refresh: refreshSession } = useSession();
+  const [mask, setMask] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const hint = await fetchRememberedHint();
+      if (!cancelled && hint !== null) {
+        setMask(hint);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (mask === null) {
+    return null; // the zero-extra-elements login page
+  }
+
+  if (stale) {
+    return (
+      <p className="field-hint login-fast-stale" role="status">
+        该设备尚未记住或已过期，请使用下方短信验证码登录。
+      </p>
+    );
+  }
+
+  async function onContinue() {
+    if (busy) {
       return;
     }
-    setSummary(null);
-    const error = validateMobileLoginPhone(phone) ?? undefined;
-    setPhoneError(error);
-    if (error !== undefined) {
-      return;
-    }
-    setVerifying(true);
+    setBusy(true);
     try {
-      await fastLoginRememberedDevice(phone.trim());
+      await fastLoginCookieOnly();
       refreshSession();
-      router.replace("/");
+      router.replace("/"); // the student home (the sole student landing)
       router.refresh();
     } catch {
-      // No trusted cookie (absent/expired) — the honest fallback is the
-      // code form itself; a quiet hint, never an error state.
-      setSentNote(false);
-      setSummary({
-        summary: "该设备尚未记住或已过期，请获取短信验证码登录",
-        fieldErrors: {},
-        requestId: null,
-      });
+      setStale(true);
     } finally {
-      setVerifying(false);
+      setBusy(false);
     }
   }
+
+  return (
+    <div className="login-fast-hint">
+      <p>
+        继续以 <span className="mono">{mask}</span> 登录
+      </p>
+      <Button
+        variant="secondary"
+        onClick={() => void onContinue()}
+        disabled={busy}
+        aria-busy={busy}
+      >
+        {busy ? <span className="spinner" aria-hidden="true" /> : null}
+        <span>一键继续</span>
+      </Button>
+    </div>
+  );
 }

@@ -55,19 +55,40 @@ export async function verifyMobileLoginCode(
 }
 
 /**
- * The remembered-device FAST LOGIN (the backend contract's no-code
- * verify): {phone} + the HttpOnly cq_staff_device cookie answers a
- * full login and ROTATES the cookie (a 30-day re-issue — the natural
- * renewal for an already-trusted device). A refusal means the cookie
- * is absent/expired: the caller falls back to the code form (the
- * honest-fallback button, never an error state of its own).
+ * The remembered-device HINT probe (owner feedback ③, 2026-10-17;
+ * frozen contract): GET /auth/mobile-code/remembered answers
+ * 200 {phone_masked} when the HttpOnly cq_staff_device cookie names a
+ * live remembered STUDENT device (the mask is the backend's
+ * mask_phone — the client never sees the full number), and a uniform
+ * 204 otherwise. Every non-answer — 204, a surprise status, transport
+ * failure — resolves `null` quietly: the probe decides whether the
+ * login page renders its one-click banner and must never disturb the
+ * code form (无 cookie 时登录页零多余元素).
  */
-export async function fastLoginRememberedDevice(
-  phone: string,
-): Promise<Schemas["TokenPairResponse"]> {
+export async function fetchRememberedHint(): Promise<string | null> {
+  try {
+    const body = await apiRequest<{ phone_masked?: string } | null>(
+      "/api/v1/auth/mobile-code/remembered",
+    );
+    return body?.phone_masked ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The banner's CLICK leg (owner feedback ③): the login page holds only
+ * the probe's MASK, never the full phone — so the HttpOnly
+ * cq_staff_device cookie alone locates the user (it is already a full
+ * single-factor credential; the trust level is unchanged) and the
+ * verify body is EMPTY. The returned login adopts the shared dance;
+ * a refusal (cookie raced/expired between probe and click) rejects and
+ * the banner falls back to the code form's copy.
+ */
+export async function fastLoginCookieOnly(): Promise<Schemas["TokenPairResponse"]> {
   const tokens = await apiRequest<Schemas["TokenPairResponse"]>(
     "/api/v1/auth/mobile-code/verify",
-    { method: "POST", body: { phone } },
+    { method: "POST", body: {} },
   );
   adoptFullLogin(tokens);
   return tokens;

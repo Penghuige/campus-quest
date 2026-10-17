@@ -148,6 +148,29 @@ describe("loginStaff", () => {
     const view = describeStaffError(error as never, "staff-login");
     assert.match(view.summary!, /尚未完成动态口令绑定/);
   });
+
+  // The 2026-10-17 login-iteration batch (owner feedback ②): the
+  // password+TOTP form's 记住此设备 30 天 checkbox — same semantics as
+  // the email-code totp leg (remember = the SECOND factor goes away for
+  // 30 days; the password never does). Presence-based, the frozen
+  // backend contract: an absent/false field behaves exactly like today.
+  test("remember=true rides remember_device in the body; the default omits it entirely", async () => {
+    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
+    await loginStaff("admin@school.edu", "correct-horse", "234567", true);
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      email: "admin@school.edu",
+      password: "correct-horse",
+      totp_code: "234567",
+      remember_device: true,
+    });
+
+    await loginStaff("admin@school.edu", "correct-horse", "234567");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      email: "admin@school.edu",
+      password: "correct-horse",
+      totp_code: "234567",
+    });
+  });
 });
 
 describe("TOTP setup calls (pending-session bearer)", () => {

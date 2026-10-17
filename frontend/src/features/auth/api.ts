@@ -81,12 +81,48 @@ export function verifyPhoneChallenge(
   );
 }
 
-/** Register one whitelisted student (201 -> `UserPublic`). */
-export function registerStudent(payload: RegisterPayload): Promise<RegisteredUser> {
-  return apiRequest<RegisteredUser>(`${BASE}/register`, {
-    method: "POST",
-    body: payload,
-  });
+/**
+ * The register outcome (owner feedback ④, 2026-10-17; frozen backend
+ * contract): the 201 body is the envelope `{user, tokens}` — every
+ * successful registration IS a login (PENDING_APPROVAL included; the
+ * browse-frozen home is the landing), so the wrapper walks the full
+ * explicit-login dance on the envelope's tokens. The transitional
+ * bare-UserPublic body (pre-envelope backend) resolves `legacy` and
+ * adopts nothing — the form keeps its old redirect until the backend
+ * half lands, and the branch dies with it.
+ */
+export type RegisterOutcome =
+  | { kind: "session"; user: RegisteredUser }
+  | { kind: "legacy"; user: RegisteredUser };
+
+/** Register one whitelisted student (201 -> the {user, tokens} envelope). */
+export async function registerStudent(
+  payload: RegisterPayload,
+): Promise<RegisterOutcome> {
+  await beginAuthTransition();
+  let body: unknown;
+  try {
+    body = await apiRequest<unknown>(`${BASE}/register`, {
+      method: "POST",
+      body: payload,
+    });
+  } finally {
+    endAuthTransition();
+    // The register login opens a NEW auth context exactly like an
+    // explicit login (the cross-tab fence's whole point).
+    broadcastContextReset();
+  }
+  const envelope = body as { user?: unknown; tokens?: unknown };
+  if (
+    envelope !== null &&
+    typeof envelope === "object" &&
+    "user" in envelope &&
+    "tokens" in envelope
+  ) {
+    adoptFullLogin(envelope.tokens as LoginTokens);
+    return { kind: "session", user: envelope.user as RegisteredUser };
+  }
+  return { kind: "legacy", user: body as RegisteredUser };
 }
 
 /**
@@ -195,18 +231,27 @@ export async function acceptStaffInvitation(
   return { kind: "admin", pendingToken: (body as LoginTokens).access_token };
 }
 
-/** Staff login: verified email + password + TOTP-or-recovery code. */
+/** Staff login: verified email + password + TOTP-or-recovery code.
+ *
+ * `rememberDevice` (owner feedback ②, 2026-10-17) issues the 30-day
+ * cq_staff_device cookie — same semantics as the email-code totp leg:
+ * the remembered SECOND factor (the TOTP) goes away, the password
+ * never does. Presence-based, like every remember flag here.
+ */
 export async function loginStaff(
   email: string,
   password: string,
   totpCode: string,
+  rememberDevice = false,
 ): Promise<LoginTokens> {
   await beginAuthTransition();
   let tokens: LoginTokens;
   try {
     tokens = await apiRequest<LoginTokens>(`${BASE}/staff/login`, {
       method: "POST",
-      body: { email, password, totp_code: totpCode },
+      body: rememberDevice
+        ? { email, password, totp_code: totpCode, remember_device: true }
+        : { email, password, totp_code: totpCode },
     });
   } finally {
     endAuthTransition();
