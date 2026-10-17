@@ -158,8 +158,13 @@ export function validateTotpCode(value: string): string | null {
  */
 export function validateSecondFactor(value: string): string | null {
   const trimmed = value.trim();
+  // Empty is ALLOWED (owner feedback ②, 2026-10-17): a remembered
+  // device exempts the TOTP and the relogin submits password-only.
+  // The HttpOnly cookie is unknowable client-side, so the server's
+  // uniform verdict decides an empty factor — the client never
+  // invents a band the backend does not own.
   if (trimmed.length === 0) {
-    return "请输入动态验证码或恢复代码";
+    return null;
   }
   if (validateTotpCode(trimmed) === null || RECOVERY_CODE_PATTERN.test(trimmed)) {
     return null;

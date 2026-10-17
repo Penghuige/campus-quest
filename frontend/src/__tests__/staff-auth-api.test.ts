@@ -171,6 +171,20 @@ describe("loginStaff", () => {
       totp_code: "234567",
     });
   });
+
+  // The frozen ② relogin contract (2026-10-17): totp_code "" ≡ omitted
+  // server-side, and the client sends the empty string VERBATIM (never
+  // conditionally omits the key) — a remembered device + password is
+  // the full login; no cookie answers the uniform wrong-factor copy.
+  test("an empty second factor posts totp_code: \"\" (the remembered relogin)", async () => {
+    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
+    await loginStaff("admin@school.edu", "correct-horse", "");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      email: "admin@school.edu",
+      password: "correct-horse",
+      totp_code: "",
+    });
+  });
 });
 
 describe("TOTP setup calls (pending-session bearer)", () => {

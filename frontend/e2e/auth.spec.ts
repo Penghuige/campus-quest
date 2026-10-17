@@ -26,7 +26,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { recoverOtpCode, recoverMobileCode } from "./fixtures";
+import { recoverOtpCode } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -85,19 +85,11 @@ test.describe("student registration and login", () => {
     await page.getByLabel("短信验证码").fill(code);
     await page.getByRole("button", { name: "注册", exact: true }).click();
 
-    // Success redirects to the login page with the registered note.
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login\\?registered=1`));
-    await expect(page.getByText("注册成功，请使用学号登录。")).toBeVisible();
-
-    // Mobile-code login (the page's DEFAULT tab) -> student home + the
-    // PENDING_APPROVAL banner (browsable, frozen — auth II §2).
-    await page.getByLabel("手机号").fill(phone);
-    await page.getByRole("button", { name: "重新发送", exact: true }).click();
-    await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-    const loginCode = recoverMobileCode(`+86${phone}`);
-    await page.getByLabel("短信验证码").fill(loginCode);
-    await page.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+    // ④ straight in (owner feedback 2026-10-17): the register
+    // response's {user, tokens} envelope IS the login — the landing is
+    // the home itself with the PENDING_APPROVAL banner (browsable,
+    // frozen — auth II §2), never a login-page round trip.
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 15_000 });
     await expect(page.getByText("账号待管理员审核。")).toBeVisible();
   });
 

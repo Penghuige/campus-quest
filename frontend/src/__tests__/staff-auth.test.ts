@@ -147,8 +147,13 @@ describe("validateSecondFactor (staff login field)", () => {
     assert.equal(validateSecondFactor("0F1E2-D3C4B"), null);
   });
 
-  test("garbage and empty fail with the both-formats hint", () => {
-    assert.match(validateSecondFactor("")!, /动态验证码或恢复代码/);
+  test("garbage fails with the both-formats hint; EMPTY passes (the remembered relogin)", () => {
+    // Owner feedback ② (2026-10-17): a remembered device exempts the
+    // TOTP — the relogin submits password-only. The HttpOnly cookie's
+    // presence is unknowable client-side, so empty is simply ALLOWED
+    // and the server's uniform verdict decides (cookie absent → the
+    // same wrong email/password/code copy as any wrong factor).
+    assert.equal(validateSecondFactor(""), null);
     assert.match(validateSecondFactor("0f1e2d3c4b")!, /恢复代码/); // missing dash
     assert.match(validateSecondFactor("0123456789")!, /恢复代码/); // 10 digits
   });

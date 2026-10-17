@@ -189,6 +189,72 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     );
   });
 
+  test("remember this device: the password+TOTP login's checkbox buys 30 TOTP-free days (owner feedback ②)", async ({
+    page,
+  }) => {
+    // A dedicated invited ADMIN (password + TOTP confirmed through the
+    // REAL onboarding above — the account is the test's own).
+    const email = `e2e-admin-remember-${RUN}@school.edu`;
+    const token = await freshInvitationToken(email, "ADMIN");
+    await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(token)}`);
+    await page.getByLabel("设置密码").fill("e2e-correct-horse");
+    await page.getByLabel("确认密码").fill("e2e-correct-horse");
+    await page.getByRole("button", { name: "激活账号" }).click();
+    const secretLocator = page.getByTestId("totp-secret");
+    await expect(secretLocator).toBeVisible();
+    const secret = (await secretLocator.textContent())?.trim() ?? "";
+    const codeField = page.getByRole("textbox", { name: /动态验证码/ });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const confirmResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/staff/totp/confirm") &&
+          response.request().method() === "POST",
+        { timeout: 15_000 },
+      );
+      await codeField.fill(totpCode(secret));
+      await page.getByRole("button", { name: "确认绑定" }).click();
+      if ((await confirmResponse).ok()) {
+        break;
+      }
+      await page.waitForTimeout(1_000);
+    }
+    await page.getByRole("button", { name: "我已妥善保存，完成绑定" }).click();
+    await expect(page.getByText("动态口令绑定完成，员工账号已激活。")).toBeVisible();
+
+    // The remembered FIRST login: password + TOTP + the checkbox.
+    await page.goto(`${BASE_URL}/staff/login`);
+    await page.getByRole("button", { name: "密码登录" }).click();
+    await page.getByLabel("邮箱").fill(email);
+    await page.getByLabel("密码").fill("e2e-correct-horse");
+    await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.getByLabel("动态验证码").fill(totpCode(secret));
+      await page.getByRole("button", { name: "登录", exact: true }).click();
+      try {
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
+          timeout: 5_000,
+        });
+        break;
+      } catch {
+        /* step rolled over mid-submit */
+      }
+    }
+
+    // Free the device (the staff logout lands back on the staff login).
+    await page.getByRole("button", { name: "退出登录" }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+
+    // The ② PIN — the remembered RELOGIN: password only, the 动态验证码
+    // field LEFT EMPTY (the field's hint says so), no code request, no
+    // second factor. The 30-day cookie is the second factor.
+    await page.getByRole("button", { name: "密码登录" }).click();
+    await page.getByLabel("邮箱").fill(email);
+    await page.getByLabel("密码").fill("e2e-correct-horse");
+    await page.getByRole("textbox", { name: /动态验证码/ }).fill("");
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+  });
+
   test("teacher invite: optional password, straight into the workspace (V1.1 §2.3)", async ({ page }) => {
     const token = await freshInvitationToken(`e2e-teacher-invite-${RUN}@school.edu`);
     await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(token)}`);

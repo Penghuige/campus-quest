@@ -149,7 +149,7 @@ export function StaffLoginForm() {
         <AuthField
           name="totp_code"
           label="动态验证码"
-          hint="验证器应用当前显示的 6 位数字；验证器不可用时输入一个恢复代码。"
+          hint="验证器应用当前显示的 6 位数字；验证器不可用时输入一个恢复代码。曾勾选「记住此设备」的设备可留空。"
           error={fieldErrors.totp_code}
           inputProps={{
             value: values.totp_code,
