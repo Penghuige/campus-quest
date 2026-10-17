@@ -1,13 +1,17 @@
 /**
- * Auth extension II e2e (spec 2026-10-16 §1-§5) — runs against the
- * MERGED backend (the register/mobile-code/approval endpoints). The
- * register→banner→approve→unlock chain and the mobile-code login family
- * including the remembered-device fast path.
+ * Auth extension II e2e (spec 2026-10-16 §1-§5 + the 2026-10-17
+ * login-iteration batch ④③) — runs against the MERGED backend (the
+ * register/mobile-code/approval endpoints). The register→banner→
+ * approve→unlock chain and the mobile-code login family including the
+ * remembered-device banner.
  *
  * Contract-first: drafted against the backend session's confirmed
  * answers (mobile-code 202-always; verify = full login for students;
- * the no-code fast login {phone} + cookie; register password
-  * null-able; the pending queue via the status filter).
+ * the register {user, tokens} envelope IS the login — straight onto
+ * the student home; the GET remembered probe answers the mask or a
+ * uniform 204; the cookie-only verify leg posts an empty body;
+ * register password null-able; the pending queue via the status
+ * filter).
  */
 import { expect, test, type Page } from "@playwright/test";
 
@@ -70,39 +74,24 @@ async function registerThroughUi(
     await page.getByLabel("密码（可选）").fill(password);
   }
   await page.getByRole("button", { name: "注册", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login\\?registered=1`));
+  // ④ (owner feedback 2026-10-17): the register response's {user,
+  // tokens} envelope IS the login — straight onto the student home
+  // (PENDING_APPROVAL browse-frozen surface), never a login-page round
+  // trip. 15s: the first hit on "/" pays the dev server's cold compile.
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 15_000 });
   return { number: studentNumber, phone, password };
 }
 
-async function loginMobileThroughUi(page: Page, phone: string): Promise<void> {
-  await page.goto(`${BASE_URL}/login`);
-  // The mobile tab is the default.
-  await expect(page.getByRole("button", { name: "手机验证码登录" })).toBeVisible();
-  await fillPhoneVerified(page, phone);
-  await page.getByRole("button", { name: "重新发送", exact: true }).click();
-  await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-  const { recoverMobileCode } = await import("./fixtures");
-  const code = recoverMobileCode(`+86${phone}`);
-  await page.getByLabel("短信验证码").fill(code);
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
-}
-
 test.describe("the register → approval → unlock chain (spec §1/§2/§5)", () => {
-  test("register without a password → banner → admin approves → frozen surface unlocks", async ({
+  test("register without a password → straight in → banner → admin approves → frozen surface unlocks", async ({
     page,
   }) => {
     const { phone } = await registerThroughUi(page, { withPassword: false });
 
-    // The PENDING banner greets the mobile-code login. 15s: this is
-    // the battery's FIRST hit on the student home — the dev server's
-    // cold compile of "/" can outlast the default 5s window (the
-    // workspace shell + banner land once compilation settles; the
-    // same flow with a settled server renders within ~2s).
-    await loginMobileThroughUi(page, phone);
-    await expect(page.getByText("账号待管理员审核。")).toBeVisible({
-      timeout: 15_000,
-    });
+    // ④ straight-in: the registration's tokens opened the session —
+    // the PENDING banner greets the landing itself, no login round
+    // trip (the URL assertion inside registerThroughUi is ④'s pin).
+    await expect(page.getByText("账号待管理员审核。")).toBeVisible();
 
     // A frozen action answers the typed copy (the claim button is the
     // canonical acting surface on the square).
@@ -149,13 +138,19 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
   });
 
-  test("remember this device: the fast login button lands without an SMS", async ({
+  test("remember this device: the banner's one click lands without an SMS", async ({
     page,
     browser,
   }) => {
     const { phone } = await registerThroughUi(page, { withPassword: false });
+    // ④ leaves the account logged in; log out to reach the code form
+    // (register itself arms NO device cookie — there is no checkbox on
+    // the register surface).
+    await page.goto(`${BASE_URL}/profile?tab=info`);
+    await page.getByRole("button", { name: "退出登录" }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+
     // First login WITH the remember checkbox: arms the cookie.
-    await page.goto(`${BASE_URL}/login`);
     await fillPhoneVerified(page, phone);
     await page.getByRole("button", { name: "重新发送", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
@@ -165,24 +160,29 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
 
-    // The replay context (cookie rides it): fast login, NO code request.
+    // The replay context (cookie rides it): the login page's PROBE
+    // answers the mask — the conditional banner (③) offers the
+    // one-click continuation, and its click is the cookie-only verify
+    // leg: no SMS, no code field, straight onto the home.
     const state = await page.context().storageState();
     const replay = await browser.newContext({ storageState: state });
     const second = await replay.newPage();
     second.goto(`${BASE_URL}/login`);
-    await fillPhoneVerified(second, phone);
-    await second.getByRole("button", { name: "快速登录（已记住的设备）" }).click();
+    const banner = second.getByText(`继续以 +86****${phone.slice(-4)} 登录`);
+    await expect(banner).toBeVisible();
+    await second.getByRole("button", { name: "一键继续" }).click();
     await expect(second).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 8_000 });
     await replay.close();
   });
 
-  test("a cookie-less fast login falls back to the code form honestly", async ({ page }) => {
+  test("no cookie: the login page renders ZERO banner elements (③'s two-state pin)", async ({ page }) => {
+    // A fresh context carries no cq_staff_device cookie: the probe's
+    // uniform 204 must leave the login page byte-identical to the
+    // pre-banner page — the banner, its copy, and its button are all
+    // absent (无 cookie 时登录页零多余元素).
     await page.goto(`${BASE_URL}/login`);
-    await page.getByLabel("手机号").fill(freshPhone());
-    await page.getByRole("button", { name: "快速登录（已记住的设备）" }).click();
-    await expect(
-      page.getByText("该设备尚未记住或已过期，请获取短信验证码登录"),
-    ).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+    await expect(page.getByText(/继续以 .+ 登录/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "一键继续" })).toHaveCount(0);
+    await expect(page.locator(".login-fast-hint")).toHaveCount(0);
   });
 });

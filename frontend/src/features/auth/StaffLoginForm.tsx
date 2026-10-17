@@ -9,6 +9,11 @@
  * - success: refresh the session cache and land on the TEACHER landing
  *   (the review queue — a staff session never lands on the student
  *   home, where the shell would turn it away);
+ * - the 记住此设备 30 天 checkbox (owner feedback ②, 2026-10-17) rides
+ *   remember_device: the remembered SECOND factor (TOTP) goes away for
+ *   30 days, the password never does — consistent with the email-code
+ *   flow's TERMINAL ruling (a remembered device never exempts the only
+ *   factor; here the password always stays in the login);
  * - `AUTHENTICATION_REQUIRED`: the uniform wrong email/password/code copy
  *   (one staff-specific line — never the student form's 学号 copy);
  * - `TOTP_SETUP_REQUIRED`: raised only AFTER the password proved correct
@@ -42,6 +47,7 @@ export function StaffLoginForm() {
   const router = useRouter();
   const { refresh: refreshSession } = useSession();
   const [values, setValues] = useState({ email: "", password: "", totp_code: "" });
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<StaffLoginFields, string>>>({});
   const [summary, setSummary] = useState<AuthErrorView | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
@@ -78,7 +84,7 @@ export function StaffLoginForm() {
     try {
       await landAfterStaffLogin({
         login: () =>
-          loginStaff(email, values.password, values.totp_code.trim()),
+          loginStaff(email, values.password, values.totp_code.trim(), rememberDevice),
         refreshSession,
         router,
         readMe,
@@ -143,7 +149,7 @@ export function StaffLoginForm() {
         <AuthField
           name="totp_code"
           label="动态验证码"
-          hint="验证器应用当前显示的 6 位数字；验证器不可用时输入一个恢复代码。"
+          hint="验证器应用当前显示的 6 位数字；验证器不可用时输入一个恢复代码。曾勾选「记住此设备」的设备可留空。"
           error={fieldErrors.totp_code}
           inputProps={{
             value: values.totp_code,
@@ -159,6 +165,15 @@ export function StaffLoginForm() {
             disabled: loading,
           }}
         />
+        <label className="field-hint">
+          <input
+            type="checkbox"
+            checked={rememberDevice}
+            onChange={(event) => setRememberDevice(event.target.checked)}
+            disabled={loading}
+          />{" "}
+          记住此设备 30 天（下次登录可免动态口令）
+        </label>
         <SubmitButton loading={loading}>登录</SubmitButton>
       </form>
     </>

@@ -54,16 +54,10 @@ test.describe("nickname rename nudge (V1.1 §6)", () => {
     await page.getByLabel("短信验证码").fill(recoverOtpCode(`+86${phone}`));
     await page.getByLabel("密码（可选）").fill("e2e-correct-horse");
     await page.getByRole("button", { name: "注册", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login\\?registered=1`));
-
-    // Password login (the tab behind the default mobile channel) ->
-    // the workspace greets the digit nickname with the nudge (pending
-    // or not, the shell mounts the banner family for the logged-in).
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("学号").fill(NUDGE_NUMBER);
-    await page.getByLabel("密码").fill("e2e-correct-horse");
-    await page.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+    // ④ straight in (owner feedback 2026-10-17): the registration's
+    // tokens ARE the login — the home greets the digit nickname with
+    // the nudge itself, no login-page round trip.
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 15_000 });
     await expect(page.getByText("把昵称改成好认的名字吧")).toBeVisible();
     await expect(page.getByRole("link", { name: "把昵称改成好认的名字吧" })).toHaveAttribute(
       "href",

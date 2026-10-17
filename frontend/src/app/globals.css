@@ -368,6 +368,33 @@ body {
   margin-bottom: var(--space-4);
 }
 
+/* Login page's conditional fast-login banner (owner feedback ③,
+   2026-10-17): mounted ONLY when the remembered-device probe answers a
+   mask — the cookie-less login page stays byte-identical (零多余元素).
+   A quiet surface-2 card; the masked phone rides the mono face. */
+.login-fast-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.login-fast-hint p {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/* The stale-device guidance that replaces the banner after a refused
+   click (probe answer raced out) — plain hint tier, never an alert. */
+.login-fast-stale {
+  margin-bottom: var(--space-4);
+}
+
 .field {
   display: grid;
   gap: var(--space-1);

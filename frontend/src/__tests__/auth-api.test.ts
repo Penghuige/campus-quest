@@ -29,6 +29,7 @@ import {
 } from "../features/auth/api";
 import { cooldownSecondsFrom, describeAuthError, resendButtonLabel } from "../features/auth/errors";
 import { isApiError } from "../lib/errors";
+import { clearAccessToken, getAccessToken } from "../lib/accessToken";
 
 type RecordedRequest = {
   url: string;
@@ -177,24 +178,33 @@ describe("registration OTP chain", () => {
     assert.equal(view.requestId, null);
   });
 
-  test("register posts the exact backend field names", async () => {
+  test("register posts the exact backend field names; the {user, tokens} envelope opens the session", async () => {
+    clearAccessToken();
     stubFetch(
       JSON.stringify({
-        id: "22222222-2222-4222-8222-222222222222",
-        username: "20240001",
-        nickname: "小明",
-        role: "STUDENT",
-        status: "ACTIVE",
+        user: {
+          id: "22222222-2222-4222-8222-222222222222",
+          username: "20240001",
+          nickname: "小明",
+          role: "STUDENT",
+          status: "ACTIVE",
+        },
+        tokens: { access_token: "reg-at", csrf_token: "ct", token_type: "bearer" },
       }),
       201,
     );
-    const user = await registerStudent({
+    const outcome = await registerStudent({
       student_number: "20240001",
       nickname: "小明",
       phone_token: "proof-token",
       password: "correct-horse",
     });
-    assert.equal(user.status, "ACTIVE");
+    assert.equal(outcome.kind, "session");
+    assert.equal(outcome.user.status, "ACTIVE");
+    // The envelope's tokens ARE the login (owner feedback ④): the
+    // wrapper adopts them — the memory manager carries the bearer from
+    // the first post-register request on.
+    assert.equal(getAccessToken(), "reg-at");
     assert.equal(recorded?.url, "/api/v1/auth/register");
     assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
       student_number: "20240001",
@@ -202,6 +212,29 @@ describe("registration OTP chain", () => {
       phone_token: "proof-token",
       password: "correct-horse",
     });
+  });
+
+  test("the legacy bare-UserPublic register body (pre-envelope backend) stays session-less", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        id: "22222222-2222-4222-8222-222222222222",
+        username: "20240001",
+        nickname: "小明",
+        role: "STUDENT",
+        status: "PENDING_APPROVAL",
+      }),
+      201,
+    );
+    const outcome = await registerStudent({
+      student_number: "20240001",
+      nickname: "小明",
+      phone_token: "proof-token",
+      password: null,
+    });
+    assert.equal(outcome.kind, "legacy");
+    assert.equal(outcome.user.status, "PENDING_APPROVAL");
+    assert.equal(getAccessToken(), null);
   });
 
   test("whitelist rejection keeps its stable copy and code branch", async () => {

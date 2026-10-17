@@ -9,6 +9,7 @@
 | 状态 | 数量 | 明细 |
 |---|---|---|
 | 已覆盖 | 14 | RA1-RA14 |
+| 前端已覆盖（后端半随其 PR） | 3 | RA15-RA17（登录迭代批次 2026-10-17：冻结契约先行，前端钉就位，后端集成行由后端半 PR 落） |
 | 缺口（轻，列出不补） | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 0 | — |
@@ -31,3 +32,6 @@
 | RA12 | §3 限速 | 手机+IP 双桶（auth:mobile-code/-ip）挂 request；429 不计锁定 | `tests/integration/identity/test_mobile_code_login_api.py::test_request_is_constant_202_and_uniform_429`（行为级注记：桶表在 rate_limit.py，路径经 limiter 注入） | 已覆盖（行为级） |
 | RA13 | §6 白名单退役 | 4 admin 端点删路由（404）；STUDENT_NOT_WHITELISTED 错误码注销（interfaces.md+冻结名单）；表留库不迁移 | admin API 矩阵行删除（`tests/integration/admin/test_admin_api.py` 权限矩阵现集）+ `tests/unit/core/test_error_codes.py` 冻结名单不含该码 | 已覆盖 |
 | RA14 | §6 密码通道 | 无密码账号走密码通道=统一 401（#83 F2 现状继承，四重认证点） | `tests/integration/identity/test_invitation_accept_no_totp.py::test_passwordless_teacher_on_password_channel_is_uniform_401`（同型面）+ login_student None-hash 分支 | 已覆盖 |
+| RA15 | 登录迭代④（2026-10-17 owner 反馈；冻结契约） | register 201 答 `{user, tokens}` 包络（tokens=登录同款，refresh 恒走 HttpOnly cookie）；注册即登录直进学生首页（PENDING=浏览冻结态首页），消除注册后撞 60s 短信冷却；过渡期裸 UserPublic 走 legacy `/login?registered=1` 跳转，随后端半退役 | 前端：`frontend/src/__tests__/auth-api.test.ts`（envelope 采纳钉+legacy 钉）+ `e2e/auth.spec.ts`/`auth-extension-2.spec.ts`/`nickname-nudge.spec.ts` 直进断言；后端半集成行由后端 PR 落 | 前端已覆盖；后端半待其 PR |
+| RA16 | 登录迭代②（同上） | staff/login 增 `remember_device`（缺省=false 行为不变；勾选=验过第二因子后签 30 天 cq_staff_device）；重登腿 `totp_code:""`≡缺省——cookie 命中+密码过=完整登录，未命中=uniform AUTHENTICATION_REQUIRED（与错密码同码同文案）；学生密码通道不加（无第二因子，30 天会话已是默认） | 前端：`frontend/src/__tests__/staff-auth-api.test.ts`（remember presence-based 钉+空串钉）+ `staff-auth.test.ts`（空因子放行钉）+ `e2e/staff-auth.spec.ts` 全链（勾选登→登出→空码重登）；后端半集成行由后端 PR 落 | 前端已覆盖；后端半待其 PR |
+| RA17 | 登录迭代③（同上） | `GET /auth/mobile-code/remembered` 匿名探测：cookie 命中绑定 STUDENT（ACTIVE/PENDING_APPROVAL、有手机）→200 `{phone_masked}`（mask_phone 形态），其余恒 204 零泄露；banner 仅探测有掩码时渲染（无 cookie 登录页零多余元素）；点击=空体免码 verify（cookie-only 定位用户），拒绝态提示条换诚实文案非报错 | 前端：`frontend/src/__tests__/mobile-login-api.test.ts`（探测三态钉+空体点击腿钉）+ `e2e/auth-extension-2.spec.ts` 两态钉（有 cookie 见掩码一键落地/无 cookie 零元素）；后端半集成行由后端 PR 落 | 前端已覆盖；后端半待其 PR |
