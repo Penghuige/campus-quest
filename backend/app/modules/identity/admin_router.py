@@ -67,19 +67,30 @@ from app.core.admin_network_policy import (
     load_management_network_policy,
     require_management_network,
 )
+from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.db.session import get_db_session
 from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
+from app.modules.identity import admin_power_service as admin_power
 from app.modules.identity.account_admin_service import AccountAdminService
-from app.modules.identity.dependencies import require_admin_actor
+from app.modules.identity.dependencies import (
+    get_business_clock,
+    require_admin_actor,
+)
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
-from app.modules.identity.providers import DbSession, LimiterDep, get_staff_service
+from app.modules.identity.providers import (
+    DbSession,
+    LimiterDep,
+    get_session_service,
+    get_staff_service,
+)
 from app.modules.identity.routing_common import _enforce_rate_limit
 from app.modules.identity.schemas import StaffInvitationCreateRequest
+from app.modules.identity.session_service import SessionService
 from app.modules.identity.staff_service import StaffService
 from app.modules.system.service import (
     MANAGEMENT_NETWORK_CIDRS,
@@ -227,6 +238,51 @@ class AdminUserListResponse(BaseModel):
     offset: int
 
 
+class AdminRecentSubmission(BaseModel):
+    """One row of the panorama's recent-submissions strip (Wave 2a §3.1):
+    submission facts only — no content, no URLs, no storage keys."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task_title: str
+    validation_status: str
+    review_status: str
+    submitted_at: datetime
+
+
+class AdminUserPanoramaResponse(BaseModel):
+    """The §3.1 detail view: the governance row plus the cross-module
+    facts the console renders on one account page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user: AdminUserResponse
+    wallet_balance: int
+    recent_submissions: list[AdminRecentSubmission]
+    active_session_count: int
+    remembered_device_count: int
+
+
+class AdminUserSessionsResponse(BaseModel):
+    """The §3.3 read: how many live refresh sessions and remembered
+    devices the account currently holds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active_session_count: int
+    remembered_device_count: int
+
+
+class AdminKickResponse(BaseModel):
+    """The §3.3 stop: what one kick took out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    revoked_sessions: int
+    revoked_devices: int
+
+
 class AccountStatusRequest(BaseModel):
     """The mandatory free-text why of one status transition (spec §5.7;
     the service refuses blanks before any read)."""
@@ -329,6 +385,83 @@ async def _transition_account_status(
         username=user.username,
         role=Role(user.role),
         status=UserStatus(user.status),
+    )
+
+
+@router.get("/admin/users/{user_id}", response_model=AdminUserPanoramaResponse)
+async def read_user_panorama(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminUserPanoramaResponse:
+    """The §3.1 account panorama: governance row, wallet balance, the
+    ten most recent submissions, and the live credential counts."""
+    panorama = await admin_power.user_panorama(db, user_id, clock=clock)
+    user = panorama["user"]
+    return AdminUserPanoramaResponse(
+        user=AdminUserResponse(
+            id=str(user.id),
+            username=user.username,
+            nickname=user.nickname,
+            role=Role(user.role),
+            status=UserStatus(user.status),
+            phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
+            created_at=user.created_at,
+        ),
+        wallet_balance=panorama["wallet_balance"],
+        recent_submissions=[
+            AdminRecentSubmission(
+                id=str(s.id),
+                task_title=title,
+                validation_status=str(s.validation_status),
+                review_status=str(s.review_status),
+                submitted_at=s.submitted_at,
+            )
+            for s, title in panorama["recent_submissions"]
+        ],
+        active_session_count=panorama["active_session_count"],
+        remembered_device_count=panorama["remembered_device_count"],
+    )
+
+
+@router.get("/admin/users/{user_id}/sessions", response_model=AdminUserSessionsResponse)
+async def read_user_sessions(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminUserSessionsResponse:
+    """The §3.3 read side: the account's live credential counts."""
+    panorama = await admin_power.user_panorama(db, user_id, clock=clock)
+    return AdminUserSessionsResponse(
+        active_session_count=panorama["active_session_count"],
+        remembered_device_count=panorama["remembered_device_count"],
+    )
+
+
+@router.delete("/admin/users/{user_id}/sessions", response_model=AdminKickResponse)
+async def kick_user(
+    user_id: UUID,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminKickResponse:
+    """The §3.3 stolen-account emergency stop: every live refresh
+    session revoked, every remembered-device credential dropped, one
+    ADMIN_SESSIONS_REVOKED audit row in the same commit."""
+    revoked_sessions, revoked_devices = await admin_power.kick(
+        db,
+        actor,
+        user_id,
+        sessions=sessions,
+        clock=clock,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminKickResponse(
+        revoked_sessions=revoked_sessions, revoked_devices=revoked_devices
     )
 
 
