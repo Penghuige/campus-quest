@@ -394,8 +394,12 @@ export function mintToken(userId: string): string {
 }
 
 /** Recover the current SMS OTP code for a phone (the real Redis hash). */
-export function recoverOtpCode(phoneE164: string): string {
-  return runWorldAction<{ code: string }>("otp-code", phoneE164).code;
+export function recoverOtpCode(phoneE164: string, purpose?: string): string {
+  return runWorldAction<{ code: string }>(
+    "otp-code",
+    phoneE164,
+    ...(purpose !== undefined ? [purpose] : []),
+  ).code;
 }
 
 /** Recover the current staff login email code for an address (V1.1

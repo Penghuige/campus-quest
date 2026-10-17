@@ -24,6 +24,7 @@ import { resendButtonLabel } from "../features/auth/errors";
 import {
   classifyVerifyResponse,
   describeEmailLoginError,
+  describeMobileStaffLoginError,
   lockedWaitMinutes,
   validateEmailCode,
 } from "../features/auth/staffEmailLoginView";
@@ -143,5 +144,36 @@ describe("classifyVerifyResponse (the T5 frozen two-shape contract)", () => {
     assert.throws(() => classifyVerifyResponse({}));
     assert.throws(() => classifyVerifyResponse(null));
     assert.throws(() => classifyVerifyResponse("tokens"));
+  });
+});
+
+// --- the mobile channel's mirror copy (login-iteration item ①) ------------
+//
+// The staff mobile-code flow shares the email family's verdict codes
+// with SMS-appropriate keys: MOBILE_CODE_INVALID is the uniform
+// wrong/expired/exhausted verdict, the lockout and cooldown branches
+// are the family's verbatim copy.
+describe("describeMobileStaffLoginError (item ①, code-branched copy)", () => {
+  test("MOBILE_CODE_INVALID is the uniform wrong/expired copy", () => {
+    const view = describeMobileStaffLoginError(
+      apiError("MOBILE_CODE_INVALID", "验证码错误或已过期", 400),
+      "登录失败，请稍后重试",
+    );
+    assert.equal(view.message, "验证码错误或已过期");
+    assert.equal(view.requestId, "req-1");
+  });
+
+  test("ACCOUNT_LOCKED names the minutes; RATE_LIMITED names the cooldown; network degrades", () => {
+    const locked = describeMobileStaffLoginError(
+      apiError("ACCOUNT_LOCKED", "尝试次数过多", 423, { retry_after_seconds: 125 }),
+      "fallback",
+    );
+    assert.equal(locked.message, "尝试次数过多，请 3 分钟后再试");
+    const rate = describeMobileStaffLoginError(
+      apiError("RATE_LIMITED", "发送过于频繁", 429),
+      "fallback",
+    );
+    assert.equal(rate.message, "发送过于频繁，请 1 分钟后再试");
+    assert.equal(describeMobileStaffLoginError(new TypeError("x"), "f").message, "网络异常，请检查连接后重试");
   });
 });

@@ -53,7 +53,11 @@ Buttons: 登录 · 注册 · 领取任务 · 开始上传 · 上传重试相关 
 完成 · 取消 · 创建草稿 · 保存修改 · 预览导入 · 重新上传文件 · 通过并发放奖励 ·
 通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 · 获取验证码 ·
 设置密码并继续 · 一键继续 (the login page's conditional fast-login banner,
-owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg)
+owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg) ·
+邮箱验证码登录 / 手机验证码登录 / 密码登录 (the staff login's three channel
+tabs — item ① disambiguated the email tab's bare 验证码登录 copy) ·
+发送验证码 / 绑定手机号 / 更换手机号 (the staff phone-binding flow,
+PhoneBindSection)
 
 Checkboxes: 记住此设备 30 天 — the email-code totp leg (V1.1 §2.2) and the
 staff password+TOTP form (owner feedback ② 2026-10-17: the remembered SECOND
@@ -91,15 +95,16 @@ Error/validation copy: 退回说明不能为空 · 判无效原因不能为空 �
 keyword 组合） · 第 2 行
 
 Status/confirmation copy: 已提交，等待老师审核 · 重试完成提交 · 任务已完成，
-积分已发放。 · 注册成功，请使用学号登录。 (transitional: only the legacy
-register redirect sends it; retires with the {user, tokens} envelope's
-backend half) · 继续以 … 登录 (the fast-login banner's masked-phone offer,
-owner feedback ③) · 该设备尚未记住或已过期，请使用下方短信验证码登录。 (the
-banner's stale-click honest fallback) · 恢复代码只显示这一次 · 已复制 ·
-动态口令绑定完成，员工账号已激活。 · 已成功导入 1 个任务单元 · 已发布 · 草稿 ·
-已批准 · 待发放 · 已发放 · 已停用 · 启用 · 正常 · 累计获得 · 可花费/当前可花费/
-消耗积分 · 匿名用户 · 暂无通知 · 暂无附近排名 · 判无效将取消该学生当前锁定的
-奖励档位与积分
+积分已发放。 · 注册成功，请使用学号登录。 (RETIRED with ④ going live — #100
+made the register envelope the login, nothing routes to /login after
+registration; removed in the post-merge cleanup) · 继续以 … 登录 (the
+fast-login banner's masked-phone offer, owner feedback ③) · 该设备尚未记住
+或已过期，请使用下方短信验证码登录。 (the banner's stale-click honest
+fallback) · 手机号已绑定。 (the staff phone-binding success note, item ①) ·
+恢复代码只显示这一次 · 已复制 · 动态口令绑定完成，员工账号已激活。 ·
+已成功导入 1 个任务单元 · 已发布 · 草稿 · 已批准 · 待发放 · 已发放 · 已停用 ·
+启用 · 正常 · 累计获得 · 可花费/当前可花费/消耗积分 · 匿名用户 · 暂无通知 ·
+暂无附近排名 · 判无效将取消该学生当前锁定的奖励档位与积分
 
 Access-denied copy (RBAC proofs): 教师工作台仅对教师与管理员开放 ·
 管理后台仅对管理员开放，当前账号是教师账号 · 任务不存在，或您不是该任务的
@@ -137,6 +142,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `[data-testid='invitation-link']` | admin one-time invitation link box | admin-invitations.spec pins the link text shape (origin + `/staff/invite/<urlsafe-token>`) and follows it to the accept page; CopyButton beside it is label-anchored (A-table) |
 | `.meta-deadline` · `.reward-window` | zero-weight mask anchors | visual-suite mask hooks (shot-surfaces): the task card's clock-derived deadline line and the reward card's window line; the classes carry no styles by design |
 | `.login-fast-hint` · `.login-fast-stale` | login fast-login banner (owner feedback ③) | the two-state pin's structural zero-element anchor (auth-extension-2: no cookie → count 0); the banner's own text/button assertions are the A-class pair |
+| `[data-testid='mobile-login-totp-leg']` | staff mobile-code login's ADMIN second leg (item ①) | mirrors `email-login-totp-leg`; the leg's presence/absence is the TEACHER-vs-ADMIN branch pin |
 
 ## Rules for the visual workstream
 

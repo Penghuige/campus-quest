@@ -15,7 +15,9 @@ interface LoginPageProps {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
-  const registered = params.registered === "1";
+  // The ?registered=1 note retired with ④ (the register envelope IS
+  // the login — nothing routes here after registration anymore); the
+  // password-reset note stays (the reset flow still lands here).
   const reset = params.reset === "1";
 
   return (
@@ -24,11 +26,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <h1 className="auth-title">登录 CampusQuest</h1>
         <p className="auth-subtitle">使用学号和密码登录</p>
       </div>
-      {registered ? (
-        <div className="alert alert-success" role="status">
-          <p>注册成功，请使用学号登录。</p>
-        </div>
-      ) : null}
       {reset ? (
         <div className="alert alert-success" role="status">
           <p>密码已重置，请使用新密码登录。</p>

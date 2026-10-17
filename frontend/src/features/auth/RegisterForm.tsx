@@ -9,9 +9,8 @@
  *   2. submit -> POST /auth/phone/challenges/{id}/verify (the SMS code
  *      becomes the single-use `phone_token`, the challenge is spent);
  *   3. POST /auth/register with that token -> the {user, tokens} envelope
- *      IS the login (owner feedback ④, 2026-10-17): straight to the
- *      student home, no login-page round trip; the transitional legacy
- *      body keeps the old /login?registered=1 redirect.
+ *      IS the login (owner feedback ④, live since #100): straight to the
+ *      student home, no login-page round trip.
  *
  * Proof lifecycle (identity/otp.py + service.py ordering, mirrored here):
  * - a wrong code does NOT consume the challenge — retry keeps the OTP;
@@ -189,23 +188,18 @@ export function RegisterForm() {
         // VALIDATION_ERROR (the backend has not consumed it yet).
         setOtp({ challengeId: currentOtp.challengeId, phoneToken });
       }
-      const outcome = await registerStudent({
+      // ④ (live since #100): the envelope IS the login — straight onto
+      // the student home (no login-page round trip into the 60s SMS
+      // cooldown).
+      await registerStudent({
         student_number: values.student_number,
         nickname: values.nickname,
         phone_token: phoneToken,
         password: values.password.length === 0 ? null : values.password,
       });
-      if (outcome.kind === "session") {
-        // The envelope's tokens ARE the login (owner feedback ④):
-        // land on the student home directly — no login-page round trip
-        // (which would immediately hit the 60s SMS cooldown).
-        refreshSession();
-        router.replace("/");
-        router.refresh();
-        return;
-      }
-      // The pre-envelope backend: the old registered-notice redirect.
-      router.replace("/login?registered=1");
+      refreshSession();
+      router.replace("/");
+      router.refresh();
     } catch (error) {
       if (!isApiError(error)) {
         setSummary({ summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null });

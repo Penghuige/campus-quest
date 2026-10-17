@@ -22,15 +22,30 @@ import { AuthField } from "./AuthField";
 import { DevicePanel } from "./DevicePanel";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
-import { updateNickname } from "./api";
-import { describeAuthError, NETWORK_ERROR_TEXT, type AuthErrorView } from "./errors";
+import {
+  confirmPhoneBind,
+  requestPhoneBind,
+  updateNickname,
+  type ChallengeView,
+} from "./api";
+import {
+  describeAuthError,
+  NETWORK_ERROR_TEXT,
+  OTP_CHALLENGE_RESET_CODES,
+  type AuthErrorView,
+} from "./errors";
 import { useSession } from "./session";
+import { SettingsSection } from "./AccountSettings";
+import { useCooldown } from "./useCooldown";
 import {
   countGraphemes,
   NICKNAME_MAX_GRAPHEME_CLUSTERS,
   validateNickname,
+  validateOtpCode,
+  validatePhone,
 } from "./validation";
 import { isApiError } from "@/lib/errors";
+import { Button } from "@/components/ui/button";
 import { BUSINESS_TIME_CONFIG } from "@/lib/time";
 
 /** Account status text — the admin surfaces' established mapping. */
@@ -89,8 +104,15 @@ export function StaffProfileView() {
             {formatRegistrationDate(me.created_at)}
           </dd>
         </div>
+        {/* Login-iteration item ①: the staff account's bound phone —
+            the fact row; binding/rebinding rides the section below. */}
+        <div className="fact-row">
+          <dt className="fact-label">手机号</dt>
+          <dd className="fact-value">{me.phone_e164 ?? "未绑定"}</dd>
+        </div>
       </dl>
       <NicknameEditRow me={me} onUpdated={refresh} />
+      <PhoneBindSection me={me} onUpdated={refresh} />
       <DevicePanel />
     </section>
   );
@@ -171,5 +193,190 @@ function NicknameEditRow({
       ) : null}
       <SubmitButton loading={submitting}>保存昵称</SubmitButton>
     </form>
+  );
+}
+
+/**
+ * The staff phone BINDING flow (login-iteration item ①): the two-step
+ * /me/phone/bind family — challenge the phone, confirm with its SMS
+ * code; first bind and rebind walk the SAME steps. No password
+ * re-auth (the staff session itself is the authority — the email
+ * binding's precedent; students keep the password-gated change
+ * family, their phone is the register-time identity). A phone owned
+ * by any other account answers 409 PHONE_ALREADY_BOUND — the shared
+ * copy family lands on the phone field.
+ */
+function PhoneBindSection({
+  me,
+  onUpdated,
+}: {
+  me: { phone_e164: string | null };
+  onUpdated: () => void;
+}) {
+  const [step, setStep] = useState<"request" | "confirm">("request");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [challenge, setChallenge] = useState<ChallengeView | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; code?: string }>({});
+  const [summary, setSummary] = useState<AuthErrorView | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const { remaining, start } = useCooldown();
+
+  /** Step 1: challenge the phone (also the resend path). */
+  async function sendChallenge(validate: boolean) {
+    setNote(null);
+    if (validate) {
+      const error = validatePhone(phone) ?? undefined;
+      setFieldErrors({ phone: error });
+      setSummary(null);
+      if (error !== undefined) {
+        return;
+      }
+    }
+    setRequesting(true);
+    try {
+      const next = await requestPhoneBind(phone.trim());
+      setChallenge(next);
+      setStep("confirm");
+      start(60);
+      setNote("验证码已发送到该手机号，请查收短信。");
+    } catch (cause) {
+      if (isApiError(cause) && cause.code === "OTP_RESEND_COOLDOWN") {
+        start(60);
+        setNote("发送过于频繁，请等待倒计时结束后重试。");
+        return;
+      }
+      const view = isApiError(cause)
+        ? describeAuthError(cause)
+        : { summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null };
+      setSummary(view);
+      setFieldErrors({
+        phone: (view.fieldErrors as Record<string, string | undefined>).phone,
+      });
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  /** Step 2: the SMS code completes the binding. */
+  async function onConfirm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const current = challenge;
+    if (current === null) {
+      return;
+    }
+    const error = validateOtpCode(code);
+    setFieldErrors(error === null ? {} : { code: error });
+    setSummary(null);
+    if (error !== null) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await confirmPhoneBind(current.challenge_id, code);
+      onUpdated();
+      setChallenge(null);
+      setStep("request");
+      setPhone("");
+      setCode("");
+      setNote(me.phone_e164 === null ? "手机号已绑定。" : "手机号已更换。");
+    } catch (cause) {
+      // A dead challenge sends the user back to step 1; a wrong code
+      // keeps it (the shared OTP semantics, identity/otp.py).
+      if (isApiError(cause) && OTP_CHALLENGE_RESET_CODES.has(cause.code)) {
+        setChallenge(null);
+        setStep("request");
+        setCode("");
+        setNote("验证码已失效，请重新获取。");
+        return;
+      }
+      const view = isApiError(cause)
+        ? describeAuthError(cause)
+        : { summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null };
+      setSummary(view);
+      setFieldErrors({
+        code: (view.fieldErrors as Record<string, string | undefined>).code,
+        phone: (view.fieldErrors as Record<string, string | undefined>).phone,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <SettingsSection
+      title="手机号"
+      hint="绑定后可使用手机验证码登录员工账号；无需验证密码，短信验证码即证明持有。"
+    >
+      <div className="panel form">
+        <p className="field-hint">当前手机号：{me.phone_e164 ?? "未绑定"}</p>
+        {step === "request" ? (
+          <form
+            className="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendChallenge(true);
+            }}
+            noValidate
+          >
+            <FormErrorSummary view={summary} />
+            <AuthField
+              name="staff-bind-phone"
+              label={me.phone_e164 === null ? "绑定手机号" : "新手机号"}
+              hint="验证码将发送到该手机号；一个手机号只能绑定一个账号。"
+              error={fieldErrors.phone}
+              inputProps={{
+                value: phone,
+                onChange: (event) => setPhone(event.target.value),
+                type: "tel",
+                inputMode: "tel",
+                autoComplete: "tel",
+                disabled: requesting,
+              }}
+            />
+            <SubmitButton loading={requesting}>发送验证码</SubmitButton>
+          </form>
+        ) : (
+          <form className="form" onSubmit={onConfirm} noValidate>
+            <FormErrorSummary view={summary} />
+            <AuthField
+              name="staff-bind-code"
+              label="短信验证码"
+              hint="验证码已发送到上方手机号（5 分钟内有效）。"
+              error={fieldErrors.code}
+              inputProps={{
+                value: code,
+                onChange: (event) => setCode(event.target.value),
+                type: "text",
+                inputMode: "numeric",
+                autoComplete: "one-time-code",
+                placeholder: "6 位数字",
+                maxLength: 6,
+                disabled: submitting,
+              }}
+            />
+            <SubmitButton loading={submitting}>
+              {me.phone_e164 === null ? "绑定手机号" : "更换手机号"}
+            </SubmitButton>
+            <p className="field-hint">
+              <Button
+                variant="secondary"
+                onClick={() => void sendChallenge(false)}
+                disabled={remaining > 0 || requesting}
+              >
+                {remaining > 0 ? `重新发送（${remaining} 秒）` : "重新发送验证码"}
+              </Button>
+            </p>
+          </form>
+        )}
+        {note !== null ? (
+          <p className="alert alert-success" role="status">
+            {note}
+          </p>
+        ) : null}
+      </div>
+    </SettingsSection>
   );
 }
