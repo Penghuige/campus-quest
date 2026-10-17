@@ -879,9 +879,15 @@ async def _main(argv: list[str]) -> Any:
     if action == "otp-code":
         from tests.e2e.otp_probe import recover_otp_code
 
+        # The purpose rides argv[2] when a flow challenges the same
+        # phone under a different OTP purpose (login-iteration item ①:
+        # PHONE_BIND); REGISTER stays the default the register spec
+        # family rides.
         broker = aioredis.from_url(get_settings().redis_url, decode_responses=True)
         try:
-            challenge_id, code = await recover_otp_code(broker, argv[1])
+            challenge_id, code = await recover_otp_code(
+                broker, argv[1], purpose=(argv[2] if len(argv) > 2 else "REGISTER")
+            )
             return {"challenge_id": str(challenge_id), "code": code}
         finally:
             await broker.aclose()
