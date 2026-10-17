@@ -53,7 +53,11 @@ Buttons: 登录 · 注册 · 领取任务 · 开始上传 · 上传重试相关 
 完成 · 取消 · 创建草稿 · 保存修改 · 预览导入 · 重新上传文件 · 通过并发放奖励 ·
 通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 · 获取验证码 ·
 设置密码并继续 · 一键继续 (the login page's conditional fast-login banner,
-owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg)
+owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg) ·
+邮箱验证码登录 / 手机验证码登录 / 密码登录 (the staff login's three channel
+tabs — item ① disambiguated the email tab's bare 验证码登录 copy) ·
+发送验证码 / 绑定手机号 / 更换手机号 (the staff phone-binding flow,
+PhoneBindSection)
 
 Checkboxes: 记住此设备 30 天 — the email-code totp leg (V1.1 §2.2) and the
 staff password+TOTP form (owner feedback ② 2026-10-17: the remembered SECOND
@@ -137,6 +141,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `[data-testid='invitation-link']` | admin one-time invitation link box | admin-invitations.spec pins the link text shape (origin + `/staff/invite/<urlsafe-token>`) and follows it to the accept page; CopyButton beside it is label-anchored (A-table) |
 | `.meta-deadline` · `.reward-window` | zero-weight mask anchors | visual-suite mask hooks (shot-surfaces): the task card's clock-derived deadline line and the reward card's window line; the classes carry no styles by design |
 | `.login-fast-hint` · `.login-fast-stale` | login fast-login banner (owner feedback ③) | the two-state pin's structural zero-element anchor (auth-extension-2: no cookie → count 0); the banner's own text/button assertions are the A-class pair |
+| `[data-testid='mobile-login-totp-leg']` | staff mobile-code login's ADMIN second leg (item ①) | mirrors `email-login-totp-leg`; the leg's presence/absence is the TEACHER-vs-ADMIN branch pin |
 
 ## Rules for the visual workstream
 
