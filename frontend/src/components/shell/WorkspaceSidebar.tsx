@@ -62,9 +62,15 @@ export interface SideNavGroup {
   items: readonly SideNavItem[];
 }
 
-/** Shared prefix-active rule ("/" is exact so it cannot win subroutes). */
+/**
+ * Shared prefix-active rule. WORKSPACE ROOTS ("/" and Wave 2a's "/admin"
+ * dashboard) match EXACTLY so they cannot win every subroute — a plain
+ * startsWith would hold the root item active on all child pages.
+ */
 export function navItemActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/" || href === "/admin"
+    ? pathname === href
+    : pathname.startsWith(href);
 }
 
 /** Keyboard step for the resizer (a deliberate nudge, not a pixel). */
