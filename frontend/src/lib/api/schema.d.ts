@@ -137,11 +137,35 @@ export interface paths {
         put?: never;
         /**
          * Verify Mobile Code
-         * @description Open a student session with the SMS code — or, with a valid
-         *     remembered-device cookie and NO code, with the cookie itself (it
-         *     re-issues a fresh 30-day value; the #87 craft, student edition).
+         * @description Open a student session with the SMS code — or, with a valid code
+         *     on an UNREGISTERED phone, answer the entry shape (the queue-jump
+         *     batch): {status:"unregistered", register_token} opens the register
+         *     door for 5 minutes. With a valid remembered-device cookie and NO
+         *     code, the cookie itself opens the session (#87 craft).
          */
         post: operations["verify_mobile_code_api_v1_auth_mobile_code_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mobile-code/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register By Mobile Code
+         * @description Trade the entry proof for a PENDING_APPROVAL account with the
+         *     phone bound — and land LOGGED IN (the register-ends-logged-in
+         *     semantics, the {user, tokens} envelope the classic door answers).
+         */
+        post: operations["register_by_mobile_code_api_v1_auth_mobile_code_register_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3478,6 +3502,32 @@ export interface components {
             created_at: string;
         };
         /**
+         * MobileCodeEntryResponse
+         * @description The verify leg's entry shape: the phone is code-checked but
+         *     owns no account — the register door opens for 5 minutes.
+         */
+        MobileCodeEntryResponse: {
+            /** Status */
+            status: string;
+            /** Register Token */
+            register_token: string;
+        };
+        /**
+         * MobileCodeRegisterRequest
+         * @description Trade the entry proof (a code-checked, accountless phone's
+         *     5-minute single-use token) for a PENDING_APPROVAL account.
+         */
+        MobileCodeRegisterRequest: {
+            /** Register Token */
+            register_token: string;
+            /** Student Number */
+            student_number: string;
+            /** Nickname */
+            nickname?: string | null;
+            /** Password */
+            password?: string | null;
+        };
+        /**
          * MobileCodeRequestRequest
          * @description Ask for a 6-digit SMS login code (V1.1 2026-10-16 §3) — always
          *     202, staff/role existence is never an answer here.
@@ -5740,7 +5790,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
+                    "application/json": components["schemas"]["TokenPairResponse"] | components["schemas"]["MobileCodeEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_by_mobile_code_api_v1_auth_mobile_code_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileCodeRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterResponse"];
                 };
             };
             /** @description Validation Error */

@@ -191,7 +191,7 @@
     "/api/v1/auth/mobile-code/verify": {
       "post": {
         "summary": "Verify Mobile Code",
-        "description": "Open a student session with the SMS code — or, with a valid\nremembered-device cookie and NO code, with the cookie itself (it\nre-issues a fresh 30-day value; the #87 craft, student edition).",
+        "description": "Open a student session with the SMS code — or, with a valid code\non an UNREGISTERED phone, answer the entry shape (the queue-jump\nbatch): {status:\"unregistered\", register_token} opens the register\ndoor for 5 minutes. With a valid remembered-device cookie and NO\ncode, the cookie itself opens the session (#87 craft).",
         "operationId": "verify_mobile_code_api_v1_auth_mobile_code_verify_post",
         "requestBody": {
           "content": {
@@ -209,7 +209,54 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TokenPairResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MobileCodeEntryResponse"
+                    }
+                  ],
+                  "title": "Response Verify Mobile Code Api V1 Auth Mobile Code Verify Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mobile-code/register": {
+      "post": {
+        "summary": "Register By Mobile Code",
+        "description": "Trade the entry proof for a PENDING_APPROVAL account with the\nphone bound — and land LOGGED IN (the register-ends-logged-in\nsemantics, the {user, tokens} envelope the classic door answers).",
+        "operationId": "register_by_mobile_code_api_v1_auth_mobile_code_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileCodeRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
                 }
               }
             }
@@ -7861,6 +7908,66 @@
         ],
         "title": "MePublic",
         "description": "The owner's own account page (spec §40): contacts included.\n\nPhone and email are the owner's own data (they typed them); the DTO\nstill enumerates fields explicitly, so the Argon2id verifier and any\nother internal column stay unrepresentable."
+      },
+      "MobileCodeEntryResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "register_token": {
+            "type": "string",
+            "title": "Register Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "register_token"
+        ],
+        "title": "MobileCodeEntryResponse",
+        "description": "The verify leg's entry shape: the phone is code-checked but\nowns no account — the register door opens for 5 minutes."
+      },
+      "MobileCodeRegisterRequest": {
+        "properties": {
+          "register_token": {
+            "type": "string",
+            "title": "Register Token"
+          },
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "register_token",
+          "student_number"
+        ],
+        "title": "MobileCodeRegisterRequest",
+        "description": "Trade the entry proof (a code-checked, accountless phone's\n5-minute single-use token) for a PENDING_APPROVAL account."
       },
       "MobileCodeRequestRequest": {
         "properties": {

@@ -194,7 +194,11 @@ async def test_request_is_constant_202_and_uniform_429(
 ) -> None:
     await _seed_student(db_session)
 
-    assert (await _request(client, "+8613800099999")).status_code == 202  # unknown
+    requested = await _request(client, "+8613800099999")  # unknown phone
+    assert requested.status_code == 202, requested.text
+    # The entry channel: a real code for the unknown phone (count only
+    # THIS phone's sends — the shared fake carries the file's history).
+    assert [m for m in api_sms.messages if m.to == "+8613800099999"]
     repeat_unknown = await _request(client, "+8613800099999")
     assert repeat_unknown.status_code == 429
     assert _envelope(repeat_unknown)["code"] == "RATE_LIMITED"
@@ -203,7 +207,8 @@ async def test_request_is_constant_202_and_uniform_429(
     repeat = await _request(client, _PHONE)
     assert repeat.status_code == 429
     assert _envelope(repeat)["code"] == "RATE_LIMITED"
-    assert len(api_sms.messages) == 1  # only the real student was SMSed
+    # (Both phones were SMSed — the entry contract: every well-formed
+    # phone gets a real code.)
 
 
 async def test_wrong_code_five_times_then_lockout_envelope(
@@ -281,11 +286,16 @@ async def test_non_student_or_inactive_phone_is_noop(
     db_session.add_all([teacher, banned])
     await db_session.flush()
 
+    # The entry-channel change (the queue-jump batch): EVERY
+    # well-formed phone now receives a real code — a staff-bound or
+    # banned phone is no longer silently skipped on REQUEST (the
+    # account check moved to VERIFY: such phones get an entry token,
+    # and the register door refuses a taken phone). The 202s hold.
     for phone in ("+8613800177777", "+8613800177776"):
         response = await _request(client, phone)
         assert response.status_code == 202, response.text
 
-    assert api_sms.messages == []
+    assert len(api_sms.messages) == 2
 
 
 async def test_sms_failure_cleans_up_and_answers_502(
