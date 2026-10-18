@@ -213,6 +213,20 @@ class PasswordForgotRequest(BaseModel):
     username: str
 
 
+class AdminPasswordResetLinkResponse(BaseModel):
+    """The one-time reset link, shown exactly once (Wave 2a §3.2)."""
+
+    reset_token: str
+
+
+class PasswordResetTokenSpendRequest(BaseModel):
+    """Spend the admin-issued reset link: the token IS the
+    authorization (the endpoint is public)."""
+
+    reset_token: str
+    new_password: str
+
+
 class PasswordResetRequest(BaseModel):
     """Confirm a password reset with the OTP code and a new password."""
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -53,6 +54,9 @@ from app.modules.identity.providers import (
     get_phone_region,
     get_profile_service,
 )
+from app.modules.identity.providers import (
+    get_identity_redis as get_identity_redis_placeholder,
+)
 from app.modules.identity.routing_common import (
     _client_ip,
     _enforce_rate_limit,
@@ -69,6 +73,7 @@ from app.modules.identity.schemas import (
     MobileCodeVerifyRequest,
     PasswordForgotRequest,
     PasswordResetRequest,
+    PasswordResetTokenSpendRequest,
     PhoneChallengeRequest,
     PhoneChallengeVerifyRequest,
     PhoneTokenResponse,
@@ -363,6 +368,31 @@ async def request_password_reset(
     )
     return ChallengeResponse(
         challenge_id=challenge.challenge_id, expires_at=challenge.expires_at
+    )
+
+
+@router.post("/auth/password/reset-token", status_code=204)
+async def spend_admin_reset_token(
+    body: PasswordResetTokenSpendRequest,
+    sessions: SessionsDep,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    redis: Annotated[aioredis.Redis, Depends(get_identity_redis_placeholder)],
+    db: DbSession,
+) -> None:
+    """Spend the admin-issued one-time reset link (Wave 2a §3.2): the
+    token IS the authorization — this endpoint is public. Sets the new
+    password, revokes every live session, writes CONSUMED; the
+    credential dies with the GETDEL (a replay answers the uniform
+    invalid)."""
+    from app.modules.identity import admin_power_service
+
+    await admin_power_service.consume_password_reset(
+        db,
+        redis=redis,
+        reset_token=body.reset_token,
+        new_password=body.new_password,
+        clock=clock,
+        sessions=sessions,
     )
 
 

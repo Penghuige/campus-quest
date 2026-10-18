@@ -57,6 +57,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -85,11 +86,15 @@ from app.modules.identity.models import User
 from app.modules.identity.providers import (
     DbSession,
     LimiterDep,
+    get_identity_redis,
     get_session_service,
     get_staff_service,
 )
 from app.modules.identity.routing_common import _enforce_rate_limit
-from app.modules.identity.schemas import StaffInvitationCreateRequest
+from app.modules.identity.schemas import (
+    AdminPasswordResetLinkResponse,
+    StaffInvitationCreateRequest,
+)
 from app.modules.identity.session_service import SessionService
 from app.modules.identity.staff_service import StaffService
 from app.modules.system.service import (
@@ -463,6 +468,33 @@ async def kick_user(
     return AdminKickResponse(
         revoked_sessions=revoked_sessions, revoked_devices=revoked_devices
     )
+
+
+@router.post(
+    "/admin/users/{user_id}/password-reset",
+    response_model=AdminPasswordResetLinkResponse,
+)
+async def issue_password_reset_link(
+    user_id: UUID,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+    redis: Annotated[aioredis.Redis, Depends(get_identity_redis)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminPasswordResetLinkResponse:
+    """The §3.2 one-time reset link for ANOTHER staff account: the
+    urlsafe32 plaintext shows exactly once (only its SHA-256 is kept,
+    48h TTL), ISSUED rides the same commit. Self-service and student
+    targets are refused — students recover through their phone OTP."""
+    token = await admin_power.issue_password_reset(
+        db,
+        actor,
+        user_id,
+        redis=redis,
+        clock=clock,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminPasswordResetLinkResponse(reset_token=token)
 
 
 @router.post("/admin/users/{user_id}/suspend", response_model=AccountStatusResponse)

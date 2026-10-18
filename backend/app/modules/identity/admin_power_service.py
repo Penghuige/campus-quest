@@ -19,26 +19,40 @@ live credential (the #87 module's design).
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.core.error_codes import ErrorCode
+from app.core.errors import BusinessError
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity import device_credentials
 from app.modules.identity.account_admin_service import (
     AccountAdminTargetNotFoundError as AdminTargetNotFoundError,
 )
+from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import RememberedDevice, User, UserSession
 from app.modules.identity.session_service import SessionService
 from app.modules.points.models import PointWallet
 from app.modules.submissions.models import Submission
 
+if TYPE_CHECKING:
+    import redis.asyncio as aioredis
+
 logger = logging.getLogger(__name__)
+
+AUDIT_ADMIN_PASSWORD_RESET_ISSUED = "ADMIN_PASSWORD_RESET_ISSUED"
+AUDIT_ADMIN_PASSWORD_RESET_CONSUMED = "ADMIN_PASSWORD_RESET_CONSUMED"
+#: The reset link's storage: SHA-256 of the urlsafe32 plaintext -> user
+#: id, TTL 48h (Redis expiry IS the link's lifetime — no sweep needed).
+_RESET_KEY_PREFIX = "adminpwreset:"
+RESET_TOKEN_TTL_SECONDS = 48 * 3600
+_RESET_TOKEN_INVALID_MESSAGE = "重置链接无效或已过期"
 
 AUDIT_ADMIN_SESSIONS_REVOKED = "ADMIN_SESSIONS_REVOKED"
 _RECENT_SUBMISSIONS_LIMIT = 10
@@ -171,3 +185,114 @@ async def kick(
         actor.user_id,
     )
     return revoked_sessions, revoked_devices
+
+
+def _hash_reset_token(token: str) -> str:
+    from hashlib import sha256
+
+    return sha256(token.encode()).hexdigest()
+
+
+async def issue_password_reset(
+    db: AsyncSession,
+    actor: Actor,
+    user_id: UUID,
+    *,
+    redis: aioredis.Redis,
+    clock: Clock,
+    audit: AuditLogWriter | None = None,
+    audit_context: AuditContext | None = None,
+) -> str:
+    """Mint the §3.2 one-time reset link for ANOTHER staff account.
+
+    The urlsafe32 plaintext is returned exactly once (the console shows
+    it; only its SHA-256 is stored, with a 48h TTL); ISSUED is audited
+    with the target as the row's target_id and no credential material
+    in the snapshot (G11). Self-service is refused — an admin resets
+    others, never their own authentication (the separation is the
+    control)."""
+    import secrets as _secrets
+
+    if user_id == actor.user_id:
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            "不能为自己签发密码重置链接",
+            status_code=403,
+        )
+    user = await db.get(User, user_id)
+    if user is None:
+        raise AdminTargetNotFoundError(user_id)
+    if user.role == Role.STUDENT.value:
+        # Students recover through their bound-phone OTP flow (§5.6).
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            "学生账号使用手机验证码重置流程",
+            status_code=403,
+        )
+
+    token = _secrets.token_urlsafe(32)
+    await redis.set(
+        _RESET_KEY_PREFIX + _hash_reset_token(token),
+        str(user_id),
+        ex=RESET_TOKEN_TTL_SECONDS,
+    )
+    writer = audit if audit is not None else AuditLogWriter()
+    await writer.append(
+        db,
+        actor=actor,
+        action=AUDIT_ADMIN_PASSWORD_RESET_ISSUED,
+        target_type="user",
+        target_id=str(user_id),
+        after_snapshot={"ttl_hours": 48},
+        ip_address=audit_context.ip_address if audit_context else None,
+        request_id=audit_context.request_id if audit_context else None,
+    )
+    await db.commit()
+    logger.info("admin reset link issued target=%s by=%s", user_id, actor.user_id)
+    return token
+
+
+async def consume_password_reset(
+    db: AsyncSession,
+    *,
+    redis: aioredis.Redis,
+    reset_token: str,
+    new_password: str,
+    clock: Clock,
+    sessions: SessionService,
+    audit: AuditLogWriter | None = None,
+) -> None:
+    """Spend the §3.2 link: set the new password, revoke every live
+    session, write CONSUMED. The credential is single-use (GETDEL); an
+    unknown/expired/spent token answers the uniform invalid — the spend
+    endpoint is public, the token IS the authorization."""
+    from app.core.security import hash_password, validate_password_length
+
+    user_id_raw = await redis.getdel(_RESET_KEY_PREFIX + _hash_reset_token(reset_token))
+    if not isinstance(user_id_raw, str):
+        raise BusinessError(
+            ErrorCode.OTP_TOKEN_INVALID,
+            _RESET_TOKEN_INVALID_MESSAGE,
+            status_code=400,
+        )
+    user = await db.get(User, UUID(user_id_raw))
+    if user is None or user.status != UserStatus.ACTIVE.value:
+        raise BusinessError(
+            ErrorCode.OTP_TOKEN_INVALID,
+            _RESET_TOKEN_INVALID_MESSAGE,
+            status_code=400,
+        )
+    validate_password_length(new_password)
+    user.password_hash = hash_password(new_password)
+    await sessions.revoke_all(db, user.id)
+    writer = audit if audit is not None else AuditLogWriter()
+    await writer.append(
+        db,
+        actor=Actor(user_id=user.id, role=Role(user.role)),
+        action=AUDIT_ADMIN_PASSWORD_RESET_CONSUMED,
+        target_type="user",
+        target_id=str(user.id),
+        after_snapshot={"sessions_revoked": True},
+    )
+    await db.commit()
+    logger.info("admin reset link consumed user_id=%s", user.id)
