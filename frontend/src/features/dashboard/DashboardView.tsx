@@ -514,7 +514,7 @@ function NotificationsPreviewSection() {
       ) : null}
       {state.status === "ready" ? (
         state.data.items.length === 0 ? (
-          <EmptyState title="暂无通知" hint="任务与审核的进展会出现在这里" />
+          <EmptyState title="暂无通知" hint="有新动态会在这里提醒" />
         ) : (
           <ul className="dash-notes">
             {state.data.items.map((item) => (

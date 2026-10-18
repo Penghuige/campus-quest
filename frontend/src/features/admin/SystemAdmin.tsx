@@ -922,7 +922,7 @@ function FailuresSection() {
           retryLabel="重新加载"
         />
       ) : items.length === 0 ? (
-        <EmptyState title="没有失败的投递" hint="投递失败的通知会出现在这里供排查" />
+        <EmptyState title="没有失败的投递" hint="失败投递会集中在这里供排查" />
       ) : (
         <>
           <div className="table-scroll">

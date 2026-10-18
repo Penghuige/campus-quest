@@ -259,7 +259,7 @@ export function NotificationInbox({ filter }: NotificationInboxProps) {
             ) : (
               <EmptyState
                 title="暂无通知"
-                hint="任务审核结果、截止提醒和兑换动态会出现在这里"
+                hint="审核结果与提醒都从这里查看"
               />
             )
           ) : (

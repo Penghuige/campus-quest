@@ -60,10 +60,10 @@ export const AUTH_ERROR_TEXT: Partial<Record<string, string>> = {
   PHONE_ALREADY_BOUND: "该手机号已绑定其他账号",
   OTP_CODE_INVALID: "验证码不正确",
   OTP_TOO_MANY_ATTEMPTS: "验证码尝试次数过多，请重新获取",
-  OTP_CHALLENGE_EXPIRED: "验证码已过期，请重新获取",
+  OTP_CHALLENGE_EXPIRED: "验证码已失效，请重新获取",
   OTP_CHALLENGE_CONSUMED: "验证码已使用，请重新获取",
   OTP_CHALLENGE_INVALID: "验证码已失效，请重新获取",
-  OTP_TOKEN_INVALID: "手机验证已失效，请重新获取验证码",
+  OTP_TOKEN_INVALID: "验证码已失效，请重新获取",
   OTP_RESEND_COOLDOWN: "验证码发送过于频繁，请稍后再试",
   // Account-settings codes (T5): email binding + the re-auth failures
   // the profile endpoints answer (spec §5.5/§5.6).

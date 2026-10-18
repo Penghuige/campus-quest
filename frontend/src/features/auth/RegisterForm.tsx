@@ -64,7 +64,7 @@ type RegisterFields = Extract<
   "student_number" | "nickname" | "phone" | "code" | "password"
 >;
 
-const OTP_RESET_NOTE = "验证码已失效，请重新获取后再提交。";
+const OTP_RESET_NOTE = "验证码已失效，请重新获取";
 
 /** The live OTP material: an open challenge, plus its minted proof if any. */
 interface OtpState {

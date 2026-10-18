@@ -173,7 +173,7 @@ function RedeemDialogBody({
                 「{reward.name}」兑换申请已提交，{redemption.points} 积分已冻结。
               </p>
               <p className="field-hint">
-                老师审核通过后即可领取；进度以「最近兑换」和积分余额为准。
+                老师审核通过后即可领取；进度看「最近兑换」和积分余额。
               </p>
             </div>
             {status !== null ? (

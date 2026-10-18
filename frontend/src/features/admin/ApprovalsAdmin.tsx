@@ -170,7 +170,7 @@ export function ApprovalsAdmin() {
       ) : phase === "error" ? (
         <SectionError error={null} onRetry={reload} retryLabel="重新加载" />
       ) : rows.length === 0 ? (
-        <EmptyState title="没有待审核的学生" hint="新注册的学生会出现在这里" />
+        <EmptyState title="没有待审核的学生" hint="有新注册时从这里审核" />
       ) : (
         <div className="table-scroll">
           <table className="staff-table" aria-label="待审核学生列表">

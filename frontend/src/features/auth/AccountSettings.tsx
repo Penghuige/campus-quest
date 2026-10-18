@@ -314,7 +314,7 @@ function PhoneChangeForm({
       // A dead challenge sends the user back to step 1; a wrong code
       // keeps it (backend OTP semantics, identity/otp.py).
       if (isApiError(cause) && OTP_CHALLENGE_RESET_CODES.has(cause.code)) {
-        backToRequest("验证码已失效，请重新获取。");
+        backToRequest("验证码已失效，请重新获取");
         return;
       }
       const view = toErrorView(cause, "password");
@@ -354,7 +354,7 @@ function PhoneChangeForm({
             <AuthField
               name="new_phone"
               label="新手机号"
-              hint="验证码将发送到新手机号；更换完成后以新手机号为准。"
+              hint="验证码将发送到新手机号；更换后登录即用新号。"
               error={fieldErrors.new_phone}
               inputProps={{
                 value: newPhone,
