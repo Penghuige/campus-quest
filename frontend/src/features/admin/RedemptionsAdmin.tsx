@@ -45,6 +45,7 @@ import {
   redemptionStatusView,
 } from "./adminView";
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 const PAGE_LIMIT = 20;
 
@@ -363,7 +364,7 @@ function ApproveDialog({
   }
 
   const errorView =
-    error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <Dialog
@@ -451,7 +452,7 @@ function RejectDialog({
   }
 
   const errorView =
-    error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <Dialog
@@ -553,7 +554,7 @@ function FulfillDialog({
   }
 
   const errorView =
-    error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <Dialog

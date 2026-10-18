@@ -17,7 +17,7 @@
  */
 import { formatFileSize } from "@/features/submissions/api";
 import type { AuthErrorView } from "@/features/auth/errors";
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 import type {
   ImportPreviewDto,
@@ -693,7 +693,7 @@ export function describeTaskMutationError(
   fallback: string,
 ): AuthErrorView {
   if (!isApiError(error)) {
-    return { summary: "网络异常，请检查连接后重试", fieldErrors: {}, requestId: null };
+    return { summary: COPY_NETWORK_FAIL, fieldErrors: {}, requestId: null };
   }
   return {
     summary: error.message || fallback,
@@ -710,7 +710,7 @@ export function describeEditError(error: unknown): AuthErrorView {
       isApiError(error) && error.requestId !== null ? error.requestId : null;
     return { summary: frozen, fieldErrors: {}, requestId };
   }
-  return describeTaskMutationError(error, "保存失败，请稍后重试");
+  return describeTaskMutationError(error, COPY_GENERIC_FAIL);
 }
 
 // --- assignment import preview (spec §7.1 steps 1-6) ----------------------------------

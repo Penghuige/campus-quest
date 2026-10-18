@@ -229,7 +229,7 @@ describe("typed conflict copy (branch on error.code, never message text)", () =>
       requestId: "req-1",
     });
     const view = describeRedeemError(error);
-    assert.equal(view.message, "兑换失败，请稍后重试");
+    assert.equal(view.message, "操作失败，请稍后重试");
     assert.equal(view.requestId, "req-1");
   });
 

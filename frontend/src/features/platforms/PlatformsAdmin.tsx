@@ -38,6 +38,7 @@ import {
   type AdminPlatformDto,
 } from "@/features/platforms/platformView";
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 export function PlatformsAdmin() {
   const [rows, setRows] = useState<AdminPlatformDto[]>([]);
@@ -87,7 +88,7 @@ export function PlatformsAdmin() {
 
   const errorView =
     actionError !== null
-      ? describePlatformAdminError(actionError, "操作失败，请稍后重试")
+      ? describePlatformAdminError(actionError, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -237,7 +238,7 @@ function CreatePlatformDialog({
       });
       onDone(verdict);
     } catch (cause) {
-      const view = describePlatformAdminError(cause, "创建失败，请稍后重试");
+      const view = describePlatformAdminError(cause, COPY_GENERIC_FAIL);
       setSummary({ message: view.message, requestId: view.requestId });
     } finally {
       setBusy(false);
@@ -366,7 +367,7 @@ function EditPlatformDialog({
       });
       onDone(verdict);
     } catch (cause) {
-      const view = describePlatformAdminError(cause, "保存失败，请稍后重试");
+      const view = describePlatformAdminError(cause, COPY_GENERIC_FAIL);
       setSummary({ message: view.message, requestId: view.requestId });
     } finally {
       setBusy(false);

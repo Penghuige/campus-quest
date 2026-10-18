@@ -34,6 +34,7 @@ import {
   validateRejectReason,
 } from "./approvalsView";
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 interface PendingRow {
   id: string;
@@ -138,7 +139,7 @@ export function ApprovalsAdmin() {
 
   const errorView =
     actionError !== null
-      ? describeApprovalError(actionError, "操作失败，请稍后重试")
+      ? describeApprovalError(actionError, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -275,7 +276,7 @@ function RejectDialog({
       await rejectStudent(row.id, reason.trim().length > 0 ? reason.trim() : null);
       onDone();
     } catch (cause) {
-      const view = describeApprovalError(cause, "操作失败，请稍后重试");
+      const view = describeApprovalError(cause, COPY_GENERIC_FAIL);
       setSummary({ message: view.message, requestId: view.requestId });
     } finally {
       setBusy(false);

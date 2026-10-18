@@ -195,7 +195,7 @@ export function toApiError(
   }
   return new ApiError({
     code: "HTTP_ERROR",
-    message: `请求失败（HTTP ${status}）`,
+    message: COPY_SERVICE_FAIL,
     status,
     requestId: requestIdHeader,
   });
@@ -236,7 +236,7 @@ export const COPY_GENERIC_FAIL = "操作失败，请稍后重试";
 
 export const SECTION_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 const SECTION_SYSTEM_ERROR_TEXT = COPY_SERVICE_FAIL;
-const SECTION_GENERIC_ERROR_TEXT = "加载失败，请稍后重试";
+const SECTION_GENERIC_ERROR_TEXT = COPY_GENERIC_FAIL;
 
 /** Derive a section error view. Pure: same failure in, same view out. */
 export function describeSectionError(error: unknown): SectionErrorView {

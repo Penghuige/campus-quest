@@ -86,6 +86,7 @@ import {
   TEMPLATE_EVENT_TYPE_OPTIONS,
 } from "./adminView";
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 export function SystemAdmin() {
   return (
@@ -313,7 +314,7 @@ function SettingKeyEditor({
 
   const next = draft();
   const errorView =
-    error !== null ? describeAdminMutationError(error, "保存失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <div className="field">
@@ -574,7 +575,7 @@ function TemplatesSection() {
 
   const createErrorView =
     createError !== null
-      ? describeAdminMutationError(createError, "创建失败，请稍后重试")
+      ? describeAdminMutationError(createError, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -754,7 +755,7 @@ function TemplateByIdPanel({
   }
 
   const errorView =
-    error !== null ? describeAdminMutationError(error, "操作失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <div className="panel moderation-panel">
@@ -1051,7 +1052,7 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
   }
 
   const errorView =
-    error !== null ? describeAdminMutationError(error, "修复失败，请稍后重试") : null;
+    error !== null ? describeAdminMutationError(error, COPY_GENERIC_FAIL) : null;
 
   return (
     <form className="panel moderation-panel" onSubmit={onSubmit} noValidate>

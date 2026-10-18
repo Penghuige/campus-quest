@@ -12,7 +12,7 @@
  * That is feature detection on the live contract, not a stub.
  */
 
-import { ApiError } from "@/lib/errors";
+import { ApiError, COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL } from "@/lib/errors";
 
 /** D2: hard upload ceiling. */
 export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
@@ -107,5 +107,5 @@ export function avatarErrorText(cause: unknown): string {
     }
     return cause.message;
   }
-  return "头像操作失败，请稍后重试。";
+  return COPY_NETWORK_FAIL;
 }

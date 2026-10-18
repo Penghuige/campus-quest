@@ -32,6 +32,7 @@ import { apiBasePath } from "@/lib/apiBase";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 
 import { createStaffInvitation } from "./adminApi";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 import {
   buildInvitationLink,
   describeInvitationError,
@@ -142,7 +143,7 @@ export function StaffInvitations() {
 
   const errorView =
     error !== null
-      ? describeInvitationError(error, "创建失败，请稍后重试")
+      ? describeInvitationError(error, COPY_GENERIC_FAIL)
       : null;
 
   return (

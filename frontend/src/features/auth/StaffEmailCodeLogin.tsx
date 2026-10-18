@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
 import { FormErrorSummary } from "./FormErrorSummary";
@@ -94,7 +94,7 @@ export function StaffEmailCodeLogin() {
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setSentNote(true);
     } catch (cause) {
-      const view = describeEmailLoginError(cause, "验证码发送失败，请稍后重试");
+      const view = describeEmailLoginError(cause, COPY_GENERIC_FAIL);
       setSummary({ summary: view.message, fieldErrors: {}, requestId: view.requestId });
     } finally {
       setSending(false);
@@ -124,7 +124,7 @@ export function StaffEmailCodeLogin() {
       }
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setVerifying(false);
     }
@@ -146,7 +146,7 @@ export function StaffEmailCodeLogin() {
       await emailLoginTotp(pendingToken, totpCode.trim(), rememberDevice);
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setVerifying(false);
     }

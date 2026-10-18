@@ -23,6 +23,7 @@ import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 
 import { Button } from "@/components/ui/button";
 import { listMyDevices, revokeMyDevices, type MyDeviceDto } from "./api";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 function deviceTime(value: string | null): string {
   return value === null ? "—" : formatDeadlineDateTime(parseServerInstant(value));
@@ -144,7 +145,7 @@ export function DevicePanel() {
         <div className="alert alert-error" role="alert">
           <p>
             <span className="alert-marker" aria-hidden="true">!</span>
-            操作失败，请稍后重试
+            {COPY_GENERIC_FAIL}
           </p>
         </div>
       ) : null}

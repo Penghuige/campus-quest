@@ -6,7 +6,7 @@
  * (the claim itself is only ever moved by server responses — a failed
  * attempt never mutates the visible claim state; patterns §7).
  */
-import { isApiError, isKnownErrorCode, isSystemErrorCode } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError, isKnownErrorCode, isSystemErrorCode } from "@/lib/errors";
 import { PinnedLengthMismatchError } from "./api";
 
 /** Presentation view of one failed submission/abandon attempt. */
@@ -32,9 +32,9 @@ export const SUBMISSION_CONFLICT_TEXT: Record<string, string> = {
   PERMISSION_DENIED: "仅任务所有者可以执行这个操作",
 };
 
-const NETWORK_TEXT = "网络异常，请检查连接后重试";
-const SYSTEM_TEXT = "服务暂时不可用，请稍后重试";
-const GENERIC_TEXT = "操作失败，请稍后重试";
+const NETWORK_TEXT = COPY_NETWORK_FAIL;
+const SYSTEM_TEXT = COPY_SERVICE_FAIL;
+const GENERIC_TEXT = COPY_GENERIC_FAIL;
 
 /** Derive a submission/abandon failure view. Pure: same failure in, same view out. */
 export function describeSubmissionError(error: unknown): SubmissionErrorView {

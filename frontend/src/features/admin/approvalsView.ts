@@ -4,7 +4,7 @@
  * actions. The frozen-surface copy pins + the phone-mask rule live
  * here; the page island consumes them.
  */
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 /** The pending list row (hand-written contract until the backend PR's
  * OpenAPI regen; the shape mirrors AdminUserResponse's approval cut). */
@@ -30,7 +30,7 @@ export interface ApprovalErrorView {
   requestId: string | null;
 }
 
-const APPROVAL_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+const APPROVAL_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 
 /** The shared mutation-error view (the admin envelope family). */
 export function describeApprovalError(

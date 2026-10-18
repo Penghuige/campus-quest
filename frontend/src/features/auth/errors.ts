@@ -20,6 +20,7 @@
  *    (registry drift) degrade to a safe generic line plus the request id.
  */
 import { isKnownErrorCode, isSystemErrorCode, type ApiError } from "../../lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL } from "@/lib/errors";
 
 /** Form field keys an auth form can render errors for. */
 export type AuthFieldName =
@@ -71,8 +72,8 @@ export const AUTH_ERROR_TEXT: Partial<Record<string, string>> = {
   RATE_LIMITED: "操作过于频繁，请稍后再试",
 };
 
-const SYSTEM_ERROR_TEXT = "服务暂时不可用，请稍后重试";
-const GENERIC_ERROR_TEXT = "操作失败，请稍后重试";
+const SYSTEM_ERROR_TEXT = COPY_SERVICE_FAIL;
+const GENERIC_ERROR_TEXT = COPY_GENERIC_FAIL;
 const VALIDATION_SUMMARY_TEXT = "请检查表单填写后重试";
 
 /**
@@ -261,7 +262,7 @@ export function resendButtonLabel(
 }
 
 /** Network/transport failure text for non-`ApiError` rejections. */
-export const NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+export const NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 
 /**
  * Presentation helper for forms that render BOTH a summary region and field
