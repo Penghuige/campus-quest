@@ -1059,8 +1059,8 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
       <h4 className="section-title">{isRelease ? "释放占用中的任务单元" : "强制失败卡住的投递"}</h4>
       <p className="field-hint">
         {isRelease
-          ? "将悬空处于 OCCUPIED 状态的任务单元放回 AVAILABLE（不改动领取历史）。仅当占用已悬空时可用；正常占用会被服务端以 409 拒绝。"
-          : "将卡在 SENDING 状态的通知投递标记为 FAILED（消息与历史不变）。非 SENDING 状态会被服务端以 409 拒绝。"}
+          ? "把悬空占用的任务单元放回可领取。仅处理已悬空的占用；正常占用会被拒绝。"
+          : "把卡住的通知投递标记为失败（消息与历史不变）。仅处理发送中的投递。"}
       </p>
       <div className="field">
         <label className="field-label" htmlFor={`repair-id-${kind}`}>

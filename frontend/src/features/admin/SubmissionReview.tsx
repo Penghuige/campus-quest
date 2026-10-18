@@ -495,11 +495,11 @@ function ApproveDialog({
       <DialogContent aria-labelledby="approve-title">
         <DialogTitle id="approve-title">通过该提交</DialogTitle>
         <p className="field-hint">
-          确认后该领取将标记为已完成
+          该领取将标记完成
           {item.locked_reward_points !== null
-            ? `，并向学生发放锁定的 ${item.locked_reward_points} 积分`
-            : "，奖励按服务端结算发放"}
-          ；此操作会立即生效并记入积分流水。
+            ? `，发放锁定的 ${item.locked_reward_points} 积分`
+            : "，奖励按结算发放"}
+          ，立即记入积分流水。
         </p>
         {error !== null ? <SectionError error={error} /> : null}
         <DialogFooter>

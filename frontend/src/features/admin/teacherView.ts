@@ -75,7 +75,7 @@ const PUBLISH_ACTION: LifecycleActionView = {
   confirmRequired: true,
   confirmTitle: "发布任务",
   confirmBody:
-    "发布后任务立即对学生可见并可领取；奖励积分、截止模式、文件策略等契约字段将从发布一刻起冻结，之后只能暂停或关闭。发布前请确认已导入任务单元并通过服务端校验。",
+    "发布后任务立即对学生可见，契约字段随之冻结。发布后不可修改，只能暂停或关闭。",
   confirmLabel: "确认发布",
 };
 
@@ -888,7 +888,7 @@ export function fileFactsText(item: {
  * is read first (design §9 Forms: help text explains consequences).
  */
 export const INVALIDATE_WARNING_TEXT =
-  "判无效将取消该学生当前锁定的奖励档位与积分，之后需要重新提交并重新核算；已记录的审计信息不可删除。请确认提交内容确属无效后再操作。";
+  "判无效会取消锁定的奖励与积分，学生需重新提交。审计记录不可删除。";
 
 /** Blank-after-trim mirror of the transport rule (the note/reason is mandatory). */
 export function reviewTextReady(text: string): boolean {

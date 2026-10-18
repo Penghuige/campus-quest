@@ -224,6 +224,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     const confirm = page.getByRole("dialog", { name: "发布任务" });
     await expect(confirm).toBeVisible();
     await expect(confirm.getByText(/发布后任务立即对学生可见/)).toBeVisible();
+    await expect(confirm.getByText(/不可修改/)).toBeVisible();
     await confirm.getByRole("button", { name: "确认发布" }).click();
     await expect(page.locator(".page-head").getByText("已发布")).toBeVisible();
 
@@ -309,7 +310,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // 判无效: the prominent warning renders BEFORE the mandatory reason.
     await page.getByRole("button", { name: "判无效", exact: true }).click();
-    await expect(page.getByText("判无效将取消该学生当前锁定的奖励档位与积分")).toBeVisible();
+    await expect(page.getByText(/判无效会取消锁定的奖励与积分/)).toBeVisible();
     await page.getByRole("button", { name: "确认判无效" }).click();
     await expect(page.getByText("判无效原因不能为空")).toBeVisible();
     await page.getByRole("button", { name: "取消" }).click();

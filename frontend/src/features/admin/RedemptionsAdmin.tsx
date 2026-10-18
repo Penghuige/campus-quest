@@ -384,9 +384,9 @@ function ApproveDialog({
       >
         <DialogTitle id="redemption-approve-title">通过兑换申请</DialogTitle>
         <p className="report-target">
-          确认后「{row.item_name}」（{row.points} 积分，申请人{" "}
-          {row.requester_nickname ?? "—"}）将扣减积分并进入待发放状态；
-          之后需要在详情中标记发放完成。
+          「{row.item_name}」（{row.points} 积分，申请人{" "}
+          {row.requester_nickname ?? "—"}）将扣减积分进入待发放；
+          之后需在详情中标记发放完成。
         </p>
         {errorView !== null ? (
           <div className="alert alert-error" role="alert">

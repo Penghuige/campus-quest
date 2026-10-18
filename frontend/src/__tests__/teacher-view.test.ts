@@ -598,8 +598,9 @@ describe("review-queue copy", () => {
 
   test("the invalidate warning is prominent AND names the consequences", () => {
     assert.match(INVALIDATE_WARNING_TEXT, /取消/);
-    assert.match(INVALIDATE_WARNING_TEXT, /奖励档位与积分/);
-    assert.match(INVALIDATE_WARNING_TEXT, /审计信息不可删除/);
+    assert.match(INVALIDATE_WARNING_TEXT, /奖励与积分/);
+    assert.match(INVALIDATE_WARNING_TEXT, /重新提交/);
+    assert.match(INVALIDATE_WARNING_TEXT, /审计记录不可删除/);
   });
 
   test("note/reason blank mirror: whitespace-only text is not ready", () => {

@@ -129,7 +129,7 @@ function RedeemDialogBody({
               </div>
             </dl>
             <p className="field-hint">
-              确认后积分将冻结并等待老师审核；审核通过前这部分积分不能再用于其他兑换，未通过会全额退回。
+              积分将冻结等待老师审核；未通过会全额退回。
             </p>
             {conflict !== null ? (
               <div className="alert alert-error" role="alert">
