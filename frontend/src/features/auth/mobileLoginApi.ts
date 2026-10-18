@@ -35,23 +35,70 @@ export function requestMobileLoginCode(phone: string): Promise<void> {
   });
 }
 
-/** Trade the SMS code for a full student login. */
+/**
+ * The verify outcome (the send-code-as-entry batch, 2026-10-19): a
+ * REGISTERED phone's code completes the login (tokens, adopted); an
+ * UNREGISTERED phone's code answers `{status:"unregistered",
+ * register_token}` — the login page's INLINE third step (学号 +
+ * optional password) consumes it via registerViaMobileCode. No token
+ * is adopted on the unregistered arm (the register leg owns that).
+ */
+export type MobileVerifyOutcome =
+  | { kind: "tokens"; tokens: Schemas["TokenPairResponse"] }
+  | { kind: "unregistered"; registerToken: string };
+
+/** Trade the SMS code for a login — or the unregistered register leg. */
 export async function verifyMobileLoginCode(
   phone: string,
   code: string,
   rememberDevice: boolean,
-): Promise<Schemas["TokenPairResponse"]> {
+): Promise<MobileVerifyOutcome> {
+  const body = await apiRequest<unknown>("/api/v1/auth/mobile-code/verify", {
+    method: "POST",
+    body: rememberDevice
+      ? { phone, code, remember_device: true }
+      : { phone, code },
+  });
+  const record = body as { status?: unknown; register_token?: unknown };
+  if (
+    typeof record === "object" &&
+    record !== null &&
+    record.status === "unregistered" &&
+    typeof record.register_token === "string"
+  ) {
+    return { kind: "unregistered", registerToken: record.register_token };
+  }
+  const tokens = body as Schemas["TokenPairResponse"];
+  adoptFullLogin(tokens);
+  return { kind: "tokens", tokens };
+}
+
+/**
+ * The inline register leg (POST /auth/mobile-code/register): the
+ * unregistered arm's register_token + the student number (and the
+ * register page's OPTIONAL-password semantics — null when unset)
+ * complete the account AND the login; the tokens adopt the shared
+ * dance and the caller lands on the student home (PENDING banner
+ * included — every fresh registration is PENDING by §1).
+ */
+export async function registerViaMobileCode(
+  registerToken: string,
+  studentNumber: string,
+  password: string | null,
+): Promise<{ kind: "tokens"; tokens: Schemas["TokenPairResponse"] }> {
   const tokens = await apiRequest<Schemas["TokenPairResponse"]>(
-    "/api/v1/auth/mobile-code/verify",
+    "/api/v1/auth/mobile-code/register",
     {
       method: "POST",
-      body: rememberDevice
-        ? { phone, code, remember_device: true }
-        : { phone, code },
+      body: {
+        register_token: registerToken,
+        student_number: studentNumber,
+        password,
+      },
     },
   );
   adoptFullLogin(tokens);
-  return tokens;
+  return { kind: "tokens", tokens };
 }
 
 /**
