@@ -145,3 +145,98 @@ def test_fully_deleted_thread_renders_nothing() -> None:
     deleted = _comment(deleted=True)
     rendered = CommentService._rendered_comment_ids([(deleted, "n", False)])
     assert rendered == set()
+
+
+# --- the vote channel's order-sensitive face (flake round 2, #111 CI) ------
+
+
+def test_constraint_name_from_driver_attribute() -> None:
+    """The asyncpg driver carries the constraint name as an attribute —
+    the fast path the races normally take."""
+    from app.modules.community.vote_service import _constraint_name
+
+    class _Orig:
+        constraint_name = "uq_comment_votes_comment_id_user_id"
+
+    exc = IntegrityError(statement="s", params={}, orig=_Orig())
+    assert _constraint_name(exc) == "uq_comment_votes_comment_id_user_id"
+
+
+def test_constraint_name_falls_back_to_the_message() -> None:
+    """No driver attribute: the name is scraped from the message."""
+    from app.modules.community.vote_service import _constraint_name
+
+    class _Orig:
+        pass
+
+    _Orig.__str__ = lambda self: (
+        "duplicate key value violates unique constraint "
+        '"uq_comment_votes_comment_id_user_id"'
+    )
+    exc = IntegrityError(statement="s", params={}, orig=_Orig())
+    assert _constraint_name(exc) == "uq_comment_votes_comment_id_user_id"
+
+
+@pytest.mark.asyncio
+async def test_vote_first_conflict_rolls_back_and_retries() -> None:
+    """The both-create race's deterministic twin: attempt 0 hits the
+    target constraint (rollback), attempt 1's replay lands."""
+    from uuid import uuid4 as _uuid4
+
+    from app.modules.community.vote_service import VoteService
+
+    class _Db:
+        def __init__(self) -> None:
+            self.rollbacks = 0
+
+        async def rollback(self) -> None:
+            self.rollbacks += 1
+
+    exc = IntegrityError(
+        statement="s",
+        params={},
+        orig=RuntimeError(
+            "duplicate key value violates unique constraint "
+            '"uq_comment_votes_comment_id_user_id"'
+        ),
+    )
+    service = VoteService()
+    calls: list[int] = []
+
+    async def _flaky(db, user_id, comment_id, value):
+        calls.append(value)
+        if len(calls) == 1:
+            raise exc
+        return "landed"
+
+    service._transition = _flaky  # type: ignore[method-assign]
+    db = _Db()
+    result = await service.set_vote(db, _uuid4(), _uuid4(), 1)
+    assert result == "landed"
+    assert db.rollbacks == 1
+    assert calls == [1, 1]
+
+
+@pytest.mark.asyncio
+async def test_vote_foreign_constraint_never_retries() -> None:
+    from uuid import uuid4 as _uuid4
+
+    from app.modules.community.vote_service import VoteService
+
+    class _Db:
+        async def rollback(self) -> None:
+            raise AssertionError("no rollback on a foreign constraint")
+
+    exc = IntegrityError(
+        statement="s",
+        params={},
+        orig=RuntimeError('... unique constraint "uq_somewhere_else"'),
+    )
+    service = VoteService()
+
+    async def _foreign(db, user_id, comment_id, value):
+        raise exc
+
+    service._transition = _foreign  # type: ignore[method-assign]
+    with pytest.raises(IntegrityError):
+        await service.set_vote(_Db(), _uuid4(), _uuid4(), 1)
