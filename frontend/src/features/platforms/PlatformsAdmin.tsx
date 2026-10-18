@@ -268,7 +268,7 @@ function CreatePlatformDialog({
             {fieldErrors.code !== undefined ? (
               <p className="field-error">{fieldErrors.code}</p>
             ) : (
-              <p className="field-hint">仅小写字母、数字与连字符；用于任务导入与 API。</p>
+              <p className="field-hint">仅小写字母、数字与连字符；用于任务导入与接口调用。</p>
             )}
           </div>
           <div className="field">

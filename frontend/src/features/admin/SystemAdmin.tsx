@@ -1034,12 +1034,12 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
       if (isRelease) {
         const result = await releaseOccupiedAssignment(targetId.trim(), reason.trim());
         setOutcome(
-          `任务单元已释放，可再次被领取。`,
+          `任务单元已释放，可再次被领取`,
         );
       } else {
         const result = await forceFailDelivery(targetId.trim(), reason.trim());
         setOutcome(
-          `投递已标记失败（共尝试 ${result.attempts} 次）。`,
+          `投递已标记失败（共尝试 ${result.attempts} 次）`,
         );
       }
       setTargetId("");

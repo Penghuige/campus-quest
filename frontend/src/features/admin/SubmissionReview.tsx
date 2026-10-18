@@ -676,16 +676,16 @@ function OutcomeAlert({
           {outcome.result.points_granted !== null
             ? `，已发放 ${outcome.result.points_granted} 积分`
             : ""}
-          {outcome.result.already_reviewed ? "（该领取此前已审核，未重复发放）" : ""}。
+          {outcome.result.already_reviewed ? "（该领取此前已审核，未重复发放）" : ""}
         </p>
       ) : outcome.kind === "revision" ? (
         <p>
-          已退回修改；学生需在 {revisionDeadline} 前重新提交，奖励档位已保留。
+          已退回修改；学生需在 {revisionDeadline} 前重新提交，奖励档位已保留
         </p>
       ) : (
         <p>
           已判无效；奖励锁定已取消（{lockLabel}），学生需在 {revisionDeadline}{" "}
-          前重新提交并重新核算。
+          前重新提交并重新核算
         </p>
       )}
       <p>

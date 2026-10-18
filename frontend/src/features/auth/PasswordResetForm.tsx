@@ -46,7 +46,7 @@ type ResetFields = Extract<AuthFieldName, "username" | "code" | "password">;
 
 /** Uniform, enumeration-free copy shown once a code has been "sent". */
 const CODE_SENT_NOTE =
-  "如果该用户名对应的账号存在且已绑定手机号，验证码已发送至其绑定手机。";
+  "如果该用户名对应的账号存在且已绑定手机号，验证码已发送至其绑定手机";
 
 export function PasswordResetForm() {
   const router = useRouter();

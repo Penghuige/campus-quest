@@ -76,7 +76,7 @@ export function DevicePanel() {
     try {
       const result = await revokeMyDevices();
       setRevoking(false);
-      setNote(`已移除 ${result.revoked} 台记住的设备；下次登录需重新验证动态口令。`);
+      setNote(`已移除 ${result.revoked} 台记住的设备；下次登录需重新验证动态口令`);
       setReloadSeed((seed) => seed + 1);
     } catch (cause) {
       setActionError(cause);

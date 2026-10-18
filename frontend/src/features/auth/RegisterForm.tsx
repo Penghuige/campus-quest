@@ -257,7 +257,7 @@ export function RegisterForm() {
         label="昵称"
         counter={`${nicknameCount}/${NICKNAME_MAX_GRAPHEME_CLUSTERS}`}
         counterOver={nicknameCount > NICKNAME_MAX_GRAPHEME_CLUSTERS}
-        hint="展示给其他同学的名称；按显示字符计数，emoji 算 1 个。"
+        hint="展示给其他同学的名称；按显示字符计数，表情算 1 个"
         error={fieldErrors.nickname}
         inputProps={{
           value: values.nickname,

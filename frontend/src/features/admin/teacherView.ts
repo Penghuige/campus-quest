@@ -320,7 +320,7 @@ export function validateTaskForm(
   if (values.submissionSchema.trim().length > 0) {
     const parsed = parseSubmissionSchema(values.submissionSchema);
     if (parsed === null) {
-      errors.submissionSchema = "提交校验 schema 必须是非空 JSON 对象";
+      errors.submissionSchema = "提交校验规则必须是非空 JSON 对象";
     }
   }
 
@@ -646,8 +646,8 @@ const FROZEN_FIELD_LABELS: Record<string, string> = {
   fixed_deadline_at: "固定截止时间",
   duration_minutes: "提交时限",
   claim_cutoff_minutes: "领取截止",
-  submission_schema: "提交校验 schema",
-  submission_schema_version: "schema 版本",
+  submission_schema: "提交校验规则",
+  submission_schema_version: "校验规则版本",
   allowed_file_types: "允许的文件类型",
   max_file_size_bytes: "单文件上限",
 };

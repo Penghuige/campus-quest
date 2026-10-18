@@ -451,7 +451,7 @@ export function UploadPanel({
 
       {state.phase === "under-review" ? (
         <div className="alert alert-success" role="status">
-          <p>文件已通过校验，进入人工审核队列。</p>
+          <p>文件已通过校验，进入人工审核队列</p>
         </div>
       ) : null}
 

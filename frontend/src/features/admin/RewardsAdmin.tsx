@@ -757,7 +757,7 @@ function GrantForm({ mode }: { mode: "grant" | "revoke" }) {
       {done ? (
         <div className="alert alert-success" role="status">
           <p>
-            {mode === "grant" ? "已授予审阅权限。" : "已撤销审阅权限。"}
+            {mode === "grant" ? "已授予审阅权限" : "已撤销审阅权限"}
             （授权状态无查询接口；可在审计日志中核对操作记录）
           </p>
         </div>

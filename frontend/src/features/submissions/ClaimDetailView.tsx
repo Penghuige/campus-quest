@@ -382,8 +382,8 @@ function RevisionBanner({ machineFailed }: { machineFailed: boolean }) {
           !
         </span>
         {machineFailed
-          ? "上次提交未通过机器校验，请按校验报告修正后重新上传。"
-          : "老师已退回修改，奖励档位已保留。"}
+          ? "上次提交未通过机器校验，请按校验报告修正后重新上传"
+          : "老师已退回修改，奖励档位已保留"}
       </p>
       <p className="field-hint">
         {machineFailed

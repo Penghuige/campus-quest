@@ -100,10 +100,10 @@ export function avatarSupported(me: object): boolean {
 export function avatarErrorText(cause: unknown): string {
   if (cause instanceof ApiError) {
     if (/RATE_LIMIT/i.test(cause.code)) {
-      return "头像更换过于频繁，请 10 分钟后再试。";
+      return "头像更换过于频繁，请 10 分钟后再试";
     }
     if (/PAYLOAD_TOO_LARGE|FILE_TOO_LARGE|REQUEST_ENTITY_TOO_LARGE/i.test(cause.code)) {
-      return "头像文件过大（最大 2 MB）。";
+      return "头像文件过大（最大 2 MB）";
     }
     return cause.message;
   }

@@ -162,7 +162,7 @@ export function AvatarSection() {
       await uploadAvatar(cropped);
       setChangeEpoch((epoch) => epoch + 1);
       refresh();
-      setSavedNote("头像已更新。");
+      setSavedNote("头像已更新");
     } catch (cause) {
       setError(avatarErrorText(cause));
     } finally {
@@ -189,7 +189,7 @@ export function AvatarSection() {
       await deleteAvatar();
       setChangeEpoch((epoch) => epoch + 1);
       refresh();
-      setSavedNote("已恢复默认头像。");
+      setSavedNote("已恢复默认头像");
     } catch (cause) {
       setError(avatarErrorText(cause));
     } finally {

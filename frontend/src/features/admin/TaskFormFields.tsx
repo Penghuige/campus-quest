@@ -293,7 +293,7 @@ export function TaskFormFields({
           common path publishable, so most teachers never open this;
           those who do get the grammar hints inline. */}
       <details className="form-advanced">
-        <summary>高级：提交校验 schema（已按所选类型自动填入默认模板）</summary>
+        <summary>高级：提交校验规则（已按所选类型自动填入默认模板）</summary>
         <p className="field-hint">
           校验规则决定学生提交的文件怎样才算通过：列名/类型/唯一性等。
           默认模板可直接发布——请先把列名改成任务实际需要的列。
@@ -301,7 +301,7 @@ export function TaskFormFields({
         <div className="form-grid">
           <div className="field">
             <label className="field-label" htmlFor="task-schema">
-              提交校验 schema（JSON，发布前必填）
+              提交校验规则（JSON，发布前必填）
             </label>
             <textarea
               id="task-schema"
@@ -323,7 +323,7 @@ export function TaskFormFields({
 
           <div className="field">
             <label className="field-label" htmlFor="task-schema-version">
-              schema 版本
+              校验规则版本
             </label>
             <input
               id="task-schema-version"

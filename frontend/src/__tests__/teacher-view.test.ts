@@ -239,7 +239,7 @@ describe("task edit surface (spec §6.2 V1 edit rule)", () => {
     assert.equal(result.ok, false);
     assert.equal(
       result.errors.submissionSchema,
-      "提交校验 schema 必须是非空 JSON 对象",
+      "提交校验规则必须是非空 JSON 对象",
     );
   });
 
@@ -493,7 +493,7 @@ describe("create-form band mirrors (server authoritative)", () => {
     assert.match(errors.claimCutoffMinutes ?? "", /不小于 0/);
     assert.equal(errors.fileTypes, "请至少选择一种允许的文件类型");
     assert.match(errors.maxFileSizeMb ?? "", /200 MB/);
-    assert.equal(errors.submissionSchema, "提交校验 schema 必须是非空 JSON 对象");
+    assert.equal(errors.submissionSchema, "提交校验规则必须是非空 JSON 对象");
   });
 
   test("schema parser accepts non-empty objects, rejects empties/arrays/scalars", () => {

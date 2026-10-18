@@ -28,7 +28,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       </div>
       {reset ? (
         <div className="alert alert-success" role="status">
-          <p>密码已重置，请使用新密码登录。</p>
+          <p>密码已重置，请使用新密码登录</p>
         </div>
       ) : null}
       {/* Auth extension II §4: the mobile-code channel is the student

@@ -134,8 +134,8 @@ function EditTaskDialogInner({
           <DialogTitle id="edit-task-title">编辑任务</DialogTitle>
           <p className="field-hint">
             {task.status === "DRAFT"
-              ? "草稿阶段可修改全部字段；提交校验 schema 与版本在发布前必须配置。"
-              : "任务已发布：仅标题与描述可修改，契约字段（奖励、截止、文件策略、schema）已冻结。"}
+              ? "草稿阶段可修改全部字段；提交校验规则与版本在发布前必须配置。"
+              : "任务已发布：仅标题与描述可修改，契约字段（奖励、截止、文件策略、校验规则）已冻结。"}
           </p>
 
           <FormErrorSummary view={summary} />
