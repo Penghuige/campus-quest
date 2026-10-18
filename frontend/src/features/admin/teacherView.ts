@@ -968,7 +968,7 @@ export const COLLABORATOR_PERMISSIONS: readonly {
   {
     value: "MANAGE_ASSIGNMENTS",
     label: "管理任务单元",
-    hint: "导入与管理 Assignment",
+    hint: "导入与管理任务单元",
   },
   {
     value: "REVIEW_SUBMISSIONS",

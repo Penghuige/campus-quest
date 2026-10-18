@@ -583,9 +583,8 @@ function TemplatesSection() {
         <h2 className="section-title">通知模板</h2>
       </div>
       <p className="field-hint">
-        模板暂无查询接口：创建后在此处继续管理；历史模板的 ID 可在审计日志中检索，
-        通过下方「按 ID 管理」编辑（title/body 全量替换，版本号自动 +1）。
-        不安全语法或未知占位符会被服务端以 422 拒绝并原样提示。
+        新建的模板会直接出现在下方继续编辑；历史模板可在审计日志查到编号后，用「按编号管理」调出。
+        保存会整体替换内容并自动升版本；内容不合规时保存会被拒绝并说明原因。
       </p>
       <div className="workbench-columns">
         <form className="panel moderation-panel" onSubmit={onCreate} noValidate>
@@ -1034,12 +1033,12 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
       if (isRelease) {
         const result = await releaseOccupiedAssignment(targetId.trim(), reason.trim());
         setOutcome(
-          `已释放任务单元 ${result.id}（任务 ${result.task_id}），当前可用状态：${result.availability_status}。`,
+          `任务单元已释放，可再次被领取。`,
         );
       } else {
         const result = await forceFailDelivery(targetId.trim(), reason.trim());
         setOutcome(
-          `投递 ${result.id} 已标记失败（状态 ${result.status}，尝试 ${result.attempts} 次）。`,
+          `投递已标记失败（共尝试 ${result.attempts} 次）。`,
         );
       }
       setTargetId("");
