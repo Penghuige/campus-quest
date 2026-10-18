@@ -76,17 +76,19 @@ export async function verifyMobileLoginCode(
 /**
  * The inline register leg (POST /auth/mobile-code/register): the
  * unregistered arm's register_token + the student number (and the
- * register page's OPTIONAL-password semantics — null when unset)
- * complete the account AND the login; the tokens adopt the shared
- * dance and the caller lands on the student home (PENDING banner
- * included — every fresh registration is PENDING by §1).
+ * register page's OPTIONAL-password semantics — null when unset;
+ * nickname rides the backend's student-number default) complete the
+ * account AND the login. The 201 body is the ④ envelope
+ * `{user, tokens}` — the tokens adopt the shared dance and the caller
+ * lands on the student home (PENDING banner included — every fresh
+ * registration is PENDING by §1).
  */
 export async function registerViaMobileCode(
   registerToken: string,
   studentNumber: string,
   password: string | null,
 ): Promise<{ kind: "tokens"; tokens: Schemas["TokenPairResponse"] }> {
-  const tokens = await apiRequest<Schemas["TokenPairResponse"]>(
+  const body = (await apiRequest<{ user?: unknown; tokens?: Schemas["TokenPairResponse"] }>(
     "/api/v1/auth/mobile-code/register",
     {
       method: "POST",
@@ -96,9 +98,12 @@ export async function registerViaMobileCode(
         password,
       },
     },
-  );
-  adoptFullLogin(tokens);
-  return { kind: "tokens", tokens };
+  )) as { user?: unknown; tokens?: Schemas["TokenPairResponse"] };
+  if (typeof body !== "object" || body === null || body.tokens === undefined) {
+    throw new Error("mobile-code register: the 201 body is not the {user, tokens} envelope");
+  }
+  adoptFullLogin(body.tokens);
+  return { kind: "tokens", tokens: body.tokens };
 }
 
 /**

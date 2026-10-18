@@ -118,11 +118,14 @@ describe("the inline register legs (send-code-as-entry)", () => {
     assert.equal(getAccessToken(), "at");
   });
 
-  test("register POSTs {register_token, student_number, password:null-when-unset} and adopts", async () => {
+  test("register POSTs {register_token, student_number, password:null-when-unset} and adopts the ENVELOPE's tokens", async () => {
     clearAccessToken();
     stubFetch(
-      JSON.stringify({ access_token: "reg-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
+      JSON.stringify({
+        user: { id: "u9", username: "20240099", nickname: "20240099", role: "STUDENT", status: "PENDING_APPROVAL" },
+        tokens: { access_token: "reg-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      201,
     );
     const outcome = await registerViaMobileCode("reg-tok", "20240099", null);
     assert.equal(outcome.kind, "tokens");
@@ -139,8 +142,11 @@ describe("the inline register legs (send-code-as-entry)", () => {
   test("register with a set password carries it verbatim", async () => {
     clearAccessToken();
     stubFetch(
-      JSON.stringify({ access_token: "reg-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
+      JSON.stringify({
+        user: { id: "u9", username: "20240099", nickname: "20240099", role: "STUDENT", status: "PENDING_APPROVAL" },
+        tokens: { access_token: "reg-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      201,
     );
     await registerViaMobileCode("reg-tok", "20240099", "e2e-correct-horse");
     assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
