@@ -12,7 +12,12 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { clearAccessToken, getAccessToken } from "../lib/accessToken";
-import { fastLoginCookieOnly, fetchRememberedHint } from "../features/auth/mobileLoginApi";
+import {
+  fastLoginCookieOnly,
+  fetchRememberedHint,
+  registerViaMobileCode,
+  verifyMobileLoginCode,
+} from "../features/auth/mobileLoginApi";
 
 const originalFetch = globalThis.fetch;
 let responseFor: () => Response;
@@ -84,5 +89,70 @@ describe("fastLoginCookieOnly (the banner's click leg)", () => {
     // user (it is the full single-factor credential), so the body
     // carries neither phone nor code.
     assert.equal(recorded?.body, "{}");
+  });
+});
+
+// --- the send-code-IS-the-entry flow (production experience batch
+// 2026-10-19; the frozen contract): an UNREGISTERED phone's verify
+// answers {status:"unregistered", register_token} — the login page's
+// inline third step consumes it; POST /auth/mobile-code/register
+// {register_token, student_number, password} (the register page's
+// optional-password semantics: null when unset) completes the login.
+describe("the inline register legs (send-code-as-entry)", () => {
+  test("verify: the unregistered body classifies WITHOUT adopting any token", async () => {
+    clearAccessToken();
+    stubFetch(JSON.stringify({ status: "unregistered", register_token: "reg-tok" }), 200);
+    const outcome = await verifyMobileLoginCode("13900001234", "234567", false);
+    assert.deepEqual(outcome, { kind: "unregistered", registerToken: "reg-tok" });
+    assert.equal(getAccessToken(), null);
+  });
+
+  test("verify: the tokens body still completes the login (the union's other arm)", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }),
+      200,
+    );
+    const outcome = await verifyMobileLoginCode("13900001234", "234567", false);
+    assert.equal(outcome.kind, "tokens");
+    assert.equal(getAccessToken(), "at");
+  });
+
+  test("register POSTs {register_token, student_number, password:null-when-unset} and adopts the ENVELOPE's tokens", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        user: { id: "u9", username: "20240099", nickname: "20240099", role: "STUDENT", status: "PENDING_APPROVAL" },
+        tokens: { access_token: "reg-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      201,
+    );
+    const outcome = await registerViaMobileCode("reg-tok", "20240099", null);
+    assert.equal(outcome.kind, "tokens");
+    assert.equal(getAccessToken(), "reg-at");
+    assert.equal(recorded?.url, "/api/v1/auth/mobile-code/register");
+    assert.equal(recorded?.method, "POST");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      register_token: "reg-tok",
+      student_number: "20240099",
+      password: null,
+    });
+  });
+
+  test("register with a set password carries it verbatim", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        user: { id: "u9", username: "20240099", nickname: "20240099", role: "STUDENT", status: "PENDING_APPROVAL" },
+        tokens: { access_token: "reg-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      201,
+    );
+    await registerViaMobileCode("reg-tok", "20240099", "e2e-correct-horse");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
+      register_token: "reg-tok",
+      student_number: "20240099",
+      password: "e2e-correct-horse",
+    });
   });
 });
