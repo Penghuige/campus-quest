@@ -89,6 +89,13 @@ _STAFF_COOLDOWN_KEY_PREFIX = "staffmobilecode:cooldown:"
 _STAFF_PENDING_KEY_PREFIX = "staffmobilecode:pending:"
 STAFF_PENDING_TTL_SECONDS = 30 * 60
 
+#: The phone-first ENTRY proof (the queue-jump batch): a 5-minute,
+#: single-use credential answering "this phone just passed a code
+#: check". Stored hashed in Redis; consumed by GETDEL at register.
+_REGISTER_KEY_PREFIX = "mobreg:"
+REGISTER_TOKEN_TTL_SECONDS = 5 * 60
+_ENTRY_STATUS_UNREGISTERED = "unregistered"
+
 
 def _hash_text(value: str) -> str:
     from hashlib import sha256
@@ -98,6 +105,21 @@ def _hash_text(value: str) -> str:
 
 def _staff_pending_key(token_hash: str) -> str:
     return _STAFF_PENDING_KEY_PREFIX + token_hash
+
+
+@dataclass(frozen=True, slots=True)
+class MobileVerifyOutcome:
+    """The verify leg's three terminal shapes: a student session
+    (tokens, maybe a rotated device cookie), or the ENTRY token for an
+    unregistered phone (register_token; tokens None)."""
+
+    tokens: SessionTokens | None = None
+    device_cookie: str | None = None
+    register_token: str | None = None
+
+    @property
+    def unregistered(self) -> bool:
+        return self.tokens is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,15 +198,10 @@ class MobileLoginService:
                 status_code=429,
             )
 
-        user = await self._users.find_by_phone_e164(db, normalized)
-        if (
-            user is None
-            or user.role != Role.STUDENT.value
-            or user.status
-            not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
-        ):
-            return  # silent no-op: same 202, nothing stored or sent
-
+        # The entry channel (the queue-jump batch): EVERY well-formed
+        # phone receives a real code — registered or not. The challenge
+        # table keys by phone, nothing here is account-gated; cooldown
+        # and the endpoint limiter bound the send surface.
         code = f"{secrets.randbelow(1_000_000):06d}"
         now = self._clock.now()
         await db.execute(
@@ -241,9 +258,11 @@ class MobileLoginService:
         device_cookie: str | None = None,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
-    ) -> tuple[SessionTokens, str | None]:
+    ) -> MobileVerifyOutcome:
         """Consume the SMS code (or the remembered-device cookie) and
-        open a browsing-grade student session.
+        open a browsing-grade student session — or, for a code-checked
+        phone with NO account, hand back the 5-minute single-use ENTRY
+        token (the queue-jump batch's register door).
 
         Returns (tokens, device_cookie): the cookie is a freshly minted
         30-day value when the login should set one (remember_device on
@@ -275,12 +294,12 @@ class MobileLoginService:
             except InvalidPhoneError as exc:
                 raise _invalid() from exc
             user = await self._users.find_by_phone_e164(db, normalized)
-            if (
-                user is None
-                or user.role != Role.STUDENT.value
+            if user is not None and (
+                user.role != Role.STUDENT.value
                 or user.status
                 not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
             ):
+                # A phone bound to staff/non-student is not an entry.
                 raise _invalid()
         else:
             # The remembered-device leg: a valid cookie is a full
@@ -305,6 +324,8 @@ class MobileLoginService:
         now = self._clock.now()
 
         if empty_code:
+            # cookie leg: its gate already raised on a missing user
+            assert user is not None
             _, tokens = await self._sessions.issue_session(db, user=user, now=now)
             new_cookie: str | None = await issue_device(db, user.id, clock=self._clock)
             await self._audit.append(
@@ -323,9 +344,9 @@ class MobileLoginService:
                 "mobile login succeeded user_id=%s channel=mobile_code+device",
                 user.id,
             )
-            return tokens, new_cookie
+            return MobileVerifyOutcome(tokens=tokens, device_cookie=new_cookie)
 
-        if await self._guard.is_locked(user.id):
+        if user is not None and await self._guard.is_locked(user.id):
             raise await self._account_locked(user.id)
 
         assert code is not None and normalized is not None  # the code leg
@@ -345,7 +366,8 @@ class MobileLoginService:
             or challenge.expires_at <= now
             or challenge.attempts >= MAX_VERIFY_ATTEMPTS
         ):
-            await self._guard.record_failure(user.id)
+            if user is not None:  # an accountless phone has no lock row
+                await self._guard.record_failure(user.id)
             raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
 
         submitted_hash = self._hash_code(code.strip())
@@ -356,15 +378,29 @@ class MobileLoginService:
             # without its own commit the attempts>=5 branch above is dead
             # code that only the lockout guard happens to backstop.
             await db.commit()
-            await self._guard.record_failure(user.id)
+            if user is not None:
+                await self._guard.record_failure(user.id)
             logger.info(
-                "mobile login verify rejected user_id=%s reason=wrong_code",
-                user.id,
+                "mobile login verify rejected reason=wrong_code phone=%s",
+                mask_phone(normalized),
             )
             raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
 
         await db.delete(challenge)
         await db.flush()
+        if user is None:
+            # The ENTRY branch: the phone just passed a code check and
+            # owns no account — mint the 5-minute single-use register
+            # proof (hashed at rest; GETDEL consumes it at register).
+            register_token = secrets.token_urlsafe(32)
+            await self._redis.set(
+                _REGISTER_KEY_PREFIX + _hash_text(register_token),
+                normalized,
+                ex=REGISTER_TOKEN_TTL_SECONDS,
+            )
+            logger.info("mobile entry token issued phone=%s", mask_phone(normalized))
+            return MobileVerifyOutcome(register_token=register_token)
+        assert user is not None  # every accountless path returned above
         await self._guard.reset(user.id)
         _, tokens = await self._sessions.issue_session(db, user=user, now=now)
         new_cookie = (
@@ -384,7 +420,88 @@ class MobileLoginService:
         )
         await db.commit()
         logger.info("mobile login succeeded user_id=%s channel=mobile_code", user.id)
-        return tokens, new_cookie
+        return MobileVerifyOutcome(tokens=tokens, device_cookie=new_cookie)
+
+    async def register_by_phone(
+        self,
+        db: AsyncSession,
+        *,
+        register_token: str,
+        student_number: str,
+        password: str | None = None,
+        nickname: str | None = None,
+    ) -> User:
+        """Trade the ENTRY proof for a PENDING_APPROVAL account with the
+        phone bound (the queue-jump batch).
+
+        The proof is single-use (GETDEL): a replay answers the uniform
+        MOBILE_CODE_INVALID. The student number carries the classic
+        register validations (band/normalization) and the database's
+        unique indexes adjudicate any race; the account lands in
+        PENDING_APPROVAL exactly like the /auth/register door. The
+        session mint rides the CALLER (the router composes the
+        register-ends-logged-in response)."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.core.error_codes import ErrorCode as _ErrorCode
+        from app.modules.identity.enums import Role as _Role
+        from app.modules.identity.enums import UserStatus as _Status
+        from app.modules.identity.validation import validate_student_number
+
+        phone = await self._redis.getdel(
+            _REGISTER_KEY_PREFIX + _hash_text(register_token)
+        )
+        if not isinstance(phone, str):
+            raise BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
+
+        number = validate_student_number(student_number)
+        nickname_value = (
+            number if nickname is None or nickname.strip() == "" else nickname.strip()
+        )
+        from app.core.security import hash_password as _hash
+        from app.core.security import validate_password_length
+
+        password_hash: str | None = None
+        if password is not None and password != "":
+            validate_password_length(password)
+            password_hash = _hash(password)
+
+        if await self._users.find_by_phone_e164(db, phone) is not None:
+            raise BusinessError(
+                ErrorCode.PHONE_ALREADY_BOUND,
+                "该手机号已绑定其他账号",
+                status_code=409,
+            )
+
+        user = User(
+            username=number,
+            password_hash=password_hash,
+            nickname=nickname_value,
+            phone_e164=phone,
+            role=_Role.STUDENT,
+            status=_Status.PENDING_APPROVAL,
+        )
+        db.add(user)
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            await db.rollback()
+            violation = str(exc.orig) if exc.orig is not None else str(exc)
+            if "uq_users_username" in violation:
+                raise BusinessError(
+                    _ErrorCode.USERNAME_ALREADY_EXISTS,
+                    "该学号已注册，请直接登录",
+                    status_code=409,
+                ) from exc
+            if "uq_users_phone_e164" in violation:
+                raise BusinessError(
+                    _ErrorCode.PHONE_ALREADY_BOUND,
+                    "该手机号已绑定其他账号",
+                    status_code=409,
+                ) from exc
+            raise
+        logger.info("mobile entry registered user_id=%s", user.id)
+        return user
 
     # --- the staff channel (V1.1 login iteration item 1) ------------------
 

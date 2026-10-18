@@ -458,6 +458,24 @@ class StaffMobileCodeVerifyRequest(BaseModel):
     remember_device: bool = False
 
 
+class MobileCodeRegisterRequest(BaseModel):
+    """Trade the entry proof (a code-checked, accountless phone's
+    5-minute single-use token) for a PENDING_APPROVAL account."""
+
+    register_token: str
+    student_number: str
+    nickname: str | None = None
+    password: str | None = None
+
+
+class MobileCodeEntryResponse(BaseModel):
+    """The verify leg's entry shape: the phone is code-checked but
+    owns no account — the register door opens for 5 minutes."""
+
+    status: str
+    register_token: str
+
+
 class StaffMobileCodeTotpRequest(BaseModel):
     """Finish an ADMIN mobile-code login with the TOTP second leg."""
 
