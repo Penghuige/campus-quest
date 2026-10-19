@@ -17,7 +17,7 @@
  */
 import { formatFileSize } from "@/features/submissions/api";
 import type { AuthErrorView } from "@/features/auth/errors";
-import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, isApiError } from "@/lib/errors";
 
 import type {
   ImportPreviewDto,

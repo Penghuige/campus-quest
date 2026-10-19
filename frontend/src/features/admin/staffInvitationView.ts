@@ -16,7 +16,7 @@
  *   lands on create when the backend adds the pre-check (reviewer
  *   ruling 2026-10-15: the V1.1 invitation-lifecycle scope candidate).
  */
-import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
+import { COPY_NETWORK_FAIL, isApiError } from "@/lib/errors";
 
 /** The backend's invitation role narrowing (spec §5.8). */
 export type StaffInvitationRole = "TEACHER" | "ADMIN";

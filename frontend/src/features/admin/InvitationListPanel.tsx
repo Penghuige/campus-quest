@@ -7,7 +7,7 @@
  * the create flow uses. ACCEPTED rows carry no verbs (their token is
  * spent history); the audit trail stays the server's story.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -67,20 +67,18 @@ export function InvitationListPanel({ refreshKey = 0 }: { refreshKey?: number })
     setError(null);
   }, []);
 
-  // The workspace's issuance nudge: a refreshKey bump reloads the list
-  // (the initial mount rides its own "loading" phase; skip key 0).
+  // The fetch effect keys on BOTH the phase and the workspace's
+  // issuance nudge: a refreshKey bump is stale-work (the ref remembers
+  // the key the last fetch served), so the reload fires without any
+  // setState ever running synchronously inside an effect (the
+  // react-compiler rule — the relay-effect shape trips it).
+  const lastFetchedKey = useRef(0);
   useEffect(() => {
-    if (refreshKey === 0) {
+    const staleNudge = lastFetchedKey.current !== refreshKey;
+    if (phase !== "loading" && !staleNudge) {
       return;
     }
-    setPhase("loading");
-    setError(null);
-  }, [refreshKey]);
-
-  useEffect(() => {
-    if (phase !== "loading") {
-      return;
-    }
+    lastFetchedKey.current = refreshKey;
     let cancelled = false;
     void (async () => {
       try {
@@ -99,7 +97,7 @@ export function InvitationListPanel({ refreshKey = 0 }: { refreshKey?: number })
     return () => {
       cancelled = true;
     };
-  }, [phase]);
+  }, [phase, refreshKey]);
 
   async function run(action: () => Promise<void>) {
     if (busy) {
