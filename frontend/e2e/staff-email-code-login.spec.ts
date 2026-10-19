@@ -134,7 +134,7 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
       try {
         // The #84 landing rule (hot-fix 2026-10-16): an ADMIN lands on
         // the ADMIN workspace, never the teacher queue.
-        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {
           timeout: 5_000,
         });
         landed = true;
@@ -158,7 +158,7 @@ test.describe("staff email-code login (V1.1 §2.1/§2.2)", () => {
     const secondCode = await requestCode(second, adminEmail);
     await second.getByLabel("邮箱验证码", { exact: false }).fill(secondCode);
     await second.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/admin$`));
     await expect(second.getByTestId("email-login-totp-leg")).toHaveCount(0);
     await replay.close();
   });

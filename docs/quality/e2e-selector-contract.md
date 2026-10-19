@@ -57,7 +57,10 @@ owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg) ·
 邮箱验证码登录 / 手机验证码登录 / 密码登录 (the staff login's three channel
 tabs — item ① disambiguated the email tab's bare 验证码登录 copy) ·
 发送验证码 / 绑定手机号 / 更换手机号 (the staff phone-binding flow,
-PhoneBindSection)
+PhoneBindSection) ·
+代重置密码 / 踢出全部会话 / 提升为管理员 / 降级为教师 / 批量停用 / 批量恢复 /
+确认执行 / 撤销 / 确认撤销 / 重发 (Wave 2a's admin power-pack: the user-detail
+actions, the batch verbs, and the invitation lifecycle panel)
 
 Checkboxes: 记住此设备 30 天 — the email-code totp leg (V1.1 §2.2) and the
 staff password+TOTP form (owner feedback ② 2026-10-17: the remembered SECOND

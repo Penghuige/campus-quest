@@ -136,7 +136,7 @@ test("bind → the mobile-code channel: teacher one-step, admin two-leg, the 409
     await page.getByRole("button", { name: "完成登录" }).click();
     try {
       // The #84 landing rule: the ADMIN lands on the ADMIN workspace.
-      await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
+      await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {
         timeout: 5_000,
       });
       landed = true;

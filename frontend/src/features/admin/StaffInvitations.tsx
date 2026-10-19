@@ -50,7 +50,13 @@ interface IssuedInvitation {
   expiresAt: string;
 }
 
-export function StaffInvitations() {
+export function StaffInvitations({
+  onIssued,
+}: {
+  /** The host page's refresh nudge — a fresh row just entered the
+   * sibling lifecycle list (the panels are otherwise independent). */
+  onIssued?: () => void;
+}) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<StaffInvitationRole>("TEACHER");
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
@@ -86,6 +92,7 @@ export function StaffInvitations() {
       });
       setEmail("");
       setEmailError(undefined);
+      onIssued?.();
     } catch (cause) {
       setError(cause);
     } finally {
