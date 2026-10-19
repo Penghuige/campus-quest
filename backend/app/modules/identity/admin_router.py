@@ -92,6 +92,9 @@ from app.modules.identity.providers import (
 )
 from app.modules.identity.routing_common import _enforce_rate_limit
 from app.modules.identity.schemas import (
+    AdminBatchRequest,
+    AdminBatchResponse,
+    AdminBatchRowResult,
     AdminPasswordResetLinkResponse,
     AdminRoleChangeRequest,
     StaffInvitationCreateRequest,
@@ -289,6 +292,37 @@ class AdminUserRoleResponse(BaseModel):
     username: str
     role: Role
     status: UserStatus
+
+
+class AdminOverviewUsers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total: int
+    by_role: dict[str, int]
+    by_status: dict[str, int]
+
+
+class AdminOverviewTasks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    by_status: dict[str, int]
+
+
+class AdminOverviewToday(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_users: int
+    active_users: int
+
+
+class AdminOverviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    users: AdminOverviewUsers
+    tasks: AdminOverviewTasks
+    pending_submissions: int
+    pending_redemptions: int
+    today: AdminOverviewToday
 
 
 class AdminKickResponse(BaseModel):
@@ -532,6 +566,48 @@ async def issue_password_reset_link(
         audit_context=AuditContext.from_request(request),
     )
     return AdminPasswordResetLinkResponse(reset_token=token)
+
+
+@router.post(
+    "/admin/users/batch",
+    response_model=AdminBatchResponse,
+    response_model_exclude_none=True,
+)
+async def batch_status_action(
+    body: AdminBatchRequest,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+) -> AdminBatchResponse:
+    """The §3.5 batch: one status action, up to 100 ids, one audited
+    transition per row — per-row outcomes, a failing row never breaks
+    its neighbours, the actor's own row is refused."""
+    results = await admin_power.batch_status_action(
+        db,
+        actor,
+        body.action,
+        body.user_ids,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminBatchResponse(results=[AdminBatchRowResult(**row) for row in results])
+
+
+@router.get("/admin/overview", response_model=AdminOverviewResponse)
+async def read_overview(
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminOverviewResponse:
+    """The §4.1 console aggregate: fixed key sets (zero counts carry),
+    governance facts only."""
+    data = await admin_power.overview(db, clock=clock)
+    return AdminOverviewResponse(
+        users=AdminOverviewUsers(**data["users"]),
+        tasks=AdminOverviewTasks(**data["tasks"]),
+        pending_submissions=data["pending_submissions"],
+        pending_redemptions=data["pending_redemptions"],
+        today=AdminOverviewToday(**data["today"]),
+    )
 
 
 @router.post("/admin/users/{user_id}/suspend", response_model=AccountStatusResponse)

@@ -19,7 +19,8 @@ live credential (the #87 module's design).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, TypedDict
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, TypedDict
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -386,3 +387,137 @@ async def change_role(
         actor.user_id,
     )
     return locked
+
+
+async def batch_status_action(
+    db: AsyncSession,
+    actor: Actor,
+    action: str,
+    user_ids: list[UUID],
+    *,
+    audit_context: AuditContext | None = None,
+) -> list[dict[str, object]]:
+    """The §3.5 batch: ONE status action over up to 100 ids, one row at
+    a time — each row its own audited transition, failures answered
+    per-row ({ok: false, reason: <error code>}) without breaking the
+    neighbours. The actor's own row is refused (a self-suspend would
+    lock the console's operator out mid-flight)."""
+    from app.modules.identity.account_admin_service import AccountAdminService
+
+    service = AccountAdminService()
+    method = "suspend_user" if action == "suspend" else "reactivate_user"
+    results: list[dict[str, object]] = []
+    for row_id in user_ids:
+        if row_id == actor.user_id:
+            results.append(
+                {"user_id": str(row_id), "ok": False, "reason": "PERMISSION_DENIED"}
+            )
+            continue
+        try:
+            await getattr(service, method)(
+                db, actor, row_id, reason="batch", audit_context=audit_context
+            )
+        except BusinessError as exc:
+            results.append(
+                {
+                    "user_id": str(row_id),
+                    "ok": False,
+                    "reason": getattr(exc.code, "value", exc.code),
+                }
+            )
+            continue
+        results.append({"user_id": str(row_id), "ok": True})
+    return results
+
+
+async def overview(db: AsyncSession, *, clock: Clock) -> dict[str, Any]:
+    """The §4.1 console aggregate: fixed key sets (zero counts carry),
+    governance facts only — counts, never identities."""
+    from datetime import time as _time
+
+    from app.modules.points.models import RewardRedemption
+    from app.modules.submissions.models import Submission
+    from app.modules.tasks.models import Task
+
+    def _fixed(pairs: dict[str, int], keys: tuple[str, ...]) -> dict[str, int]:
+        return {key: pairs.get(key, 0) for key in keys}
+
+    roles: dict[str, int] = {
+        str(role): int(count)
+        for role, count in await db.execute(
+            select(User.role, func.count()).group_by(User.role)
+        )
+    }
+    statuses: dict[str, int] = {
+        str(status): int(count)
+        for status, count in await db.execute(
+            select(User.status, func.count()).group_by(User.status)
+        )
+    }
+    total = int(await db.scalar(select(func.count()).select_from(User)) or 0)
+
+    task_rows: dict[str, int] = {
+        str(status): int(count)
+        for status, count in await db.execute(
+            select(Task.status, func.count()).group_by(Task.status)
+        )
+    }
+    task_keys = (
+        "DRAFT",
+        "PUBLISHED",
+        "PAUSED",
+        "COMPLETED",
+        "ARCHIVED",
+        "DEPLETED",
+    )
+
+    pending_submissions = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(Submission)
+            .where(Submission.review_status == "PENDING_REVIEW")
+        )
+        or 0
+    )
+    pending_redemptions = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(RewardRedemption)
+            .where(RewardRedemption.status.in_(("REQUESTED", "UNDER_REVIEW")))
+        )
+        or 0
+    )
+
+    day_start = datetime.combine(
+        clock.now().date(), _time.min, tzinfo=clock.now().tzinfo
+    )
+    new_users = int(
+        await db.scalar(
+            select(func.count()).select_from(User).where(User.created_at >= day_start)
+        )
+        or 0
+    )
+    active_users = int(
+        await db.scalar(
+            select(func.count(func.distinct(UserSession.user_id)))
+            .select_from(UserSession)
+            .where(
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > clock.now(),
+            )
+        )
+        or 0
+    )
+    return {
+        "users": {
+            "total": total,
+            "by_role": _fixed(roles, ("STUDENT", "TEACHER", "ADMIN")),
+            "by_status": _fixed(
+                statuses, ("ACTIVE", "PENDING_APPROVAL", "SUSPENDED", "BANNED")
+            ),
+        },
+        "tasks": {"by_status": _fixed(task_rows, task_keys)},
+        "pending_submissions": pending_submissions,
+        "pending_redemptions": pending_redemptions,
+        "today": {"new_users": new_users, "active_users": active_users},
+    }

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -217,6 +218,25 @@ class AdminPasswordResetLinkResponse(BaseModel):
     """The one-time reset link, shown exactly once (Wave 2a §3.2)."""
 
     reset_token: str
+
+
+class AdminBatchRequest(BaseModel):
+    """The §3.5 batch: one action, up to 100 ids."""
+
+    action: Literal["suspend", "reactivate"]
+    user_ids: list[UUID] = Field(max_length=100)
+
+
+class AdminBatchRowResult(BaseModel):
+    """One row's outcome; ``reason`` is a stable error code string."""
+
+    user_id: str
+    ok: bool
+    reason: str | None = None
+
+
+class AdminBatchResponse(BaseModel):
+    results: list[AdminBatchRowResult]
 
 
 class AdminRoleChangeRequest(BaseModel):
