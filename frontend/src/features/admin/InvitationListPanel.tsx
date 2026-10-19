@@ -65,6 +65,16 @@ export function InvitationListPanel({ refreshKey = 0 }: { refreshKey?: number })
   const load = useCallback(() => {
     setPhase("loading");
     setError(null);
+  }, []);
+
+  // The workspace's issuance nudge: a refreshKey bump reloads the list
+  // (the initial mount rides its own "loading" phase; skip key 0).
+  useEffect(() => {
+    if (refreshKey === 0) {
+      return;
+    }
+    setPhase("loading");
+    setError(null);
   }, [refreshKey]);
 
   useEffect(() => {
