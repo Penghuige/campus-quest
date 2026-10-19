@@ -389,6 +389,38 @@
         }
       }
     },
+    "/api/v1/auth/password/reset-token": {
+      "post": {
+        "summary": "Spend Admin Reset Token",
+        "description": "Spend the admin-issued one-time reset link (Wave 2a §3.2): the\ntoken IS the authorization — this endpoint is public. Sets the new\npassword, revokes every live session, writes CONSUMED; the\ncredential dies with the GETDEL (a replay answers the uniform\ninvalid).",
+        "operationId": "spend_admin_reset_token_api_v1_auth_password_reset_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetTokenSpendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/password/reset": {
       "post": {
         "summary": "Confirm Password Reset",
@@ -5101,6 +5133,312 @@
         }
       }
     },
+    "/api/v1/admin/users/{user_id}": {
+      "get": {
+        "summary": "Read User Panorama",
+        "description": "The §3.1 account panorama: governance row, wallet balance, the\nten most recent submissions, and the live credential counts.",
+        "operationId": "read_user_panorama_api_v1_admin_users__user_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserPanoramaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/sessions": {
+      "get": {
+        "summary": "Read User Sessions",
+        "description": "The §3.3 read side: the account's live credential counts.",
+        "operationId": "read_user_sessions_api_v1_admin_users__user_id__sessions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserSessionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Kick User",
+        "description": "The §3.3 stolen-account emergency stop: every live refresh\nsession revoked, every remembered-device credential dropped, one\nADMIN_SESSIONS_REVOKED audit row in the same commit.",
+        "operationId": "kick_user_api_v1_admin_users__user_id__sessions_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/role": {
+      "patch": {
+        "summary": "Change User Role",
+        "description": "The §3.4 TEACHER<->ADMIN flip: not on oneself, not on students,\nnever leaving zero ACTIVE ADMINs (service check + DB trigger).",
+        "operationId": "change_user_role_api_v1_admin_users__user_id__role_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRoleChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserRoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/password-reset": {
+      "post": {
+        "summary": "Issue Password Reset Link",
+        "description": "The §3.2 one-time reset link for ANOTHER staff account: the\nurlsafe32 plaintext shows exactly once (only its SHA-256 is kept,\n48h TTL), ISSUED rides the same commit. Self-service and student\ntargets are refused — students recover through their phone OTP.",
+        "operationId": "issue_password_reset_link_api_v1_admin_users__user_id__password_reset_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPasswordResetLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/batch": {
+      "post": {
+        "summary": "Batch Status Action",
+        "description": "The §3.5 batch: one status action, up to 100 ids, one audited\ntransition per row — per-row outcomes, a failing row never breaks\nits neighbours, the actor's own row is refused.",
+        "operationId": "batch_status_action_api_v1_admin_users_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "summary": "Read Overview",
+        "description": "The §4.1 console aggregate: fixed key sets (zero counts carry),\ngovernance facts only.",
+        "operationId": "read_overview_api_v1_admin_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/users/{user_id}/suspend": {
       "post": {
         "summary": "Suspend User",
@@ -5413,6 +5751,150 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/staff/invitations": {
+      "get": {
+        "summary": "List Staff Invitations",
+        "description": "The §4.2 lifecycle list: derived states (PENDING/ACCEPTED/\nEXPIRED/REVOKED) against the business clock, the invited email\nmasked (G11), the issuer by id and nickname.",
+        "operationId": "list_staff_invitations_api_v1_admin_staff_invitations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInvitationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/staff/invitations/{invitation_id}": {
+      "delete": {
+        "summary": "Revoke Staff Invitation",
+        "description": "§4.2: revoke an un-accepted invitation — its token stops\nresolving the moment this commits (the accept path rejects revoked\nrows). Accepted or already-revoked rows refuse (409); unknown ids\nanswer 404.",
+        "operationId": "revoke_staff_invitation_api_v1_admin_staff_invitations__invitation_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invitation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/staff/invitations/{invitation_id}/resend": {
+      "post": {
+        "summary": "Resend Staff Invitation",
+        "description": "§4.2: re-sign an un-accepted invitation — a fresh one-time token\n(the old one dies), the expiry window restarts, and a revoked row\nrevives. Accepted rows refuse (409). The fresh token returns\nexactly once, the create contract, under the create-side\nper-admin rate bucket (it mints the same capability).",
+        "operationId": "resend_staff_invitation_api_v1_admin_staff_invitations__invitation_id__resend_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invitation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffInvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/admin/rewards": {
@@ -6186,6 +6668,200 @@
         ],
         "title": "AccountStatusResponse"
       },
+      "AdminBatchRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "suspend",
+              "reactivate"
+            ],
+            "title": "Action"
+          },
+          "user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "User Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "user_ids"
+        ],
+        "title": "AdminBatchRequest",
+        "description": "The §3.5 batch: one action, up to 100 ids."
+      },
+      "AdminBatchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/AdminBatchRowResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "AdminBatchResponse"
+      },
+      "AdminBatchRowResult": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "ok"
+        ],
+        "title": "AdminBatchRowResult",
+        "description": "One row's outcome; ``reason`` is a stable error code string."
+      },
+      "AdminInvitationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminInvitationRow"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminInvitationListResponse"
+      },
+      "AdminInvitationRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "EXPIRED",
+              "REVOKED"
+            ],
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "issuer_nickname": {
+            "type": "string",
+            "title": "Issuer Nickname"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "expires_at",
+          "accepted_at",
+          "revoked_at",
+          "created_by",
+          "issuer_nickname",
+          "created_at"
+        ],
+        "title": "AdminInvitationRow",
+        "description": "One invitation on the §4.2 lifecycle list. ``email`` arrives\nMASKED from the service (G11: the plaintext rests on the row);\n``status`` is derived at read time against the business clock."
+      },
+      "AdminKickResponse": {
+        "properties": {
+          "revoked_sessions": {
+            "type": "integer",
+            "title": "Revoked Sessions"
+          },
+          "revoked_devices": {
+            "type": "integer",
+            "title": "Revoked Devices"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revoked_sessions",
+          "revoked_devices"
+        ],
+        "title": "AdminKickResponse",
+        "description": "The §3.3 stop: what one kick took out."
+      },
       "AdminNotificationTemplateListResponse": {
         "properties": {
           "items": {
@@ -6262,6 +6938,153 @@
           "version"
         ],
         "title": "AdminNotificationTemplateResponse"
+      },
+      "AdminOverviewResponse": {
+        "properties": {
+          "users": {
+            "$ref": "#/components/schemas/AdminOverviewUsers"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/AdminOverviewTasks"
+          },
+          "pending_submissions": {
+            "type": "integer",
+            "title": "Pending Submissions"
+          },
+          "pending_redemptions": {
+            "type": "integer",
+            "title": "Pending Redemptions"
+          },
+          "today": {
+            "$ref": "#/components/schemas/AdminOverviewToday"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "users",
+          "tasks",
+          "pending_submissions",
+          "pending_redemptions",
+          "today"
+        ],
+        "title": "AdminOverviewResponse"
+      },
+      "AdminOverviewTasks": {
+        "properties": {
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "by_status"
+        ],
+        "title": "AdminOverviewTasks"
+      },
+      "AdminOverviewToday": {
+        "properties": {
+          "new_users": {
+            "type": "integer",
+            "title": "New Users"
+          },
+          "active_users": {
+            "type": "integer",
+            "title": "Active Users"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "new_users",
+          "active_users"
+        ],
+        "title": "AdminOverviewToday"
+      },
+      "AdminOverviewUsers": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_role": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Role"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "by_role",
+          "by_status"
+        ],
+        "title": "AdminOverviewUsers"
+      },
+      "AdminPasswordResetLinkResponse": {
+        "properties": {
+          "reset_token": {
+            "type": "string",
+            "title": "Reset Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reset_token"
+        ],
+        "title": "AdminPasswordResetLinkResponse",
+        "description": "The one-time reset link, shown exactly once (Wave 2a §3.2)."
+      },
+      "AdminRecentSubmission": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_title": {
+            "type": "string",
+            "title": "Task Title"
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status"
+          },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "task_title",
+          "validation_status",
+          "review_status",
+          "submitted_at"
+        ],
+        "title": "AdminRecentSubmission",
+        "description": "One row of the panorama's recent-submissions strip (Wave 2a §3.1):\nsubmission facts only — no content, no URLs, no storage keys."
       },
       "AdminRewardItemListResponse": {
         "properties": {
@@ -6405,6 +7228,19 @@
         "title": "AdminRewardItemResponse",
         "description": "One catalogue row, admin view: every business field including\nthe enabled flag and the fulfillment instructions the student\nlisting omits."
       },
+      "AdminRoleChangeRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "AdminRoleChangeRequest",
+        "description": "The §3.4 TEACHER<->ADMIN flip request."
+      },
       "AdminUserListResponse": {
         "properties": {
           "items": {
@@ -6436,6 +7272,43 @@
           "offset"
         ],
         "title": "AdminUserListResponse"
+      },
+      "AdminUserPanoramaResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AdminUserResponse"
+          },
+          "wallet_balance": {
+            "type": "integer",
+            "title": "Wallet Balance"
+          },
+          "recent_submissions": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRecentSubmission"
+            },
+            "type": "array",
+            "title": "Recent Submissions"
+          },
+          "active_session_count": {
+            "type": "integer",
+            "title": "Active Session Count"
+          },
+          "remembered_device_count": {
+            "type": "integer",
+            "title": "Remembered Device Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user",
+          "wallet_balance",
+          "recent_submissions",
+          "active_session_count",
+          "remembered_device_count"
+        ],
+        "title": "AdminUserPanoramaResponse",
+        "description": "The §3.1 detail view: the governance row plus the cross-module\nfacts the console renders on one account page."
       },
       "AdminUserResponse": {
         "properties": {
@@ -6487,6 +7360,54 @@
         ],
         "title": "AdminUserResponse",
         "description": "One account row for the governance listing (G11: governance\nfacts plus the MASKED phone — the approval queue's identifying\ncontact fact, minimal-necessary form; the raw number stays behind\nits own surfaces)."
+      },
+      "AdminUserRoleResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "role",
+          "status"
+        ],
+        "title": "AdminUserRoleResponse",
+        "description": "The §3.4 flip's result row."
+      },
+      "AdminUserSessionsResponse": {
+        "properties": {
+          "active_session_count": {
+            "type": "integer",
+            "title": "Active Session Count"
+          },
+          "remembered_device_count": {
+            "type": "integer",
+            "title": "Remembered Device Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "active_session_count",
+          "remembered_device_count"
+        ],
+        "title": "AdminUserSessionsResponse",
+        "description": "The §3.3 read: how many live refresh sessions and remembered\ndevices the account currently holds."
       },
       "ApprovalVerdictResponse": {
         "properties": {
@@ -8550,6 +9471,25 @@
         ],
         "title": "PasswordResetRequest",
         "description": "Confirm a password reset with the OTP code and a new password."
+      },
+      "PasswordResetTokenSpendRequest": {
+        "properties": {
+          "reset_token": {
+            "type": "string",
+            "title": "Reset Token"
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reset_token",
+          "new_password"
+        ],
+        "title": "PasswordResetTokenSpendRequest",
+        "description": "Spend the admin-issued reset link: the token IS the\nauthorization (the endpoint is public)."
       },
       "PhoneBindConfirmRequest": {
         "properties": {

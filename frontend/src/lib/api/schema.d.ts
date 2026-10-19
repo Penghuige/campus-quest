@@ -236,6 +236,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password/reset-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Spend Admin Reset Token
+         * @description Spend the admin-issued one-time reset link (Wave 2a §3.2): the
+         *     token IS the authorization — this endpoint is public. Sets the new
+         *     password, revokes every live session, writes CONSUMED; the
+         *     credential dies with the GETDEL (a replay answers the uniform
+         *     invalid).
+         */
+        post: operations["spend_admin_reset_token_api_v1_auth_password_reset_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password/reset": {
         parameters: {
             query?: never;
@@ -2298,6 +2322,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read User Panorama
+         * @description The §3.1 account panorama: governance row, wallet balance, the
+         *     ten most recent submissions, and the live credential counts.
+         */
+        get: operations["read_user_panorama_api_v1_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read User Sessions
+         * @description The §3.3 read side: the account's live credential counts.
+         */
+        get: operations["read_user_sessions_api_v1_admin_users__user_id__sessions_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Kick User
+         * @description The §3.3 stolen-account emergency stop: every live refresh
+         *     session revoked, every remembered-device credential dropped, one
+         *     ADMIN_SESSIONS_REVOKED audit row in the same commit.
+         */
+        delete: operations["kick_user_api_v1_admin_users__user_id__sessions_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change User Role
+         * @description The §3.4 TEACHER<->ADMIN flip: not on oneself, not on students,
+         *     never leaving zero ACTIVE ADMINs (service check + DB trigger).
+         */
+        patch: operations["change_user_role_api_v1_admin_users__user_id__role_patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Password Reset Link
+         * @description The §3.2 one-time reset link for ANOTHER staff account: the
+         *     urlsafe32 plaintext shows exactly once (only its SHA-256 is kept,
+         *     48h TTL), ISSUED rides the same commit. Self-service and student
+         *     targets are refused — students recover through their phone OTP.
+         */
+        post: operations["issue_password_reset_link_api_v1_admin_users__user_id__password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Status Action
+         * @description The §3.5 batch: one status action, up to 100 ids, one audited
+         *     transition per row — per-row outcomes, a failing row never breaks
+         *     its neighbours, the actor's own row is refused.
+         */
+        post: operations["batch_status_action_api_v1_admin_users_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Overview
+         * @description The §4.1 console aggregate: fixed key sets (zero counts carry),
+         *     governance facts only.
+         */
+        get: operations["read_overview_api_v1_admin_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{user_id}/suspend": {
         parameters: {
             query?: never;
@@ -2418,6 +2576,75 @@ export interface paths {
          *     exactly once.
          */
         post: operations["create_staff_invitation_api_v1_staff_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/staff/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staff Invitations
+         * @description The §4.2 lifecycle list: derived states (PENDING/ACCEPTED/
+         *     EXPIRED/REVOKED) against the business clock, the invited email
+         *     masked (G11), the issuer by id and nickname.
+         */
+        get: operations["list_staff_invitations_api_v1_admin_staff_invitations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/staff/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Staff Invitation
+         * @description §4.2: revoke an un-accepted invitation — its token stops
+         *     resolving the moment this commits (the accept path rejects revoked
+         *     rows). Accepted or already-revoked rows refuse (409); unknown ids
+         *     answer 404.
+         */
+        delete: operations["revoke_staff_invitation_api_v1_admin_staff_invitations__invitation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/staff/invitations/{invitation_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Staff Invitation
+         * @description §4.2: re-sign an un-accepted invitation — a fresh one-time token
+         *     (the old one dies), the expiry window restarts, and a revoked row
+         *     revives. Accepted rows refuse (409). The fresh token returns
+         *     exactly once, the create contract, under the create-side
+         *     per-admin rate bucket (it mints the same capability).
+         */
+        post: operations["resend_staff_invitation_api_v1_admin_staff_invitations__invitation_id__resend_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2732,6 +2959,87 @@ export interface components {
             status: components["schemas"]["UserStatus"];
         };
         /**
+         * AdminBatchRequest
+         * @description The §3.5 batch: one action, up to 100 ids.
+         */
+        AdminBatchRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "suspend" | "reactivate";
+            /** User Ids */
+            user_ids: string[];
+        };
+        /** AdminBatchResponse */
+        AdminBatchResponse: {
+            /** Results */
+            results: components["schemas"]["AdminBatchRowResult"][];
+        };
+        /**
+         * AdminBatchRowResult
+         * @description One row's outcome; ``reason`` is a stable error code string.
+         */
+        AdminBatchRowResult: {
+            /** User Id */
+            user_id: string;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AdminInvitationListResponse */
+        AdminInvitationListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminInvitationRow"][];
+        };
+        /**
+         * AdminInvitationRow
+         * @description One invitation on the §4.2 lifecycle list. ``email`` arrives
+         *     MASKED from the service (G11: the plaintext rests on the row);
+         *     ``status`` is derived at read time against the business clock.
+         */
+        AdminInvitationRow: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            role: components["schemas"]["Role"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Accepted At */
+            accepted_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Created By */
+            created_by: string;
+            /** Issuer Nickname */
+            issuer_nickname: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AdminKickResponse
+         * @description The §3.3 stop: what one kick took out.
+         */
+        AdminKickResponse: {
+            /** Revoked Sessions */
+            revoked_sessions: number;
+            /** Revoked Devices */
+            revoked_devices: number;
+        };
+        /**
          * AdminNotificationTemplateListResponse
          * @description Offset-paginated template page, (event_type, channel)-ordered,
          *     disabled rows INCLUDED — the administration view.
@@ -2762,6 +3070,71 @@ export interface components {
             enabled: boolean;
             /** Version */
             version: number;
+        };
+        /** AdminOverviewResponse */
+        AdminOverviewResponse: {
+            users: components["schemas"]["AdminOverviewUsers"];
+            tasks: components["schemas"]["AdminOverviewTasks"];
+            /** Pending Submissions */
+            pending_submissions: number;
+            /** Pending Redemptions */
+            pending_redemptions: number;
+            today: components["schemas"]["AdminOverviewToday"];
+        };
+        /** AdminOverviewTasks */
+        AdminOverviewTasks: {
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+        };
+        /** AdminOverviewToday */
+        AdminOverviewToday: {
+            /** New Users */
+            new_users: number;
+            /** Active Users */
+            active_users: number;
+        };
+        /** AdminOverviewUsers */
+        AdminOverviewUsers: {
+            /** Total */
+            total: number;
+            /** By Role */
+            by_role: {
+                [key: string]: number;
+            };
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * AdminPasswordResetLinkResponse
+         * @description The one-time reset link, shown exactly once (Wave 2a §3.2).
+         */
+        AdminPasswordResetLinkResponse: {
+            /** Reset Token */
+            reset_token: string;
+        };
+        /**
+         * AdminRecentSubmission
+         * @description One row of the panorama's recent-submissions strip (Wave 2a §3.1):
+         *     submission facts only — no content, no URLs, no storage keys.
+         */
+        AdminRecentSubmission: {
+            /** Id */
+            id: string;
+            /** Task Title */
+            task_title: string;
+            /** Validation Status */
+            validation_status: string;
+            /** Review Status */
+            review_status: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
         };
         /**
          * AdminRewardItemListResponse
@@ -2809,6 +3182,13 @@ export interface components {
             /** Fulfillment Instructions */
             fulfillment_instructions: string | null;
         };
+        /**
+         * AdminRoleChangeRequest
+         * @description The §3.4 TEACHER<->ADMIN flip request.
+         */
+        AdminRoleChangeRequest: {
+            role: components["schemas"]["Role"];
+        };
         /** AdminUserListResponse */
         AdminUserListResponse: {
             /** Items */
@@ -2819,6 +3199,22 @@ export interface components {
             limit: number;
             /** Offset */
             offset: number;
+        };
+        /**
+         * AdminUserPanoramaResponse
+         * @description The §3.1 detail view: the governance row plus the cross-module
+         *     facts the console renders on one account page.
+         */
+        AdminUserPanoramaResponse: {
+            user: components["schemas"]["AdminUserResponse"];
+            /** Wallet Balance */
+            wallet_balance: number;
+            /** Recent Submissions */
+            recent_submissions: components["schemas"]["AdminRecentSubmission"][];
+            /** Active Session Count */
+            active_session_count: number;
+            /** Remembered Device Count */
+            remembered_device_count: number;
         };
         /**
          * AdminUserResponse
@@ -2843,6 +3239,29 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * AdminUserRoleResponse
+         * @description The §3.4 flip's result row.
+         */
+        AdminUserRoleResponse: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+        };
+        /**
+         * AdminUserSessionsResponse
+         * @description The §3.3 read: how many live refresh sessions and remembered
+         *     devices the account currently holds.
+         */
+        AdminUserSessionsResponse: {
+            /** Active Session Count */
+            active_session_count: number;
+            /** Remembered Device Count */
+            remembered_device_count: number;
         };
         /**
          * ApprovalVerdictResponse
@@ -3829,6 +4248,17 @@ export interface components {
             challenge_id: string;
             /** Code */
             code: string;
+            /** New Password */
+            new_password: string;
+        };
+        /**
+         * PasswordResetTokenSpendRequest
+         * @description Spend the admin-issued reset link: the token IS the
+         *     authorization (the endpoint is public).
+         */
+        PasswordResetTokenSpendRequest: {
+            /** Reset Token */
+            reset_token: string;
             /** New Password */
             new_password: string;
         };
@@ -5872,6 +6302,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChallengeResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spend_admin_reset_token_api_v1_auth_password_reset_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetTokenSpendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -8970,6 +9431,218 @@ export interface operations {
             };
         };
     };
+    read_user_panorama_api_v1_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPanoramaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_user_sessions_api_v1_admin_users__user_id__sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserSessionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kick_user_api_v1_admin_users__user_id__sessions_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminKickResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_user_role_api_v1_admin_users__user_id__role_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRoleChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRoleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_password_reset_link_api_v1_admin_users__user_id__password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPasswordResetLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_status_action_api_v1_admin_users_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_overview_api_v1_admin_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverviewResponse"];
+                };
+            };
+        };
+    };
     suspend_user_api_v1_admin_users__user_id__suspend_post: {
         parameters: {
             query?: never;
@@ -9153,6 +9826,98 @@ export interface operations {
                 "application/json": components["schemas"]["StaffInvitationCreateRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffInvitationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staff_invitations_api_v1_admin_staff_invitations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInvitationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_staff_invitation_api_v1_admin_staff_invitations__invitation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_staff_invitation_api_v1_admin_staff_invitations__invitation_id__resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
