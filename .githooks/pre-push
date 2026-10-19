@@ -2,4 +2,15 @@
 # CampusQuest pre-push: the fast local lane of the CI gates (see the
 # pre-push target in the Makefile). Skip one push with:
 #   git push --no-verify
+#
+# GIT_DIR re-anchoring (2026-10-19): git hands hooks a GIT_DIR that can
+# be RELATIVE (".git" in a plain clone), and every child that changes
+# directory — npm run in frontend/, make -C — then resolves it against
+# the WRONG root: check-css-integrity's `git grep` died silently on
+# every push from a worktree. Re-anchor both vars to absolute paths
+# once, here, so the gates run identically from any cwd.
+GIT_DIR_ABS=$(cd "$(git rev-parse --git-dir)" && pwd) || exit 1
+GIT_WORK_TREE_ABS=$(cd "$(git rev-parse --show-toplevel)" && pwd) || exit 1
+export GIT_DIR="$GIT_DIR_ABS"
+export GIT_WORK_TREE="$GIT_WORK_TREE_ABS"
 exec make pre-push
