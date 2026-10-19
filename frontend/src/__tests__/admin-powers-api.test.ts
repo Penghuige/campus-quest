@@ -24,7 +24,6 @@ import {
   fetchAdminUserDetail,
   issueAdminPasswordReset,
   listAdminInvitations,
-  listAdminUserSessions,
   resendAdminInvitation,
   revokeAdminInvitation,
   revokeAdminUserSessions,
@@ -110,10 +109,10 @@ describe("the user detail panorama (spec §3.1)", () => {
 });
 
 describe("the admin password reset (spec §3.2)", () => {
-  test("POSTs and answers the one-time link", async () => {
-    stubFetch(JSON.stringify({ reset_link: "https://x/campus/reset?t=abc" }), 200);
-    const { reset_link } = await issueAdminPasswordReset("u1");
-    assert.equal(reset_link, "https://x/campus/reset?t=abc");
+  test("POSTs and answers the one-time TOKEN (the URL composes client-side)", async () => {
+    stubFetch(JSON.stringify({ reset_token: "urlsafe32-abc" }), 200);
+    const { reset_token } = await issueAdminPasswordReset("u1");
+    assert.equal(reset_token, "urlsafe32-abc");
     assert.equal(recorded?.url, "/api/v1/admin/users/u1/password-reset");
     assert.equal(recorded?.method, "POST");
     assert.equal(recorded?.body, null);
@@ -121,15 +120,10 @@ describe("the admin password reset (spec §3.2)", () => {
 });
 
 describe("session management (spec §3.3)", () => {
-  test("lists sessions; DELETE answers the revoked count", async () => {
-    stubFetch(JSON.stringify({ items: [{ id: "se1", created_at: "2026-10-18T08:00:00Z" }] }));
-    const { items } = await listAdminUserSessions("u1");
-    assert.equal(items.length, 1);
-    assert.equal(recorded?.url, "/api/v1/admin/users/u1/sessions");
-
-    stubFetch(JSON.stringify({ revoked: 3 }), 200);
-    const { revoked } = await revokeAdminUserSessions("u1");
-    assert.equal(revoked, 3);
+  test("the kick DELETE answers BOTH revoked counts (the GET discloses counts only — no listing)", async () => {
+    stubFetch(JSON.stringify({ revoked_sessions: 2, revoked_devices: 1 }), 200);
+    const counts = await revokeAdminUserSessions("u1");
+    assert.deepEqual(counts, { revoked_sessions: 2, revoked_devices: 1 });
     assert.equal(recorded?.method, "DELETE");
     assert.equal(recorded?.url, "/api/v1/admin/users/u1/sessions");
   });
@@ -196,9 +190,19 @@ describe("the invitation lifecycle (spec §4.2)", () => {
     assert.equal(recorded?.method, "DELETE");
     assert.equal(recorded?.url, "/api/v1/admin/staff/invitations/inv1");
 
-    stubFetch(JSON.stringify({ link: "https://x/campus/staff/invite?t=new" }));
-    const { link } = await resendAdminInvitation("inv1");
-    assert.equal(link, "https://x/campus/staff/invite?t=new");
+    // The wire carries the fresh one-time TOKEN (the create contract's
+    // own shape); the URL composes through buildInvitationLink.
+    stubFetch(
+      JSON.stringify({
+        id: "inv1",
+        role: "TEACHER",
+        token: "fresh-urlsafe-token",
+        expires_at: "2026-10-20T12:00:00Z",
+        created_at: "2026-10-19T12:00:00Z",
+      }),
+    );
+    const { token } = await resendAdminInvitation("inv1");
+    assert.equal(token, "fresh-urlsafe-token");
     assert.equal(recorded?.method, "POST");
     assert.equal(recorded?.url, "/api/v1/admin/staff/invitations/inv1/resend");
   });

@@ -14,17 +14,19 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { staffLogin } from "./fixtures";
+import { mintToken, staffLogin } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
+const RUN = process.env.CQ_E2E_RUN;
+const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
 const ADMIN = process.env.CQ_E2E_ADMIN;
 const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
 const STAFF = process.env.CQ_E2E_STAFF;
 const STAFF_TOTP_SECRET = process.env.CQ_E2E_STAFF_TOTP_SECRET;
 
 test.skip(
-  !(E2E_ENABLED && ADMIN && ADMIN_TOTP_SECRET && STAFF && STAFF_TOTP_SECRET),
+  !(E2E_ENABLED && RUN && ADMIN_ID && ADMIN && ADMIN_TOTP_SECRET && STAFF && STAFF_TOTP_SECRET),
   "set CQ_E2E=1 (and the CQ_E2E_ADMIN/STAFF + TOTP vars) to run this suite.",
 );
 
@@ -66,11 +68,11 @@ test("the user detail: reset link once, kick answers 401, the role round-trips",
   await expect(linkBox).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "复制重置链接" })).toBeVisible();
 
-  // 踢线: the count note answers; the victim's held session dies.
+  // 踢线: BOTH counts answer; the victim's held session dies.
   await page.getByRole("button", { name: "踢出全部会话" }).click();
-  await expect(page.getByText(/已撤销 \d+ 项会话与设备凭据/)).toBeVisible({
-    timeout: 10_000,
-  });
+  await expect(
+    page.getByText(/已撤销 \d+ 项会话与 \d+ 项设备凭据/),
+  ).toBeVisible({ timeout: 10_000 });
   const probe = await victim.newPage();
   await probe.context().addCookies(victimState.cookies);
   const me = await probe.request.get(`${BASE_URL}/api/v1/me`);
@@ -82,6 +84,68 @@ test("the user detail: reset link once, kick answers 401, the role round-trips",
   await page.getByRole("button", { name: "降级为教师" }).click();
   await expect(page.getByText("角色已调整为教师")).toBeVisible({ timeout: 10_000 });
   await victim.close();
+});
+
+test("the reset token's full loop: issue → consume page sets the password → fresh login", async ({
+  page,
+  browser,
+}) => {
+  // A DEDICATED invited teacher (password set at accept): the seeded
+  // staff's password must never move (battery poison).
+  const email = `e2e-wave2a-reset-${RUN}@school.edu`;
+  const token = await mintToken(ADMIN_ID!);
+  const response = await page.request.post(
+    `${process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1"}/staff/invitations`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { email, role: "TEACHER" },
+    },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+  const { token: inviteToken } = (await response.json()) as { token: string };
+  await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(inviteToken)}`);
+  await page.getByLabel("设置密码").fill("e2e-old-horse-123");
+  await page.getByLabel("确认密码").fill("e2e-old-horse-123");
+  await page.getByRole("button", { name: "激活账号" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+
+  // The admin issues the one-time token; the composed PUBLIC link
+  // renders for exactly-once copy.
+  await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
+  await page.goto(`${BASE_URL}/admin/users`);
+  const row = page.locator("tr", { hasText: email });
+  await row.getByRole("link", { name: email }).click();
+  await expect(page.getByRole("heading", { name: "用户详情" })).toBeVisible();
+  await page.getByRole("button", { name: "代重置密码" }).click();
+  const linkBox = page.getByText(/reset-password\?token=/);
+  await expect(linkBox).toBeVisible({ timeout: 10_000 });
+  const resetUrl = (await linkBox.textContent()) ?? "";
+
+  // A FRESH context (the victim's own session was revoked server-side
+  // at spend) opens the link: the token prefills, the new password
+  // sets, the page lands the login's reset note.
+  const spender = await browser.newContext({ ignoreHTTPSErrors: true } as never);
+  const spenderPage = await spender.newPage();
+  await spenderPage.goto(resetUrl.trim());
+  await expect(spenderPage.getByLabel("重置口令")).toHaveValue(/.+/);
+  await spenderPage.getByLabel("新密码").fill("e2e-new-horse-456");
+  await spenderPage.getByRole("button", { name: "重置密码" }).click();
+  await expect(spenderPage).toHaveURL(new RegExp(`${BASE_URL}/login\\?reset=1`), {
+    timeout: 10_000,
+  });
+  await spenderPage.getByText("密码已重置，请使用新密码登录").toBeVisible();
+  await spender.close();
+
+  // The fresh login rides the NEW password (the teacher's password
+  // channel needs no second factor).
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await page.goto(`${BASE_URL}/staff/login`);
+  await page.getByRole("button", { name: "密码登录" }).click();
+  await page.getByLabel("邮箱").fill(email);
+  await page.getByLabel("密码").fill("e2e-new-horse-456");
+  await page.getByRole("textbox", { name: /动态验证码/ }).fill("");
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
 });
 
 test("the invitation panel: create → revoke → resend a one-time link", async ({ page }) => {

@@ -27,6 +27,8 @@ import {
   revokeAdminInvitation,
   type AdminInvitationDto,
 } from "./adminPowersApi";
+import { buildInvitationLink } from "./staffInvitationView";
+import { apiBasePath } from "@/lib/apiBase";
 
 const STATUS_VIEWS: Record<
   string,
@@ -119,8 +121,13 @@ export function InvitationListPanel() {
 
   function onResend(row: AdminInvitationDto) {
     void run(async () => {
-      const { link } = await resendAdminInvitation(row.id);
-      setResent({ email: row.email, link });
+      // The wire carries the fresh one-time TOKEN; the copyable URL
+      // composes through the create surface's own builder.
+      const { token } = await resendAdminInvitation(row.id);
+      setResent({
+        email: row.email,
+        link: buildInvitationLink(window.location.origin, apiBasePath(), token),
+      });
       load();
     });
   }

@@ -66,6 +66,20 @@ export function buildInvitationLink(
   return `${origin}${basePath}/staff/invite/${token}`;
 }
 
+/**
+ * The §3.2 admin-issued reset link: the PUBLIC consume page that
+ * spends the one-time token (`/reset-password?token=…`; the token is
+ * URL-safe by construction). The same origin+mount-prefix discipline
+ * as the invitation link.
+ */
+export function buildAdminResetLink(
+  origin: string,
+  basePath: string,
+  token: string,
+): string {
+  return `${origin}${basePath}/reset-password?token=${token}`;
+}
+
 export interface StaffInvitationErrorView {
   message: string;
   requestId: string | null;

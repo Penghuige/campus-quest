@@ -202,7 +202,7 @@ export function AdminUserAccounts() {
           refused.length === 0
             ? `批量操作完成：${okCount} 项成功。`
             : `批量操作完成：${okCount} 项成功，${refused.length} 项被跳过（${refused
-                .map((row) => `${row.user_id}：${batchReasonCopy(row.reason)}`)
+                .map((row) => `${row.user_id}：${batchReasonCopy(row.reason ?? undefined)}`)
                 .join("；")}）。`,
         );
         setSelected(new Set());

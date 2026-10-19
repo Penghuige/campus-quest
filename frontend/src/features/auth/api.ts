@@ -175,6 +175,23 @@ export function confirmPasswordReset(
   });
 }
 
+/**
+ * Spend the admin-issued one-time reset token (Wave 2a §3.2): PUBLIC —
+ * the urlsafe32 token IS the authorization (48h TTL, hash-kept,
+ * GETDEL at spend; a replay answers the uniform invalid). Sets the
+ * new password and revokes every live session server-side — the user
+ * logs in fresh afterwards.
+ */
+export function spendAdminResetToken(
+  resetToken: string,
+  newPassword: string,
+): Promise<void> {
+  return apiRequest<void>(`${BASE}/password/reset-token`, {
+    method: "POST",
+    body: { reset_token: resetToken, new_password: newPassword },
+  });
+}
+
 // --- staff surface (spec §5.8; backend identity/staff_router.py) -----------------
 //
 // Auth model on these four endpoints:

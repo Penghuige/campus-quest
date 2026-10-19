@@ -24,6 +24,7 @@ import { useSession } from "@/features/auth/session";
 import { SectionError, SectionSkeleton } from "@/components/ui/sectionStates";
 import { isApiError } from "@/lib/errors";
 import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
+import { apiBasePath } from "@/lib/apiBase";
 
 import {
   changeAdminUserRole,
@@ -32,6 +33,7 @@ import {
   revokeAdminUserSessions,
   type AdminUserDetailDto,
 } from "./adminPowersApi";
+import { buildAdminResetLink } from "./staffInvitationView";
 
 const ROLE_LABELS: Record<string, string> = {
   STUDENT: "学生",
@@ -115,15 +117,22 @@ export function AdminUserDetail({ userId }: { userId: string }) {
 
   function onIssueReset() {
     void run(async () => {
-      const { reset_link } = await issueAdminPasswordReset(userId);
-      setResetLink(reset_link);
+      // The wire carries the one-time TOKEN; the copyable URL composes
+      // client-side onto the public consume page (48h validity).
+      const { reset_token } = await issueAdminPasswordReset(userId);
+      setResetLink(
+        buildAdminResetLink(window.location.origin, apiBasePath(), reset_token),
+      );
     });
   }
 
   function onKick() {
     void run(async () => {
-      const { revoked } = await revokeAdminUserSessions(userId);
-      setNote({ text: `已撤销 ${revoked} 项会话与设备凭据。`, tone: "ok" });
+      const { revoked_sessions, revoked_devices } = await revokeAdminUserSessions(userId);
+      setNote({
+        text: `已撤销 ${revoked_sessions} 项会话与 ${revoked_devices} 项设备凭据。`,
+        tone: "ok",
+      });
       load();
     });
   }
@@ -206,7 +215,7 @@ export function AdminUserDetail({ userId }: { userId: string }) {
                   {detail.recent_submissions.map((row) => (
                     <tr key={row.id}>
                       <td>{row.task_title}</td>
-                      <td>{row.status}</td>
+                      <td>{row.validation_status}</td>
                       <td>
                         <time className="notif-time" dateTime={row.submitted_at}>
                           {formatDeadlineDateTime(parseServerInstant(row.submitted_at))}
