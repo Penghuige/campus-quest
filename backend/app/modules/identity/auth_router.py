@@ -38,7 +38,6 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.mobile_login_service import MobileLoginService
 from app.modules.identity.models import User
 from app.modules.identity.otp import (
-    InvalidPhoneError,
     OtpPurpose,
     normalize_phone,
 )
@@ -70,10 +69,7 @@ from app.modules.identity.schemas import (
     ChallengeResponse,
     LoginRequest,
     LogoutRequest,
-    MobileCodeEntryResponse,
     MobileCodeRegisterRequest,
-    MobileCodeRequestRequest,
-    MobileCodeVerifyRequest,
     PasswordForgotRequest,
     PasswordResetRequest,
     PasswordResetTokenSpendRequest,
@@ -184,111 +180,6 @@ async def register_student(
     )
 
 
-@router.get(
-    "/auth/mobile-code/remembered",
-    status_code=200,
-    response_model=None,
-)
-async def probe_remembered_device(
-    request: Request,
-    clock: Annotated[Clock, Depends(get_business_clock)],
-    db: DbSession,
-) -> Response:
-    """Is a remembered device alive for the login banner? (V1.1 login
-    iteration item 3.)
-
-    The banner renders only when this answers a masked phone — but
-    cq_staff_device is HttpOnly, so the browser cannot look itself.
-    200 {phone_masked} ONLY for the banner's audience: a cookie bound
-    to a STUDENT (ACTIVE or PENDING_APPROVAL) with a bound phone. Every
-    other shape — no cookie, unknown or expired value, a staff binding
-    — answers the same empty 204: existence is never an answer. The
-    click leg is the cookie-only POST /auth/mobile-code/verify.
-    """
-    cookie = request.cookies.get(DEVICE_COOKIE_NAME)
-    if cookie is not None:
-        user_id = await validate_device(db, cookie, clock=clock)
-        if user_id is not None:
-            user = await db.get(User, user_id)
-            if (
-                user is not None
-                and user.role == Role.STUDENT
-                and user.status in (UserStatus.ACTIVE, UserStatus.PENDING_APPROVAL)
-                and user.phone_e164
-            ):
-                return JSONResponse({"phone_masked": mask_phone(user.phone_e164)})
-    return Response(status_code=204)
-
-
-@router.post("/auth/mobile-code/request", status_code=202)
-async def request_mobile_code(
-    body: MobileCodeRequestRequest,
-    request: Request,
-    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
-    limiter: LimiterDep,
-    db: DbSession,
-) -> Response:
-    """SMS one 6-digit student login code (V1.1 2026-10-16 §3) — always
-    202, empty body: phone/student existence is never an answer here;
-    only a cooldown/liter breach (429) differs."""
-    # The limiter key is the SAME E.164 form the service's cooldown
-    # uses (the OTP-send discipline): format variants of one number must
-    # not split the bucket (final review I-3).
-    try:
-        limiter_phone = normalize_phone(body.phone, "CN")
-    except InvalidPhoneError:
-        limiter_phone = body.phone.strip()
-    await _enforce_rate_limit(
-        limiter,
-        "auth:mobile-code",
-        limiter_phone,
-        client_ip=_client_ip(request),
-    )
-    await mobile_login.request_code(db, body.phone)
-    return JSONResponse({}, status_code=202)
-
-
-@router.post("/auth/mobile-code/verify")
-async def verify_mobile_code(
-    body: MobileCodeVerifyRequest,
-    request: Request,
-    response: Response,
-    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
-    settings: AppSettings,
-    db: DbSession,
-) -> TokenPairResponse | MobileCodeEntryResponse:
-    """Open a student session with the SMS code — or, with a valid code
-    on an UNREGISTERED phone, answer the entry shape (the queue-jump
-    batch): {status:"unregistered", register_token} opens the register
-    door for 5 minutes. With a valid remembered-device cookie and NO
-    code, the cookie itself opens the session (#87 craft)."""
-    outcome = await mobile_login.verify_code(
-        db,
-        phone=body.phone,
-        code=body.code,
-        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
-        remember_device=body.remember_device,
-        audit_context=AuditContext.from_request(request),
-    )
-    if outcome.unregistered:
-        assert outcome.register_token is not None
-        return MobileCodeEntryResponse(
-            status="unregistered", register_token=outcome.register_token
-        )
-    assert outcome.tokens is not None
-    pair = _token_pair_response(response, outcome.tokens, settings)
-    if outcome.device_cookie is not None:
-        response.set_cookie(
-            DEVICE_COOKIE_NAME,
-            outcome.device_cookie,
-            max_age=DEVICE_TTL_DAYS * 24 * 3600,
-            secure=True,
-            httponly=True,
-            samesite="lax",
-        )
-    return pair
-
-
 @router.post(
     "/auth/mobile-code/register",
     response_model=RegisterResponse,
@@ -340,8 +231,11 @@ async def login(
     union — a phone/student-number reaches the student flow (phone
     first), an email reaches the staff flow with the remembered-cookie
     honoring preserved; an ADMIN without one answers totp_required and
-    the totp leg completes at /auth/challenge/totp."""
-    identity = (body.username or body.identifier or "").strip()
+    the totp leg completes at /auth/challenge/totp.
+
+    PR-3 (2026-10-19 spec §3.2/§3.3): the legacy {username, password}
+    form is RETIRED — the unified identifier form is the only shape."""
+    identity = (body.identifier or "").strip()
     # Two layers (hardening A-1): per identity and per transport peer.
     await _enforce_rate_limit(
         limiter,
@@ -349,9 +243,6 @@ async def login(
         identity.lower(),
         client_ip=_client_ip(request),
     )
-    if body.username is not None:
-        tokens = await sessions.login_student(db, body.username, body.password)
-        return _token_pair_response(response, tokens, settings)
     outcome = await unified.login(
         db,
         identifier=body.identifier or "",
