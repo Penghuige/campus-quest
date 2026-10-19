@@ -62,8 +62,8 @@ test.describe("student logout (defect #11)", () => {
     // QA #18's complaint, student side: another student can log in on
     // the freed device right away.
     const [username, password] = AUTHOR_STUDENT!.split(":");
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("学号").fill(username);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("手机号、邮箱或学号").fill(username);
     await page.getByLabel("密码").fill(password);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -88,7 +88,7 @@ test.describe("staff logout (defect #18)", () => {
     await expect(page.getByRole("banner")).toBeVisible();
 
     await page.getByRole("button", { name: "退出登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
 
     const me = await page.request.get(`${BASE_URL}/api/v1/me`);
     expect(me.status()).toBe(401);

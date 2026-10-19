@@ -102,7 +102,7 @@ test.describe("student registration and login", () => {
     await page.getByRole("button", { name: "登录", exact: true }).click();
 
     // (.first(): Next's route announcer also carries role=alert.)
-    await expect(page.getByRole("alert").first()).toContainText("学号或密码不正确");
+    await expect(page.getByRole("alert").first()).toContainText("账号或密码不正确");
   });
 
   test("client convenience validation blocks obviously invalid input without a request", async ({ page }) => {

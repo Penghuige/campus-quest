@@ -45,8 +45,16 @@ function makeFixture(files: Record<string, string>): string {
   // Tailwind resolves `@import "tailwindcss/…"` by walking node_modules
   // up from the CSS file — point the fixture at the real install.
   symlinkSync(join(frontendRoot, "node_modules"), join(dir, "node_modules"));
-  execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["add", "-A"], { cwd: dir });
+  // Env immunity (the push-hook class): an ambient GIT_DIR (the hook
+  // exports one) would send this init INTO the real gitdir instead of
+  // the fixture — the checker's stripped-env discovery then finds no
+  // repository. Both sides of the seam ignore the plumbing.
+  const gitEnv = { ...process.env };
+  delete gitEnv.GIT_DIR;
+  delete gitEnv.GIT_WORK_TREE;
+  delete gitEnv.GIT_INDEX_FILE;
+  execFileSync("git", ["init", "-q"], { cwd: dir, env: gitEnv });
+  execFileSync("git", ["add", "-A"], { cwd: dir, env: gitEnv });
   return dir;
 }
 

@@ -1,8 +1,8 @@
 {
   "_comment": "Unit-suite coverage ratchet (P1). SEMANTIC BOUNDARY: this measures the tsx --test unit suite only — the lib/*, view-model, and pure-derivation layers plus module contracts. It does NOT include e2e/Playwright coverage of pages/components; a low component number here is expected and fine, the battery covers behavior. The ratchet fails when any metric drops below its floor; run `npm run coverage:update` after INTENTIONALLY accepted decreases (with the PR reason) or improvements. 2026-10-17→19 (login-iteration + send-code-as-entry batches): the UI surfaces (FastLoginHint, staff mobile channel, phone-bind, then the inline register step) land e2e-covered (their backend halves' merge gates); branches 91.95->91.83->91.78, lines/functions rose each round (95.19/90.53->95.29/90.72) — the unit suite has no component harness by design (this ratchet's own semantic boundary).",
   "_command": "npx tsx --test --experimental-test-coverage src/__tests__/*.test.ts",
-  "lines": 95.29,
-  "branches": 91.78,
-  "functions": 90.72,
-  "_recorded": "2026-10-18"
+  "lines": 95.06,
+  "branches": 91.87,
+  "functions": 90.69,
+  "_recorded": "2026-10-19"
 }

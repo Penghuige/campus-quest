@@ -36,7 +36,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
-const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
+const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/login`;
 const TEACHER = process.env.CQ_E2E_TEACHER;
 const TEACHER_TOTP_SECRET = process.env.CQ_E2E_TEACHER_TOTP_SECRET;
 const ADMIN = process.env.CQ_E2E_ADMIN;
@@ -103,22 +103,31 @@ async function loginAsStaff(
 ): Promise<void> {
   const [email, password] = credentials.split(":");
   await page.goto(STAFF_LOGIN_URL);
-  // V1.1 T8: the email-code tab is default; ride the password channel.
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("邮箱").fill(email);
+  // The unified page: the weak link expands the password form; an
+  // ADMIN's password answers totp_required (the leg completes it).
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").fill(email);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
     await page.getByRole("button", { name: "登录", exact: true }).click();
+    const legAppeared = await page
+      .getByTestId("unified-login-totp-leg")
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (legAppeared) {
+      await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+      await page.getByRole("button", { name: "完成登录" }).click();
+    }
     try {
-      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 5_000 });
       return;
     } catch {
       // A slow hop can carry the submit across the step boundary —
       // recompute the code exactly like a real user would.
     }
   }
-  await expect(page).not.toHaveURL(/\/staff\/login/);
+  await expect(page).not.toHaveURL(/\/login/);
 }
 
 test.describe("admin workspace privilege navigation (plan step 1)", () => {

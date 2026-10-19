@@ -1,39 +1,41 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-import { StudentLoginPanel } from "@/features/auth/StudentLoginPanel";
-import { Button } from "@/components/ui/button";
+import { UnifiedLoginPanel } from "@/features/auth/UnifiedLoginPanel";
 
 export const metadata: Metadata = {
   title: "登录 · CampusQuest",
-  description: "使用学号或手机号登录 CampusQuest",
+  description: "使用手机号、邮箱或学号登录 CampusQuest",
 };
 
 interface LoginPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+/**
+ * The UNIFIED login page (spec 2026-10-19 §4): student and staff
+ * merge into ONE page — the remembered-device banner (conditional),
+ * the single identifier field + code/password progressive disclosure,
+ * the ADMIN TOTP leg, and the unregistered phone's inline register
+ * all live in UnifiedLoginPanel. /staff/login redirects here; the
+ * invitation accept flow stays its own route.
+ */
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
-  // The ?registered=1 note retired with ④ (the register envelope IS
-  // the login — nothing routes here after registration anymore); the
-  // password-reset note stays (the reset flow still lands here).
   const reset = params.reset === "1";
 
   return (
     <>
       <div className="auth-head">
         <h1 className="auth-title">登录 CampusQuest</h1>
-        <p className="auth-subtitle">使用学号或手机号登录</p>
+        <p className="auth-subtitle">使用手机号、邮箱或学号登录</p>
       </div>
       {reset ? (
         <div className="alert alert-success" role="status">
           <p>密码已重置，请使用新密码登录</p>
         </div>
       ) : null}
-      {/* Auth extension II §4: the mobile-code channel is the student
-       * default; the password form rides the panel's toggle. */}
-      <StudentLoginPanel />
+      <UnifiedLoginPanel />
       <p className="auth-alt-action">
         还没有账号？
         <Link className="link" href="/register">
@@ -45,12 +47,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           忘记密码？
         </Link>
       </p>
-      {/* V1.1 §2.4: the staff entry as a visible secondary action — the
-       * pre-V1.1 page had NO staff path at all; one visible button, not
-       * footer text. */}
-      <Button asChild variant="secondary" block>
-        <Link href="/staff/login">员工登录</Link>
-      </Button>
     </>
   );
 }

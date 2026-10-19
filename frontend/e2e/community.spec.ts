@@ -51,7 +51,7 @@ import { ensureStudentLogin, expect, test } from "./fixtures";
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const LOGIN_URL = process.env.CQ_E2E_LOGIN_URL ?? `${BASE_URL}/login`;
-const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
+const STAFF_LOGIN_URL = process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/login`;
 const TASK_URL = process.env.CQ_E2E_TASK_URL;
 const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
 const AUTHOR_STUDENT = process.env.CQ_E2E_AUTHOR_STUDENT;
@@ -82,8 +82,8 @@ async function loginAs(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(LOGIN_URL);
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("学号").fill(username);
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -133,15 +133,24 @@ async function loginAsStaff(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(STAFF_LOGIN_URL);
-  // V1.1 T8: the email-code tab is default; ride the password channel.
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("邮箱").fill(username);
+  // The unified page: the weak link expands the password form; an
+  // ADMIN's password answers totp_required (the leg completes it).
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").fill(username);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
     await page.getByRole("button", { name: "登录", exact: true }).click();
+    const legAppeared = await page
+      .getByTestId("unified-login-totp-leg")
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (legAppeared) {
+      await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+      await page.getByRole("button", { name: "完成登录" }).click();
+    }
     try {
-      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 5_000 });
       return;
     } catch {
       // A slow hop can carry the submit across the step boundary —

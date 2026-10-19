@@ -55,6 +55,19 @@ async function fillPhoneVerified(page: Page, phone: string): Promise<void> {
   await expect(field).toHaveValue(phone);
 }
 
+/** The unified LOGIN page's identifier field (手机号或邮箱). */
+async function fillLoginIdentifierVerified(page: Page, identifier: string): Promise<void> {
+  const field = page.getByLabel("手机号或邮箱", { exact: true });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await field.fill(identifier);
+    await page.waitForTimeout(400);
+    if ((await field.inputValue()) === identifier) {
+      return;
+    }
+  }
+  await expect(field).toHaveValue(identifier);
+}
+
 async function registerThroughUi(
   page: Page,
   options: { withPassword: boolean },
@@ -124,15 +137,15 @@ test.describe("the register → approval → unlock chain (spec §1/§2/§5)", (
 });
 
 test.describe("mobile-code login (spec §3/§4)", () => {
-  test("the password tab still works for a passworded account; the mobile tab is default", async ({
+  test("the password expansion still works for a passworded account; the code form is default", async ({
     page,
   }) => {
     await page.goto(`${BASE_URL}/login`);
-    // Mobile is the default tab; switch to password and log the seeded
-    // student in through the classic channel.
-    await page.getByRole("button", { name: "密码登录" }).click();
+    // The code form is the default; the weak link expands the password
+    // form and the three-state identifier carries the seeded 学号.
+    await page.getByRole("button", { name: "使用密码登录" }).click();
     const [username, password] = (STUDENT ?? "").split(":");
-    await page.getByLabel("学号").fill(username);
+    await page.getByLabel("手机号、邮箱或学号").fill(username);
     await page.getByLabel("密码").fill(password);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -151,11 +164,11 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
 
     // First login WITH the remember checkbox: arms the cookie.
-    await fillPhoneVerified(page, phone);
-    await page.getByRole("button", { name: "重新发送", exact: true }).click();
+    await fillLoginIdentifierVerified(page, phone);
+    await page.getByRole("button", { name: "获取验证码", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
     const { recoverMobileCode } = await import("./fixtures");
-    await page.getByLabel("短信验证码").fill(recoverMobileCode(`+86${phone}`));
+    await page.getByLabel("验证码", { exact: true }).fill(recoverMobileCode(`+86${phone}`));
     await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));

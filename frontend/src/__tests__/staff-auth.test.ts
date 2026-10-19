@@ -171,7 +171,7 @@ describe("describeStaffError (AUTHENTICATION_REQUIRED per surface)", () => {
   test("staff-login: wrong credentials copy, NEVER the student 学号 copy", () => {
     const view = describeStaffError(apiError("AUTHENTICATION_REQUIRED"), "staff-login");
     assert.equal(view.summary, "邮箱、密码或动态验证码错误");
-    assert.notEqual(view.summary, "学号或密码不正确");
+    assert.notEqual(view.summary, "账号或密码不正确");
   });
 
   test("totp-confirm: wrong-code copy keeps the retry safe", () => {

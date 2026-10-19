@@ -21,16 +21,34 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ratchetPath = join(here, "..", "coverage-ratchet.json");
 
 function runCoverage() {
-  const out = execFileSync(
-    "npx",
-    [
-      "tsx",
-      "--test",
-      "--experimental-test-coverage",
-      "src/__tests__/*.test.ts",
-    ],
-    { cwd: join(here, ".."), encoding: "utf8", shell: true },
-  );
+  let out;
+  try {
+    out = execFileSync(
+      "npx",
+      [
+        "tsx",
+        "--test",
+        "--experimental-test-coverage",
+        "src/__tests__/*.test.ts",
+      ],
+      {
+        cwd: join(here, ".."),
+        encoding: "utf8",
+        shell: true,
+        // The full-suite TAP output with coverage tables runs past 1MB —
+        // Node's default maxBuffer kills the child mid-stream (first hit
+        // under make pre-push, where the whole gate chain pipes output;
+        // a direct npm run inherits stdout and never buffers).
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+  } catch (cause) {
+    // The child's own failure output is the only lead (the hook context
+    // has reproduced failures a direct run never shows) — park it for
+    // diagnosis instead of losing it to the truncated error dump.
+    writeFileSync("/tmp/cq-cov-fail.log", String(cause.stdout ?? ""));
+    throw cause;
+  }
   // The summary row (space-padded columns):
   // # all files  |  95.22 |  91.22 |  90.19 |
   const m = out.match(/^#\s+all files\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)/m);

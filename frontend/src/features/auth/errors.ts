@@ -53,7 +53,7 @@ export interface AuthErrorView {
 
 /** Stable zh-CN copy per auth-relevant envelope code. */
 export const AUTH_ERROR_TEXT: Partial<Record<string, string>> = {
-  AUTHENTICATION_REQUIRED: "学号或密码不正确",
+  AUTHENTICATION_REQUIRED: "账号或密码不正确",
   ACCOUNT_NOT_ACTIVE: "该账号当前无法登录，请联系管理员",
   STUDENT_NOT_WHITELISTED: "该学号不在注册白名单中，无法注册",
   USERNAME_ALREADY_EXISTS: "该学号已注册，请直接登录",

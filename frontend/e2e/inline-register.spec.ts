@@ -27,7 +27,7 @@ function freshPhone(): string {
 
 /** Settle-verified phone fill (the hydration-wipe lesson). */
 async function fillPhoneVerified(page: Page, phone: string): Promise<void> {
-  const field = page.getByLabel("手机号", { exact: true });
+  const field = page.getByLabel("手机号或邮箱", { exact: true });
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await field.fill(phone);
     await page.waitForTimeout(400);
@@ -47,10 +47,10 @@ test("a fresh phone registers inline from the login page and lands logged in", a
 
   await page.goto(`${BASE_URL}/login`);
   await fillPhoneVerified(page, phone);
-  await page.getByRole("button", { name: "重新发送", exact: true }).click();
+  await page.getByRole("button", { name: "获取验证码", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
   const { recoverMobileCode } = await import("./fixtures");
-  await page.getByLabel("短信验证码").fill(recoverMobileCode(`+86${phone}`));
+  await page.getByLabel("验证码", { exact: true }).fill(recoverMobileCode(`+86${phone}`));
   await page.getByRole("button", { name: "登录", exact: true }).click();
 
   // The third step renders INLINE — no register-page routing.

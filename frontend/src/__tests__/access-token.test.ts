@@ -46,8 +46,7 @@ import { isApiError } from "../lib/errors";
 import { observeServerDateHeader, resetServerClockForTests } from "../lib/serverClock";
 import {
   acceptStaffInvitation,
-  loginStaff,
-  loginStudent,
+  loginWithPassword,
   logout,
 } from "../features/auth/api";
 
@@ -84,6 +83,11 @@ function envelope401(): () => Response {
 
 function tokenPair(access: string): unknown {
   return { access_token: access, csrf_token: "ct", token_type: "bearer" };
+}
+
+/** The unified login family's authenticated envelope (spec §3.1). */
+function authEnvelope(access: string, role = "STUDENT"): unknown {
+  return { status: "authenticated", role, tokens: tokenPair(access) };
 }
 
 /** Storage-write recorder: the pin that nothing ever persists the token. */
@@ -134,10 +138,10 @@ afterEach(() => {
 describe("regression 1: login stores the token; the next request carries it", () => {
   test("student login -> Bearer on the following protected request", async () => {
     route({
-      "/api/v1/auth/login": [json(tokenPair("at-student"))],
+      "/api/v1/auth/login": [json(authEnvelope("at-student"))],
       "/api/v1/points/me": [json({ available_points: 1, earned_points: 1, spendable_points: 1, point_debt: 0 })],
     });
-    await loginStudent("20240001", "correct-horse");
+    await loginWithPassword("20240001", "correct-horse", false);
     assert.equal(getAccessToken(), "at-student");
 
     await apiRequest("/api/v1/points/me");
@@ -148,10 +152,10 @@ describe("regression 1: login stores the token; the next request carries it", ()
 
   test("staff login -> Bearer too (the staff session is a full session)", async () => {
     route({
-      "/api/v1/auth/staff/login": [json(tokenPair("at-staff"))],
+      "/api/v1/auth/login": [json(authEnvelope("at-staff", "TEACHER"))],
       "/api/v1/me": [json({ id: "u1" })],
     });
-    await loginStaff("teacher@school.edu", "correct-horse", "234567");
+    await loginWithPassword("teacher@school.edu", "correct-horse", false);
     await apiRequest("/api/v1/me");
     assert.equal(calls[1]?.headers.get("Authorization"), "Bearer at-staff");
   });
@@ -229,7 +233,7 @@ describe("regression 2: cold-start bootstrap -> refresh -> new Bearer -> /me suc
     route({
       "/api/v1/auth/login": [envelope401()],
     });
-    await loginStudent("20240001", "wrong").then(
+    await loginWithPassword("20240001", "wrong", false).then(
       () => assert.fail("expected rejection"),
       () => {},
     );
@@ -293,11 +297,11 @@ describe("regression 3: concurrent bootstraps rotate exactly once (single-flight
 describe("regression 4: logout forgets the memory token", () => {
   test("logout POSTs the revoke and clears the token", async () => {
     route({
-      "/api/v1/auth/login": [json(tokenPair("at-session"))],
+      "/api/v1/auth/login": [json(authEnvelope("at-session"))],
       "/api/v1/auth/logout": [() => new Response(null, { status: 204 })],
       "/api/v1/me": [json({ id: "u1" })],
     });
-    await loginStudent("20240001", "correct-horse");
+    await loginWithPassword("20240001", "correct-horse", false);
     await logout();
 
     assert.equal(calls[1]?.url, "/api/v1/auth/logout");
@@ -311,12 +315,12 @@ describe("regression 4: logout forgets the memory token", () => {
 
   test("a failed revoke still clears the token (the client never keeps it)", async () => {
     route({
-      "/api/v1/auth/login": [json(tokenPair("at-session"))],
+      "/api/v1/auth/login": [json(authEnvelope("at-session"))],
       "/api/v1/auth/logout": [
         json({ error: { code: "INTERNAL_ERROR", message: "服务暂不可用", details: null, request_id: null } }, 500),
       ],
     });
-    await loginStudent("20240001", "correct-horse");
+    await loginWithPassword("20240001", "correct-horse", false);
     await logout().then(
       () => assert.fail("expected rejection"),
       () => {},

@@ -84,7 +84,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <p className="auth-subtitle">运营管理需要管理员账号登录</p>
             </div>
             <Button asChild variant="primary" block>
-            <Link href="/staff/login">前往员工登录</Link>
+            <Link href="/login">前往员工登录</Link>
           </Button>
             <p className="auth-alt-action">
               <Link className="link" href="/login">

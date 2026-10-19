@@ -273,7 +273,7 @@ export function StudentShell({
         <MinimalShell state="error">
           {errorCard}
           <p className="auth-alt-action">
-            <Link className="link" href="/staff/login">
+            <Link className="link" href="/login">
               前往员工登录
             </Link>
           </p>

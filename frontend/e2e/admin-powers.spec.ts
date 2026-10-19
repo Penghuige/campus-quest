@@ -136,17 +136,17 @@ test("the reset token's full loop: issue → consume page sets the password → 
   await expect(spenderPage.getByText("密码已重置，请使用新密码登录")).toBeVisible();
   await spender.close();
 
-  // The fresh session rides the DEFAULT email-code channel (the
+  // The fresh session rides the unified page's code channel (the
   // invited teacher carries NO totp credential, and the password form
-  // client-requires a second factor) — the code proves the account is
+  // would demand a second factor) — the code proves the account is
   // alive under the NEW credential set either way.
   await page.getByRole("button", { name: "退出登录" }).click();
-  await page.goto(`${BASE_URL}/staff/login`);
-  await page.getByLabel("邮箱", { exact: true }).fill(email);
-  await page.getByRole("button", { name: "重新发送", exact: true }).click();
+  await page.goto(`${BASE_URL}/login`);
+  await page.getByLabel("手机号或邮箱", { exact: true }).fill(email);
+  await page.getByRole("button", { name: "获取验证码", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
   const { recoverEmailCode } = await import("./fixtures");
-  await page.getByLabel("邮箱验证码", { exact: false }).fill(recoverEmailCode(email));
+  await page.getByLabel("验证码", { exact: true }).fill(recoverEmailCode(email));
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
 });

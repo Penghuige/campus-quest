@@ -106,10 +106,11 @@ export async function loginThroughUi(
   account: SeededAccount,
 ): Promise<void> {
   await page.goto(`${BASE_URL}/login`);
-  // Auth extension II §4: the MOBILE channel is the student default;
-  // the student-number + password form lives behind the toggle.
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("学号").fill(account.username);
+  // The unified page (spec 2026-10-19 §4): the password form is the
+  // weak link's expansion — the identifier field is THREE-state there
+  // (手机号、邮箱或学号), and the seeded student rides its 学号.
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").fill(account.username);
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -220,7 +221,45 @@ function sessionStatePath(): string {
 // uses — one TOTP implementation, one form-driving discipline.
 
 export const STAFF_LOGIN_URL =
-  process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/staff/login`;
+  // /staff/login now redirects to the unified page; go there directly.
+  process.env.CQ_E2E_STAFF_LOGIN_URL ?? `${BASE_URL}/login`;
+
+export async function staffLogin(
+  page: Page,
+  credentials: string,
+  totpSecret: string,
+): Promise<void> {
+  const [email, password] = credentials.split(":");
+  studentSessionContext = null;
+  await page.goto(STAFF_LOGIN_URL);
+  // The unified page's password expansion (spec §4 layer 1a): the
+  // three-state identifier carries the staff email. An ADMIN's
+  // password answers totp_required — the second leg completes on the
+  // page's TOTP layer; a TEACHER password lands directly.
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").fill(email);
+  await page.getByLabel("密码").fill(password);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    const totpLeg = page.getByTestId("unified-login-totp-leg");
+    const legAppeared = await totpLeg
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (legAppeared) {
+      await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
+      await page.getByRole("button", { name: "完成登录" }).click();
+    }
+    try {
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 5_000 });
+      return;
+    } catch {
+      // A slow hop can carry the submit across the step boundary —
+      // recompute the code exactly like a real user would.
+    }
+  }
+  await expect(page).not.toHaveURL(/\/login/);
+}
 
 /** RFC 4648 base32 (the TOTP secret alphabet) -> bytes. */
 function base32Decode(input: string): Buffer {
@@ -264,35 +303,6 @@ export function totpCode(secret: string, atMs: number = Date.now()): string {
  * A staff session on a context disqualifies that context from the
  * student resume chain — the marker clear keeps a later persist from
  * handing the NEXT test a staff session as "the student". */
-export async function staffLogin(
-  page: Page,
-  credentials: string,
-  totpSecret: string,
-): Promise<void> {
-  const [email, password] = credentials.split(":");
-  studentSessionContext = null;
-  await page.goto(STAFF_LOGIN_URL);
-  // V1.1 §2.1 (plan T8): the email-code channel is the staff login
-  // page's DEFAULT tab; the password+TOTP form lives behind the visible
-  // 密码登录 toggle. This helper rides the password channel (the TOTP
-  // contract it pins), so switch first — one click, exactly like a user.
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("邮箱").fill(email);
-  await page.getByLabel("密码").fill(password);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.getByLabel("动态验证码").fill(totpCode(totpSecret));
-    await page.getByRole("button", { name: "登录", exact: true }).click();
-    try {
-      await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
-      return;
-    } catch {
-      // A slow hop can carry the submit across the step boundary —
-      // recompute the code exactly like a real user would.
-    }
-  }
-  await expect(page).not.toHaveURL(/\/staff\/login/);
-}
-
 /** The three-role account contract consumed by happy-path specs (each
  * leg optional: the e2e world exports only what its flows need). */
 export interface SeededAccounts {
