@@ -368,3 +368,33 @@ async def test_create_refuses_an_email_already_held_by_an_account(
     )
     assert fresh.status_code == 200, fresh.text
     assert fresh.json()["token"]
+
+
+async def test_lifecycle_guards_refuse_non_admin_actors_and_unknown_ids(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    # The in-depth service guards: the route's AdminActor is the first
+    # wall, the service re-checks the role for every lifecycle write —
+    # a TEACHER actor is refused before the invitation is even looked
+    # up (the create contract). And an unknown id answers the typed 404
+    # on resend too (the DELETE 404 rides the revoke test).
+    admin, headers = await _admin_headers(db_session, api_clock)
+    teacher = await _seed_staff(
+        db_session, api_clock, role=Role.TEACHER, status=UserStatus.ACTIVE
+    )
+    service = _make_staff_service(api_clock)
+    teacher_actor = Actor(user_id=teacher.id, role=Role.TEACHER)
+    await db_session.commit()
+
+    with pytest.raises(BusinessError) as revoke_denied:
+        await service.revoke_invitation(db_session, teacher_actor, uuid4())
+    assert revoke_denied.value.status_code == 403
+
+    with pytest.raises(BusinessError) as resend_denied:
+        await service.resend_invitation(db_session, teacher_actor, uuid4())
+    assert resend_denied.value.status_code == 403
+
+    unknown = await client.post(
+        f"/api/v1/admin/staff/invitations/{uuid4()}/resend", headers=headers
+    )
+    assert unknown.status_code == 404, unknown.text

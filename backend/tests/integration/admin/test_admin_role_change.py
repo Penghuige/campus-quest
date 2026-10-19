@@ -280,3 +280,59 @@ async def test_concurrent_double_demotion_adjudicated_by_the_db(
             )
         )
         await cleanup.commit()
+
+
+async def test_role_change_guards_students_unknown_ids_and_no_ops(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    # The §3.4 guards: students never participate (403), an unknown id
+    # answers the typed 404, STUDENT as the target role is a validation
+    # answer (400 — the DTO's enum lets it through, the service narrows),
+    # and flipping to the SAME role is a no-op: 200, unchanged role, and
+    # no audit row (nothing changed).
+    _, headers = await _admin_headers(db_session, api_clock)
+    teacher = await _seed_staff(db_session, api_clock, role=Role.TEACHER)
+    student = User(
+        username=f"role-student-{uuid.uuid4().hex[:8]}",
+        password_hash=hash_password(_PASSWORD),
+        nickname="角色守卫学生",
+        role=Role.STUDENT,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(student)
+    await db_session.commit()
+
+    refused = await client.patch(
+        f"/api/v1/admin/users/{student.id}/role",
+        json={"role": "ADMIN"},
+        headers=headers,
+    )
+    assert refused.status_code == 403, refused.text
+
+    unknown = await client.patch(
+        f"/api/v1/admin/users/{uuid.uuid4()}/role",
+        json={"role": "ADMIN"},
+        headers=headers,
+    )
+    assert unknown.status_code == 404, unknown.text
+
+    narrowing = await client.patch(
+        f"/api/v1/admin/users/{teacher.id}/role",
+        json={"role": "STUDENT"},
+        headers=headers,
+    )
+    assert narrowing.status_code == 400, narrowing.text
+
+    no_op = await client.patch(
+        f"/api/v1/admin/users/{teacher.id}/role",
+        json={"role": "TEACHER"},
+        headers=headers,
+    )
+    assert no_op.status_code == 200, no_op.text
+    assert no_op.json()["role"] == "TEACHER"
+    audits = (
+        await db_session.scalars(
+            select(AuditLog).where(AuditLog.action == "ROLE_CHANGED")
+        )
+    ).all()
+    assert audits == []

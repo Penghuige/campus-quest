@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -230,6 +231,68 @@ async def test_reset_token_sets_password_revokes_sessions_and_consumes(
         json={"reset_token": reset_token, "new_password": "another-password-9"},
     )
     assert replay.status_code == 400, replay.text
+
+
+async def test_reset_refuses_students_unknown_ids_and_suspended_consumers(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    # The §3.2 guards: students keep their bound-phone OTP flow (403),
+    # an unknown id answers the typed 404, and a token minted for an
+    # account that is no longer ACTIVE consumes into the same uniform
+    # OTP_TOKEN_INVALID as any unknown token (no state oracle).
+    admin, headers = await _admin_headers(db_session, api_clock)
+    student = User(
+        username="reset-student@campus.example.edu",
+        password_hash=hash_password(_TARGET_PW),
+        nickname="reset-student",
+        email_normalized="reset-student@campus.example.edu",
+        email_verified_at=api_clock.now(),
+        role=Role.STUDENT,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(student)
+    suspended = User(
+        username="reset-suspended@campus.example.edu",
+        password_hash=hash_password(_TARGET_PW),
+        nickname="reset-suspended",
+        email_normalized="reset-suspended@campus.example.edu",
+        email_verified_at=api_clock.now(),
+        role=Role.TEACHER,
+        status=UserStatus.SUSPENDED,
+    )
+    db_session.add(suspended)
+    await db_session.flush()
+    db_session.add(
+        TotpCredential(
+            user_id=suspended.id,
+            secret_encrypted=b"test-stand-in-secret",
+            confirmed_at=api_clock.now(),
+        )
+    )
+    await db_session.commit()
+
+    refused = await client.post(
+        f"/api/v1/admin/users/{student.id}/password-reset", headers=headers
+    )
+    assert refused.status_code == 403, refused.text
+
+    unknown = await client.post(
+        f"/api/v1/admin/users/{uuid4()}/password-reset", headers=headers
+    )
+    assert unknown.status_code == 404, unknown.text
+
+    issued = await client.post(
+        f"/api/v1/admin/users/{suspended.id}/password-reset", headers=headers
+    )
+    assert issued.status_code == 200, issued.text
+    spent = await client.post(
+        "/api/v1/auth/password/reset-token",
+        json={
+            "reset_token": issued.json()["reset_token"],
+            "new_password": "brand-new-password-9",
+        },
+    )
+    assert spent.status_code == 400, spent.text
 
 
 async def test_unknown_reset_token_is_uniform_invalid(

@@ -254,3 +254,26 @@ async def test_kick_revokes_sessions_and_devices_with_audit(
     snapshot = audits[0].after_snapshot or {}
     assert snapshot.get("revoked_sessions") == 1
     assert snapshot.get("revoked_devices") == 1
+
+
+async def test_unknown_user_answers_404_across_the_detail_family(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    # The §3.1/§3.3 guards: every read and the kick name their target
+    # before anything else — an unknown id is a typed 404, and the GET
+    # legs share the panorama's loader, so one seed covers all three.
+    _, headers = await _seed_admin(db_session, api_clock)
+    await db_session.commit()
+
+    unknown = uuid.uuid4()
+    read = await client.get(f"/api/v1/admin/users/{unknown}", headers=headers)
+    listed = await client.get(
+        f"/api/v1/admin/users/{unknown}/sessions", headers=headers
+    )
+    kicked = await client.delete(
+        f"/api/v1/admin/users/{unknown}/sessions", headers=headers
+    )
+
+    assert read.status_code == 404, read.text
+    assert listed.status_code == 404, listed.text
+    assert kicked.status_code == 404, kicked.text
