@@ -27,10 +27,12 @@ users 单表三角色（STUDENT/TEACHER/ADMIN）；`phone_e164`、`email_normali
   - 响应恒 202 同构（冷却 429 信封不变）。前端提示按**自己提交的标识格式**渲染（短信/邮箱文案），不经服务端区分。
 - `POST /auth/challenge/verify` — body `{identifier, code, remember_device?}`
   - 判别联合信封：
-    - `{status:"authenticated", …tokens, role}`
+    - `{status:"authenticated", tokens: TokenPairResponse, role}`（tokens 嵌套，对齐 RegisterResponse{user,tokens} 信封先例）
     - `{status:"totp_required", pending_token}`（仅 ADMIN 第一因子通过后）
     - `{status:"unregistered", register_token}`（仅未注册手机号；内联注册三步复用现有 register_token + `/auth/register` 语义）
 - `POST /auth/challenge/totp` — body `{pending_token, totp_code, remember_device?}` → authenticated
+- `GET /auth/challenge/remembered` — 层 0"一键继续"落点（原 /auth/mobile-code 族内 remembered 腿迁移）：200 `{phone_masked}`（本机有免码 cookie/凭据）| 204（无）。只查本机状态，无枚举面。
+- `POST /auth/challenge/verify` **空体变体** — 学生免码 cookie 单因子腿（cookie 即因子）；ADMIN 不因 cookie 豁免，仍 `totp_required`。员工免 TOTP 语义只在 cq_staff_device 设备凭据腿（Wave 1 既有语义不变）。
 
 ### 3.2 密码登录（既有 `/auth/login` 扩展）
 
@@ -47,6 +49,7 @@ users 单表三角色（STUDENT/TEACHER/ADMIN）；`phone_e164`、`email_normali
 ### 3.4 错误码
 
 - 新增 status 成员与错误码走注册表纪律（interfaces.md 先行）。
+- 错码/过期/耗尽合一单码 `CHALLENGE_CODE_INVALID`（防枚举：分支差异只入服务端日志）；RATE_LIMITED / ACCOUNT_LOCKED / VALIDATION_ERROR 沿用既有成员。
 
 ## 4. 前端设计
 
