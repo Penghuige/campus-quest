@@ -1,59 +1,46 @@
 "use client";
 /**
- * Staff email-code login island (V1.1 §2.1/§2.2; plan Task 8) — the
- * DEFAULT login channel: email → 6-digit mailed code → logged in.
- *
- * State machine (every branch is a backend verdict, never a guess):
- *
- *   email ──发送验证码──▶ code ──登录──▶ TEACHER/remembered-ADMIN: done
- *     │                    │
- *     │ 429 = 60s cooldown │ ADMIN without device: {status:"totp_required"}
- *     ▼                    ▼
- *   cooldown copy        totp leg (验证码步重发可用) ──动态口令──▶ done
- *
- * - the resend button counts down 60s as TEXT ONLY — nothing animates,
- *   so the reduced-motion contract holds by construction;
- * - the "记住此设备 30 天" checkbox lives ONLY on the totp leg — a
- *   TERMINAL design decision (reviewer ruling 2026-10-15): a remembered
- *   device exempts an admin's TOTP but keeps the emailed code as a
- *   factor; a teacher remembered device would exempt the ONLY factor
- *   (pure single-factor cookie), which spec §2.2 never grants. The
- *   code step therefore never sends remember_device, and the checkbox
- *   is invisible before the response reveals an ADMIN (also the
- *   anti-enumeration stance);
- * - the totp leg's pending token is the sanctioned body-token
- *   exception: one Authorization header per call, React state only —
- *   the invitation flow's pending-session discipline verbatim;
- * - EMAIL_CODE_INVALID is uniform for wrong/expired/exhausted codes;
- *   ACCOUNT_LOCKED rounds retry_after_seconds up to whole minutes.
+ * The UNIFIED staff code-login island (two-channel convergence,
+ * 2026-10-20): ONE identifier field (邮箱或手机号) + the code + the
+ * remember checkbox. The backend routes the code stream by identifier
+ * shape — the employee picks no channel. Structure mirrors the family
+ * (cooldown, the ADMIN pending leg, the #84 landing rule); the
+ * TERMINAL remember-device ruling holds verbatim: the code leg a
+ * TEACHER completes never sends remember_device — the checkbox rides
+ * along in state and its meaning lives on the ADMIN totp leg only.
  */
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { useSession } from "@/features/auth/session";
-import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 import { AuthField } from "./AuthField";
+import { Button } from "@/components/ui/button";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
-import { emailLoginTotp, readMe, requestEmailLoginCode, verifyEmailLoginCode } from "./api";
-import { NETWORK_ERROR_TEXT, resendButtonLabel, type AuthErrorView } from "./errors";
-import { landAfterStaffLogin } from "./staffLoginFlow";
-import { validateStaffEmail } from "./staffAuthView";
 import {
-  describeEmailLoginError,
+  readMe,
+  requestUnifiedStaffCode,
+  staffMobileCodeTotp,
+  verifyUnifiedStaffCode,
+} from "./api";
+import { NETWORK_ERROR_TEXT } from "./errors";
+import { isApiError } from "@/lib/errors";
+import { resendButtonLabel, type AuthErrorView } from "./errors";
+import { landAfterStaffLogin } from "./staffLoginFlow";
+import {
+  describeMobileStaffLoginError,
   validateEmailCode,
 } from "./staffEmailLoginView";
-import { Button } from "@/components/ui/button";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
-export function StaffEmailCodeLogin() {
+export function StaffUnifiedCodeLogin() {
   const router = useRouter();
   const { refresh: refreshSession } = useSession();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
-  const [emailError, setEmailError] = useState<string | undefined>(undefined);
+  const [identifierError, setIdentifierError] = useState<string | undefined>(undefined);
   const [codeError, setCodeError] = useState<string | undefined>(undefined);
   const [totpCode, setTotpCode] = useState("");
   const [totpError, setTotpError] = useState<string | undefined>(undefined);
@@ -65,8 +52,6 @@ export function StaffEmailCodeLogin() {
   const [verifying, setVerifying] = useState(false);
   const [summary, setSummary] = useState<AuthErrorView | null>(null);
 
-  // Text-only countdown: one self-rescheduling timeout per second — no
-  // interval to leak, nothing animating (reduced-motion safe).
   useEffect(() => {
     if (cooldown === 0) {
       return;
@@ -75,27 +60,38 @@ export function StaffEmailCodeLogin() {
     return () => clearTimeout(timer);
   }, [cooldown]);
 
+  /** The identifier band: an email address OR a CN mobile. */
+  function validateIdentifier(value: string): string | undefined {
+    const trimmed = value.trim();
+    if (/^1[3-9]\d{9}$/.test(trimmed)) {
+      return undefined;
+    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return undefined;
+    }
+    return "请输入员工邮箱或手机号";
+  }
+
   async function onSendCode() {
     if (sending || cooldown > 0) {
       return;
     }
     setSummary(null);
     setSentNote(false);
-    const error = validateStaffEmail(email.trim()) ?? undefined;
-    setEmailError(error);
+    const error = validateIdentifier(identifier) ?? undefined;
+    setIdentifierError(error);
     if (error !== undefined) {
       return;
     }
     setSending(true);
     try {
-      // 202 always — anti-enumeration: unknown/student/inactive emails
-      // answer identically, so the copy never branches on existence.
-      await requestEmailLoginCode(email.trim());
+      // 202 always — anti-enumeration: the response never tells which
+      // identifiers exist.
+      await requestUnifiedStaffCode(identifier.trim());
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setSentNote(true);
     } catch (cause) {
-      const view = describeEmailLoginError(cause, COPY_GENERIC_FAIL);
-      setSummary({ summary: view.message, fieldErrors: {}, requestId: view.requestId });
+      setSummary(toSummary(cause, "验证码发送失败，请稍后重试"));
     } finally {
       setSending(false);
     }
@@ -114,17 +110,15 @@ export function StaffEmailCodeLogin() {
     }
     setVerifying(true);
     try {
-      const outcome = await verifyEmailLoginCode(email.trim(), code.trim());
+      const outcome = await verifyUnifiedStaffCode(identifier.trim(), code.trim());
       if (outcome.kind === "totp_required") {
-        // The ADMIN second leg: the pending token stays in state only.
         setPendingToken(outcome.pendingToken);
         setTotpCode("");
-        setRememberDevice(false);
         return;
       }
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
+      setSummary(toSummary(cause, "登录失败，请稍后重试"));
     } finally {
       setVerifying(false);
     }
@@ -143,19 +137,19 @@ export function StaffEmailCodeLogin() {
     }
     setVerifying(true);
     try {
-      await emailLoginTotp(pendingToken, totpCode.trim(), rememberDevice);
+      // The checkbox's meaning lives HERE (the ADMIN second leg) —
+      // the code leg never sent remember_device (the 2026-10-15
+      // ruling, option a).
+      await staffMobileCodeTotp(pendingToken, totpCode.trim(), rememberDevice);
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
+      setSummary(toSummary(cause, "登录失败，请稍后重试"));
     } finally {
       setVerifying(false);
     }
   }
 
   function landOnWorkspace() {
-    // Route by the POST-LOGIN /me answer (the #84 rule): an ADMIN's
-    // email-code login lands on the admin workspace, a teacher's on
-    // the review queue — never a fixed staff-wide destination.
     void landAfterStaffLogin({
       login: async () => undefined,
       refreshSession,
@@ -168,20 +162,20 @@ export function StaffEmailCodeLogin() {
     if (!isApiError(cause)) {
       return { summary: NETWORK_ERROR_TEXT, fieldErrors: {}, requestId: null };
     }
-    const view = describeEmailLoginError(cause, fallback);
+    const view = describeMobileStaffLoginError(cause, fallback);
     return { summary: view.message, fieldErrors: {}, requestId: view.requestId };
   }
 
-  // --- the ADMIN second leg --------------------------------------------------
+  // --- the ADMIN second leg ---------------------------------------------------
   if (pendingToken !== null) {
     return (
       <form className="form" onSubmit={onTotp} noValidate>
         <FormErrorSummary view={summary} />
-        <p className="field-hint" data-testid="email-login-totp-leg">
+        <p className="field-hint" data-testid="unified-login-totp-leg">
           该账号需要动态口令验证：请输入验证器应用当前显示的 6 位数字。
         </p>
         <AuthField
-          name="email-login-totp-code"
+          name="unified-login-totp-code"
           label="动态验证码"
           error={totpError}
           inputProps={{
@@ -233,39 +227,39 @@ export function StaffEmailCodeLogin() {
     <>
       {sentNote ? (
         <p className="alert alert-success" role="status">
-          验证码已发送，请到邮箱查收（5 分钟内有效；若未收到请检查垃圾箱）。
+          验证码已发送，请查收邮件或短信（5 分钟内有效）
         </p>
       ) : null}
       <form className="form" onSubmit={onVerify} noValidate>
         <FormErrorSummary view={summary} />
         <AuthField
-          name="email-login-email"
-          label="邮箱"
-          error={emailError}
+          name="staff-unified-identifier"
+          label="邮箱或手机号"
+          hint="绑定员工的邮箱或手机号均可；验证码将发送到对应的邮箱或手机"
+          error={identifierError}
           inputProps={{
-            value: email,
+            value: identifier,
             onChange: (event) => {
-              setEmail(event.target.value);
-              if (emailError !== undefined) {
-                setEmailError(undefined);
+              setIdentifier(event.target.value);
+              if (identifierError !== undefined) {
+                setIdentifierError(undefined);
               }
             },
-            type: "email",
-            inputMode: "email",
-            autoComplete: "email",
+            type: "text",
+            autoComplete: "username",
             autoCapitalize: "none",
             autoCorrect: "off",
-            placeholder: "员工邮箱",
+            placeholder: "员工邮箱或手机号",
             disabled: sending || verifying,
           }}
         />
         <div className="field">
-          <label className="field-label" htmlFor="email-login-code">
-            邮箱验证码
+          <label className="field-label" htmlFor="staff-unified-code">
+            验证码
           </label>
           <div className="otp-row">
             <input
-              id="email-login-code"
+              id="staff-unified-code"
               className="input"
               type="text"
               inputMode="numeric"
@@ -282,7 +276,7 @@ export function StaffEmailCodeLogin() {
                 }
               }}
               aria-invalid={codeError !== undefined || undefined}
-              aria-describedby={codeError !== undefined ? "email-login-code-error" : undefined}
+              aria-describedby={codeError !== undefined ? "staff-unified-code-error" : undefined}
               disabled={verifying}
             />
             <Button
@@ -296,11 +290,20 @@ export function StaffEmailCodeLogin() {
             </Button>
           </div>
           {codeError !== undefined ? (
-            <p className="field-error" id="email-login-code-error">
+            <p className="field-error" id="staff-unified-code-error">
               {codeError}
             </p>
           ) : null}
         </div>
+        <label className="field-hint">
+          <input
+            type="checkbox"
+            checked={rememberDevice}
+            onChange={(event) => setRememberDevice(event.target.checked)}
+            disabled={verifying}
+          />{" "}
+          记住此设备 30 天（对需要动态口令的账号生效）
+        </label>
         <SubmitButton loading={verifying}>登录</SubmitButton>
       </form>
     </>
