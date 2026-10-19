@@ -461,6 +461,7 @@ class EmailChallengeResponse(BaseModel):
 
     expires_at: datetime
 
+
 class MobileCodeRegisterRequest(BaseModel):
     """Trade the entry proof (a code-checked, accountless phone's
     5-minute single-use token) for a PENDING_APPROVAL account."""
@@ -469,4 +470,3 @@ class MobileCodeRegisterRequest(BaseModel):
     student_number: str
     nickname: str | None = None
     password: str | None = None
-

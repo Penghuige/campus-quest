@@ -157,7 +157,9 @@ async def _verify(
     if remember:
         body["remember_device"] = True
     cookies = {"cq_staff_device": device_cookie} if device_cookie else None
-    return await client.post("/api/v1/auth/challenge/verify", json=body, cookies=cookies)
+    return await client.post(
+        "/api/v1/auth/challenge/verify", json=body, cookies=cookies
+    )
 
 
 def _envelope(response: httpx.Response) -> dict:
@@ -196,7 +198,8 @@ async def test_pending_approval_student_logs_in_end_to_end(
     assert "HttpOnly" in _shell_header(verified)
 
     me = await client.get(
-        "/api/v1/me", headers={"Authorization": f"Bearer {body['tokens']['access_token']}"}
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {body['tokens']['access_token']}"},
     )
     assert me.status_code == 200, me.text
     assert me.json()["status"] == "PENDING_APPROVAL"

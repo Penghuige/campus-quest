@@ -454,7 +454,10 @@ async def test_body_refresh_token_needs_no_csrf(
         "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
     )
     assert refreshed.status_code == 200, refreshed.text
-    assert refreshed.json()["access_token"] != login_response.json()["tokens"]["access_token"]
+    assert (
+        refreshed.json()["access_token"]
+        != login_response.json()["tokens"]["access_token"]
+    )
     # Rotation responses are cookie-only too.
     assert set(refreshed.json()) == {"access_token", "csrf_token", "token_type"}
 

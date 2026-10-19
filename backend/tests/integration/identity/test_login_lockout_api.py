@@ -304,7 +304,6 @@ async def test_staff_wrong_password_counts_before_second_factor(
     api_redis: aioredis.Redis,
 ) -> None:
     secret = await _seed_staff_with_totp(db_session)
-    valid_code = pyotp.TOTP(secret).at(api_clock.now())
 
     for _ in range(4):
         wrong = await client.post(
@@ -317,7 +316,10 @@ async def test_staff_wrong_password_counts_before_second_factor(
     # ADMIN that means the FULL cycle (password leg + totp leg), not
     # the totp_required mid-state.
     ok = await _staff_totp_attempt(
-        client, api_clock, api_email, api_redis,
+        client,
+        api_clock,
+        api_email,
+        api_redis,
         totp_code=pyotp.TOTP(secret).at(api_clock.now()),
     )
     assert ok.status_code == 200, ok.text

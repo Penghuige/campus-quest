@@ -34,12 +34,6 @@ from app.core.security import hash_password
 from app.db.session import get_db_session
 from app.main import create_app
 from app.modules.identity.dependencies import get_business_clock
-from app.modules.identity.device_credentials import (
-    DEVICE_COOKIE_NAME,
-)
-from app.modules.identity.device_credentials import (
-    issue as issue_device,
-)
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import TotpCredential, User
 from app.modules.identity.providers import (
@@ -180,7 +174,6 @@ def _totp_now(secret: str) -> str:
     import pyotp
 
     return pyotp.TOTP(secret).at(_T0)
-
 
 
 # --- the durability legs (the e2e-caught defect's regression pins) ---------
