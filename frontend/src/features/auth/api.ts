@@ -21,7 +21,6 @@ import {
 import { invalidateDataCache } from "@/lib/dataCache";
 import { invalidateSessionCache } from "./session";
 import { classifyInviteAccept } from "./staffAuthView";
-import { classifyVerifyResponse } from "./staffEmailLoginView";
 import type { components } from "../../lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -194,12 +193,11 @@ export function spendAdminResetToken(
 
 // --- staff surface (spec §5.8; backend identity/staff_router.py) -----------------
 //
-// Auth model on these four endpoints:
-// - `invitations/accept` and `staff/login` behave like the student login:
-//   the refresh token rides the HttpOnly cookie; the SHORT-LIVED access
-//   token + CSRF mirror sit in the body;
-// - `staff/login` success is a full staff session, so its access token
-//   enters the memory-only manager exactly like the student login's;
+// Auth model on these endpoints (the retired `staff/login` rode the
+// same model until the unified /auth/login absorbed it):
+// - `invitations/accept` behaves like any login: the refresh token
+//   rides the HttpOnly cookie; the SHORT-LIVED access token + CSRF
+//   mirror sit in the body;
 // - the pending staff session's access token is the SANCTIONED body-token
 //   exception (backend `PendingStaffSession`): the server confines it to
 //   `/staff/totp/*`, so it is deliberately NOT promoted into the shared
@@ -242,46 +240,6 @@ export async function acceptStaffInvitation(
   return { kind: "admin", pendingToken: (body as LoginTokens).access_token };
 }
 
-/** Staff login: verified email + password + TOTP-or-recovery code.
- *
- * `rememberDevice` (owner feedback ②, 2026-10-17) issues the 30-day
- * cq_staff_device cookie — same semantics as the email-code totp leg:
- * the remembered SECOND factor (the TOTP) goes away, the password
- * never does. Presence-based, like every remember flag here.
- */
-export async function loginStaff(
-  email: string,
-  password: string,
-  totpCode: string,
-  rememberDevice = false,
-): Promise<LoginTokens> {
-  await beginAuthTransition();
-  let tokens: LoginTokens;
-  try {
-    tokens = await apiRequest<LoginTokens>(`${BASE}/staff/login`, {
-      method: "POST",
-      body: rememberDevice
-        ? { email, password, totp_code: totpCode, remember_device: true }
-        : { email, password, totp_code: totpCode },
-    });
-  } finally {
-    endAuthTransition();
-    // Cross-tab fence (PR #14 review P0): sibling tabs must drop this
-    // account's stale bearer and bump their epoch before any in-flight
-    // 401 recovery can replay old-account intent under the new login.
-    broadcastContextReset();
-  }
-  // An explicit login opens a NEW auth context (epoch bump) and
-  // synchronously drops any cached ANONYMOUS /me: the login page's
-  // hook may have cached it moments ago, and the freshly mounted
-  // shell must never render "未登录" from that stale fresh-window
-  // entry (targeted re-review P1).
-  recordLogin(tokens.access_token);
-  invalidateSessionCache();
-  invalidateDataCache();
-  return tokens;
-}
-
 // --- own remembered devices (V1.1 §2.2; plan Task 11) ---------------------------
 //
 // GET/DELETE /me/devices — self-service management of the 30-day
@@ -302,104 +260,15 @@ export function revokeMyDevices(): Promise<{ revoked: number }> {
   return apiRequest<{ revoked: number }>(`${ME}/devices`, { method: "DELETE" });
 }
 
-// --- staff email-code login (V1.1 §2.1/§2.2; plan T5 contract) -------------------
-//
-// Three endpoints under /auth/staff/email-code/*: a 202-always request
-// (anti-enumeration), a verify whose 200 body is EITHER a full
-// TokenPairResponse (TEACHER, or ADMIN riding a valid remembered
-// device) or the ADMIN {status:"totp_required", pending_token} second
-// leg, and that second leg's totp completion. The pending token of the
-// totp_required body is the sanctioned body-token exception — it rides
-// ONE Authorization header into the totp endpoint and lives in the
-// form's React state only, exactly like the invitation flow's pending
-// session. Full-login outcomes (both shapes that answer tokens) walk
-// the same adoption dance as loginStaff below.
-
-/** The verify-step outcome the form branches on (T5 frozen contract). */
-export type EmailCodeVerifyResult =
-  | { kind: "tokens"; tokens: LoginTokens }
-  | { kind: "totp_required"; pendingToken: string };
-
-/** The shared explicit-login adoption (loginStaff's dance verbatim). */
-/** The shared explicit-login adoption (exported for the auth-II
- * mobile channel — the same dance every login walks). */
+/**
+ * The shared explicit-login adoption: every login family's tokens
+ * walk this one dance (the memory-only manager + the session/data
+ * cache invalidations).
+ */
 export function adoptFullLogin(tokens: LoginTokens): void {
   recordLogin(tokens.access_token);
   invalidateSessionCache();
   invalidateDataCache();
-}
-
-// --- staff mobile-code login (login-iteration item ①; plan-frozen
-// contract, backend PR #101) ----------------------------------------------
-//
-// The mobile channel mirrors the email-code family endpoint-for-
-// endpoint (202-always request; verify = tokens OR the ADMIN
-// totp_required pending leg; body-carried totp completion). The
-// TERMINAL remember-device ruling (2026-10-15) applies verbatim: the
-// verify leg a TEACHER can complete never carries remember_device
-// from this client — the checkbox lives ONLY on the totp leg (a
-// remembered device must never exempt a sole factor).
-
-/**
- * Complete the ADMIN mobile-code login's TOTP leg — the pending token
- * rides the BODY (the family's frozen shape), remember_device
- * presence-based (the ONLY leg the checkbox lives on).
- */
-export async function staffMobileCodeTotp(
-  pendingToken: string,
-  code: string,
-  rememberDevice: boolean,
-): Promise<LoginTokens> {
-  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/mobile-code/totp`, {
-    method: "POST",
-    body: rememberDevice
-      ? { pending_token: pendingToken, code, remember_device: true }
-      : { pending_token: pendingToken, code },
-  });
-  adoptFullLogin(tokens);
-  return tokens;
-}
-
-// --- the UNIFIED staff code channel (two-channel convergence,
-// 2026-10-20; frozen contract) ---------------------------------------------
-//
-// ONE identifier field (email or phone) rides both legs; the backend
-// routes the code stream by identifier shape. The TERMINAL
-// remember-device ruling (2026-10-15, option a) holds verbatim: the
-// verify leg a TEACHER completes NEVER carries remember_device — the
-// checkbox's meaning lives on the ADMIN totp leg (which completes on
-// the existing /staff/mobile-code/totp endpoint above).
-
-/**
- * Ask for a staff login code to the email OR phone in `identifier`.
- * 202 with an empty body for every identifier (anti-enumeration).
- */
-export function requestUnifiedStaffCode(identifier: string): Promise<void> {
-  return apiRequest<void>(`${BASE}/staff/code/request`, {
-    method: "POST",
-    body: { identifier },
-  });
-}
-
-/**
- * Trade the code for a session — the family's exact outcome union
- * (TEACHER tokens / ADMIN totp_required pending; the pending leg
- * completes via staffMobileCodeTotp).
- */
-export async function verifyUnifiedStaffCode(
-  identifier: string,
-  code: string,
-): Promise<EmailCodeVerifyResult> {
-  const body = await apiRequest<unknown>(`${BASE}/staff/code/verify`, {
-    method: "POST",
-    body: { identifier, code },
-  });
-  const outcome = classifyVerifyResponse(body);
-  if (outcome.kind === "totp_required") {
-    return outcome;
-  }
-  adoptFullLogin(body as LoginTokens);
-  return { kind: "tokens", tokens: body as LoginTokens };
 }
 
 // --- the UNIFIED challenge family (unified-login spec §3, 2026-10-19;
@@ -509,6 +378,46 @@ export async function unifiedChallengeTotp(
     body: rememberDevice
       ? { pending_token: pendingToken, totp_code: totpCode, remember_device: true }
       : { pending_token: pendingToken, totp_code: totpCode },
+  });
+  const outcome = classifyChallengeEnvelope(body);
+  if (outcome.kind === "authenticated") {
+    adoptFullLogin(asAuthenticated(body).tokens);
+  }
+  return outcome;
+}
+
+/**
+ * The remembered-device LAYER-0 probe (spec §3.1's read path, frozen
+ * with reviewer amendment 5e3636d): GET /auth/challenge/remembered
+ * answers 200 {phone_masked} when the HttpOnly cq_staff_device cookie
+ * names a live remembered device (the backend's mask — the client
+ * never sees the full number), 204 otherwise. Every non-answer
+ * resolves null quietly: the probe only decides whether the page
+ * renders its one-click banner.
+ */
+export async function fetchRememberedHint(): Promise<string | null> {
+  try {
+    const body = await apiRequest<{ phone_masked?: string } | null>(
+      `${BASE}/challenge/remembered`,
+    );
+    return body?.phone_masked ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The banner's CLICK leg: the page holds only the probe's MASK, so the
+ * cookie alone locates the user and the verify body is EMPTY. The
+ * answer rides the SAME three-arm union — a remembered ADMIN still
+ * answers totp_required (the cookie never exempts the ADMIN second
+ * factor, the frozen §3.1 semantics), and the banner hands that leg
+ * to the page's TOTP layer.
+ */
+export async function fastLoginCookieOnly(): Promise<ChallengeOutcome> {
+  const body = await apiRequest<unknown>(`${BASE}/challenge/verify`, {
+    method: "POST",
+    body: {},
   });
   const outcome = classifyChallengeEnvelope(body);
   if (outcome.kind === "authenticated") {

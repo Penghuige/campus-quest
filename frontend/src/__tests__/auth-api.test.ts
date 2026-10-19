@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
   confirmPasswordReset,
-  loginStudent,
+  loginWithPassword,
   registerStudent,
   requestPasswordReset,
   requestPhoneChallenge,
@@ -80,27 +80,13 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("login", () => {
-  test("posts username/password to /api/v1/auth/login with cookie credentials", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    const tokens = await loginStudent("20240001", "correct-horse");
-    assert.equal(tokens.access_token, "at");
-    assert.equal(recorded?.url, "/api/v1/auth/login");
-    assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.credentials, "include");
-    assert.equal(recorded?.headers.get("Content-Type"), "application/json");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      username: "20240001",
-      password: "correct-horse",
-    });
-  });
-
+describe("login (the unified /auth/login; the wire pins live in unified-challenge-api.test.ts)", () => {
   test("401 envelope maps to the uniform wrong-credentials copy", async () => {
     stubFetch(envelope("AUTHENTICATION_REQUIRED", "未登录或登录状态已失效"), 401);
-    const error = await rejectionOf(loginStudent("20240001", "wrong"));
+    const error = await rejectionOf(loginWithPassword("20240001", "wrong", false));
     assert.ok(isApiError(error));
     const view = describeAuthError(error as never);
-    assert.equal(view.summary, "学号或密码不正确");
+    assert.equal(view.summary, "账号或密码不正确");
     assert.deepEqual(view.fieldErrors, {});
   });
 });
@@ -297,7 +283,7 @@ describe("error-code branching pin at the transport level", () => {
       }),
       400,
     );
-    const error = await rejectionOf(loginStudent("20240001", "whatever"));
+    const error = await rejectionOf(loginWithPassword("20240001", "whatever", false));
     assert.ok(isApiError(error));
     const view = describeAuthError(error as never);
     assert.equal(view.summary, "操作失败，请稍后重试");
@@ -306,7 +292,7 @@ describe("error-code branching pin at the transport level", () => {
 
   test("out-of-surface business code -> backend message as fallback text", async () => {
     stubFetch(envelope("ASSIGNMENT_LIMIT_REACHED", "当前进行中的任务已达到上限"), 409);
-    const error = await rejectionOf(loginStudent("20240001", "whatever"));
+    const error = await rejectionOf(loginWithPassword("20240001", "whatever", false));
     assert.ok(isApiError(error));
     const view = describeAuthError(error as never);
     assert.equal(view.summary, "当前进行中的任务已达到上限");

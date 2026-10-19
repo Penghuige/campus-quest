@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useLogoutAction } from "@/features/auth/LogoutSection";
 
 export function StaffLogoutButton() {
-  const { busy, handle } = useLogoutAction("/staff/login");
+  const { busy, handle } = useLogoutAction("/login");
   return (
     <Button variant="ghost" onClick={handle} disabled={busy} aria-busy={busy}>
       退出登录

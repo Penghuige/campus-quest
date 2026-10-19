@@ -22,12 +22,8 @@ import {
   beginTotpSetup,
   confirmPhoneBind,
   confirmTotpSetup,
-  loginStaff,
   readMe,
-  requestUnifiedStaffCode,
   requestPhoneBind,
-  staffMobileCodeTotp,
-  verifyUnifiedStaffCode,
 } from "../features/auth/api";
 import { describeStaffError } from "../features/auth/staffAuthView";
 import { isApiError } from "../lib/errors";
@@ -124,68 +120,6 @@ describe("acceptStaffInvitation", () => {
     assert.ok(isApiError(error));
     const view = describeStaffError(error as never, "invite-accept");
     assert.equal(view.summary, "邀请链接无效或已被使用");
-  });
-});
-
-describe("loginStaff", () => {
-  test("posts {email, password, totp_code} to the dedicated staff endpoint", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("teacher@school.edu", "correct-horse", "234567");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/login");
-    assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.credentials, "include");
-    assert.equal(recorded?.headers.get("Content-Type"), "application/json");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "teacher@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-    });
-  });
-
-  test("403 TOTP_SETUP_REQUIRED stays a code branch for the form's setup panel", async () => {
-    stubFetch(envelope("TOTP_SETUP_REQUIRED", "该账号必须先绑定 TOTP 动态验证码"), 403);
-    const error = await rejectionOf(loginStaff("teacher@school.edu", "correct-horse", "234567"));
-    assert.ok(isApiError(error));
-    assert.equal((error as { code: string }).code, "TOTP_SETUP_REQUIRED");
-    const view = describeStaffError(error as never, "staff-login");
-    assert.match(view.summary!, /尚未完成动态口令绑定/);
-  });
-
-  // The 2026-10-17 login-iteration batch (owner feedback ②): the
-  // password+TOTP form's 记住此设备 30 天 checkbox — same semantics as
-  // the email-code totp leg (remember = the SECOND factor goes away for
-  // 30 days; the password never does). Presence-based, the frozen
-  // backend contract: an absent/false field behaves exactly like today.
-  test("remember=true rides remember_device in the body; the default omits it entirely", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("admin@school.edu", "correct-horse", "234567", true);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-      remember_device: true,
-    });
-
-    await loginStaff("admin@school.edu", "correct-horse", "234567");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-    });
-  });
-
-  // The frozen ② relogin contract (2026-10-17): totp_code "" ≡ omitted
-  // server-side, and the client sends the empty string VERBATIM (never
-  // conditionally omits the key) — a remembered device + password is
-  // the full login; no cookie answers the uniform wrong-factor copy.
-  test("an empty second factor posts totp_code: \"\" (the remembered relogin)", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("admin@school.edu", "correct-horse", "");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "",
-    });
   });
 });
 
@@ -328,40 +262,5 @@ describe("staff phone binding (item ①; /me/phone/bind family)", () => {
     assert.ok(isApiError(error));
     assert.equal((error as { code: string }).code, "PHONE_ALREADY_BOUND");
     assert.equal((error as { message: string }).message, "该手机号已绑定其他账号");
-  });
-});
-
-describe("the unified staff code channel", () => {
-  test("request POSTs {identifier} and resolves the uniform 202 {}", async () => {
-    stubFetch("{}", 202);
-    await requestUnifiedStaffCode("teacher@school.edu");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/code/request");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      identifier: "teacher@school.edu",
-    });
-  });
-
-  test("verify: tokens adopt; the body carries NO remember_device", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "t-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    const outcome = await verifyUnifiedStaffCode("13900001234", "234567");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/code/verify");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      identifier: "13900001234",
-      code: "234567",
-    });
-    assert.equal(outcome.kind, "tokens");
-    assert.equal(getAccessToken(), "t-at");
-  });
-
-  test("verify: the ADMIN totp_required body adopts NOTHING", async () => {
-    clearAccessToken();
-    stubFetch(JSON.stringify({ status: "totp_required", pending_token: "p-at" }), 200);
-    const outcome = await verifyUnifiedStaffCode("admin@school.edu", "234567");
-    assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "p-at" });
-    assert.equal(getAccessToken(), null);
   });
 });

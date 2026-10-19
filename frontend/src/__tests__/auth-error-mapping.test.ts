@@ -50,7 +50,7 @@ describe("describeAuthError branches by code", () => {
     const view = describeAuthError(
       apiError("AUTHENTICATION_REQUIRED", "未登录或登录状态已失效", null, null, 401),
     );
-    assert.equal(view.summary, "学号或密码不正确");
+    assert.equal(view.summary, "账号或密码不正确");
     const inactive = describeAuthError(
       apiError("ACCOUNT_NOT_ACTIVE", "账号已停用", null, null, 403),
     );

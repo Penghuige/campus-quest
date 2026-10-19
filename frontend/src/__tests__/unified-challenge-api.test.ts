@@ -21,6 +21,8 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
 import {
+  fastLoginCookieOnly,
+  fetchRememberedHint,
   loginWithPassword,
   requestUnifiedChallenge,
   unifiedChallengeTotp,
@@ -186,6 +188,53 @@ describe("unifiedChallengeTotp", () => {
       totp_code: "234567",
       remember_device: true,
     });
+  });
+});
+
+describe("the remembered-device layer-0 pair (the migrated paths)", () => {
+  test("the probe rides GET /auth/challenge/remembered and yields the mask", async () => {
+    stubFetch(JSON.stringify({ phone_masked: "+861****5555" }), 200);
+    const mask = await fetchRememberedHint();
+    assert.equal(mask, "+861****5555");
+    assert.equal(recorded?.url, "/api/v1/auth/challenge/remembered");
+    assert.equal(recorded?.method, "GET");
+    assert.equal(recorded?.credentials, "include");
+  });
+
+  test("the probe answers null for the uniform 204 — and NEVER throws (any failure is null)", async () => {
+    stubFetch("", 204);
+    assert.equal(await fetchRememberedHint(), null);
+    // A surprise status also resolves null quietly — the probe decides
+    // a banner's existence, nothing more.
+    responseFor = () => {
+      throw new Error("transport");
+    };
+    assert.equal(await fetchRememberedHint(), null);
+  });
+
+  test("the one-click posts an EMPTY body verify — the cookie alone locates the user", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        status: "authenticated",
+        role: "STUDENT",
+        tokens: { access_token: "s-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      200,
+    );
+    const outcome = await fastLoginCookieOnly();
+    assert.equal(recorded?.url, "/api/v1/auth/challenge/verify");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {});
+    assert.deepEqual(outcome, { kind: "authenticated", role: "STUDENT" });
+    assert.equal(getAccessToken(), "s-at");
+  });
+
+  test("a remembered ADMIN's one-click answers totp_required — the exemption never resets", async () => {
+    clearAccessToken();
+    stubFetch(JSON.stringify({ status: "totp_required", pending_token: "p-at" }), 200);
+    const outcome = await fastLoginCookieOnly();
+    assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "p-at" });
+    assert.equal(getAccessToken(), null);
   });
 });
 
