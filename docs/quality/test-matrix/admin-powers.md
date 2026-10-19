@@ -27,7 +27,7 @@
 | AP7 | §4.2 | 邀请列表：邮箱掩码显示（首字符+域，明文不出服务层=G11）；状态四态派生（ACCEPTED/REVOKED 落库时间戳，PENDING/EXPIRED 业务钟读时切分，优先级 accepted>revoked>expired）；签发人 id+nickname | 后端：`tests/integration/admin/test_admin_invitations_lifecycle.py::test_list_derives_the_four_states_with_masked_email`；前端：`frontend/e2e/admin-powers.spec.ts`（生命周期面板四态链）+`frontend/src/__tests__/admin-powers-api.test.ts`（线缆钉） | 已覆盖 |
 | AP8 | §4.2 | 撤销：DELETE 对未接受的设 revoked_at（0032，状态活过过期窗）；token 立即失效（accept 统一拒绝谓词含 revoked）；ACCEPTED/已撤销 409；未知 404；服务级非 ADMIN actor 403（纵深）；审计 STAFF_INVITATION_REVOKED | 后端：`test_admin_invitations_lifecycle.py::test_revoke_kills_the_token_and_refuses_terminal_states` / `::test_lifecycle_guards_refuse_non_admin_actors_and_unknown_ids`；前端：`frontend/e2e/admin-powers.spec.ts`（创建→撤销→重发链钉） | 已覆盖 |
 | AP9 | §4.2 | 重签：POST resend 对未接受（pending/EXPIRED 救援路径）/已撤销的换发新 token——旧 hash 被替换即旧 token 死、窗口重开、revoked_at 清零复活；新 token 一次性返回（create 契约）；ACCEPTED 409；未知 404；服务级非 ADMIN actor 403 | 后端：`test_admin_invitations_lifecycle.py::test_resend_rotates_the_one_time_token` / `::test_lifecycle_guards_refuse_non_admin_actors_and_unknown_ids`；前端：`frontend/e2e/admin-powers.spec.ts`（重发一次性 {link} 显示钉） | 已覆盖 |
-| AP10 | §4.2 | create 占用预检：邮箱已有账号 → 409 EMAIL_ALREADY_BOUND（前端 2026-10-14 实证缺口）；规范化先行（大小写变体命中）；预检拒后零行落库 | 后端：`test_admin_invitations_lifecycle.py::test_create_refuses_an_email_already_held_by_an_account`；前端：创建表单沿用（identity 面），无新钉 | 已覆盖 |
+| AP10 | §4.2 | create 占用预检：邮箱已有账号 → 409 EMAIL_ALREADY_BOUND（前端 2026-10-14 实证缺口）；规范化先行（大小写变体命中）；预检拒后零行落库 | 后端：`tests/integration/admin/test_admin_invitations_lifecycle.py::test_create_refuses_an_email_already_held_by_an_account`；前端：创建表单沿用（identity 面），无新钉 | 已覆盖 |
 
 ## 缺口明细
 
