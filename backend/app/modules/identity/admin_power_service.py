@@ -296,3 +296,93 @@ async def consume_password_reset(
     )
     await db.commit()
     logger.info("admin reset link consumed user_id=%s", user.id)
+
+
+AUDIT_ROLE_CHANGED = "ROLE_CHANGED"
+_ROLE_CHANGE_REFUSED_LAST_ADMIN = "不能降级最后一个活跃管理员"
+
+
+async def change_role(
+    db: AsyncSession,
+    actor: Actor,
+    user_id: UUID,
+    new_role: Role,
+    *,
+    audit: AuditLogWriter | None = None,
+    audit_context: AuditContext | None = None,
+) -> User:
+    """The §3.4 TEACHER<->ADMIN flip: never on oneself, never on a
+    student, never leaving zero ACTIVE ADMINs.
+
+    Two guards: the sequential one here (count under the target's row
+    lock -> the friendly 409), and the DB trigger (0031) re-adjudicating
+    every UPDATE under FOR UPDATE on the whole ACTIVE-ADMIN set — the
+    concurrent backstop. ROLE_CHANGED audits before/after."""
+    if user_id == actor.user_id:
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED, "不能修改自己的角色", status_code=403
+        )
+    user = await db.get(User, user_id)
+    if user is None:
+        raise AdminTargetNotFoundError(user_id)
+    if user.role == Role.STUDENT.value:
+        raise BusinessError(
+            ErrorCode.PERMISSION_DENIED,
+            "学生账号不参与角色变更",
+            status_code=403,
+        )
+    if new_role not in (Role.TEACHER, Role.ADMIN):
+        raise BusinessError(
+            ErrorCode.VALIDATION_ERROR,
+            "角色只能在 TEACHER 与 ADMIN 之间切换",
+            status_code=400,
+        )
+    old_role = Role(user.role)
+    if old_role == new_role:
+        return user
+
+    locked = await db.scalar(select(User).where(User.id == user_id).with_for_update())
+    if locked is None:
+        raise AdminTargetNotFoundError(user_id)
+    if old_role is Role.ADMIN and new_role is Role.TEACHER:
+        others = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(
+                    User.role == Role.ADMIN.value,
+                    User.status == UserStatus.ACTIVE.value,
+                    User.id != user_id,
+                )
+            )
+            or 0
+        )
+        if others == 0:
+            raise BusinessError(
+                ErrorCode.CONFLICT,
+                _ROLE_CHANGE_REFUSED_LAST_ADMIN,
+                status_code=409,
+            )
+    locked.role = new_role.value
+    await db.flush()
+    writer = audit if audit is not None else AuditLogWriter()
+    await writer.append(
+        db,
+        actor=actor,
+        action=AUDIT_ROLE_CHANGED,
+        target_type="user",
+        target_id=str(user_id),
+        before_snapshot={"role": old_role.value},
+        after_snapshot={"role": new_role.value},
+        ip_address=audit_context.ip_address if audit_context else None,
+        request_id=audit_context.request_id if audit_context else None,
+    )
+    await db.commit()
+    logger.info(
+        "role changed user_id=%s %s->%s by=%s",
+        user_id,
+        old_role,
+        new_role,
+        actor.user_id,
+    )
+    return locked

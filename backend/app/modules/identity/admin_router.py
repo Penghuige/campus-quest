@@ -93,6 +93,7 @@ from app.modules.identity.providers import (
 from app.modules.identity.routing_common import _enforce_rate_limit
 from app.modules.identity.schemas import (
     AdminPasswordResetLinkResponse,
+    AdminRoleChangeRequest,
     StaffInvitationCreateRequest,
 )
 from app.modules.identity.session_service import SessionService
@@ -277,6 +278,17 @@ class AdminUserSessionsResponse(BaseModel):
 
     active_session_count: int
     remembered_device_count: int
+
+
+class AdminUserRoleResponse(BaseModel):
+    """The §3.4 flip's result row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    username: str
+    role: Role
+    status: UserStatus
 
 
 class AdminKickResponse(BaseModel):
@@ -467,6 +479,31 @@ async def kick_user(
     )
     return AdminKickResponse(
         revoked_sessions=revoked_sessions, revoked_devices=revoked_devices
+    )
+
+
+@router.patch("/admin/users/{user_id}/role", response_model=AdminUserRoleResponse)
+async def change_user_role(
+    user_id: UUID,
+    body: AdminRoleChangeRequest,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+) -> AdminUserRoleResponse:
+    """The §3.4 TEACHER<->ADMIN flip: not on oneself, not on students,
+    never leaving zero ACTIVE ADMINs (service check + DB trigger)."""
+    user = await admin_power.change_role(
+        db,
+        actor,
+        user_id,
+        body.role,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminUserRoleResponse(
+        id=str(user.id),
+        username=user.username,
+        role=Role(user.role),
+        status=UserStatus(user.status),
     )
 
 

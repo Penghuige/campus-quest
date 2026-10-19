@@ -219,6 +219,12 @@ class AdminPasswordResetLinkResponse(BaseModel):
     reset_token: str
 
 
+class AdminRoleChangeRequest(BaseModel):
+    """The §3.4 TEACHER<->ADMIN flip request."""
+
+    role: Role
+
+
 class PasswordResetTokenSpendRequest(BaseModel):
     """Spend the admin-issued reset link: the token IS the
     authorization (the endpoint is public)."""

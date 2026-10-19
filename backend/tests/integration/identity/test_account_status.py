@@ -421,6 +421,9 @@ async def test_role_comes_from_the_user_row_not_the_jwt_claim(
     # claim authorizes nothing.
     clock = FrozenClock(_T0)
     user = await _seed_user(db_session, role=Role.ADMIN)
+    # The 0031 trigger guards the last ACTIVE ADMIN: this test's
+    # demotion needs a survivor, so a companion admin rides the world.
+    await _seed_user(db_session, role=Role.ADMIN)
     _, tokens = await _open_session(
         db_session, user, codec=get_access_token_codec(), clock=clock
     )
