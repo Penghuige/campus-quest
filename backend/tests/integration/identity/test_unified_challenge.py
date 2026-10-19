@@ -821,3 +821,51 @@ async def test_login_admin_leg_honors_the_remembered_cookie(
     assert warm_body["status"] == "authenticated"
     assert warm_body["role"] == "ADMIN"
     assert warm_body["tokens"]["access_token"]
+
+
+async def test_empty_body_verify_serves_pending_approval_students(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The banner's promise holds for a PENDING_APPROVAL student too
+    (the #115 runtime finding): the probe answers the masked phone for
+    ACTIVE and PENDING_APPROVAL alike (the #87 audience), and the
+    one-click continue must honor the same audience — a PENDING student
+    logs in and browses the frozen home (RA3); a banner that invites
+    and then refuses is a dead-end UX."""
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800160071",
+    )
+    student.status = UserStatus.PENDING_APPROVAL
+    await db_session.commit()
+
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": student.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": student.phone_e164,
+            "code": code,
+            "remember_device": True,
+        },
+    )
+    assert login.status_code == 200, login.text
+    cookie = _device_cookie(login)
+
+    probed = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(cookie)
+    )
+    assert probed.status_code == 200, probed.text
+
+    continued = await client.post(
+        "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["status"] == "authenticated"
+    assert continued.json()["role"] == "STUDENT"
