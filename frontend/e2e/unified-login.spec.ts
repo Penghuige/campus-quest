@@ -1,32 +1,28 @@
 /**
- * Staff UNIFIED code-login e2e (the two-channel convergence,
- * 2026-10-20) — rides the backend's unified identifier endpoints
- * (contract-frozen; implementation in its #74 slot): ONE identifier
- * field carries email OR phone, the backend routes the code stream.
+ * The UNIFIED login page's e2e (spec 2026-10-19; rides the backend's
+ * PR-1 unified challenge endpoints — contract-frozen, skip-gated
+ * until that merge): ONE /login page, progressive disclosure, every
+ * audience.
  *
  * Coverage:
- * 1. teacher EMAIL chain: identifier → code → workspace, zero TOTP;
+ * 1. teacher EMAIL chain: identifier → 获取验证码 → code → workspace,
+ *    zero TOTP;
  * 2. teacher PHONE chain, fully self-contained (invite → accept →
  *    bind a phone through the live profile section → logout → login
  *    with the PHONE as the identifier);
- * 3. a wrong code renders the uniform invalid copy (derived, never
- *    guessed);
+ * 3. a wrong code renders the uniform CHALLENGE_CODE_INVALID copy
+ *    (derived, never guessed);
  * 4. ADMIN two-leg + the remembered device SKIPS the leg on replay
  *    (the checkbox's meaning lives on the totp leg — option a);
  * 5. lockout after five wrong codes (a DEDICATED invited teacher —
  *    locking the shared seeded teacher would poison the battery);
- * 6. the password channel survives one toggle away (the fixtures'
- *    staffLogin walks it everywhere; this pins the toggle itself).
+ * 6. the password expansion stays one weak link away (aria-expanded),
+ *    with the THREE-state identifier (a student number logs a student
+ *    in through the very same page).
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import {
-  mintToken,
-  recoverEmailCode,
-  recoverMobileCode,
-  recoverOtpCode,
-  totpCode,
-} from "./fixtures";
+import { mintToken, recoverEmailCode, recoverMobileCode, recoverOtpCode, totpCode } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -47,7 +43,7 @@ function wrongNeighborOf(code: string): string {
 
 /** Settle-verified identifier fill (the hydration-wipe lesson). */
 async function fillIdentifierVerified(page: Page, identifier: string): Promise<void> {
-  const field = page.getByLabel("邮箱或手机号", { exact: true });
+  const field = page.getByLabel("手机号或邮箱", { exact: true });
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await field.fill(identifier);
     await page.waitForTimeout(400);
@@ -60,20 +56,22 @@ async function fillIdentifierVerified(page: Page, identifier: string): Promise<v
 
 async function requestCode(page: Page, identifier: string): Promise<string> {
   await fillIdentifierVerified(page, identifier);
-  await page.getByRole("button", { name: "重新发送", exact: true }).click();
+  // The FIRST send is the 获取验证码 primary button; the code row (with
+  // its cooldown 重新发送) appears only after it (layer 2's condition).
+  await page.getByRole("button", { name: "获取验证码", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
   await expect(page.getByText("验证码已发送", { exact: false })).toBeVisible();
   // The backend routes the stream by shape — recovery rides the
-  // matching world action.
+  // matching world action (the login challenge store for phones).
   return identifier.includes("@")
     ? recoverEmailCode(identifier)
     : recoverMobileCode(`+86${identifier}`);
 }
 
-test.describe("staff unified code login (two-channel convergence)", () => {
+test.describe("the unified login page (six chains)", () => {
   test("teacher EMAIL chain: identifier → code → workspace, zero TOTP", async ({ page }) => {
     const [email] = (process.env.CQ_E2E_STAFF ?? "").split(":");
-    await page.goto(`${BASE_URL}/staff/login`);
+    await page.goto(`${BASE_URL}/login`);
     const code = await requestCode(page, email);
     await page.getByLabel("验证码", { exact: true }).fill(code);
     await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -115,9 +113,9 @@ test.describe("staff unified code login (two-channel convergence)", () => {
     await page.getByRole("button", { name: "绑定手机号", exact: true }).click();
     await expect(page.getByText("手机号已绑定")).toBeVisible();
     await page.getByRole("button", { name: "退出登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
 
-    // The unified channel with the PHONE as the identifier.
+    // The unified page with the PHONE as the identifier.
     const code = await requestCode(page, phone);
     await page.getByLabel("验证码", { exact: true }).fill(code);
     await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -126,19 +124,19 @@ test.describe("staff unified code login (two-channel convergence)", () => {
 
   test("a wrong code renders the uniform invalid copy", async ({ page }) => {
     const [email] = (process.env.CQ_E2E_STAFF ?? "").split(":");
-    await page.goto(`${BASE_URL}/staff/login`);
+    await page.goto(`${BASE_URL}/login`);
     const code = await requestCode(page, email);
     await page.getByLabel("验证码", { exact: true }).fill(wrongNeighborOf(code));
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page.getByText("验证码错误或已过期")).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
   });
 
   test("admin two-leg; the remembered device then skips the leg", async ({ page, browser }) => {
     // The replay leg waits out the 60s resend cooldown — 180s covers both.
     test.setTimeout(180_000);
     const [adminEmail] = ADMIN!.split(":");
-    await page.goto(`${BASE_URL}/staff/login`);
+    await page.goto(`${BASE_URL}/login`);
     const code = await requestCode(page, adminEmail);
     await page.getByLabel("验证码", { exact: true }).fill(code);
     await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -165,7 +163,7 @@ test.describe("staff unified code login (two-channel convergence)", () => {
     const state = await page.context().storageState();
     const replay = await browser.newContext({ storageState: state });
     const second = await replay.newPage();
-    second.goto(`${BASE_URL}/staff/login`);
+    second.goto(`${BASE_URL}/login`);
     const secondCode = await requestCode(second, adminEmail);
     await second.getByLabel("验证码", { exact: true }).fill(secondCode);
     await second.getByRole("button", { name: "登录", exact: true }).click();
@@ -195,7 +193,7 @@ test.describe("staff unified code login (two-channel convergence)", () => {
     await page.getByRole("button", { name: "退出登录" }).click();
 
     const email = `e2e-lock-${RUN}@school.edu`;
-    await page.goto(`${BASE_URL}/staff/login`);
+    await page.goto(`${BASE_URL}/login`);
     const code = await requestCode(page, email);
     const wrong = wrongNeighborOf(code);
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -210,10 +208,17 @@ test.describe("staff unified code login (two-channel convergence)", () => {
     await expect(page.getByText(/尝试次数过多，请 \d+ 分钟后再试/)).toBeVisible();
   });
 
-  test("the password channel stays one toggle away", async ({ page }) => {
-    await page.goto(`${BASE_URL}/staff/login`);
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await expect(page.getByLabel("邮箱", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("动态验证码")).toBeVisible();
+  test("the password expansion: weak link, three-state identifier, student number logs in", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/login`);
+    const weakLink = page.getByRole("button", { name: "使用密码登录" });
+    await weakLink.click();
+    await expect(weakLink).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByLabel("手机号、邮箱或学号", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
+    // The flip-back link restores the code form.
+    await page.getByRole("button", { name: "使用验证码登录" }).click();
+    await expect(page.getByLabel("手机号或邮箱", { exact: true })).toBeVisible();
   });
 });
