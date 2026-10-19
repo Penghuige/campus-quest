@@ -54,8 +54,9 @@ Buttons: 登录 · 注册 · 领取任务 · 开始上传 · 上传重试相关 
 通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 · 获取验证码 ·
 设置密码并继续 · 一键继续 (the login page's conditional fast-login banner,
 owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg) ·
-邮箱验证码登录 / 手机验证码登录 / 密码登录 (the staff login's three channel
-tabs — item ① disambiguated the email tab's bare 验证码登录 copy) ·
+验证码登录 / 密码登录 (the staff login's TWO channel tabs — the
+2026-10-20 convergence; the unified code channel's identifier field is
+邮箱或手机号) ·
 发送验证码 / 绑定手机号 / 更换手机号 (the staff phone-binding flow,
 PhoneBindSection) ·
 代重置密码 / 踢出全部会话 / 提升为管理员 / 降级为教师 / 批量停用 / 批量恢复 /
