@@ -1,6 +1,14 @@
 # backend/tests/integration/community/test_ratings.py
 """Task ratings against real PostgreSQL (spec §20, §31.7; plan 06 task 7).
 
+ORDER-SENSITIVITY NOTE (2026-10-19 flake hunt, closed as structurally
+mitigated): rating_service's conflict→rollback→retry orchestration is
+order-sensitive under a randomized suite (six lines lost coverage in 2
+of 8 hunt rounds — variance report in the hunt archive); the current
+pipeline's deterministic file order cannot trigger it (pytest-randomly
+is not a declared dependency). If a randomized order is ever
+reintroduced, pin this face FIRST.
+
 Order follows the task's risk: the eligibility gate (the surface this
 task adds), then the upsert semantics, then the aggregate read, then
 concurrency, then the writer gates:
