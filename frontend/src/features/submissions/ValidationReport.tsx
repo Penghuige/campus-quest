@@ -54,7 +54,7 @@ export function ValidationReport({ report }: { report: ValidationReportDto }) {
       ) : null}
 
       {view.passed && view.warnings.length === 0 ? (
-        <p className="report-ok-line">未发现问题，文件已进入人工审核队列。</p>
+        <p className="report-ok-line">未发现问题，文件已进入人工审核队列</p>
       ) : null}
 
       <ColumnStats

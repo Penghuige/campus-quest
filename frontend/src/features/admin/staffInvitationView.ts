@@ -16,7 +16,7 @@
  *   lands on create when the backend adds the pre-check (reviewer
  *   ruling 2026-10-15: the V1.1 invitation-lifecycle scope candidate).
  */
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 /** The backend's invitation role narrowing (spec §5.8). */
 export type StaffInvitationRole = "TEACHER" | "ADMIN";
@@ -71,7 +71,7 @@ export interface StaffInvitationErrorView {
   requestId: string | null;
 }
 
-const INVITATION_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+const INVITATION_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 
 /** Code-branched copy for a refused issuance (§29: never by status). */
 export function describeInvitationError(

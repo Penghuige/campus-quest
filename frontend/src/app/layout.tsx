@@ -6,7 +6,7 @@ import { DESIGN_TOKENS, oklchToHex } from "@/lib/designTokens";
 
 export const metadata: Metadata = {
   title: "CampusQuest",
-  description: "CampusQuest academic task platform",
+  description: "校园任务平台：领任务、攒积分、兑奖励",
 };
 
 /**

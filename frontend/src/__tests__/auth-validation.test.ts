@@ -24,6 +24,7 @@ import {
   validatePassword,
   validatePhone,
   validateStudentNumber,
+  validateUsername,
   NICKNAME_MAX_GRAPHEME_CLUSTERS,
 } from "../features/auth/validation";
 
@@ -145,5 +146,25 @@ describe("OTP code and phone convenience rules", () => {
     assert.notEqual(validatePhone("abc"), null);
     assert.notEqual(validatePhone(""), null);
     assert.notEqual(validatePhone("138-0013-8000"), null);
+  });
+});
+
+describe("validateUsername (the password channel's dual identifier)", () => {
+  // The login-iteration addendum (2026-10-19): the student password
+  // channel accepts the student number OR the bound phone — the same
+  // dual identifier the backend login reads. Both shapes pass the
+  // band; everything else stays refused client-side.
+  test("a student number passes", () => {
+    assert.equal(validateUsername("20240001"), null);
+  });
+
+  test("a CN mobile shape passes too", () => {
+    assert.equal(validateUsername("13900001234"), null);
+  });
+
+  test("neither shape is refused silently", () => {
+    assert.notEqual(validateUsername("12345"), null); // too short for a student number
+    assert.notEqual(validateUsername("abcdef"), null); // letters — neither shape
+    assert.notEqual(validateUsername(""), null);
   });
 });

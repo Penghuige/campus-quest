@@ -115,7 +115,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
           <div className="alert alert-error" role="alert">
             <p>
               <span className="alert-marker" aria-hidden="true">!</span>
-              教师工作台仅对教师与管理员开放，当前账号是学生账号。
+              教师工作台仅对教师与管理员开放，当前账号是学生账号
             </p>
             <p>
               <Link className="link" href={gate.workspacePath}>

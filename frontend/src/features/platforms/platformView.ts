@@ -86,14 +86,14 @@ export interface PlatformAdminErrorView {
   requestId: string | null;
 }
 
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 export function describePlatformAdminError(
   error: unknown,
   fallback: string,
 ): PlatformAdminErrorView {
   if (!isApiError(error)) {
-    return { message: "网络异常，请检查连接后重试", requestId: null };
+    return { message: COPY_NETWORK_FAIL, requestId: null };
   }
   if (error.code === "CONFLICT") {
     return {

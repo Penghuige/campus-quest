@@ -11,7 +11,7 @@
  * - lifecycle labels map the backend `RewardRedemption.status` values
  *   to product wording (design §9: no raw enum names).
  */
-import { isApiError, isKnownErrorCode, isSystemErrorCode } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError, isKnownErrorCode, isSystemErrorCode } from "@/lib/errors";
 import { formatDeadlineDateTime, BUSINESS_TIME_CONFIG } from "@/lib/time";
 
 import type { RewardItemDto } from "@/features/points/api";
@@ -183,9 +183,9 @@ export const REDEEM_ERROR_TEXT: Record<string, string> = {
   RATE_LIMITED: "操作过于频繁，请稍后再试",
 };
 
-const REDEEM_SYSTEM_ERROR_TEXT = "服务暂时不可用，请稍后重试";
-const REDEEM_GENERIC_ERROR_TEXT = "兑换失败，请稍后重试";
-export const REDEEM_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+const REDEEM_SYSTEM_ERROR_TEXT = COPY_SERVICE_FAIL;
+const REDEEM_GENERIC_ERROR_TEXT = COPY_GENERIC_FAIL;
+export const REDEEM_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 
 /**
  * Typed copy for a failed redeem POST. Branches on `error.code` only:

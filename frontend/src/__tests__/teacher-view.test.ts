@@ -239,7 +239,7 @@ describe("task edit surface (spec §6.2 V1 edit rule)", () => {
     assert.equal(result.ok, false);
     assert.equal(
       result.errors.submissionSchema,
-      "提交校验 schema 必须是非空 JSON 对象",
+      "提交校验规则必须是非空 JSON 对象",
     );
   });
 
@@ -493,7 +493,7 @@ describe("create-form band mirrors (server authoritative)", () => {
     assert.match(errors.claimCutoffMinutes ?? "", /不小于 0/);
     assert.equal(errors.fileTypes, "请至少选择一种允许的文件类型");
     assert.match(errors.maxFileSizeMb ?? "", /200 MB/);
-    assert.equal(errors.submissionSchema, "提交校验 schema 必须是非空 JSON 对象");
+    assert.equal(errors.submissionSchema, "提交校验规则必须是非空 JSON 对象");
   });
 
   test("schema parser accepts non-empty objects, rejects empties/arrays/scalars", () => {
@@ -598,8 +598,9 @@ describe("review-queue copy", () => {
 
   test("the invalidate warning is prominent AND names the consequences", () => {
     assert.match(INVALIDATE_WARNING_TEXT, /取消/);
-    assert.match(INVALIDATE_WARNING_TEXT, /奖励档位与积分/);
-    assert.match(INVALIDATE_WARNING_TEXT, /审计信息不可删除/);
+    assert.match(INVALIDATE_WARNING_TEXT, /奖励与积分/);
+    assert.match(INVALIDATE_WARNING_TEXT, /重新提交/);
+    assert.match(INVALIDATE_WARNING_TEXT, /审计记录不可删除/);
   });
 
   test("note/reason blank mirror: whitespace-only text is not ready", () => {

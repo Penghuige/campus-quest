@@ -191,7 +191,7 @@ function WalletSection({
           ) : null}
           {frozen > 0 ? (
             <p className="progress-note">
-              有 {frozen} 积分冻结在兑换申请中，兑换以可花费余额为准
+              有 {frozen} 积分冻结在审核中的兑换里，只能花未冻结的部分
             </p>
           ) : null}
         </>

@@ -23,6 +23,7 @@ import { formatDeadlineDateTime, parseServerInstant } from "@/lib/time";
 
 import { Button } from "@/components/ui/button";
 import { listMyDevices, revokeMyDevices, type MyDeviceDto } from "./api";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 function deviceTime(value: string | null): string {
   return value === null ? "—" : formatDeadlineDateTime(parseServerInstant(value));
@@ -75,7 +76,7 @@ export function DevicePanel() {
     try {
       const result = await revokeMyDevices();
       setRevoking(false);
-      setNote(`已移除 ${result.revoked} 台记住的设备；下次登录需重新验证动态口令。`);
+      setNote(`已移除 ${result.revoked} 台记住的设备；下次登录需重新验证动态口令`);
       setReloadSeed((seed) => seed + 1);
     } catch (cause) {
       setActionError(cause);
@@ -144,7 +145,7 @@ export function DevicePanel() {
         <div className="alert alert-error" role="alert">
           <p>
             <span className="alert-marker" aria-hidden="true">!</span>
-            操作失败，请稍后重试
+            {COPY_GENERIC_FAIL}
           </p>
         </div>
       ) : null}

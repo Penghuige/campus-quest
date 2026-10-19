@@ -48,6 +48,7 @@ import {
   type AccountActionKind,
 } from "./adminView";
 import { Button, type ButtonVariant } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 const PAGE_LIMIT = 20;
 
@@ -372,7 +373,7 @@ function AccountStatusDialog({
 
   const errorView =
     error !== null
-      ? describeAdminMutationError(error, "操作失败，请稍后重试")
+      ? describeAdminMutationError(error, COPY_GENERIC_FAIL)
       : null;
 
   return (

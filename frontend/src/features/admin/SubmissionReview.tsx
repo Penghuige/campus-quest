@@ -495,11 +495,11 @@ function ApproveDialog({
       <DialogContent aria-labelledby="approve-title">
         <DialogTitle id="approve-title">通过该提交</DialogTitle>
         <p className="field-hint">
-          确认后该领取将标记为已完成
+          该领取将标记完成
           {item.locked_reward_points !== null
-            ? `，并向学生发放锁定的 ${item.locked_reward_points} 积分`
-            : "，奖励按服务端结算发放"}
-          ；此操作会立即生效并记入积分流水。
+            ? `，发放锁定的 ${item.locked_reward_points} 积分`
+            : "，奖励按结算发放"}
+          ，立即记入积分流水。
         </p>
         {error !== null ? <SectionError error={error} /> : null}
         <DialogFooter>
@@ -676,16 +676,16 @@ function OutcomeAlert({
           {outcome.result.points_granted !== null
             ? `，已发放 ${outcome.result.points_granted} 积分`
             : ""}
-          {outcome.result.already_reviewed ? "（该领取此前已审核，未重复发放）" : ""}。
+          {outcome.result.already_reviewed ? "（该领取此前已审核，未重复发放）" : ""}
         </p>
       ) : outcome.kind === "revision" ? (
         <p>
-          已退回修改；学生需在 {revisionDeadline} 前重新提交，奖励档位已保留。
+          已退回修改；学生需在 {revisionDeadline} 前重新提交，奖励档位已保留
         </p>
       ) : (
         <p>
           已判无效；奖励锁定已取消（{lockLabel}），学生需在 {revisionDeadline}{" "}
-          前重新提交并重新核算。
+          前重新提交并重新核算
         </p>
       )}
       <p>

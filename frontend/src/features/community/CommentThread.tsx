@@ -180,7 +180,7 @@ export function CommentThread({ taskId, sort }: CommentThreadProps) {
           {view !== null && view.groups.length === 0 ? (
             <EmptyState
               title="还没有评论"
-              hint="领取并完成任务后，来分享你的经验和 tips 吧"
+              hint="领取并完成任务后，来分享你的经验和心得吧"
             />
           ) : null}
 

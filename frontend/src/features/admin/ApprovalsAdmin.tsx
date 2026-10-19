@@ -34,6 +34,7 @@ import {
   validateRejectReason,
 } from "./approvalsView";
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 interface PendingRow {
   id: string;
@@ -138,7 +139,7 @@ export function ApprovalsAdmin() {
 
   const errorView =
     actionError !== null
-      ? describeApprovalError(actionError, "操作失败，请稍后重试")
+      ? describeApprovalError(actionError, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -169,7 +170,7 @@ export function ApprovalsAdmin() {
       ) : phase === "error" ? (
         <SectionError error={null} onRetry={reload} retryLabel="重新加载" />
       ) : rows.length === 0 ? (
-        <EmptyState title="没有待审核的学生" hint="新注册的学生会出现在这里" />
+        <EmptyState title="没有待审核的学生" hint="有新注册时从这里审核" />
       ) : (
         <div className="table-scroll">
           <table className="staff-table" aria-label="待审核学生列表">
@@ -275,7 +276,7 @@ function RejectDialog({
       await rejectStudent(row.id, reason.trim().length > 0 ? reason.trim() : null);
       onDone();
     } catch (cause) {
-      const view = describeApprovalError(cause, "操作失败，请稍后重试");
+      const view = describeApprovalError(cause, COPY_GENERIC_FAIL);
       setSummary({ message: view.message, requestId: view.requestId });
     } finally {
       setBusy(false);

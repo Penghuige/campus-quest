@@ -195,7 +195,7 @@ export function toApiError(
   }
   return new ApiError({
     code: "HTTP_ERROR",
-    message: `请求失败（HTTP ${status}）`,
+    message: COPY_SERVICE_FAIL,
     status,
     requestId: requestIdHeader,
   });
@@ -223,9 +223,20 @@ export interface SectionErrorView {
   requestId: string | null;
 }
 
-export const SECTION_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
-const SECTION_SYSTEM_ERROR_TEXT = "服务暂时不可用，请稍后重试";
-const SECTION_GENERIC_ERROR_TEXT = "加载失败，请稍后重试";
+/**
+ * The three GENERIC fallback sentences (the copy-de-AI batch's class-A
+ * convergence, 2026-10-19) — the WHOLE site's unexpected-failure
+ * fallbacks, single-sourced here. Shape: what failed + one thing to
+ * do, ≤14 characters. Expected business failures keep their own
+ * code-mapped copy; these three own only the unexpected remainder.
+ */
+export const COPY_NETWORK_FAIL = "网络异常，请检查连接后重试";
+export const COPY_SERVICE_FAIL = "服务暂时不可用，请稍后重试";
+export const COPY_GENERIC_FAIL = "操作失败，请稍后重试";
+
+export const SECTION_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
+const SECTION_SYSTEM_ERROR_TEXT = COPY_SERVICE_FAIL;
+const SECTION_GENERIC_ERROR_TEXT = COPY_GENERIC_FAIL;
 
 /** Derive a section error view. Pure: same failure in, same view out. */
 export function describeSectionError(error: unknown): SectionErrorView {

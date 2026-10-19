@@ -43,7 +43,7 @@ import {
   validateEmailCode,
 } from "./staffEmailLoginView";
 import { validateMobileLoginPhone } from "./mobileLoginView";
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -92,7 +92,7 @@ export function StaffMobileCodeLogin() {
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setSentNote(true);
     } catch (cause) {
-      const view = describeMobileStaffLoginError(cause, "验证码发送失败，请稍后重试");
+      const view = describeMobileStaffLoginError(cause, COPY_GENERIC_FAIL);
       setSummary({ summary: view.message, fieldErrors: {}, requestId: view.requestId });
     } finally {
       setSending(false);
@@ -122,7 +122,7 @@ export function StaffMobileCodeLogin() {
       }
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setVerifying(false);
     }
@@ -144,7 +144,7 @@ export function StaffMobileCodeLogin() {
       await staffMobileCodeTotp(pendingToken, totpCode.trim(), rememberDevice);
       landOnWorkspace();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setVerifying(false);
     }

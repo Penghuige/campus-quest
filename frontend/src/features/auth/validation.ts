@@ -163,6 +163,20 @@ export function validatePhone(value: string): string | null {
 }
 
 /** Username convenience rule for the login/reset forms (student number). */
+/**
+ * The password channel's DUAL identifier (login-iteration addendum
+ * 2026-10-19): the student number OR the bound CN mobile — both
+ * shapes ride the same username field, mirroring the backend login's
+ * dual read. Neither band's specifics leak into the other's errors:
+ * a value that is neither shape gets the shared too-short/neither
+ * refusal below.
+ */
 export function validateUsername(value: string): string | null {
-  return validateStudentNumber(value);
+  if (validateStudentNumber(value) === null) {
+    return null;
+  }
+  if (/^1[3-9]\d{9}$/.test(value)) {
+    return null;
+  }
+  return "请输入学号或手机号";
 }

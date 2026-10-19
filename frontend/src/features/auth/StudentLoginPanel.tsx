@@ -36,7 +36,7 @@ import {
 import { resendButtonLabel } from "./errors";
 import { NETWORK_ERROR_TEXT, type AuthErrorView } from "./errors";
 import { validatePassword, validateStudentNumber } from "./validation";
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -129,7 +129,7 @@ function MobileLoginForm({
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setSentNote(true);
     } catch (cause) {
-      setSummary(toSummary(cause, "验证码发送失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setSending(false);
     }
@@ -167,7 +167,7 @@ function MobileLoginForm({
       router.replace("/"); // the student home (the sole student landing)
       router.refresh();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setVerifying(false);
     }

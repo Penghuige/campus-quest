@@ -111,7 +111,7 @@ describe("avatar error copy (§29: code branching, never message parsing)", () =
   });
 
   test("non-ApiError failures get the generic retry copy", () => {
-    assert.equal(avatarErrorText(new Error("network")), "头像操作失败，请稍后重试。");
-    assert.equal(avatarErrorText("weird"), "头像操作失败，请稍后重试。");
+    assert.equal(avatarErrorText(new Error("network")), "网络异常，请检查连接后重试");
+    assert.equal(avatarErrorText("weird"), "网络异常，请检查连接后重试");
   });
 });
