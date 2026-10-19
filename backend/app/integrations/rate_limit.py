@@ -143,6 +143,25 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
             limit=IP_HOURLY_LIMIT,
             window_seconds=HOURLY_WINDOW_SECONDS,
         ),
+        # The unified challenge facade (2026-10-19 spec §3.1): the
+        # per-identifier caps mirror the OTP-send posture the routed
+        # services own (their internal cooldowns stay the finer
+        # throttle); the totp leg is ip-keyd only — its identifier is
+        # a single-use opaque token, useless as a bucket key, and the
+        # 6-digit factor under online brute force is exactly the login
+        # limiter's job (interfaces.md).
+        RateLimitRule(bucket="auth:challenge", limit=5, window_seconds=3600),
+        RateLimitRule(
+            bucket="auth:challenge-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
+        RateLimitRule(bucket="auth:challenge-totp", limit=10, window_seconds=300),
+        RateLimitRule(
+            bucket="auth:challenge-totp-ip",
+            limit=IP_HOURLY_LIMIT,
+            window_seconds=HOURLY_WINDOW_SECONDS,
+        ),
         RateLimitRule(bucket="auth:register", limit=5, window_seconds=3600),
         RateLimitRule(bucket="auth:otp-send", limit=5, window_seconds=3600),
         RateLimitRule(
@@ -284,6 +303,10 @@ LOGIN_FAMILY_BUCKETS: tuple[str, ...] = (
     "auth:staff-login-ip",
     "auth:staff-email-code",
     "auth:staff-email-code-ip",
+    "auth:challenge",
+    "auth:challenge-ip",
+    "auth:challenge-totp",
+    "auth:challenge-totp-ip",
 )
 _E2E_LOGIN_LIMIT = 1000
 _E2E_LOGIN_WINDOW_SECONDS = 3600

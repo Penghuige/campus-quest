@@ -299,6 +299,7 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `EMAIL_DELIVERY_FAILED` | V1.1 §2.1 |
 | `MOBILE_CODE_INVALID` | V1.1 2026-10-16 §3 |
 | `APPROVAL_PENDING` | V1.1 2026-10-16 §2 |
+| `CHALLENGE_CODE_INVALID` | 统一登录 2026-10-19 §3.4 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
@@ -330,6 +331,39 @@ never shared, never reinterpreted):
 | `otp.ResendCooldownError` | `OTP_RESEND_COOLDOWN` | 429 |
 | `otp.OtpRateLimitError` | `RATE_LIMITED` | 429 |
 | `rate_limit.RateLimitExceededError` | `RATE_LIMITED` | 429 |
+
+### Unified login challenge family (2026-10-19 spec §3)
+
+The unified endpoints (`/auth/challenge/{request,verify,totp}`,
+`/auth/challenge/remembered`, the `/auth/login` identifier form) are a
+route FACADE over the existing challenge services — storage, cooldown,
+lockout, HMAC, GETDEL, and device-credential craft are untouched, and
+the legacy per-leg codes above stay until the retirement PR (PR-3).
+Two deliberate breaks INSIDE the new family only:
+
+- **One code for the code-was-wrong family**: on the unified verify
+  arms, wrong / expired / attempts-exhausted codes all answer
+  `CHALLENGE_CODE_INVALID` (400) — the branch reason stays in server
+  logs, the anti-enumeration surface stays uniform (§5.1). Cooldown
+  and lockout keep `RATE_LIMITED` / `ACCOUNT_LOCKED` as everywhere.
+- **`totp_code`, not `code`**: spec §3.1 names the totp leg's field
+  `totp_code`; the legacy family's `code` spelling retires with PR-3.
+- **The totp leg rate-limits on the transport peer**: the unified
+  `/auth/challenge/totp` counts against an ip-keyed bucket of the
+  login family (the legacy totp legs rode only the pending
+  credential's single-use/TTL/attempt-cap semantics — the unified
+  endpoint is a new aggregated surface, and a 6-digit second factor
+  under online brute force is the login limiter's core job). The
+  per-credential caps stay exactly as they are underneath.
+
+The verify response is a discriminated union — judgment rides the
+`status` member alone: `authenticated` (with `role` and `tokens` — the
+`TokenPairResponse` shape, nested as in `RegisterResponse`),
+`totp_required` (with `pending_token`), `unregistered` (with
+`register_token`). `remember_device` is honored server-side by
+audience only (STUDENT verify arm and the ADMIN totp arm; the staff
+code arms never exempt a factor) — the frontend sends it
+unconditionally and holds no audience knowledge.
 
 ### System / framework codes
 

@@ -1,0 +1,37 @@
+# unified login 规约-测试对账矩阵
+
+> 建立日期：2026-10-19 · 域：统一登录挑战族（spec 2026-10-19-unified-login-design §3.1/§3.2/§3.4，PR-1 后端半）
+> 方法论：`campusquest-test-process` skill；**预期列先于测试检索落笔**；缺口列出不补；不匹配上报不擅改。
+> 规约来源：unified-login-design §3（main 5e3636d 契约修订版）+ §5 安全边界；interfaces.md「Unified login challenge family」小节。
+> 域界：legacy 端点族（PR-3 退役）不在本表；邀请接受流不动；/auth/register 与 /auth/mobile-code/register 不动。
+
+## 对账摘要
+
+| 状态 | 数量 | 明细 |
+|---|---|---|
+| 已覆盖 | 10 | U1-U10 |
+| 缺口 | 0 | — |
+| 不匹配 | 0 | — |
+
+## 矩阵
+
+| # | 规则引用 | 预期行为（先于测试写下） | 测试位置（file::test） | 状态 |
+|---|---|---|---|---|
+| U1 | §3.1 | request 四臂按标识符形态路由：邮箱→员工邮箱码（真发信）；手机按 users 行——无行/STUDENT→学生手机码、TEACHER/ADMIN→员工手机码（未注册手机真发码=发码即入口语义保持）；学号→422 格式层拒绝（无账号查询无枚举面）；响应恒 202 | `tests/integration/identity/test_unified_challenge.py::test_request_routes_by_identifier_shape` | 已覆盖 |
+| U2 | §3.1 + #85/#101 纪律 | 发码类 202 前必须 commit 挑战行：savepoint 假绿不可证，真会话+独立连接读回（email 臂 login_email_challenges、手机臂 login_mobile_challenges）；清扫幂等 | `tests/integration/identity/test_unified_challenge.py::test_request_commits_challenges_across_connections` | 已覆盖 |
+| U3 | §3.1 | verify 判别联合（判定只认 status）：email 臂 ADMIN→totp_required{pending_token}；统一 totp 端点（email 域 pending）→authenticated{role, tokens 嵌套 TokenPairResponse} | `tests/integration/identity/test_unified_challenge.py::test_verify_email_arm_admin_answers_totp_required` | 已覆盖 |
+| U4 | §3.1 | 手机臂三态：STUDENT→authenticated、TEACHER→authenticated、未注册→unregistered{register_token}（内联注册三步复用现有语义） | `tests/integration/identity/test_unified_challenge.py::test_verify_phone_arms_answer_all_three_states` | 已覆盖 |
+| U5 | §3.1 | 一个 totp 端点吃两族 pending 域（emaillogin:pending / staffmobilecode:pending；错域 GETDEL miss 不烧 token）；bogus pending→CHALLENGE_CODE_INVALID | `tests/integration/identity/test_unified_challenge.py::test_totp_endpoint_serves_both_pending_domains` | 已覆盖 |
+| U6 | §3.4 | 错码/过期/耗尽合一→CHALLENGE_CODE_INVALID 400（分支理由只入服务端日志）；RATE_LIMITED/ACCOUNT_LOCKED/VALIDATION_ERROR 沿用 | `tests/integration/identity/test_unified_challenge.py::test_wrong_codes_answer_the_single_challenge_envelope` | 已覆盖 |
+| U7 | §3.1 remembered | GET /auth/challenge/remembered：无 cookie→204；学生 cookie→200{phone_masked}（掩码不含全号）；verify 空体（cookie 单因子）学生→authenticated | `tests/integration/identity/test_unified_challenge.py::test_remembered_probe_and_empty_body_verify_leg` | 已覆盖 |
+| U8 | §5.1 裁定 | 空体 verify 对 ADMIN 恒 totp_required——cookie 不因码腿豁免二因子（免 TOTP 语义只在 /auth/login 密码腿的 cookie honoring）；员工 cookie 非探针受众（204） | `tests/integration/identity/test_unified_challenge.py::test_empty_body_verify_still_owes_admin_the_second_factor` | 已覆盖 |
+| U9 | §3.2 | login 标识形态：学号→学生密码流；手机（学生先手机后学号=#73 并入）→学生密码流；邮箱→员工密码流（TEACHER 密码即全认证 §2.3）；旧形态 {username,password} 并存收（PR-3 清） | `tests/integration/identity/test_unified_challenge.py::test_login_identifier_form_covers_three_identifiers` | 已覆盖 |
+| U10 | §3.2 + §2.2 | ADMIN 密码腿：无 cookie→totp_required；有效 remembered cookie→authenticated 直落（staff/login 30 天重登语义保持）；cookie 经码流 totp 腿+remember_device 铸造 | `tests/integration/identity/test_unified_challenge.py::test_login_admin_leg_honors_the_remembered_cookie` | 已覆盖 |
+
+## 缺口明细
+
+无。
+
+## 不匹配明细
+
+无。

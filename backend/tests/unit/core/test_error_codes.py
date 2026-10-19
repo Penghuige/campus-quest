@@ -71,6 +71,8 @@ FROZEN_BUSINESS_CODES = (
     "EMAIL_DELIVERY_FAILED",
     "MOBILE_CODE_INVALID",
     "APPROVAL_PENDING",
+    # The unified login challenge family (2026-10-19 spec §3.4).
+    "CHALLENGE_CODE_INVALID",
 )
 
 FROZEN_SYSTEM_CODES = (

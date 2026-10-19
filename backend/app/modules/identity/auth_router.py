@@ -53,6 +53,7 @@ from app.modules.identity.providers import (
     get_mobile_login_service,
     get_phone_region,
     get_profile_service,
+    get_unified_login_service,
 )
 from app.modules.identity.providers import (
     get_identity_redis as get_identity_redis_placeholder,
@@ -84,9 +85,14 @@ from app.modules.identity.schemas import (
     RegisterResponse,
     RegisterStudent,
     TokenPairResponse,
+    UnifiedAuthOutcome,
+    UnifiedChallengeRequest,
+    UnifiedChallengeTotpRequest,
+    UnifiedChallengeVerifyRequest,
     UserPublic,
 )
 from app.modules.identity.service import IdentityService
+from app.modules.identity.unified_login_service import UnifiedLoginService
 
 router = APIRouter()
 
@@ -315,26 +321,179 @@ async def register_by_mobile_code(
     )
 
 
-@router.post("/auth/login", response_model=TokenPairResponse)
+@router.post("/auth/login", response_model=None)
 async def login(
     body: LoginRequest,
     request: Request,
     response: Response,
     sessions: SessionsDep,
+    unified: Annotated[UnifiedLoginService, Depends(get_unified_login_service)],
     settings: AppSettings,
     limiter: LimiterDep,
     db: DbSession,
-) -> TokenPairResponse:
-    # Two layers (hardening A-1): per username and per transport peer —
-    # the identifier cap cannot bound one IP stuffing many usernames.
+) -> TokenPairResponse | UnifiedAuthOutcome:
+    """Student or staff password login — BOTH forms (2026-10-19 §3.2).
+
+    Legacy: {username, password} answers the flat TokenPairResponse
+    (unchanged bytes; the retirement PR removes it). Unified:
+    {identifier, password, remember_device?} answers the discriminated
+    union — a phone/student-number reaches the student flow (phone
+    first), an email reaches the staff flow with the remembered-cookie
+    honoring preserved; an ADMIN without one answers totp_required and
+    the totp leg completes at /auth/challenge/totp."""
+    identity = (body.username or body.identifier or "").strip()
+    # Two layers (hardening A-1): per identity and per transport peer.
     await _enforce_rate_limit(
         limiter,
         "auth:login",
-        body.username.strip().lower(),
+        identity.lower(),
         client_ip=_client_ip(request),
     )
-    tokens = await sessions.login_student(db, body.username, body.password)
-    return _token_pair_response(response, tokens, settings)
+    if body.username is not None:
+        tokens = await sessions.login_student(db, body.username, body.password)
+        return _token_pair_response(response, tokens, settings)
+    outcome = await unified.login(
+        db,
+        identifier=body.identifier or "",
+        password=body.password,
+        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        remember_device=body.remember_device,
+    )
+    return _unified_outcome_response(response, outcome, settings)
+
+
+def _unified_outcome_response(
+    response: Response, outcome: object, settings: AppSettings
+) -> UnifiedAuthOutcome:
+    """Shape one facade outcome: tokens ride the refresh-cookie pair
+    (the HttpOnly delivery, never the body), a minted device cookie
+    rides its own HttpOnly Set-Cookie, and only the union's named
+    members reach the body."""
+    tokens = getattr(outcome, "tokens", None)
+    pair = None
+    if tokens is not None:
+        pair = _token_pair_response(response, tokens, settings)
+    device_cookie = getattr(outcome, "device_cookie", None)
+    if device_cookie is not None:
+        response.set_cookie(
+            DEVICE_COOKIE_NAME,
+            device_cookie,
+            max_age=DEVICE_TTL_DAYS * 24 * 3600,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+    return UnifiedAuthOutcome(
+        status=outcome.status,  # type: ignore[attr-defined]
+        role=getattr(outcome, "role", None),
+        tokens=pair,
+        pending_token=getattr(outcome, "pending_token", None),
+        register_token=getattr(outcome, "register_token", None),
+    )
+
+
+@router.post("/auth/challenge/request", status_code=202, response_model=None)
+async def unified_challenge_request(
+    body: UnifiedChallengeRequest,
+    request: Request,
+    unified: Annotated[UnifiedLoginService, Depends(get_unified_login_service)],
+    limiter: LimiterDep,
+    db: DbSession,
+) -> Response:
+    """One code request, routed by identifier shape (2026-10-19 §3.1):
+    email → the staff email-code service; phone by the users row → the
+    student mobile-code service (unregistered phones included — the
+    entry flow) or the staff one. Always the arm's own 202; a student
+    number is a format-layer 422 with no account query."""
+    await _enforce_rate_limit(
+        limiter,
+        "auth:challenge",
+        body.identifier.strip().lower(),
+        client_ip=_client_ip(request),
+    )
+    await unified.request(db, body.identifier)
+    return JSONResponse({}, status_code=202)
+
+
+@router.post("/auth/challenge/verify", response_model=None)
+async def unified_challenge_verify(
+    body: UnifiedChallengeVerifyRequest,
+    request: Request,
+    response: Response,
+    unified: Annotated[UnifiedLoginService, Depends(get_unified_login_service)],
+    settings: AppSettings,
+    db: DbSession,
+) -> UnifiedAuthOutcome:
+    """The code leg (or, with BOTH fields empty, the remembered-cookie
+    single-factor leg): the discriminated union answers authenticated /
+    totp_required / unregistered — ``status`` is the only judgment
+    member. Wrong or expired or exhausted codes answer the single
+    CHALLENGE_CODE_INVALID."""
+    outcome = await unified.verify(
+        db,
+        identifier=body.identifier,
+        code=body.code,
+        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        remember_device=body.remember_device,
+        audit_context=AuditContext.from_request(request),
+    )
+    return _unified_outcome_response(response, outcome, settings)
+
+
+@router.post("/auth/challenge/totp", response_model=None)
+async def unified_challenge_totp(
+    body: UnifiedChallengeTotpRequest,
+    request: Request,
+    response: Response,
+    unified: Annotated[UnifiedLoginService, Depends(get_unified_login_service)],
+    settings: AppSettings,
+    limiter: LimiterDep,
+    db: DbSession,
+) -> UnifiedAuthOutcome:
+    """The ADMIN second factor — ONE endpoint over BOTH pending domains
+    (email-login and staff-mobile; a wrong-domain probe burns nothing).
+    Transport-peer rate-limited (interfaces.md: the 6-digit factor under
+    online brute force is the login limiter's job; the per-credential
+    caps stay underneath)."""
+    await _enforce_rate_limit(
+        limiter,
+        "auth:challenge-totp",
+        _client_ip(request) or "unknown",
+        client_ip=_client_ip(request),
+    )
+    outcome = await unified.verify_totp(
+        db,
+        pending_token=body.pending_token,
+        code=body.totp_code,
+        remember_device=body.remember_device,
+        audit_context=AuditContext.from_request(request),
+    )
+    return _unified_outcome_response(response, outcome, settings)
+
+
+@router.get("/auth/challenge/remembered", status_code=200, response_model=None)
+async def unified_remembered_probe(
+    request: Request,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    db: DbSession,
+) -> Response:
+    """Is a remembered device alive for the login banner? The §3.1
+    remembered read, the mobile-code probe's contract: 200
+    {phone_masked} only for the banner's audience (a cookie-bound
+    STUDENT), the same empty 204 for every other shape."""
+    cookie = request.cookies.get(DEVICE_COOKIE_NAME)
+    if cookie is not None:
+        user_id = await validate_device(db, cookie, clock=clock)
+        if user_id is not None:
+            user = await db.get(User, user_id)
+            if (
+                user is not None
+                and user.role == Role.STUDENT
+                and user.status in (UserStatus.ACTIVE, UserStatus.PENDING_APPROVAL)
+                and user.phone_e164
+            ):
+                return JSONResponse({"phone_masked": mask_phone(user.phone_e164)})
+    return Response(status_code=204)
 
 
 @router.post(

@@ -101,6 +101,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from cryptography.fernet import Fernet
@@ -861,7 +862,8 @@ class StaffService:
         *,
         device_cookie: str | None = None,
         remember_device: bool = False,
-    ) -> tuple[SessionTokens, str | None]:
+        second_factor_policy: Literal["strict", "unified"] = "strict",
+    ) -> tuple[SessionTokens | None, str | None]:
         """Staff login: verified email + password + valid second factor.
 
         ``totp_code`` accepts a current RFC 6238 code or one unused
@@ -928,14 +930,27 @@ class StaffService:
                     db, device_cookie, clock=self._clock
                 )
             if cookie_user_id != user.id:
-                if self._guard is not None:
-                    await self._guard.record_failure(user.id)
-                logger.info(
-                    "staff second factor rejected user_id=%s "
-                    "reason=empty_code_without_valid_device",
-                    user.id,
-                )
-                raise self._staff_authentication_required()
+                # PR-1's unified password form (2026-10-19 spec §3.2,
+                # ``second_factor_policy="unified"``) reshapes ONLY this
+                # arm for the new caller: a TEACHER's password is the
+                # whole auth (§2.3 — no TOTP by design), and an ADMIN's
+                # proven password owes the totp leg — signaled as a
+                # (None, None) return for the facade to mint the pending
+                # credential. The legacy "strict" callers keep the
+                # uniform failure byte-for-byte.
+                if second_factor_policy == "unified" and user.role == Role.ADMIN:
+                    return None, None
+                if second_factor_policy == "unified" and user.role == Role.TEACHER:
+                    logger.info("staff unified login password-only user_id=%s", user.id)
+                else:
+                    if self._guard is not None:
+                        await self._guard.record_failure(user.id)
+                    logger.info(
+                        "staff second factor rejected user_id=%s "
+                        "reason=empty_code_without_valid_device",
+                        user.id,
+                    )
+                    raise self._staff_authentication_required()
         else:
             credential = await db.get(TotpCredential, user.id)
             if credential is None or credential.confirmed_at is None:
