@@ -182,7 +182,7 @@ function NicknameForm({
     try {
       await updateNickname(value.trim());
       onUpdated();
-      setSavedNote("昵称已更新。");
+      setSavedNote("昵称已更新");
     } catch (cause) {
       setSummary(toErrorView(cause, "password"));
       setFieldErrors({});
@@ -200,7 +200,7 @@ function NicknameForm({
           label="昵称"
           counter={`${count}/${NICKNAME_MAX_GRAPHEME_CLUSTERS}`}
           counterOver={count > NICKNAME_MAX_GRAPHEME_CLUSTERS}
-          hint="展示给其他同学的名称；按显示字符计数，emoji 算 1 个。"
+          hint="展示给其他同学的名称；按显示字符计数，表情算 1 个"
           error={fieldErrors.nickname}
           inputProps={{
             value,
@@ -272,11 +272,11 @@ function PhoneChangeForm({
       setChallenge(next);
       setStep("confirm");
       start(60);
-      setNote("验证码已发送到新手机号，请查收短信。");
+      setNote("验证码已发送到新手机号，请查收短信");
     } catch (cause) {
       if (isApiError(cause) && cause.code === "OTP_RESEND_COOLDOWN") {
         start(60);
-        setNote("发送过于频繁，请等待倒计时结束后重试。");
+        setNote("发送过于频繁，请等待倒计时结束后重试");
         return;
       }
       const view = toErrorView(cause, "password");
@@ -309,12 +309,12 @@ function PhoneChangeForm({
       setPassword("");
       setNewPhone("");
       setCode("");
-      setNote("手机号已更新。");
+      setNote("手机号已更新");
     } catch (cause) {
       // A dead challenge sends the user back to step 1; a wrong code
       // keeps it (backend OTP semantics, identity/otp.py).
       if (isApiError(cause) && OTP_CHALLENGE_RESET_CODES.has(cause.code)) {
-        backToRequest("验证码已失效，请重新获取。");
+        backToRequest("验证码已失效，请重新获取");
         return;
       }
       const view = toErrorView(cause, "password");
@@ -354,7 +354,7 @@ function PhoneChangeForm({
             <AuthField
               name="new_phone"
               label="新手机号"
-              hint="验证码将发送到新手机号；更换完成后以新手机号为准。"
+              hint="验证码将发送到新手机号；更换后登录即用新号。"
               error={fieldErrors.new_phone}
               inputProps={{
                 value: newPhone,
@@ -397,7 +397,7 @@ function PhoneChangeForm({
             <Button
               block
               variant="secondary"
-              onClick={() => backToRequest("已取消，可重新填写。")}
+              onClick={() => backToRequest("已取消，可重新填写")}
               disabled={submitting}
             >
               取消更换
@@ -458,7 +458,7 @@ function EmailPanel({
     setSending(true);
     try {
       await requestEmailVerification(email.trim());
-      setNote("验证邮件已发送，请到邮箱查收验证码。");
+      setNote("验证邮件已发送，请到邮箱查收验证码");
     } catch (cause) {
       const errorView = toErrorView(cause, "email");
       setSummary(errorView);
@@ -484,7 +484,7 @@ function EmailPanel({
       onUpdated();
       setEmail("");
       setToken("");
-      setNote("邮箱已绑定并验证。");
+      setNote("邮箱已绑定并验证");
     } catch (cause) {
       const errorView = toErrorView(cause, "token");
       setSummary(errorView);
@@ -512,7 +512,7 @@ function EmailPanel({
       onUpdated();
       setUnbindOpen(false);
       setUnbindPassword("");
-      setNote("邮箱已解绑。");
+      setNote("邮箱已解绑");
     } catch (cause) {
       const errorView = toErrorView(cause, "current_password");
       setSummary(errorView);
@@ -656,7 +656,7 @@ function PasswordForm({ onUpdated }: { onUpdated: () => void }) {
       setCurrent("");
       setNext("");
       setConfirmation("");
-      setNote("密码已更新；其他设备上的登录已全部退出，当前登录保持。");
+      setNote("密码已更新；其他设备上的登录已全部退出，当前登录保持");
     } catch (cause) {
       const errorView = toErrorView(cause, "current_password");
       setSummary(errorView);

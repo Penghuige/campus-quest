@@ -287,7 +287,7 @@ function TotpDone() {
   return (
     <div className="totp-step">
       <div className="alert alert-success" role="status">
-        <p>动态口令绑定完成，员工账号已激活。</p>
+        <p>动态口令绑定完成，员工账号已激活</p>
       </div>
       <p className="auth-alt-action">
         下一步：

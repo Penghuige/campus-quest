@@ -76,6 +76,7 @@ function rowId(row: Row): string {
   return row.row.id;
 }
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 function RewardCatalogue() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -342,7 +343,7 @@ function RewardFormDialog({
 
   const errorView =
     error !== null
-      ? describeAdminMutationError(error, "保存失败，请稍后重试")
+      ? describeAdminMutationError(error, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -575,7 +576,7 @@ function DisableRewardDialog({
 
   const errorView =
     error !== null
-      ? describeAdminMutationError(error, "下架失败，请稍后重试")
+      ? describeAdminMutationError(error, COPY_GENERIC_FAIL)
       : null;
 
   return (
@@ -705,7 +706,7 @@ function GrantForm({ mode }: { mode: "grant" | "revoke" }) {
     error !== null
       ? describeAdminMutationError(
           error,
-          mode === "grant" ? "授权失败，请稍后重试" : "撤销失败，请稍后重试",
+          mode === "grant" ? COPY_GENERIC_FAIL : COPY_GENERIC_FAIL,
         )
       : null;
 
@@ -756,7 +757,7 @@ function GrantForm({ mode }: { mode: "grant" | "revoke" }) {
       {done ? (
         <div className="alert alert-success" role="status">
           <p>
-            {mode === "grant" ? "已授予审阅权限。" : "已撤销审阅权限。"}
+            {mode === "grant" ? "已授予审阅权限" : "已撤销审阅权限"}
             （授权状态无查询接口；可在审计日志中核对操作记录）
           </p>
         </div>

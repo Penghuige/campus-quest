@@ -57,6 +57,7 @@ export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogP
   ) : null;
 }
 import { Button } from "@/components/ui/button";
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
 
 function CreateTaskDialogInner({
   onClose,
@@ -101,7 +102,7 @@ function CreateTaskDialogInner({
       const task = await createTeacherTask(result.body);
       onCreated(task);
     } catch (cause) {
-      setSummary(describeTaskMutationError(cause, "创建失败，请稍后重试"));
+      setSummary(describeTaskMutationError(cause, COPY_GENERIC_FAIL));
     } finally {
       setSubmitting(false);
     }

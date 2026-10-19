@@ -69,6 +69,8 @@ from app.modules.identity.schemas import (
     ChallengeResponse,
     LoginRequest,
     LogoutRequest,
+    MobileCodeEntryResponse,
+    MobileCodeRegisterRequest,
     MobileCodeRequestRequest,
     MobileCodeVerifyRequest,
     PasswordForgotRequest,
@@ -240,7 +242,7 @@ async def request_mobile_code(
     return JSONResponse({}, status_code=202)
 
 
-@router.post("/auth/mobile-code/verify", response_model=TokenPairResponse)
+@router.post("/auth/mobile-code/verify")
 async def verify_mobile_code(
     body: MobileCodeVerifyRequest,
     request: Request,
@@ -248,11 +250,13 @@ async def verify_mobile_code(
     mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
     settings: AppSettings,
     db: DbSession,
-) -> TokenPairResponse:
-    """Open a student session with the SMS code — or, with a valid
-    remembered-device cookie and NO code, with the cookie itself (it
-    re-issues a fresh 30-day value; the #87 craft, student edition)."""
-    tokens, device_cookie = await mobile_login.verify_code(
+) -> TokenPairResponse | MobileCodeEntryResponse:
+    """Open a student session with the SMS code — or, with a valid code
+    on an UNREGISTERED phone, answer the entry shape (the queue-jump
+    batch): {status:"unregistered", register_token} opens the register
+    door for 5 minutes. With a valid remembered-device cookie and NO
+    code, the cookie itself opens the session (#87 craft)."""
+    outcome = await mobile_login.verify_code(
         db,
         phone=body.phone,
         code=body.code,
@@ -260,17 +264,55 @@ async def verify_mobile_code(
         remember_device=body.remember_device,
         audit_context=AuditContext.from_request(request),
     )
-    pair = _token_pair_response(response, tokens, settings)
-    if device_cookie is not None:
+    if outcome.unregistered:
+        assert outcome.register_token is not None
+        return MobileCodeEntryResponse(
+            status="unregistered", register_token=outcome.register_token
+        )
+    assert outcome.tokens is not None
+    pair = _token_pair_response(response, outcome.tokens, settings)
+    if outcome.device_cookie is not None:
         response.set_cookie(
             DEVICE_COOKIE_NAME,
-            device_cookie,
+            outcome.device_cookie,
             max_age=DEVICE_TTL_DAYS * 24 * 3600,
             secure=True,
             httponly=True,
             samesite="lax",
         )
     return pair
+
+
+@router.post(
+    "/auth/mobile-code/register",
+    response_model=RegisterResponse,
+    status_code=201,
+)
+async def register_by_mobile_code(
+    body: MobileCodeRegisterRequest,
+    response: Response,
+    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
+    sessions: SessionsDep,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    settings: AppSettings,
+    db: DbSession,
+) -> RegisterResponse:
+    """Trade the entry proof for a PENDING_APPROVAL account with the
+    phone bound — and land LOGGED IN (the register-ends-logged-in
+    semantics, the {user, tokens} envelope the classic door answers)."""
+    user = await mobile_login.register_by_phone(
+        db,
+        register_token=body.register_token,
+        student_number=body.student_number,
+        password=body.password,
+        nickname=body.nickname,
+    )
+    _, tokens = await sessions.issue_session(db, user=user, now=clock.now())
+    await db.commit()
+    return RegisterResponse(
+        user=UserPublic.from_user(user),
+        tokens=_token_pair_response(response, tokens, settings),
+    )
 
 
 @router.post("/auth/login", response_model=TokenPairResponse)

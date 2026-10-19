@@ -348,7 +348,7 @@ function ClaimDetailReady({
             <section className="section" aria-label="上次提交的校验报告">
               <h2 className="section-title">上次提交未通过机器校验</h2>
               <p className="field-hint">
-                按报告修正后重新上传即可；审核以最新版本为准。
+                按报告修正后重新上传；审核只看最新版本。
               </p>
               <ValidationReport report={lastValidation.report} />
             </section>
@@ -382,13 +382,13 @@ function RevisionBanner({ machineFailed }: { machineFailed: boolean }) {
           !
         </span>
         {machineFailed
-          ? "上次提交未通过机器校验，请按校验报告修正后重新上传。"
-          : "老师已退回修改，奖励档位已保留。"}
+          ? "上次提交未通过机器校验，请按校验报告修正后重新上传"
+          : "老师已退回修改，奖励档位已保留"}
       </p>
       <p className="field-hint">
         {machineFailed
-          ? "上传修正后的新版本即可；审核以最新版本为准。"
-          : "请在修改期限内上传修正后的新版本，审核以最新版本为准。"}
+          ? "上传修正后的新版本；旧版本自动作废。"
+          : "请在修改期限内完成修正，逾期不能再上传。"}
       </p>
     </div>
   );

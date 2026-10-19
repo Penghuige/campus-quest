@@ -132,7 +132,7 @@ describe("conflict-code -> typed copy", () => {
     stubFetch(envelope("BRAND_NEW_CODE", "未来错误", { request_id: "req-11" }), 409);
     const error = await rejectionOf(claimTask("22222222-2222-4222-8222-222222222222"));
     const view = describeClaimError(error);
-    assert.equal(view.message, "领取失败，请稍后重试");
+    assert.equal(view.message, "操作失败，请稍后重试");
     assert.equal(view.requestId, "req-11");
   });
 

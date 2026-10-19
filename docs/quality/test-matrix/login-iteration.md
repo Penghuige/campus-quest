@@ -8,7 +8,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 18 | LI1-LI18 |
+| 已覆盖 | 21 | LI1-LI21 |
 | 缺口（轻，列出不补） | 0 | — |
 | 不匹配 | 0 | — |
 | 流程行 | 0 | — |
@@ -35,3 +35,6 @@
 | LI16 | ① ADMIN 免腿 | ADMIN 空体 verify+有效 cq_staff_device→直答 tokens（cookie 替代码+TOTP 双腿，与②密码重登共享 30 天凭据） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_with_remembered_device_skips_totp_leg` | 已覆盖 |
 | LI17 | ① 挑战持久性 | request_staff_code 的 202 前挑战行必须跨连接可见（commit boundary；e2e 抓到的 #101 缺陷回归钉——savepoint 集成形态不可见） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_request_leaves_the_challenge_durable_across_sessions` | 已覆盖 |
 | LI18 | ① 冷却释放 | 发送失败（502）释放 Redis 冷却键：重试不被 429 拦 60s（学生腿同纪律） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_failed_send_releases_the_cooldown` | 已覆盖 |
+| LI19 | 入口·发码即入口 | request 对一切有效形态手机号真发码（去掉无账号静默；畸形号仍静默=形态校验域） | `tests/integration/identity/test_mobile_code_entry_registration.py::test_unregistered_phone_receives_a_code_and_an_entry_token`（发码断言） | 已覆盖 |
+| LI20 | 入口·entry token | 码对+无账号→`{status:"unregistered", register_token}`（5 分钟单用：GETDEL 消费、replay 400；在册号仍直答 tokens） | `tests/integration/identity/test_mobile_code_entry_registration.py::test_register_token_is_single_use` / `::test_registered_phone_still_logs_in_directly` | 已覆盖 |
+| LI21 | 入口·register | POST /auth/mobile-code/register：学号校验（纯数字 6-20）+唯一（409 USERNAME_ALREADY_EXISTS）→PENDING_APPROVAL+phone 绑定+{user,tokens} 即登录（#96 语义） | `tests/integration/identity/test_mobile_code_entry_registration.py::test_register_token_mints_a_logged_in_pending_account` / `::test_taken_student_number_is_a_conflict` | 已覆盖 |

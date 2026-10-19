@@ -344,7 +344,7 @@ export function UploadPanel({
       <h2 className="section-title">提交数据文件</h2>
       <p className="field-hint">
         支持格式：{allowedFormats}；单个文件最大 {formatFileSize(DEFAULT_MAX_UPLOAD_BYTES)}
-        （任务如有更严格的限制，以上传时的校验结果为准）。
+        （任务若限制更严，按校验提示来）
       </p>
 
       <p className="field-hint">
@@ -451,7 +451,7 @@ export function UploadPanel({
 
       {state.phase === "under-review" ? (
         <div className="alert alert-success" role="status">
-          <p>文件已通过校验，进入人工审核队列。</p>
+          <p>文件已通过校验，进入人工审核队列</p>
         </div>
       ) : null}
 

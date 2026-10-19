@@ -192,7 +192,7 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
             <dd className="fact-value">{formatFileSize(task.max_file_size_bytes)}</dd>
           </div>
           <div className="fact-row">
-            <dt className="fact-label">提交校验 schema</dt>
+            <dt className="fact-label">提交校验规则</dt>
             <dd className="fact-value mono">
               {task.submission_schema !== null
                 ? `v${task.submission_schema_version ?? "—"} ${JSON.stringify(task.submission_schema)}`

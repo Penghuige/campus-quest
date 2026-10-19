@@ -129,7 +129,7 @@ function RedeemDialogBody({
               </div>
             </dl>
             <p className="field-hint">
-              确认后积分将冻结并等待老师审核；审核通过前这部分积分不能再用于其他兑换，未通过会全额退回。
+              积分将冻结等待老师审核；未通过会全额退回。
             </p>
             {conflict !== null ? (
               <div className="alert alert-error" role="alert">
@@ -173,7 +173,7 @@ function RedeemDialogBody({
                 「{reward.name}」兑换申请已提交，{redemption.points} 积分已冻结。
               </p>
               <p className="field-hint">
-                老师审核通过后即可领取；进度以「最近兑换」和积分余额为准。
+                老师审核通过后即可领取；进度看「最近兑换」和积分余额。
               </p>
             </div>
             {status !== null ? (

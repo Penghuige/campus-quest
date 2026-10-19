@@ -46,6 +46,8 @@ import {
   type RewardsShelf,
 } from "./sections";
 
+import { COPY_GENERIC_FAIL } from "@/lib/errors";
+
 /** Own-claims page size for the summary. V1 caps ACTIVE claims at 3
  * (spec §8.2), so the first page of 10 always covers every open claim. */
 const CLAIMS_PAGE_LIMIT = 10;
@@ -311,7 +313,7 @@ function WalletBody({
         <span className="skeleton skeleton-line" data-width="narrow" aria-label="正在加载可兑换奖励" />
       ) : null}
       {shelf.shelf === "unavailable" ? (
-        <p className="progress-note">暂时无法获取可兑换奖励，请稍后重试</p>
+        <p className="progress-note">{COPY_GENERIC_FAIL}</p>
       ) : null}
       {shelf.shelf === "verdict" &&
       shelf.progress.status === "ready" &&
@@ -512,7 +514,7 @@ function NotificationsPreviewSection() {
       ) : null}
       {state.status === "ready" ? (
         state.data.items.length === 0 ? (
-          <EmptyState title="暂无通知" hint="任务与审核的进展会出现在这里" />
+          <EmptyState title="暂无通知" hint="有新动态会在这里提醒" />
         ) : (
           <ul className="dash-notes">
             {state.data.items.map((item) => (

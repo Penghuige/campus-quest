@@ -178,7 +178,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
 
     // Confirm-seen exits the one-time window; the codes never come back.
     await page.getByRole("button", { name: "我已妥善保存，完成绑定" }).click();
-    await expect(page.getByText("动态口令绑定完成，员工账号已激活。")).toBeVisible();
+    await expect(page.getByText("动态口令绑定完成，员工账号已激活")).toBeVisible();
     await expect(codesList).toHaveCount(0);
     await expect(secretLocator).toHaveCount(0);
 
@@ -219,7 +219,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
       await page.waitForTimeout(1_000);
     }
     await page.getByRole("button", { name: "我已妥善保存，完成绑定" }).click();
-    await expect(page.getByText("动态口令绑定完成，员工账号已激活。")).toBeVisible();
+    await expect(page.getByText("动态口令绑定完成，员工账号已激活")).toBeVisible();
 
     // The remembered FIRST login: password + TOTP + the checkbox.
     await page.goto(`${BASE_URL}/staff/login`);
@@ -314,7 +314,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
       await page.waitForTimeout(1_000);
     }
     await page.getByRole("button", { name: "我已妥善保存，完成绑定" }).click();
-    await expect(page.getByText("动态口令绑定完成，员工账号已激活。")).toBeVisible();
+    await expect(page.getByText("动态口令绑定完成，员工账号已激活")).toBeVisible();
 
     // THE landing pin (owner bug 2026-10-16): the fresh ADMIN logs in
     // through the production email-code channel and must land on the

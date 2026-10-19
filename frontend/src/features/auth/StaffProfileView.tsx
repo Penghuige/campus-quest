@@ -171,7 +171,7 @@ function NicknameEditRow({
         label="修改昵称"
         counter={`${count}/${NICKNAME_MAX_GRAPHEME_CLUSTERS}`}
         counterOver={count > NICKNAME_MAX_GRAPHEME_CLUSTERS}
-        hint="展示给同事和学生的名称；按显示字符计数，emoji 算 1 个。"
+        hint="展示给同事和学生的名称；按显示字符计数，表情算 1 个"
         error={fieldError}
         inputProps={{
           value,
@@ -241,11 +241,11 @@ function PhoneBindSection({
       setChallenge(next);
       setStep("confirm");
       start(60);
-      setNote("验证码已发送到该手机号，请查收短信。");
+      setNote("验证码已发送到该手机号，请查收短信");
     } catch (cause) {
       if (isApiError(cause) && cause.code === "OTP_RESEND_COOLDOWN") {
         start(60);
-        setNote("发送过于频繁，请等待倒计时结束后重试。");
+        setNote("发送过于频繁，请等待倒计时结束后重试");
         return;
       }
       const view = isApiError(cause)

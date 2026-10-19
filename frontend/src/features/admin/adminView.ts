@@ -16,7 +16,7 @@
  * take different copy through `describeAdminMutationError`, driven by
  * `error.code` only (never the Chinese message).
  */
-import { isApiError } from "@/lib/errors";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 import type {
   AdminUserDto,
@@ -35,7 +35,7 @@ export interface AdminMutationErrorView {
   conflict: boolean;
 }
 
-export const ADMIN_NETWORK_ERROR_TEXT = "网络异常，请检查连接后重试";
+export const ADMIN_NETWORK_ERROR_TEXT = COPY_NETWORK_FAIL;
 
 /**
  * The shared mutation-failure view for every admin dialog: 409 CONFLICT

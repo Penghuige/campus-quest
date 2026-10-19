@@ -64,7 +64,7 @@ type RegisterFields = Extract<
   "student_number" | "nickname" | "phone" | "code" | "password"
 >;
 
-const OTP_RESET_NOTE = "验证码已失效，请重新获取后再提交。";
+const OTP_RESET_NOTE = "验证码已失效，请重新获取";
 
 /** The live OTP material: an open challenge, plus its minted proof if any. */
 interface OtpState {
@@ -257,7 +257,7 @@ export function RegisterForm() {
         label="昵称"
         counter={`${nicknameCount}/${NICKNAME_MAX_GRAPHEME_CLUSTERS}`}
         counterOver={nicknameCount > NICKNAME_MAX_GRAPHEME_CLUSTERS}
-        hint="展示给其他同学的名称；按显示字符计数，emoji 算 1 个。"
+        hint="展示给其他同学的名称；按显示字符计数，表情算 1 个"
         error={fieldErrors.nickname}
         inputProps={{
           value: values.nickname,

@@ -212,7 +212,7 @@ test.describe("admin workspace operations (brief: users / redemptions / settings
     // becomes available on the server verdict.
     await page.getByRole("button", { name: "通过并扣减积分" }).click();
     const approve = page.getByRole("dialog", { name: "通过兑换申请" });
-    await expect(approve.getByText(/将扣减积分并进入待发放状态/)).toBeVisible();
+    await expect(approve.getByText(/将扣减积分进入待发放/)).toBeVisible();
     await approve.getByRole("button", { name: "确认通过" }).click();
     // .first(): after approval the badge renders on BOTH the queue row
     // and the selected detail — the strict-mode ambiguity would fail

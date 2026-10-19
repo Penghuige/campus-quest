@@ -146,7 +146,7 @@ test.describe("student rewards redemption", () => {
     // the 最近兑换 receipt carries the server's own figures (several
     // lines match /积分/ — the receipt's and the freeze hint's).
     const wallet = page.getByLabel("积分余额");
-    await expect(wallet.getByText(/冻结在兑换申请中/)).toBeVisible();
+    await expect(wallet.getByText(/冻结在审核中的兑换里/)).toBeVisible();
     const latest = page.getByLabel("最近兑换");
     await expect(latest.getByText(/积分/).first()).toBeVisible();
     await expect(latest.locator(".badge", { hasText: "待审核" })).toBeVisible();

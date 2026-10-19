@@ -24,6 +24,7 @@ import { LoginForm } from "./LoginForm";
 import {
   fastLoginCookieOnly,
   fetchRememberedHint,
+  registerViaMobileCode,
   requestMobileLoginCode,
   verifyMobileLoginCode,
 } from "./mobileLoginApi";
@@ -34,7 +35,8 @@ import {
 } from "./mobileLoginView";
 import { resendButtonLabel } from "./errors";
 import { NETWORK_ERROR_TEXT, type AuthErrorView } from "./errors";
-import { isApiError } from "@/lib/errors";
+import { validatePassword, validateStudentNumber } from "./validation";
+import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -90,6 +92,15 @@ function MobileLoginForm({
   const [verifying, setVerifying] = useState(false);
   const [summary, setSummary] = useState<AuthErrorView | null>(null);
   const [suggestMobile, setSuggestMobile] = useState(false);
+  // The send-code-as-entry third step (2026-10-19): an unregistered
+  // phone's verify hands the register token; the 学号+optional-password
+  // form below completes the account AND the login — no register-page
+  // detour anywhere in the copy.
+  const [registerToken, setRegisterToken] = useState<string | null>(null);
+  const [studentNumber, setStudentNumber] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [studentNumberError, setStudentNumberError] = useState<string | undefined>(undefined);
+  const [registerPasswordError, setRegisterPasswordError] = useState<string | undefined>(undefined);
 
   // The shared text-only countdown family (reduced-motion safe).
   useEffect(() => {
@@ -118,7 +129,7 @@ function MobileLoginForm({
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setSentNote(true);
     } catch (cause) {
-      setSummary(toSummary(cause, "验证码发送失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
     } finally {
       setSending(false);
     }
@@ -142,12 +153,66 @@ function MobileLoginForm({
     }
     setVerifying(true);
     try {
-      await verifyMobileLoginCode(phone.trim(), code.trim(), rememberDevice);
+      const outcome = await verifyMobileLoginCode(phone.trim(), code.trim(), rememberDevice);
+      if (outcome.kind === "unregistered") {
+        // The send-code-as-entry third step: hand the inline register
+        // form the token (nothing adopted yet — the register leg owns
+        // the login).
+        setRegisterToken(outcome.registerToken);
+        setStudentNumber("");
+        setRegisterPassword("");
+        return;
+      }
       refreshSession();
       router.replace("/"); // the student home (the sole student landing)
       router.refresh();
     } catch (cause) {
-      setSummary(toSummary(cause, "登录失败，请稍后重试"));
+      setSummary(toSummary(cause, COPY_GENERIC_FAIL));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  /** The third step: 学号 (+ optional password) completes the account. */
+  async function onInlineRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const token = registerToken;
+    if (verifying || token === null) {
+      return;
+    }
+    setSummary(null);
+    const errors = {
+      student_number: validateStudentNumber(studentNumber) ?? undefined,
+      password:
+        registerPassword.length === 0
+          ? undefined
+          : (validatePassword(registerPassword) ?? undefined),
+    };
+    setStudentNumberError(errors.student_number);
+    setRegisterPasswordError(errors.password);
+    if (Object.values(errors).some((message) => message !== undefined)) {
+      return;
+    }
+    setVerifying(true);
+    try {
+      await registerViaMobileCode(
+        token,
+        studentNumber.trim(),
+        registerPassword.length === 0 ? null : registerPassword,
+      );
+      refreshSession();
+      router.replace("/"); // registered AND logged in — straight home
+      router.refresh();
+    } catch (cause) {
+      if (isApiError(cause) && cause.code === "VALIDATION_ERROR") {
+        // The register-page discipline: a band-level validation refusal
+        // keeps the (still-valid) token; anything else consumes it —
+        // back to the code step for a fresh SMS.
+        setSummary(toSummary(cause, "注册失败，请稍后重试"));
+      } else {
+        setRegisterToken(null);
+        setSummary(toSummary(cause, "注册失败，请重新获取验证码"));
+      }
     } finally {
       setVerifying(false);
     }
@@ -164,11 +229,62 @@ function MobileLoginForm({
 
   return (
     <>
-      {sentNote ? (
-        <p className="alert alert-success" role="status">
-          验证码已发送，请查收短信（5 分钟内有效）。
-        </p>
-      ) : null}
+      {registerToken !== null ? (
+        <form className="form" onSubmit={onInlineRegister} noValidate>
+          <FormErrorSummary view={summary} />
+          <p className="field-hint">
+            该手机号尚未注册。填写学号即可完成注册并直接登录（账号需管理员审核，审核前可浏览）。
+          </p>
+          <AuthField
+            name="inline-register-student-number"
+            label="学号"
+            error={studentNumberError}
+            inputProps={{
+              value: studentNumber,
+              onChange: (event) => {
+                setStudentNumber(event.target.value);
+                if (studentNumberError !== undefined) {
+                  setStudentNumberError(undefined);
+                }
+              },
+              type: "text",
+              inputMode: "numeric",
+              autoComplete: "username",
+              autoCapitalize: "none",
+              autoCorrect: "off",
+              placeholder: "请输入学号",
+              maxLength: 20,
+              disabled: verifying,
+            }}
+          />
+          <AuthField
+            name="inline-register-password"
+            label="密码（可选）"
+            hint="10-128 个字符。留空则仅用手机验证码登录，之后可在设置中自行设置密码。"
+            error={registerPasswordError}
+            inputProps={{
+              value: registerPassword,
+              onChange: (event) => {
+                setRegisterPassword(event.target.value);
+                if (registerPasswordError !== undefined) {
+                  setRegisterPasswordError(undefined);
+                }
+              },
+              type: "password",
+              autoComplete: "new-password",
+              placeholder: "请设置密码",
+              disabled: verifying,
+            }}
+          />
+          <SubmitButton loading={verifying}>完成注册并登录</SubmitButton>
+        </form>
+      ) : (
+        <>
+          {sentNote ? (
+            <p className="alert alert-success" role="status">
+              验证码已发送，请查收短信（5 分钟内有效）。
+            </p>
+          ) : null}
       <form className="form" onSubmit={onLogin} noValidate>
         <FormErrorSummary view={summary} />
         {suggestMobile ? (
@@ -252,6 +368,8 @@ function MobileLoginForm({
         </label>
         <SubmitButton loading={verifying}>登录</SubmitButton>
       </form>
+        </>
+      )}
     </>
   );
 }

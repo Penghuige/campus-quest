@@ -126,7 +126,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="alert alert-error" role="alert">
             <p>
               <span className="alert-marker" aria-hidden="true">!</span>
-              管理后台仅对管理员开放，当前账号是{isTeacher ? "教师" : "学生"}账号。
+              管理后台仅对管理员开放，当前账号是{isTeacher ? "教师" : "学生"}账号
             </p>
             <p>
               <Link className="link" href={gate.workspacePath}>

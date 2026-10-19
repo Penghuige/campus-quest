@@ -264,7 +264,7 @@ function ImportPreviewTable({
           {capped.hiddenCount > 0 ? (
             <p className="report-preview-note">
               表格仅显示前 {capped.visible.length} 行，另有 {capped.hiddenCount}{" "}
-              行问题未展开（总数以上方统计为准）。
+              行问题未展开，总数见上方统计。
             </p>
           ) : null}
         </>
