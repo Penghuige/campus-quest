@@ -54,9 +54,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -67,19 +68,38 @@ from app.core.admin_network_policy import (
     load_management_network_policy,
     require_management_network,
 )
+from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.db.session import get_db_session
 from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
+from app.modules.identity import admin_power_service as admin_power
 from app.modules.identity.account_admin_service import AccountAdminService
-from app.modules.identity.dependencies import require_admin_actor
+from app.modules.identity.dependencies import (
+    get_business_clock,
+    require_admin_actor,
+)
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
-from app.modules.identity.providers import DbSession, LimiterDep, get_staff_service
+from app.modules.identity.providers import (
+    DbSession,
+    LimiterDep,
+    get_identity_redis,
+    get_session_service,
+    get_staff_service,
+)
 from app.modules.identity.routing_common import _enforce_rate_limit
-from app.modules.identity.schemas import StaffInvitationCreateRequest
+from app.modules.identity.schemas import (
+    AdminBatchRequest,
+    AdminBatchResponse,
+    AdminBatchRowResult,
+    AdminPasswordResetLinkResponse,
+    AdminRoleChangeRequest,
+    StaffInvitationCreateRequest,
+)
+from app.modules.identity.session_service import SessionService
 from app.modules.identity.staff_service import StaffService
 from app.modules.system.service import (
     MANAGEMENT_NETWORK_CIDRS,
@@ -227,6 +247,93 @@ class AdminUserListResponse(BaseModel):
     offset: int
 
 
+class AdminRecentSubmission(BaseModel):
+    """One row of the panorama's recent-submissions strip (Wave 2a §3.1):
+    submission facts only — no content, no URLs, no storage keys."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task_title: str
+    validation_status: str
+    review_status: str
+    submitted_at: datetime
+
+
+class AdminUserPanoramaResponse(BaseModel):
+    """The §3.1 detail view: the governance row plus the cross-module
+    facts the console renders on one account page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user: AdminUserResponse
+    wallet_balance: int
+    recent_submissions: list[AdminRecentSubmission]
+    active_session_count: int
+    remembered_device_count: int
+
+
+class AdminUserSessionsResponse(BaseModel):
+    """The §3.3 read: how many live refresh sessions and remembered
+    devices the account currently holds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active_session_count: int
+    remembered_device_count: int
+
+
+class AdminUserRoleResponse(BaseModel):
+    """The §3.4 flip's result row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    username: str
+    role: Role
+    status: UserStatus
+
+
+class AdminOverviewUsers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total: int
+    by_role: dict[str, int]
+    by_status: dict[str, int]
+
+
+class AdminOverviewTasks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    by_status: dict[str, int]
+
+
+class AdminOverviewToday(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_users: int
+    active_users: int
+
+
+class AdminOverviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    users: AdminOverviewUsers
+    tasks: AdminOverviewTasks
+    pending_submissions: int
+    pending_redemptions: int
+    today: AdminOverviewToday
+
+
+class AdminKickResponse(BaseModel):
+    """The §3.3 stop: what one kick took out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    revoked_sessions: int
+    revoked_devices: int
+
+
 class AccountStatusRequest(BaseModel):
     """The mandatory free-text why of one status transition (spec §5.7;
     the service refuses blanks before any read)."""
@@ -257,6 +364,31 @@ class StaffInvitationResponse(BaseModel):
     token: str
     expires_at: datetime
     created_at: datetime
+
+
+class AdminInvitationRow(BaseModel):
+    """One invitation on the §4.2 lifecycle list. ``email`` arrives
+    MASKED from the service (G11: the plaintext rests on the row);
+    ``status`` is derived at read time against the business clock."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    email: str
+    role: Role
+    status: Literal["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]
+    expires_at: datetime
+    accepted_at: datetime | None
+    revoked_at: datetime | None
+    created_by: str
+    issuer_nickname: str
+    created_at: datetime
+
+
+class AdminInvitationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminInvitationRow]
 
 
 # --- account status governance (spec §5.7; W2 service) --------------------
@@ -329,6 +461,177 @@ async def _transition_account_status(
         username=user.username,
         role=Role(user.role),
         status=UserStatus(user.status),
+    )
+
+
+@router.get("/admin/users/{user_id}", response_model=AdminUserPanoramaResponse)
+async def read_user_panorama(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminUserPanoramaResponse:
+    """The §3.1 account panorama: governance row, wallet balance, the
+    ten most recent submissions, and the live credential counts."""
+    panorama = await admin_power.user_panorama(db, user_id, clock=clock)
+    user = panorama["user"]
+    return AdminUserPanoramaResponse(
+        user=AdminUserResponse(
+            id=str(user.id),
+            username=user.username,
+            nickname=user.nickname,
+            role=Role(user.role),
+            status=UserStatus(user.status),
+            phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
+            created_at=user.created_at,
+        ),
+        wallet_balance=panorama["wallet_balance"],
+        recent_submissions=[
+            AdminRecentSubmission(
+                id=str(s.id),
+                task_title=title,
+                validation_status=str(s.validation_status),
+                review_status=str(s.review_status),
+                submitted_at=s.submitted_at,
+            )
+            for s, title in panorama["recent_submissions"]
+        ],
+        active_session_count=panorama["active_session_count"],
+        remembered_device_count=panorama["remembered_device_count"],
+    )
+
+
+@router.get("/admin/users/{user_id}/sessions", response_model=AdminUserSessionsResponse)
+async def read_user_sessions(
+    user_id: UUID,
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminUserSessionsResponse:
+    """The §3.3 read side: the account's live credential counts."""
+    panorama = await admin_power.user_panorama(db, user_id, clock=clock)
+    return AdminUserSessionsResponse(
+        active_session_count=panorama["active_session_count"],
+        remembered_device_count=panorama["remembered_device_count"],
+    )
+
+
+@router.delete("/admin/users/{user_id}/sessions", response_model=AdminKickResponse)
+async def kick_user(
+    user_id: UUID,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminKickResponse:
+    """The §3.3 stolen-account emergency stop: every live refresh
+    session revoked, every remembered-device credential dropped, one
+    ADMIN_SESSIONS_REVOKED audit row in the same commit."""
+    revoked_sessions, revoked_devices = await admin_power.kick(
+        db,
+        actor,
+        user_id,
+        sessions=sessions,
+        clock=clock,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminKickResponse(
+        revoked_sessions=revoked_sessions, revoked_devices=revoked_devices
+    )
+
+
+@router.patch("/admin/users/{user_id}/role", response_model=AdminUserRoleResponse)
+async def change_user_role(
+    user_id: UUID,
+    body: AdminRoleChangeRequest,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+) -> AdminUserRoleResponse:
+    """The §3.4 TEACHER<->ADMIN flip: not on oneself, not on students,
+    never leaving zero ACTIVE ADMINs (service check + DB trigger)."""
+    user = await admin_power.change_role(
+        db,
+        actor,
+        user_id,
+        body.role,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminUserRoleResponse(
+        id=str(user.id),
+        username=user.username,
+        role=Role(user.role),
+        status=UserStatus(user.status),
+    )
+
+
+@router.post(
+    "/admin/users/{user_id}/password-reset",
+    response_model=AdminPasswordResetLinkResponse,
+)
+async def issue_password_reset_link(
+    user_id: UUID,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+    redis: Annotated[aioredis.Redis, Depends(get_identity_redis)],
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminPasswordResetLinkResponse:
+    """The §3.2 one-time reset link for ANOTHER staff account: the
+    urlsafe32 plaintext shows exactly once (only its SHA-256 is kept,
+    48h TTL), ISSUED rides the same commit. Self-service and student
+    targets are refused — students recover through their phone OTP."""
+    token = await admin_power.issue_password_reset(
+        db,
+        actor,
+        user_id,
+        redis=redis,
+        clock=clock,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminPasswordResetLinkResponse(reset_token=token)
+
+
+@router.post(
+    "/admin/users/batch",
+    response_model=AdminBatchResponse,
+    response_model_exclude_none=True,
+)
+async def batch_status_action(
+    body: AdminBatchRequest,
+    request: Request,
+    actor: AdminActor,
+    db: DbSession,
+) -> AdminBatchResponse:
+    """The §3.5 batch: one status action, up to 100 ids, one audited
+    transition per row — per-row outcomes, a failing row never breaks
+    its neighbours, the actor's own row is refused."""
+    results = await admin_power.batch_status_action(
+        db,
+        actor,
+        body.action,
+        body.user_ids,
+        audit_context=AuditContext.from_request(request),
+    )
+    return AdminBatchResponse(results=[AdminBatchRowResult(**row) for row in results])
+
+
+@router.get("/admin/overview", response_model=AdminOverviewResponse)
+async def read_overview(
+    actor: AdminActor,
+    db: DbSession,
+    clock: Annotated[Clock, Depends(get_business_clock)],
+) -> AdminOverviewResponse:
+    """The §4.1 console aggregate: fixed key sets (zero counts carry),
+    governance facts only."""
+    data = await admin_power.overview(db, clock=clock)
+    return AdminOverviewResponse(
+        users=AdminOverviewUsers(**data["users"]),
+        tasks=AdminOverviewTasks(**data["tasks"]),
+        pending_submissions=data["pending_submissions"],
+        pending_redemptions=data["pending_redemptions"],
+        today=AdminOverviewToday(**data["today"]),
     )
 
 
@@ -465,6 +768,76 @@ async def create_staff_invitation(
         actor,
         body.email,
         body.role,
+        audit_context=AuditContext.from_request(request),
+    )
+    return StaffInvitationResponse(
+        id=str(issued.invitation.id),
+        role=Role(issued.invitation.role),
+        token=issued.token,
+        expires_at=issued.invitation.expires_at,
+        created_at=issued.invitation.created_at,
+    )
+
+
+@router.get("/admin/staff/invitations", response_model=AdminInvitationListResponse)
+async def list_staff_invitations(
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    db: DbSession,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> AdminInvitationListResponse:
+    """The §4.2 lifecycle list: derived states (PENDING/ACCEPTED/
+    EXPIRED/REVOKED) against the business clock, the invited email
+    masked (G11), the issuer by id and nickname."""
+    rows = await staff.list_invitations(db, limit=limit, offset=offset)
+    return AdminInvitationListResponse(
+        items=[AdminInvitationRow(**row) for row in rows]
+    )
+
+
+@router.delete("/admin/staff/invitations/{invitation_id}", status_code=204)
+async def revoke_staff_invitation(
+    invitation_id: UUID,
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    db: DbSession,
+    request: Request,
+) -> None:
+    """§4.2: revoke an un-accepted invitation — its token stops
+    resolving the moment this commits (the accept path rejects revoked
+    rows). Accepted or already-revoked rows refuse (409); unknown ids
+    answer 404."""
+    await staff.revoke_invitation(
+        db,
+        actor,
+        invitation_id,
+        audit_context=AuditContext.from_request(request),
+    )
+
+
+@router.post(
+    "/admin/staff/invitations/{invitation_id}/resend",
+    response_model=StaffInvitationResponse,
+)
+async def resend_staff_invitation(
+    invitation_id: UUID,
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    limiter: LimiterDep,
+    db: DbSession,
+    request: Request,
+) -> StaffInvitationResponse:
+    """§4.2: re-sign an un-accepted invitation — a fresh one-time token
+    (the old one dies), the expiry window restarts, and a revoked row
+    revives. Accepted rows refuse (409). The fresh token returns
+    exactly once, the create contract, under the create-side
+    per-admin rate bucket (it mints the same capability)."""
+    await _enforce_rate_limit(limiter, _INVITATION_BUCKET, str(actor.user_id))
+    issued = await staff.resend_invitation(
+        db,
+        actor,
+        invitation_id,
         audit_context=AuditContext.from_request(request),
     )
     return StaffInvitationResponse(

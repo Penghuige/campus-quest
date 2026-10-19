@@ -574,6 +574,10 @@ async def _seed() -> dict[str, Any]:
             "CQ_E2E_STUDENT_ID": str(student.user_id),
             "CQ_E2E_TEACHER_ID": str(teacher.user_id),
             "CQ_E2E_ADMIN_ID": str(admin.user_id),
+            # Wave 2a (frontend request 2026-10-19): the composed deep
+            # link to the admin detail (panorama) page, so the specs
+            # never re-derive the id→path rule on the Node side.
+            "CQ_E2E_ADMIN_DETAIL_PATH": f"/admin/users/{admin.user_id}",
             "CQ_E2E_REWARD_ITEM_ID": str(item.reward_item_id),
             "CQ_E2E_REGISTER_NUMBER": _registered_number(run),
             # Plan 10 task 9 (community.spec): the task detail URL, the

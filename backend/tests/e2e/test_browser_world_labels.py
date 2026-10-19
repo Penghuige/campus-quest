@@ -154,3 +154,17 @@ async def test_default_mode_still_embeds_run_id(
         assert not any(FIXED[:6] in title for title in labels["task_titles"])
     finally:
         await browser_world._clean(world["world_file"])
+
+
+async def test_admin_detail_path_rides_the_env_contract() -> None:
+    """Wave 2a (frontend request 2026-10-19): the env contract carries
+    the composed admin-detail deep link beside the raw id, so the
+    admin-surface specs and dev tooling point at the panorama page
+    without re-deriving the id→path rule on the Node side."""
+    world = await browser_world._seed()
+    try:
+        assert world["env"]["CQ_E2E_ADMIN_DETAIL_PATH"] == (
+            f"/admin/users/{world['env']['CQ_E2E_ADMIN_ID']}"
+        )
+    finally:
+        await browser_world._clean(world["world_file"])

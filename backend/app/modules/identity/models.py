@@ -210,6 +210,10 @@ class StaffInvitation(Base):
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # §4.2: set by the admin revoke action; NULL on a fresh row and
+    # cleared again by resend (a revoked invitation can come back to
+    # life with a new token). The accept path rejects revoked rows.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
