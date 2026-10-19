@@ -334,6 +334,16 @@ never shared, never reinterpreted):
 
 ### Unified login challenge family (2026-10-19 spec §3)
 
+**PR-3 retirement (2026-10-19 §3.3)**: the legacy route families —
+`/auth/staff/login`, `/auth/staff/email-code/*`,
+`/auth/staff/mobile-code/*`, `/auth/mobile-code/{request,verify,
+remembered}` — are GONE (the services beneath stay as the unified
+family's engines). Their typed codes (`EMAIL_CODE_INVALID`,
+`MOBILE_CODE_INVALID`) stay REGISTERED above as history (the enum is
+frozen membership; no live route raises them); the unified arms raise
+`CHALLENGE_CODE_INVALID`. `/auth/mobile-code/register` and
+`/auth/register` stay (the entry door's contract).
+
 The unified endpoints (`/auth/challenge/{request,verify,totp}`,
 `/auth/challenge/remembered`, the `/auth/login` identifier form) are a
 route FACADE over the existing challenge services — storage, cooldown,

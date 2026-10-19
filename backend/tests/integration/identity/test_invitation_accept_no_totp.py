@@ -218,16 +218,16 @@ async def test_teacher_accept_without_password_then_email_code_login(
     assert user.password_hash is None
 
     requested = await client.post(
-        "/api/v1/auth/staff/email-code/request", json={"email": _TEACHER_EMAIL}
+        "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
     )
     assert requested.status_code == 202, requested.text
     _, code = await recover_email_code(db_session, _TEACHER_EMAIL)
     verified = await client.post(
-        "/api/v1/auth/staff/email-code/verify",
-        json={"email": _TEACHER_EMAIL, "code": code},
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": _TEACHER_EMAIL, "code": code},
     )
     assert verified.status_code == 200, verified.text
-    assert verified.json()["access_token"]
+    assert verified.json()["tokens"]["access_token"]
 
 
 async def test_teacher_accept_weak_password_is_rejected_before_the_token_burns(
@@ -320,19 +320,8 @@ async def test_passwordless_teacher_on_password_channel_is_uniform_401(
     assert accepted.status_code == 200, accepted.text
 
     staff_login = await client.post(
-        "/api/v1/auth/staff/login",
-        json={
-            "email": _TEACHER_EMAIL,
-            "password": "whatever-password",
-            "totp_code": "123456",
-        },
+        "/api/v1/auth/login",
+        json={"identifier": _TEACHER_EMAIL, "password": "whatever-password"},
     )
     assert staff_login.status_code == 401, staff_login.text
     assert staff_login.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
-
-    student_door = await client.post(
-        "/api/v1/auth/login",
-        json={"username": _TEACHER_EMAIL, "password": "whatever-password"},
-    )
-    assert student_door.status_code == 401, student_door.text
-    assert student_door.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"

@@ -709,8 +709,7 @@ async def test_login_identifier_form_covers_three_identifiers(
     """The /auth/login identifier form: student number and student
     phone both reach the student password flow (phone first — the #73
     semantics), a staff email reaches the staff password flow, and the
-    OLD {username, password} shape still works (the transition, PR-3
-    retires it)."""
+    RETIRED {username, password} shape answers the schema 422 (PR-3)."""
     student = await _seed_user(
         db_session,
         username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
@@ -750,12 +749,13 @@ async def test_login_identifier_form_covers_three_identifiers(
     assert staff_body["status"] == "authenticated"
     assert staff_body["role"] == "TEACHER"
 
+    # PR-3: the legacy {username, password} form is RETIRED — a 422
+    # naming the unknown member, the unified form the only shape.
     legacy = await client.post(
         "/api/v1/auth/login",
         json={"username": student.username, "password": _PASSWORD},
     )
-    assert legacy.status_code == 200, legacy.text
-    assert legacy.json()["access_token"]
+    assert legacy.status_code == 422, legacy.text
 
 
 async def test_login_admin_leg_honors_the_remembered_cookie(
@@ -869,3 +869,175 @@ async def test_empty_body_verify_serves_pending_approval_students(
     assert continued.status_code == 200, continued.text
     assert continued.json()["status"] == "authenticated"
     assert continued.json()["role"] == "STUDENT"
+
+
+async def _email_arm_pending(
+    client: httpx.AsyncClient,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+    email: str,
+) -> str:
+    """One email-arm cycle with the wall-clock cooldown key cleared
+    (the TTL runs on real time; the cooldown CRAFT has its own suite):
+    request, verify the mailed code, return the pending credential."""
+    await api_redis.delete(f"emailcode:cooldown:{email}")
+    requested = await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": email}
+    )
+    assert requested.status_code == 202, requested.text
+    code = str(api_email.messages[-1].variables["code"])
+    pending = (
+        await client.post(
+            "/api/v1/auth/challenge/verify",
+            json={"identifier": email, "code": code},
+        )
+    ).json()
+    assert pending["status"] == "totp_required", pending
+    return pending["pending_token"]
+
+
+async def test_admin_cookie_completes_at_email_verify(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    """An ADMIN's valid remembered cookie replaces the SECOND factor,
+    not the code (the #87 craft on the email arm): a valid mailed code
+    + cookie completes AT verify — no totp_required mid-state — while
+    a wrong code stays the uniform single envelope even with one."""
+    secret = pyotp.random_base32()
+    admin = await _seed_user(
+        db_session,
+        username=f"uni-admin6-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        totp_secret=secret,
+    )
+    await db_session.commit()
+
+    first = await _email_arm_pending(
+        client, api_email, api_redis, admin.email_normalized
+    )
+    warm_cycle = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={
+            "pending_token": first,
+            "totp_code": _totp_code(secret, api_clock),
+            "remember_device": True,
+        },
+    )
+    assert warm_cycle.status_code == 200, warm_cycle.text
+    cookie = _device_cookie(warm_cycle)
+
+    # Wrong code: the cookie saves no one from a bad code.
+    wrong = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": admin.email_normalized,
+            "code": "000000",
+            "remember_device": True,
+        },
+        cookies=_cookies(cookie),
+    )
+    assert wrong.status_code == 400, wrong.text
+    assert wrong.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
+
+    # Valid code + cookie: the login completes HERE, no totp leg.
+    await api_redis.delete(f"emailcode:cooldown:{admin.email_normalized}")
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": admin.email_normalized}
+    )
+    good_code = str(api_email.messages[-1].variables["code"])
+    warm = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": admin.email_normalized,
+            "code": good_code,
+            "remember_device": True,
+        },
+        cookies=_cookies(cookie),
+    )
+    assert warm.status_code == 200, warm.text
+    assert warm.json()["status"] == "authenticated"
+    assert warm.json()["role"] == "ADMIN"
+    assert warm.json()["tokens"]["access_token"]
+
+
+async def test_email_totp_wrong_code_counts_once_but_cycles_reset(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    """The email-arm totp leg's wrong-code branch counts (server-side)
+    but the FULL cycle's verify success RESETS the streak — the
+    accumulation-to-lock lives on the mobile arm (the lockout suite);
+    here one failure leaves the account open for the next valid cycle."""
+    secret = pyotp.random_base32()
+    admin = await _seed_user(
+        db_session,
+        username=f"uni-admin7-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        totp_secret=secret,
+    )
+    await db_session.commit()
+
+    pending = await _email_arm_pending(
+        client, api_email, api_redis, admin.email_normalized
+    )
+    wrong = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={"pending_token": pending, "totp_code": "000000"},
+    )
+    assert wrong.status_code == 400, wrong.text
+    assert wrong.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
+
+    pending2 = await _email_arm_pending(
+        client, api_email, api_redis, admin.email_normalized
+    )
+    recovered = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={
+            "pending_token": pending2,
+            "totp_code": _totp_code(secret, api_clock),
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["status"] == "authenticated"
+
+
+async def test_email_totp_leg_forces_setup_for_unconfirmed_admin(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    """The EMAIL pending domain keeps its setup-forcing signal (unlike
+    the mobile domain's uniform fold): an accepted-but-unconfirmed
+    ADMIN answers TOTP_SETUP_REQUIRED at the totp leg."""
+    from app.core.security import hash_password as _hash_pw
+    from app.modules.identity.models import User as _User
+
+    mail = f"uni-admin8-{uuid4().hex[:8]}@campus.example.edu"
+    db_session.add(
+        _User(
+            username=mail,
+            password_hash=_hash_pw(_PASSWORD),
+            nickname="未确认管理员",
+            email_normalized=mail,
+            email_verified_at=_T0,
+            role=Role.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+    )
+    await db_session.commit()
+
+    pending = await _email_arm_pending(client, api_email, api_redis, mail)
+    forced = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={"pending_token": pending, "totp_code": "123456"},
+    )
+    assert forced.status_code == 403, forced.text
+    assert forced.json()["error"]["code"] == "TOTP_SETUP_REQUIRED"

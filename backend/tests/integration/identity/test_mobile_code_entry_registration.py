@@ -113,7 +113,7 @@ async def client(api_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 
 async def _request_code(client: httpx.AsyncClient) -> str:
     requested = await client.post(
-        "/api/v1/auth/mobile-code/request", json={"phone": _PHONE}
+        "/api/v1/auth/challenge/request", json={"identifier": _PHONE}
     )
     assert requested.status_code == 202, requested.text
     return requested
@@ -122,7 +122,7 @@ async def _request_code(client: httpx.AsyncClient) -> str:
 async def _code_and_verify(api_sms: FakeSmsSender, client: httpx.AsyncClient):
     code = api_sms.messages[-1].variables["code"]
     return await client.post(
-        "/api/v1/auth/mobile-code/verify", json={"phone": _PHONE, "code": code}
+        "/api/v1/auth/challenge/verify", json={"identifier": _PHONE, "code": code}
     )
 
 
@@ -247,4 +247,4 @@ async def test_registered_phone_still_logs_in_directly(
     verified = await _code_and_verify(api_sms, client)
 
     assert verified.status_code == 200, verified.text
-    assert verified.json()["access_token"]
+    assert verified.json()["tokens"]["access_token"]

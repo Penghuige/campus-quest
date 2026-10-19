@@ -134,18 +134,32 @@ def _last_code(api_sms: FakeSmsSender) -> str:
 
 
 async def _request(client: httpx.AsyncClient, phone: str) -> httpx.Response:
-    return await client.post("/api/v1/auth/mobile-code/request", json={"phone": phone})
+    return await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": phone}
+    )
 
 
 async def _verify(
-    client: httpx.AsyncClient, phone: str, code: str | None, *, remember: bool = False
+    client: httpx.AsyncClient,
+    phone: str | None,
+    code: str | None,
+    *,
+    remember: bool = False,
+    device_cookie: str | None = None,
 ) -> httpx.Response:
-    body: dict[str, object] = {"phone": phone}
+    # The unified door: identifier+code pair, or BOTH omitted for the
+    # remembered-cookie single-factor leg.
+    body: dict[str, object] = {}
+    if phone is not None:
+        body["identifier"] = phone
     if code is not None:
         body["code"] = code
     if remember:
         body["remember_device"] = True
-    return await client.post("/api/v1/auth/mobile-code/verify", json=body)
+    cookies = {"cq_staff_device": device_cookie} if device_cookie else None
+    return await client.post(
+        "/api/v1/auth/challenge/verify", json=body, cookies=cookies
+    )
 
 
 def _envelope(response: httpx.Response) -> dict:
@@ -177,13 +191,15 @@ async def test_pending_approval_student_logs_in_end_to_end(
     verified = await _verify(client, _PHONE, _last_code(api_sms))
     assert verified.status_code == 200, verified.text
     body = verified.json()
-    assert body["access_token"]
+    assert body["status"] == "authenticated"
+    assert body["tokens"]["access_token"]
     header = _shell_header(verified)
     assert re.search(r"cq_shell=student", header)
     assert "HttpOnly" in _shell_header(verified)
 
     me = await client.get(
-        "/api/v1/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {body['tokens']['access_token']}"},
     )
     assert me.status_code == 200, me.text
     assert me.json()["status"] == "PENDING_APPROVAL"
@@ -222,7 +238,7 @@ async def test_wrong_code_five_times_then_lockout_envelope(
     for _ in range(5):
         wrong = await _verify(client, _PHONE, "000000")
         assert wrong.status_code == 400, wrong.text
-        assert _envelope(wrong)["code"] == "MOBILE_CODE_INVALID"
+        assert _envelope(wrong)["code"] == "CHALLENGE_CODE_INVALID"
 
     sixth = await _verify(client, _PHONE, _last_code(api_sms))
     assert sixth.status_code == 429, sixth.text
@@ -252,14 +268,11 @@ async def test_remembered_device_cookie_logs_in_without_any_code(
     cookie_value = jar["cq_staff_device"].value
     assert cookie_value
 
-    # The remembered path: NO code in the body, only the cookie.
-    remembered = await client.post(
-        "/api/v1/auth/mobile-code/verify",
-        json={"phone": _PHONE},
-        cookies={"cq_staff_device": cookie_value},
-    )
+    # The remembered path: NO identifier and NO code — the cookie is
+    # the credential (the unified door's empty-body leg).
+    remembered = await _verify(client, None, None, device_cookie=cookie_value)
     assert remembered.status_code == 200, remembered.text
-    assert remembered.json()["access_token"]
+    assert remembered.json()["tokens"]["access_token"]
     # And it SMSed nothing new.
     assert len(api_sms.messages) == 1
 
@@ -419,7 +432,7 @@ async def test_pending_student_survives_refresh_rotation(
     await _request(client, _PHONE)
     login = await _verify(client, _PHONE, _last_code(api_sms))
     assert login.status_code == 200, login.text
-    csrf = login.json()["csrf_token"]
+    csrf = login.json()["tokens"]["csrf_token"]
 
     jar = http_cookies.SimpleCookie()
 
@@ -440,6 +453,8 @@ async def test_pending_student_survives_refresh_rotation(
         headers={"X-CSRF-Token": csrf},
     )
     assert rotated.status_code == 200, rotated.text
+    # The refresh route keeps its OWN flat envelope (only the login
+    # family answers the union).
     assert rotated.json()["access_token"]
 
     me = await client.get(

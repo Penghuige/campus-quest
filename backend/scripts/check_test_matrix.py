@@ -40,6 +40,10 @@ _COVERED = ("已覆盖", "covered")
 _GAP = ("缺口", "gap")
 _MISMATCH = ("不匹配", "mismatch")
 _PROCESS = ("流程行", "process")
+# PR-3 (2026-10-19): a retired row's route family left the tree — its
+# citation names dead files BY DESIGN; the row points at the behavior's
+# new door instead, so it is citation-exempt like a process row.
+_RETIRED = ("已退役", "retired")
 
 # A covered row's citation: a backend suite path (tests/...) or a
 # frontend suite path (frontend/e2e/... or frontend/src/...), each with
@@ -59,7 +63,7 @@ def _cite_file(cited: str) -> Path:
 
 def _status_of(cells: list[str]) -> str | None:
     status = cells[-1].strip()
-    for marker in _COVERED + _GAP + _MISMATCH + _PROCESS:
+    for marker in _COVERED + _GAP + _MISMATCH + _PROCESS + _RETIRED:
         if marker in status:
             return (
                 "covered"

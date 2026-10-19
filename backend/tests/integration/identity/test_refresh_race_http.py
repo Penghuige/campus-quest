@@ -114,7 +114,7 @@ async def test_two_client_cold_start_race_matrix(
         # CSRF surface).
         login = await http.post(
             "/api/v1/auth/login",
-            json={"username": _STUDENT, "password": _PASSWORD},
+            json={"identifier": _STUDENT, "password": _PASSWORD},
         )
         assert login.status_code == 200, login.text
         initial_refresh = http.cookies.get("refresh_token")

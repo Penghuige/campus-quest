@@ -72,25 +72,16 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """The /auth/login body — BOTH forms (2026-10-19 spec §3.2).
-
-    Legacy: {username, password}. Unified: {identifier, password,
-    remember_device?} with the identifier a phone / email / student
-    number. Exactly one of username/identifier must be present; the
-    retirement PR removes the legacy member."""
+    """The /auth/login body — the unified identifier form only
+    (2026-10-19 spec §3.2; PR-3 retired the legacy {username} shape):
+    {identifier, password, remember_device?} with the identifier a
+    phone / email / student number."""
 
     model_config = ConfigDict(extra="forbid")
 
-    username: str | None = None
-    identifier: str | None = None
+    identifier: str
     password: str
     remember_device: bool = False
-
-    @model_validator(mode="after")
-    def _exactly_one_identity(self) -> LoginRequest:
-        if (self.username is None) == (self.identifier is None):
-            raise ValueError("provide exactly one of username or identifier")
-        return self
 
 
 class UnifiedChallengeRequest(BaseModel):
@@ -147,61 +138,6 @@ class UnifiedAuthOutcome(BaseModel):
     tokens: TokenPairResponse | None = None
     pending_token: str | None = None
     register_token: str | None = None
-
-
-class StaffLoginRequest(BaseModel):
-    """Staff login: verified email + password + TOTP/recovery code (§5.8).
-
-    ``totp_code`` may be EMPTY (or omitted) when a valid remembered-
-    device cookie accompanies the request — the cookie is the second
-    factor for the 30-day re-login (V1.1 login iteration item 2); empty
-    without one is the uniform authentication failure. ``remember_device``
-    mints that cookie on a successful full login.
-    """
-
-    email: str
-    password: str
-    totp_code: str = ""
-    remember_device: bool = False
-
-
-class StaffEmailCodeRequestRequest(BaseModel):
-    """Ask for a 6-digit login code by email (V1.1 §2.1).
-
-    Always answered 202 with an empty body — staff existence is not an
-    answer this endpoint gives (anti-enumeration).
-    """
-
-    email: str
-
-
-class StaffEmailCodeVerifyRequest(BaseModel):
-    """Trade the emailed code for a login (V1.1 §2.1/§2.2).
-
-    TEACHER completes in one step; ADMIN gets ``totp_required`` (unless a
-    valid remembered-device cookie accompanies the request).
-    """
-
-    email: str
-    code: str
-    remember_device: bool = False
-
-
-class StaffEmailCodeTotpRequest(BaseModel):
-    """Finish an ADMIN email-code login with the TOTP second leg."""
-
-    pending_token: str
-    code: str
-    remember_device: bool = False
-
-
-class StaffEmailCodePendingResponse(BaseModel):
-    """The ADMIN mid-login state: a short-lived session token that may
-    finish the login via the totp leg (or TOTP onboarding endpoints),
-    and nothing else."""
-
-    status: str
-    pending_token: str
 
 
 class RefreshRequest(BaseModel):
@@ -526,49 +462,6 @@ class EmailChallengeResponse(BaseModel):
     expires_at: datetime
 
 
-class MobileCodeRequestRequest(BaseModel):
-    """Ask for a 6-digit SMS login code (V1.1 2026-10-16 §3) — always
-    202, staff/role existence is never an answer here."""
-
-    phone: str
-
-
-class MobileCodeVerifyRequest(BaseModel):
-    """Trade the SMS code (or the remembered-device cookie) for a student
-    session.
-
-    Three shapes: ``phone``+``code`` (the SMS leg), ``phone`` with
-    ``code`` omitted (the cookie must match that phone's user), or an
-    EMPTY body (the login-banner click: the device row alone resolves
-    the user — the banner only ever has the masked phone).
-    """
-
-    phone: str | None = None
-    code: str | None = None
-    remember_device: bool = False
-
-
-class StaffMobileCodeRequestRequest(BaseModel):
-    """Ask for a staff SMS login code (V1.1 login iteration item 1) —
-    always 202, and a phone bound to a student (or nobody) never
-    actually receives one: staff existence is never an answer."""
-
-    phone: str
-
-
-class StaffMobileCodeVerifyRequest(BaseModel):
-    """Trade the staff SMS code for a staff session.
-
-    TEACHER completes in one step; ADMIN gets ``totp_required`` with an
-    opaque pending token — unless a valid remembered-device cookie
-    accompanies the (empty-body) request, in which case the cookie
-    replaces BOTH factors' second leg (the #87 craft)."""
-
-    phone: str | None = None
-    code: str | None = None
-    remember_device: bool = False
-
-
 class MobileCodeRegisterRequest(BaseModel):
     """Trade the entry proof (a code-checked, accountless phone's
     5-minute single-use token) for a PENDING_APPROVAL account."""
@@ -577,19 +470,3 @@ class MobileCodeRegisterRequest(BaseModel):
     student_number: str
     nickname: str | None = None
     password: str | None = None
-
-
-class MobileCodeEntryResponse(BaseModel):
-    """The verify leg's entry shape: the phone is code-checked but
-    owns no account — the register door opens for 5 minutes."""
-
-    status: str
-    register_token: str
-
-
-class StaffMobileCodeTotpRequest(BaseModel):
-    """Finish an ADMIN mobile-code login with the TOTP second leg."""
-
-    pending_token: str
-    code: str
-    remember_device: bool = False
