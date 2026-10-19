@@ -78,7 +78,7 @@ export function LoginForm() {
       <FormErrorSummary view={summary} />
       <AuthField
         name="username"
-        label="学号"
+        label="学号或手机号"
         error={fieldErrors.username}
         inputProps={{
           value: username,
@@ -88,7 +88,7 @@ export function LoginForm() {
           autoComplete: "username",
           autoCapitalize: "none",
           autoCorrect: "off",
-          placeholder: "请输入学号",
+          placeholder: "请输入学号或手机号",
           maxLength: 20,
           disabled: loading,
         }}

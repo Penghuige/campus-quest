@@ -77,7 +77,7 @@ export function describeMobileLoginError(
     // The password channel's uniform refusal. For a passwordless
     // account this is the ONLY outcome — guide to the mobile tab.
     return {
-      message: "邮箱或密码不正确；未设置密码的账号请使用手机验证码登录，或先在设置中设置密码",
+      message: "学号、手机号或密码不正确；未设置密码的账号请使用手机验证码登录，或先在设置中设置密码",
       suggestMobileTab: true,
       requestId: error.requestId,
     };

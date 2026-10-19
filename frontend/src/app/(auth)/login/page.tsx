@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "登录 · CampusQuest",
-  description: "使用学号和密码登录 CampusQuest",
+  description: "使用学号或手机号登录 CampusQuest",
 };
 
 interface LoginPageProps {
@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <>
       <div className="auth-head">
         <h1 className="auth-title">登录 CampusQuest</h1>
-        <p className="auth-subtitle">使用学号和密码登录</p>
+        <p className="auth-subtitle">使用学号或手机号登录</p>
       </div>
       {reset ? (
         <div className="alert alert-success" role="status">
