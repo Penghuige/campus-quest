@@ -16,6 +16,12 @@ map each §45 criterion to the automated test or the manual deployment check
 that proves it, then collect the operator runbook for running the gate and
 the clean-environment script.
 
+Day-to-day flow before this gate matters: `make pre-push` is the fast local
+lane wired into the git pre-push hook (`.githooks/`), and branch protection
+on main makes every merge go through a PR with the three CI jobs green on
+an up-to-date head. `make release-gate` stays the release proof and the
+owner's post-merge product-level acceptance run.
+
 ## §45 acceptance criteria → proof
 
 Test ids are `file::test` relative to the repository root; browser tests are
@@ -73,13 +79,16 @@ stack with empty volumes goes straight into `make release-gate` — fresh
 volumes → `up -d` → gate exit 0 is the Task-1 release proof. A
 pre-migrated database makes the step a no-op version check.
 
-The gate is thirteen ordered steps (Makefile `release-gate`); the
-playwright step additionally asserts zero skipped tests in the
+The gate is seventeen ordered steps (0–16, Makefile `release-gate`);
+the playwright step additionally asserts zero skipped tests in the
 teacher/admin suites (`frontend/scripts/assert-e2e-no-skips.mjs` — a
-missing world export reads as skips, never as a silent green). Steps
-12–13 (ranking rebuild, concurrency gate) run inside the backend e2e
-suite (`tests/e2e/test_ranking_recovery.py`,
-`tests/e2e/test_concurrency_gate.py`)
+missing world export reads as skips, never as a silent green). Step 0
+is the architecture contract gate (`arch-lint`, added 2026-10-16);
+steps 12–13 (ranking rebuild, concurrency gate) run inside the backend
+e2e suite (`tests/e2e/test_ranking_recovery.py`,
+`tests/e2e/test_concurrency_gate.py`); step 14 is the pixel visual
+regression suite; step 15 is the dependency audit pair (pip-audit +
+npm-audit, wired 2026-10-19)
 — see the Makefile comment for the full mapping. `CQ_S3_SMOKE=1` and
 `CQ_COMPOSITION_SMOKE=1` are set by the integration target itself, so the
 real-stack smokes never silently skip inside the gate.

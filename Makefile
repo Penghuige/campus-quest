@@ -69,6 +69,49 @@ verify: lint-backend arch-lint
 	cd backend && uv run pytest -v
 	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run build
 
+# Pre-push fast lane (~2 min, no docker stack): the CI gates that fail
+# most often and run fully locally — coverage-floor direction, backend
+# lint/types/architecture, spec-test matrix coherence, G3 placeholder
+# guard, both contract-freshness checks (OpenAPI snapshot + generated
+# TS types), frontend typecheck/lint/CSS/unit-coverage ratchet. Wired
+# as the git pre-push hook via .githooks/ (core.hooksPath); skip a
+# single push with `git push --no-verify`. Backend coverage ratchet,
+# integration, e2e, and the pixel/axe suites need the compose stack —
+# those stay in `make pre-push-full`, `make release-gate`, and CI.
+# Gotcha: tsconfig includes .next/types/**, so after pulling commits
+# that delete or rename a page, a stale .next cache fails typecheck
+# with phantom page.js errors — `rm -rf frontend/.next/types
+# frontend/.next/dev/types` and re-run (next dev/build regenerates).
+.PHONY: pre-push ratchet-direction test-matrix placeholder-guard
+pre-push: ratchet-direction lint-backend arch-lint test-matrix placeholder-guard
+	cd backend && $(TEST_STACK_ENV) uv run python scripts/dump_openapi.py ../frontend/openapi.snapshot.json
+	git diff --exit-code frontend/openapi.snapshot.json
+	cd frontend && npm run api:types:snapshot
+	git diff --exit-code frontend/src/lib/api/schema.d.ts
+	cd frontend && npm run typecheck && npm run lint && npm run check:css && npm run coverage:ratchet
+
+# Coverage-floor direction gate (2026-10-19): ratchet floors only move
+# up — scripts/check_ratchet_direction.py compares both
+# coverage-ratchet.json files against the merge base with origin/main
+# and fails on any lowered/removed floor, closing the "--update can
+# quietly lower the bar" hole. Deliberate decreases carry the
+# [floor-adjust] marker (CI wires it to the PR body); offline clones
+# skip with a warning.
+ratchet-direction:
+	python3 scripts/check_ratchet_direction.py
+
+# Spec-test matrix coherence (G19, owner-approved 2026-10-07): every
+# covered row cites an existing test file, gap/mismatch rows are
+# registered. Existed only as a script before 2026-10-19 — now wired.
+test-matrix:
+	cd backend && uv run python scripts/check_test_matrix.py
+
+# G3 placeholder guard: no `raise NotImplementedError` ships in
+# backend/app (zero today — this keeps it that way). Prose TODO/FIXME
+# comments stay free; only the executable placeholder is gated.
+placeholder-guard:
+	! grep -rn "raise NotImplementedError" backend/app --include="*.py"
+
 # --- Plan 10 task 11: the V1 release command ------------------------------
 #
 # `make release-gate` runs, in this order (plan 10 task 11 step 1):
@@ -83,29 +126,35 @@ verify: lint-backend arch-lint
 #      `alembic upgrade head` on campusquest_test — the integration/e2e
 #      suites need a migrated schema and nothing else creates it on
 #      fresh compose volumes)
-#   2. backend unit tests            (backend-unit-cov; same suite as
-#      backend-unit plus the --cov-append chain feeding step 15)
+#   2. backend unit+worker tests     (backend-unit-worker-cov; ONE pytest
+#      process, the ci.yml shape — the ratchet's cross-talk waiver
+#      fingerprints only appear in this combined run, so this is the
+#      only shape whose ratchet verdict reproduces CI)
 #   3. backend integration tests     (backend-integration-cov; real
 #      PostgreSQL/Redis/MinIO, S3 + composition smokes ON)
-#   4. backend worker tests          (backend-worker-cov)
-#   5. backend e2e tests             (backend-e2e, CQ_E2E=1)
-#   6. migration verification        (migration-verify; dedicated
+#   4. backend e2e tests             (backend-e2e, CQ_E2E=1)
+#   5. migration verification        (migration-verify; dedicated
 #      campusquest_migrate_test database: upgrade head -> schema
 #      assertions -> downgrade base -> re-upgrade)
-#   7. frontend typecheck            (frontend-typecheck)
-#   8. frontend lint                 (frontend-lint)
-#   9. frontend CSS integrity        (frontend-css-guard)
-#  10. frontend unit tests           (frontend-unit)
-#  11. frontend production build     (frontend-build)
-#  12. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
+#   6. frontend typecheck            (frontend-typecheck)
+#   7. frontend lint                 (frontend-lint)
+#   8. frontend CSS integrity        (frontend-css-guard)
+#   9. frontend unit tests           (frontend-unit)
+#  10. frontend production build     (frontend-build)
+#  11. Playwright e2e                (playwright-e2e, CQ_E2E=1; the config
 #      orchestrates both servers itself)
-#  13. ranking rebuild test          — inside backend-e2e:
+#  12. ranking rebuild test          — inside backend-e2e:
 #      tests/e2e/test_ranking_recovery.py
-#  14. concurrency gate              — inside backend-e2e:
+#  13. concurrency gate              — inside backend-e2e:
 #      tests/e2e/test_concurrency_gate.py
-#  15. coverage ratchet              (coverage-ratchet; owner-approved
+#  14. pixel visual regression       (visual-regression; the 11-baseline
+#      pixel suite — same gate as the ci.yml visual job)
+#  15. dependency audit gates        (pip-audit + npm-audit; the CI
+#      backend/frontend jobs gate these — wired here 2026-10-19 so the
+#      local gate no longer skips them)
+#  16. coverage ratchet              (coverage-ratchet; owner-approved
 #      addition — backend: the .coverage accumulated by the -cov legs
-#      of steps 2-4 vs coverage-ratchet.json floors; frontend: the
+#      of steps 2-3 vs coverage-ratchet.json floors; frontend: the
 #      native-coverage ratchet self-runs its unit suite)
 #
 # Prerequisites (quality-gates §15; docs/operations/release-checklist.md
@@ -134,21 +183,26 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
                  S3_SECRET_KEY=$${S3_SECRET_KEY:-campusquest-dev} \
                  BUSINESS_TIMEZONE=$${BUSINESS_TIMEZONE:-Asia/Shanghai}
 
-# The three backend suites, single-sourced: the bare targets, the
-# coverage-accumulating -cov variants the gate runs, and coverage-baseline
-# below all compose these, so suite paths and stack env cannot drift
-# between them. COV_APPEND_FLAGS is the accumulate-into-one-.coverage
-# chain the step-14 ratchet compares.
+# The backend suites, single-sourced: the bare targets, the
+# coverage-accumulating -cov variants the gate runs, and
+# coverage-baseline below all compose these, so suite paths and stack
+# env cannot drift between them. COV_APPEND_FLAGS is the
+# accumulate-into-one-.coverage chain the step-16 ratchet compares.
+# BACKEND_UNIT_WORKER_CMD runs unit+workers in ONE pytest process —
+# the ci.yml shape; the ratchet's cross-talk waiver fingerprints only
+# appear in this combined run, so every coverage-measuring leg uses it.
 COV_APPEND_FLAGS = --cov=app --cov-branch --cov-report= --cov-append
 BACKEND_UNIT_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit
 BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration
 BACKEND_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers
+BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit tests/workers
 
 .PHONY: backend-unit backend-integration backend-worker backend-e2e \
-        backend-unit-cov backend-integration-cov backend-worker-cov \
+        backend-unit-worker-cov backend-integration-cov \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
-        coverage-clean coverage-baseline coverage-ratchet pip-audit
+        coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
+        pre-push-full
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -168,19 +222,17 @@ backend-integration:
 backend-worker:
 	$(BACKEND_WORKER_CMD) -v
 
-# The gate's coverage-accumulating legs: the SAME suites as the bare
-# targets above, plus the --cov-append chain whose accumulated
-# backend/.coverage step 14's ratchet compares. release-gate runs
+# The gate's coverage-accumulating legs in the CI shape: unit+workers
+# in one pytest process (see BACKEND_UNIT_WORKER_CMD above), then
+# integration — the --cov-append chain whose accumulated
+# backend/.coverage step 16's ratchet compares. release-gate runs
 # coverage-clean first so a stale local .coverage (e.g. left by an
 # earlier baseline run) can never flatter the floors.
-backend-unit-cov:
-	$(BACKEND_UNIT_CMD) $(COV_APPEND_FLAGS) -v
+backend-unit-worker-cov:
+	$(BACKEND_UNIT_WORKER_CMD) $(COV_APPEND_FLAGS) -v
 
 backend-integration-cov:
 	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -v
-
-backend-worker-cov:
-	$(BACKEND_WORKER_CMD) $(COV_APPEND_FLAGS) -v
 
 backend-e2e:
 	cd backend && $(TEST_STACK_ENV) CQ_E2E=1 uv run pytest tests/e2e -v
@@ -191,17 +243,17 @@ migration-verify:
 coverage-clean:
 	rm -f backend/.coverage
 
-# Coverage ratchet (owner-approved 2026-10-07). baseline: the three
-# suites with --cov (branch, app/ only, appended into one .coverage) +
-# REWRITE the floors (--update is a deliberate, reviewable commit).
-# ratchet: compare the accumulated .coverage against the committed
-# floors (the CI gate; CI accumulates via --cov-append too), then the
-# frontend native-coverage ratchet, which self-runs its unit suite and
-# needs no wired input.
+# Coverage ratchet (owner-approved 2026-10-07). baseline: the CI-shaped
+# legs with --cov (branch, app/ only, appended into one .coverage) +
+# REWRITE the floors (--update is a deliberate, reviewable commit —
+# floors may only move up; the ratchet-direction gate blocks silent
+# lowering). ratchet: compare the accumulated .coverage against the
+# committed floors (the CI gate; CI accumulates via --cov-append in
+# the same shape), then the frontend native-coverage ratchet, which
+# self-runs its unit suite and needs no wired input.
 coverage-baseline:
-	$(BACKEND_UNIT_CMD) $(COV_APPEND_FLAGS) -q
+	$(BACKEND_UNIT_WORKER_CMD) $(COV_APPEND_FLAGS) -q
 	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -q
-	$(BACKEND_WORKER_CMD) $(COV_APPEND_FLAGS) -q
 	cd backend && uv run python scripts/coverage_ratchet.py --update
 
 coverage-ratchet:
@@ -210,6 +262,16 @@ coverage-ratchet:
 
 pip-audit:
 	cd backend && uv run python scripts/pip_audit_gate.py
+
+npm-audit:
+	cd frontend && npm run audit:gate
+
+# Pre-push full lane (~5-8 min, needs the compose stack): reproduces
+# the CI backend coverage chain in the CI shape plus both ratchets —
+# run before merging backend-heavy PRs. Everything faster is in the
+# pre-push fast lane; everything slower is in release-gate.
+pre-push-full: coverage-clean release-test-db backend-unit-worker-cov \
+               backend-integration-cov coverage-ratchet
 
 frontend-typecheck:
 	cd frontend && npm run typecheck
@@ -235,11 +297,11 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: arch-lint coverage-clean release-test-db backend-unit-cov \
-              backend-integration-cov backend-worker-cov \
+release-gate: arch-lint coverage-clean release-test-db \
+              backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e \
-              visual-regression coverage-ratchet
+              visual-regression pip-audit npm-audit coverage-ratchet
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #

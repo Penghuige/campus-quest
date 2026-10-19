@@ -45,6 +45,7 @@ When deciding whether to copy a pattern from another codebase, read:
 - Use test-driven development for features and bug fixes.
 - Reproduce a bug with a failing regression test before fixing it.
 - Run focused tests while developing, then the relevant module gate before completion.
+- Run `make pre-push` before pushing (fast local gate — lint/types/architecture/contract freshness/frontend ratchet, ~30s–2min, no docker stack; the pre-push hook runs it automatically, `git push --no-verify` skips a single push).
 - Use a fresh verification run before claiming the task is complete.
 - Request code review for completed implementation tasks before merging them into a wider workstream.
 - Do not silently change product semantics to make implementation easier. Amend the spec or plan first if a real ambiguity is discovered.
@@ -142,10 +143,11 @@ A task is not complete until:
 
 ## Owner acceptance
 
-Merge approval belongs to the owner. Reviewer APPROVE and green CI (or its pause-period local equivalent, below) are necessary, not sufficient. Before merging a reviewed PR, the owner checks:
+Merge approval belongs to the owner. Branch protection on main enforces the first line of defense for every merge, owner included (enforce_admins): the three required status checks ("Backend (Python 3.12)", "Frontend (Node 22)", "Pixel visual regression (Playwright)") must be green on the exact head, the PR must be up-to-date with main (strict), and force pushes and branch deletion are blocked. Reviewer APPROVE plus these enforced checks are necessary, not sufficient. Before merging a reviewed PR, the owner double-checks:
 
 - the reviewer verdict names the exact head commit and is APPROVE;
-- CI is green on that same head (match the run URL to the head commit, not an earlier run); while CI is paused for quota exhaustion (2026-10-07 onward), fresh local gate logs on that same head are the equivalent evidence, and the CI requirement resumes automatically once the quota resets;
+- CI is green on that same head (match the run URL to the head commit, not an earlier run);
+- the PR is up-to-date with main — the strict requirement blocks merging a stale head;
 - no unresolved reviewer or bot threads remain on the PR.
 
 Merge order follows reviewer-stated dependencies when they exist.
