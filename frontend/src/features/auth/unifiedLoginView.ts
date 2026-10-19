@@ -86,11 +86,7 @@ export function describeChallengeError(
   if (!isApiError(error)) {
     return { message: NETWORK_ERROR_TEXT, requestId: null };
   }
-  // Contract-first: CHALLENGE_CODE_INVALID joins the generated ErrorCode
-  // union when the backend's PR-1 regen lands (the #72 discipline); the
-  // widened compare flips to a direct === with it.
-  const code = error.code as string;
-  if (code === "CHALLENGE_CODE_INVALID") {
+  if (error.code === "CHALLENGE_CODE_INVALID") {
     return { message: "验证码错误或已过期", requestId: error.requestId };
   }
   if (error.code === "ACCOUNT_LOCKED") {
