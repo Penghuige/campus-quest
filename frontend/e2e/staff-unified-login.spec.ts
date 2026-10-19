@@ -20,7 +20,13 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { mintToken, recoverEmailCode, recoverMobileCode, totpCode } from "./fixtures";
+import {
+  mintToken,
+  recoverEmailCode,
+  recoverMobileCode,
+  recoverOtpCode,
+  totpCode,
+} from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -96,13 +102,16 @@ test.describe("staff unified code login (two-channel convergence)", () => {
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
 
     // Bind a phone through the live profile section (the ① surface).
+    // The binding OTP lives in the GENERIC otp store under PHONE_BIND —
+    // recoverMobileCode reads the login challenge table and would find
+    // nothing here (the retired binding spec's exact helper).
     const phone = `156${String(Date.now()).slice(-8)}`;
     await page.goto(`${BASE_URL}/teacher/profile`);
     await page.getByLabel("绑定手机号").fill(phone);
     await page.getByRole("button", { name: "发送验证码", exact: true }).click();
     await page
       .getByLabel("短信验证码")
-      .fill(recoverMobileCode(`+86${phone}`));
+      .fill(recoverOtpCode(`+86${phone}`, "PHONE_BIND"));
     await page.getByRole("button", { name: "绑定手机号", exact: true }).click();
     await expect(page.getByText("手机号已绑定")).toBeVisible();
     await page.getByRole("button", { name: "退出登录" }).click();
