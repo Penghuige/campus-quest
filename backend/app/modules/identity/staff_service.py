@@ -118,6 +118,7 @@ from app.core.security import (
     validate_password_length,
     verify_password,
 )
+from app.integrations.masking import mask_email
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity import device_credentials
@@ -161,6 +162,8 @@ logger = logging.getLogger(__name__)
 # other's names (see the module docstring).
 AUDIT_STAFF_INVITATION_CREATED = "STAFF_INVITATION_CREATED"
 AUDIT_STAFF_INVITATION_ACCEPTED = "STAFF_INVITATION_ACCEPTED"
+AUDIT_STAFF_INVITATION_REVOKED = "STAFF_INVITATION_REVOKED"
+AUDIT_STAFF_INVITATION_RESENT = "STAFF_INVITATION_RESENT"
 
 # The audit target for both staff-lifecycle actions: the invitation
 # itself (target_id = the invitation's UUID as text) — the anchor both
@@ -173,6 +176,8 @@ _AUTHENTICATION_MESSAGE = "邀请链接无效、已过期或已被使用"
 _STAFF_AUTHENTICATION_MESSAGE = "邮箱、密码或动态验证码错误"
 _ACCOUNT_NOT_ACTIVE_MESSAGE = "账号当前状态不允许登录"
 _EMAIL_TAKEN_MESSAGE = "该邮箱已被其他账号使用"
+_INVITATION_NOT_FOUND_MESSAGE = "邀请不存在"
+_INVITATION_CONFLICT_MESSAGE = "邀请已被接受或已撤销，不能再变更"
 _ALREADY_BOUND_MESSAGE = "该账号已绑定 TOTP，不能重复绑定"
 _NOT_STARTED_MESSAGE = "尚未开始 TOTP 绑定"
 _WRONG_CODE_MESSAGE = "动态验证码错误"
@@ -308,6 +313,18 @@ class StaffService:
             )
         email_normalized = self._normalized_email(email)
 
+        # §4.2 occupancy pre-check (the 2026-10-14 frontend finding): an
+        # address already held by an account can never be invited — the
+        # accept path would build a user the unique index then rejects
+        # mid-flow. Normalization has run, so case variants of a held
+        # address resolve here too.
+        if await self._users.find_by_email_normalized(db, email_normalized) is not None:
+            raise BusinessError(
+                ErrorCode.EMAIL_ALREADY_BOUND,
+                _EMAIL_TAKEN_MESSAGE,
+                status_code=409,
+            )
+
         now = self._clock.now()
         token = secrets.token_urlsafe(32)
         invitation = StaffInvitation(
@@ -361,6 +378,187 @@ class StaffService:
         )
         return IssuedStaffInvitation(invitation=invitation, token=token)
 
+    async def list_invitations(
+        self, db: AsyncSession, *, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, object]]:
+        """The §4.2 admin list: every invitation with its DERIVED state.
+
+        ACCEPTED/REVOKED ride their stored timestamps; the
+        PENDING/EXPIRED split is a read-time fact against the business
+        clock, precedence accepted > revoked > expired. The invited
+        email leaves this method MASKED (G11: the plaintext rests on
+        the row; this read path never widens it), the issuer shows by
+        id and nickname.
+        """
+        rows = (
+            await db.execute(
+                select(StaffInvitation, User.nickname)
+                .join(User, User.id == StaffInvitation.created_by)
+                .order_by(StaffInvitation.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        now = self._clock.now()
+        listed: list[dict[str, object]] = []
+        for invitation, issuer_nickname in rows:
+            if invitation.accepted_at is not None:
+                status = "ACCEPTED"
+            elif invitation.revoked_at is not None:
+                status = "REVOKED"
+            elif invitation.expires_at <= now:
+                status = "EXPIRED"
+            else:
+                status = "PENDING"
+            listed.append(
+                {
+                    "id": str(invitation.id),
+                    "email": mask_email(invitation.email_normalized),
+                    "role": invitation.role,
+                    "status": status,
+                    "expires_at": invitation.expires_at,
+                    "accepted_at": invitation.accepted_at,
+                    "revoked_at": invitation.revoked_at,
+                    "created_by": str(invitation.created_by),
+                    "issuer_nickname": issuer_nickname,
+                    "created_at": invitation.created_at,
+                }
+            )
+        return listed
+
+    async def revoke_invitation(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        invitation_id: UUID,
+        *,
+        audit_context: AuditContext | None = None,
+    ) -> None:
+        """§4.2: revoke an un-accepted invitation; its token dies now.
+
+        REVOKED is stored (it must outlive the expiry window), and the
+        accept path rejects revoked rows — the one-time token stops
+        resolving the moment this commits. Accepted rows are history
+        and refuse (409), as does a second revoke of the same row; the
+        row lock serializes a revoke racing an accept.
+        """
+        if actor.role != Role.ADMIN:
+            raise BusinessError(
+                ErrorCode.PERMISSION_DENIED,
+                _PERMISSION_DENIED_MESSAGE,
+                status_code=403,
+            )
+        invitation = await db.scalar(
+            select(StaffInvitation)
+            .where(StaffInvitation.id == invitation_id)
+            .with_for_update()
+        )
+        if invitation is None:
+            raise BusinessError(
+                ErrorCode.NOT_FOUND,
+                _INVITATION_NOT_FOUND_MESSAGE,
+                status_code=404,
+            )
+        if invitation.accepted_at is not None or invitation.revoked_at is not None:
+            raise BusinessError(
+                ErrorCode.CONFLICT,
+                _INVITATION_CONFLICT_MESSAGE,
+                status_code=409,
+            )
+        invitation.revoked_at = self._clock.now()
+        await db.flush()
+        # Durable G12 trace, the CREATED/ACCEPTED shape: the audited
+        # migration is the revocation itself; the email stays OFF the
+        # row (G11) — it rests on the invitation the target_id names.
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_STAFF_INVITATION_REVOKED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(invitation.id),
+            after_snapshot={
+                "role": invitation.role,
+                "revoked_at": invitation.revoked_at.isoformat(),
+                "expires_at": invitation.expires_at.isoformat(),
+            },
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        logger.info(
+            "staff invitation revoked invitation_id=%s actor_id=%s",
+            invitation.id,
+            actor.user_id,
+        )
+
+    async def resend_invitation(
+        self,
+        db: AsyncSession,
+        actor: Actor,
+        invitation_id: UUID,
+        *,
+        audit_context: AuditContext | None = None,
+    ) -> IssuedStaffInvitation:
+        """§4.2: re-issue an un-accepted invitation's one-time token.
+
+        Works on pending, EXPIRED (the rescue path: the window restarts)
+        and revoked rows alike — only an accepted row refuses (409). The
+        row lock is the one accept takes, so a resend racing an accept
+        serializes and the loser re-reads a terminal row; the old hash
+        is replaced (that token stops resolving) and ``revoked_at``
+        clears: a revoked invitation comes back to life. The fresh
+        token returns exactly once, the create contract.
+        """
+        if actor.role != Role.ADMIN:
+            raise BusinessError(
+                ErrorCode.PERMISSION_DENIED,
+                _PERMISSION_DENIED_MESSAGE,
+                status_code=403,
+            )
+        now = self._clock.now()
+        invitation = await db.scalar(
+            select(StaffInvitation)
+            .where(StaffInvitation.id == invitation_id)
+            .with_for_update()
+        )
+        if invitation is None:
+            raise BusinessError(
+                ErrorCode.NOT_FOUND,
+                _INVITATION_NOT_FOUND_MESSAGE,
+                status_code=404,
+            )
+        if invitation.accepted_at is not None:
+            raise BusinessError(
+                ErrorCode.CONFLICT,
+                _INVITATION_CONFLICT_MESSAGE,
+                status_code=409,
+            )
+        token = secrets.token_urlsafe(32)
+        invitation.token_hash = hash_refresh_token(token)
+        invitation.expires_at = now + self._invitation_ttl
+        invitation.revoked_at = None
+        await db.flush()
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=AUDIT_STAFF_INVITATION_RESENT,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(invitation.id),
+            after_snapshot={
+                "role": invitation.role,
+                "expires_at": invitation.expires_at.isoformat(),
+            },
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        logger.info(
+            "staff invitation resent invitation_id=%s actor_id=%s",
+            invitation.id,
+            actor.user_id,
+        )
+        return IssuedStaffInvitation(invitation=invitation, token=token)
+
     async def accept_staff_invitation(
         self,
         db: AsyncSession,
@@ -400,8 +598,12 @@ class StaffService:
             .where(StaffInvitation.token_hash == hash_refresh_token(token))
             .with_for_update()
         )
-        if invitation is None or invitation.accepted_at is not None:
-            logger.info("staff invitation rejected reason=unknown_or_used")
+        if (
+            invitation is None
+            or invitation.accepted_at is not None
+            or invitation.revoked_at is not None
+        ):
+            logger.info("staff invitation rejected reason=unknown_used_or_revoked")
             raise self._invitation_rejected()
         if invitation.expires_at <= now:
             logger.info(

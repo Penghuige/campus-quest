@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -364,6 +364,31 @@ class StaffInvitationResponse(BaseModel):
     token: str
     expires_at: datetime
     created_at: datetime
+
+
+class AdminInvitationRow(BaseModel):
+    """One invitation on the §4.2 lifecycle list. ``email`` arrives
+    MASKED from the service (G11: the plaintext rests on the row);
+    ``status`` is derived at read time against the business clock."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    email: str
+    role: Role
+    status: Literal["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]
+    expires_at: datetime
+    accepted_at: datetime | None
+    revoked_at: datetime | None
+    created_by: str
+    issuer_nickname: str
+    created_at: datetime
+
+
+class AdminInvitationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminInvitationRow]
 
 
 # --- account status governance (spec §5.7; W2 service) --------------------
@@ -743,6 +768,76 @@ async def create_staff_invitation(
         actor,
         body.email,
         body.role,
+        audit_context=AuditContext.from_request(request),
+    )
+    return StaffInvitationResponse(
+        id=str(issued.invitation.id),
+        role=Role(issued.invitation.role),
+        token=issued.token,
+        expires_at=issued.invitation.expires_at,
+        created_at=issued.invitation.created_at,
+    )
+
+
+@router.get("/admin/staff/invitations", response_model=AdminInvitationListResponse)
+async def list_staff_invitations(
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    db: DbSession,
+    limit: PageLimit = DEFAULT_PAGE_LIMIT,
+    offset: PageOffset = 0,
+) -> AdminInvitationListResponse:
+    """The §4.2 lifecycle list: derived states (PENDING/ACCEPTED/
+    EXPIRED/REVOKED) against the business clock, the invited email
+    masked (G11), the issuer by id and nickname."""
+    rows = await staff.list_invitations(db, limit=limit, offset=offset)
+    return AdminInvitationListResponse(
+        items=[AdminInvitationRow(**row) for row in rows]
+    )
+
+
+@router.delete("/admin/staff/invitations/{invitation_id}", status_code=204)
+async def revoke_staff_invitation(
+    invitation_id: UUID,
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    db: DbSession,
+    request: Request,
+) -> None:
+    """§4.2: revoke an un-accepted invitation — its token stops
+    resolving the moment this commits (the accept path rejects revoked
+    rows). Accepted or already-revoked rows refuse (409); unknown ids
+    answer 404."""
+    await staff.revoke_invitation(
+        db,
+        actor,
+        invitation_id,
+        audit_context=AuditContext.from_request(request),
+    )
+
+
+@router.post(
+    "/admin/staff/invitations/{invitation_id}/resend",
+    response_model=StaffInvitationResponse,
+)
+async def resend_staff_invitation(
+    invitation_id: UUID,
+    actor: AdminActor,
+    staff: StaffServiceDep,
+    limiter: LimiterDep,
+    db: DbSession,
+    request: Request,
+) -> StaffInvitationResponse:
+    """§4.2: re-sign an un-accepted invitation — a fresh one-time token
+    (the old one dies), the expiry window restarts, and a revoked row
+    revives. Accepted rows refuse (409). The fresh token returns
+    exactly once, the create contract, under the create-side
+    per-admin rate bucket (it mints the same capability)."""
+    await _enforce_rate_limit(limiter, _INVITATION_BUCKET, str(actor.user_id))
+    issued = await staff.resend_invitation(
+        db,
+        actor,
+        invitation_id,
         audit_context=AuditContext.from_request(request),
     )
     return StaffInvitationResponse(
