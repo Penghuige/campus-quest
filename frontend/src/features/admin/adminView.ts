@@ -16,7 +16,7 @@
  * take different copy through `describeAdminMutationError`, driven by
  * `error.code` only (never the Chinese message).
  */
-import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
+import { COPY_NETWORK_FAIL, isApiError } from "@/lib/errors";
 
 import type {
   AdminUserDto,

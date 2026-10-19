@@ -42,8 +42,8 @@ describe("login landing by role", () => {
   test("regression 2 (owner report 2026-10-15): each staff role lands on ITS OWN workspace", () => {
     assert.equal(landingPathForRole("TEACHER"), "/teacher/reviews");
     assert.equal(TEACHER_LANDING_PATH, "/teacher/reviews");
-    assert.equal(landingPathForRole("ADMIN"), "/admin/users");
-    assert.equal(ADMIN_LANDING_PATH, "/admin/users");
+    assert.equal(landingPathForRole("ADMIN"), "/admin");
+    assert.equal(ADMIN_LANDING_PATH, "/admin");
   });
 });
 
@@ -55,7 +55,7 @@ describe("student workspace gate (the / student shell's branch)", () => {
   test("regression 3: TEACHER/ADMIN on \"/\" get staff-guidance with EACH ROLE's own workspace link — never the pages", () => {
     const expectations = {
       TEACHER: "/teacher/reviews",
-      ADMIN: "/admin/users",
+      ADMIN: "/admin",
     } as const;
     for (const role of ["TEACHER", "ADMIN"] as const) {
       const gate = studentWorkspaceGate(role);

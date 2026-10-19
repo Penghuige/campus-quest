@@ -16,7 +16,7 @@
  *   lands on create when the backend adds the pre-check (reviewer
  *   ruling 2026-10-15: the V1.1 invitation-lifecycle scope candidate).
  */
-import { COPY_GENERIC_FAIL, COPY_NETWORK_FAIL, COPY_SERVICE_FAIL, isApiError } from "@/lib/errors";
+import { COPY_NETWORK_FAIL, isApiError } from "@/lib/errors";
 
 /** The backend's invitation role narrowing (spec §5.8). */
 export type StaffInvitationRole = "TEACHER" | "ADMIN";
@@ -64,6 +64,20 @@ export function buildInvitationLink(
   token: string,
 ): string {
   return `${origin}${basePath}/staff/invite/${token}`;
+}
+
+/**
+ * The §3.2 admin-issued reset link: the PUBLIC consume page that
+ * spends the one-time token (`/reset-password?token=…`; the token is
+ * URL-safe by construction). The same origin+mount-prefix discipline
+ * as the invitation link.
+ */
+export function buildAdminResetLink(
+  origin: string,
+  basePath: string,
+  token: string,
+): string {
+  return `${origin}${basePath}/reset-password?token=${token}`;
 }
 
 export interface StaffInvitationErrorView {
