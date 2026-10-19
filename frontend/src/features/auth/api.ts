@@ -402,6 +402,154 @@ export async function verifyUnifiedStaffCode(
   return { kind: "tokens", tokens: body as LoginTokens };
 }
 
+// --- the UNIFIED challenge family (unified-login spec §3, 2026-10-19;
+// contract frozen with the backend's PR-1) ---------------------------
+//
+// ONE identifier (E.164 phone or email) drives every login audience;
+// the backend routes the code stream by identifier shape AND the
+// remember_device semantics by audience (the 2026-10-15 terminal
+// ruling enforced server-side: the client has no pre-verify audience
+// knowledge, so it sends the flag whenever checked and the STUDENT arm
+// is the only code-verify arm that honors it). The verify answer is a
+// THREE-arm status-discriminated union — authenticated (nested tokens,
+// the register ④ envelope's shape precedent), totp_required (ADMIN
+// first factor passed), unregistered (an unknown phone's register leg).
+// The password login rides the SAME union on /auth/login.
+
+/** The verify outcome every unified-login surface branches on. */
+export type ChallengeOutcome =
+  | { kind: "authenticated"; role: string }
+  | { kind: "totp_required"; pendingToken: string }
+  | { kind: "unregistered"; registerToken: string };
+
+/**
+ * Discriminate a challenge-family 200 body by its `status` member —
+ * exactly the three frozen arms, each with its token member typed as a
+ * string; anything else is a broken contract and throws (no silent
+ * fallback onto a legacy bare-TokenPair body).
+ */
+function classifyChallengeEnvelope(body: unknown): ChallengeOutcome {
+  if (typeof body === "object" && body !== null) {
+    const record = body as Record<string, unknown>;
+    if (record.status === "totp_required" && typeof record.pending_token === "string") {
+      return { kind: "totp_required", pendingToken: record.pending_token };
+    }
+    if (record.status === "unregistered" && typeof record.register_token === "string") {
+      return { kind: "unregistered", registerToken: record.register_token };
+    }
+    if (
+      record.status === "authenticated" &&
+      typeof record.role === "string" &&
+      typeof (record.tokens as { access_token?: unknown } | undefined)?.access_token === "string"
+    ) {
+      return { kind: "authenticated", role: record.role };
+    }
+  }
+  throw new Error("challenge verify: unrecognized response body");
+}
+
+/** The authenticated arm's shape (validated by classifyChallengeEnvelope). */
+interface AuthenticatedEnvelope {
+  role: string;
+  tokens: LoginTokens;
+}
+
+function asAuthenticated(body: unknown): AuthenticatedEnvelope {
+  return body as AuthenticatedEnvelope;
+}
+
+/**
+ * Ask for a login code to the email OR phone in `identifier`. 202 with
+ * an empty body for every identifier (anti-enumeration); a
+ * student-number-shaped identifier is refused at the format layer.
+ */
+export function requestUnifiedChallenge(identifier: string): Promise<void> {
+  return apiRequest<void>(`${BASE}/challenge/request`, {
+    method: "POST",
+    body: { identifier },
+  });
+}
+
+/**
+ * Trade the code for a session — or the ADMIN second leg, or an
+ * unknown phone's register leg. Tokens adopt the shared dance ONLY on
+ * the authenticated arm (the register leg owns its own login).
+ */
+export async function verifyUnifiedChallenge(
+  identifier: string,
+  code: string,
+  rememberDevice: boolean,
+): Promise<ChallengeOutcome> {
+  const body = await apiRequest<unknown>(`${BASE}/challenge/verify`, {
+    method: "POST",
+    body: rememberDevice
+      ? { identifier, code, remember_device: true }
+      : { identifier, code },
+  });
+  const outcome = classifyChallengeEnvelope(body);
+  if (outcome.kind === "authenticated") {
+    adoptFullLogin(asAuthenticated(body).tokens);
+  }
+  return outcome;
+}
+
+/**
+ * Complete the ADMIN second leg. The member is `totp_code` (the spec's
+ * name — NOT the retired mobile-code family's `code`), and this leg is
+ * where the remember checkbox's meaning lives (the only leg it may
+ * ever exempt is the SECOND factor).
+ */
+export async function unifiedChallengeTotp(
+  pendingToken: string,
+  totpCode: string,
+  rememberDevice: boolean,
+): Promise<ChallengeOutcome> {
+  const body = await apiRequest<unknown>(`${BASE}/challenge/totp`, {
+    method: "POST",
+    body: rememberDevice
+      ? { pending_token: pendingToken, totp_code: totpCode, remember_device: true }
+      : { pending_token: pendingToken, totp_code: totpCode },
+  });
+  const outcome = classifyChallengeEnvelope(body);
+  if (outcome.kind === "authenticated") {
+    adoptFullLogin(asAuthenticated(body).tokens);
+  }
+  return outcome;
+}
+
+/**
+ * The password login on /auth/login with the identifier extension:
+ * identifier ∈ {phone, email, student number}; the answer rides the
+ * SAME three-arm union (an ADMIN password answers totp_required — the
+ * second leg completes on challenge/totp, replacing the retired
+ * synchronous email+password+totp_code staff form). Walks the password
+ * family's auth-transition dance (loginStudent's precedent).
+ */
+export async function loginWithPassword(
+  identifier: string,
+  password: string,
+  rememberDevice: boolean,
+): Promise<ChallengeOutcome> {
+  await beginAuthTransition();
+  let body: unknown;
+  try {
+    body = await apiRequest<unknown>(`${BASE}/login`, {
+      method: "POST",
+      body: rememberDevice
+        ? { identifier, password, remember_device: true }
+        : { identifier, password },
+    });
+  } finally {
+    endAuthTransition();
+    broadcastContextReset();
+  }
+  const outcome = classifyChallengeEnvelope(body);
+  if (outcome.kind === "authenticated") {
+    adoptFullLogin(asAuthenticated(body).tokens);
+  }
+  return outcome;
+}
+
 /**
  * Revoke the presented session server-side (204) and forget the
  * memory-only access token. The memory clears in a `finally` even when
