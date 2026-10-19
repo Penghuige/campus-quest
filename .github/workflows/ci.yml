@@ -345,6 +345,13 @@ jobs:
       CQ_E2E: "1"
       CQ_VISUAL: "1"
       CQ_E2E_FIXED_LABELS: "1"
+      # The login family's per-username bucket (10/5min) holds EIGHT
+      # admin logins per job — exactly the four pre-Wave-2a admin faces
+      # times the visual+a11y stages. Wave 2a's dashboard+detail pushed
+      # the job to TWELVE and the a11y tail (axe: admin-dashboard, then
+      # admin-user-detail) burned the bucket, timing out on the login
+      # page. Same e2e-battery relief flag the local battery runs with.
+      CQ_E2E_LOGIN_RATELIMIT: "1"
 
     steps:
       - uses: actions/checkout@v7
