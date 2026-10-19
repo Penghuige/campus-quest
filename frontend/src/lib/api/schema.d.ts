@@ -181,8 +181,114 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
+        /**
+         * Login
+         * @description Student or staff password login — BOTH forms (2026-10-19 §3.2).
+         *
+         *     Legacy: {username, password} answers the flat TokenPairResponse
+         *     (unchanged bytes; the retirement PR removes it). Unified:
+         *     {identifier, password, remember_device?} answers the discriminated
+         *     union — a phone/student-number reaches the student flow (phone
+         *     first), an email reaches the staff flow with the remembered-cookie
+         *     honoring preserved; an ADMIN without one answers totp_required and
+         *     the totp leg completes at /auth/challenge/totp.
+         */
         post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/challenge/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unified Challenge Request
+         * @description One code request, routed by identifier shape (2026-10-19 §3.1):
+         *     email → the staff email-code service; phone by the users row → the
+         *     student mobile-code service (unregistered phones included — the
+         *     entry flow) or the staff one. Always the arm's own 202; a student
+         *     number is a format-layer 422 with no account query.
+         */
+        post: operations["unified_challenge_request_api_v1_auth_challenge_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/challenge/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unified Challenge Verify
+         * @description The code leg (or, with BOTH fields empty, the remembered-cookie
+         *     single-factor leg): the discriminated union answers authenticated /
+         *     totp_required / unregistered — ``status`` is the only judgment
+         *     member. Wrong or expired or exhausted codes answer the single
+         *     CHALLENGE_CODE_INVALID.
+         */
+        post: operations["unified_challenge_verify_api_v1_auth_challenge_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/challenge/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unified Challenge Totp
+         * @description The ADMIN second factor — ONE endpoint over BOTH pending domains
+         *     (email-login and staff-mobile; a wrong-domain probe burns nothing).
+         *     Transport-peer rate-limited (interfaces.md: the 6-digit factor under
+         *     online brute force is the login limiter's job; the per-credential
+         *     caps stay underneath).
+         */
+        post: operations["unified_challenge_totp_api_v1_auth_challenge_totp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/challenge/remembered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unified Remembered Probe
+         * @description Is a remembered device alive for the login banner? The §3.1
+         *     remembered read, the mobile-code probe's contract: 200
+         *     {phone_masked} only for the banner's audience (a cookie-bound
+         *     STUDENT), the same empty 204 for every other shape.
+         */
+        get: operations["unified_remembered_probe_api_v1_auth_challenge_remembered_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3844,13 +3950,25 @@ export interface components {
         };
         /**
          * LoginRequest
-         * @description Student login: student number + password (spec §5.6).
+         * @description The /auth/login body — BOTH forms (2026-10-19 spec §3.2).
+         *
+         *     Legacy: {username, password}. Unified: {identifier, password,
+         *     remember_device?} with the identifier a phone / email / student
+         *     number. Exactly one of username/identifier must be present; the
+         *     retirement PR removes the legacy member.
          */
         LoginRequest: {
             /** Username */
-            username: string;
+            username?: string | null;
+            /** Identifier */
+            identifier?: string | null;
             /** Password */
             password: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
         };
         /**
          * LogoutRequest
@@ -5800,6 +5918,50 @@ export interface components {
             otpauth_uri: string;
         };
         /**
+         * UnifiedChallengeRequest
+         * @description Ask for one login code by identifier (spec §3.1) — always 202
+         *     from the routed service; a student number is a format-layer 422.
+         */
+        UnifiedChallengeRequest: {
+            /** Identifier */
+            identifier: string;
+        };
+        /**
+         * UnifiedChallengeTotpRequest
+         * @description Finish the ADMIN second factor (spec §3.1). The field is
+         *     ``totp_code`` — the spec's own name; the legacy family's ``code``
+         *     spelling retires with PR-3.
+         */
+        UnifiedChallengeTotpRequest: {
+            /** Pending Token */
+            pending_token: string;
+            /** Totp Code */
+            totp_code: string;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
+         * UnifiedChallengeVerifyRequest
+         * @description Trade the code for the discriminated-union answer (spec §3.1).
+         *
+         *     ``identifier``+``code`` is the code leg; BOTH omitted is the
+         *     remembered-cookie single-factor leg (the empty-body verify).
+         */
+        UnifiedChallengeVerifyRequest: {
+            /** Identifier */
+            identifier?: string | null;
+            /** Code */
+            code?: string | null;
+            /**
+             * Remember Device
+             * @default false
+             */
+            remember_device: boolean;
+        };
+        /**
          * UploadCompleteRequest
          * @description Notify the backend that the presigned PUT landed (spec §10 step 5).
          *
@@ -6286,7 +6448,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPairResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -6296,6 +6458,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unified_challenge_request_api_v1_auth_challenge_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnifiedChallengeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unified_challenge_verify_api_v1_auth_challenge_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnifiedChallengeVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unified_challenge_totp_api_v1_auth_challenge_totp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnifiedChallengeTotpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unified_remembered_probe_api_v1_auth_challenge_remembered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

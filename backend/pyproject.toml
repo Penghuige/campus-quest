@@ -160,7 +160,7 @@ type = "layers"
 containers = ["app.modules.identity"]
 layers = [
     "admin_router : auth_router : profile_router : staff_router : users_router",
-    "account_admin_service : avatar_service : mobile_login_service : profile_service : service : session_service : staff_service",
+    "account_admin_service : avatar_service : mobile_login_service : profile_service : service : session_service : staff_service : unified_login_service",
 ]
 
 [[tool.importlinter.contracts]]

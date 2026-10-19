@@ -358,7 +358,10 @@ async def test_business_and_validation_errors_use_the_envelope(
     assert missing_fields.status_code == 422
     validation = _envelope(missing_fields)
     assert validation["code"] == "VALIDATION_ERROR"
-    assert set(validation["details"]) == {"username", "password"}
+    # PR-1's dual form (2026-10-19 spec §3.2): username is now optional
+    # beside identifier (exactly-one-of enforced at the model level), so
+    # an empty body's FIELD-level miss is the password alone.
+    assert set(validation["details"]) == {"password"}
 
 
 @pytest.mark.integration

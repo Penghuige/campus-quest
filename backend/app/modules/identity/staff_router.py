@@ -103,6 +103,9 @@ async def staff_login(
         device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
         remember_device=body.remember_device,
     )
+    # Strict policy (this legacy route) always resolves tokens; the
+    # None shape belongs to the unified form's caller only.
+    assert tokens is not None
     pair = _token_pair_response(response, tokens, settings)
     if device_cookie is not None:
         response.set_cookie(
