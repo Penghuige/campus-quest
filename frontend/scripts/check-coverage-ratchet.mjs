@@ -29,7 +29,16 @@ function runCoverage() {
       "--experimental-test-coverage",
       "src/__tests__/*.test.ts",
     ],
-    { cwd: join(here, ".."), encoding: "utf8", shell: true },
+    {
+      cwd: join(here, ".."),
+      encoding: "utf8",
+      shell: true,
+      // The full-suite TAP output with coverage tables runs past 1MB —
+      // Node's default maxBuffer kills the child mid-stream (first hit
+      // under make pre-push, where the whole gate chain pipes output;
+      // a direct npm run inherits stdout and never buffers).
+      maxBuffer: 16 * 1024 * 1024,
+    },
   );
   // The summary row (space-padded columns):
   // # all files  |  95.22 |  91.22 |  90.19 |
