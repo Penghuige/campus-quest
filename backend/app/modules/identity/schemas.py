@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
@@ -72,10 +72,81 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """Student login: student number + password (spec §5.6)."""
+    """The /auth/login body — BOTH forms (2026-10-19 spec §3.2).
 
-    username: str
+    Legacy: {username, password}. Unified: {identifier, password,
+    remember_device?} with the identifier a phone / email / student
+    number. Exactly one of username/identifier must be present; the
+    retirement PR removes the legacy member."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str | None = None
+    identifier: str | None = None
     password: str
+    remember_device: bool = False
+
+    @model_validator(mode="after")
+    def _exactly_one_identity(self) -> LoginRequest:
+        if (self.username is None) == (self.identifier is None):
+            raise ValueError("provide exactly one of username or identifier")
+        return self
+
+
+class UnifiedChallengeRequest(BaseModel):
+    """Ask for one login code by identifier (spec §3.1) — always 202
+    from the routed service; a student number is a format-layer 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    identifier: str
+
+
+class UnifiedChallengeVerifyRequest(BaseModel):
+    """Trade the code for the discriminated-union answer (spec §3.1).
+
+    ``identifier``+``code`` is the code leg; BOTH omitted is the
+    remembered-cookie single-factor leg (the empty-body verify)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    identifier: str | None = None
+    code: str | None = None
+    remember_device: bool = False
+
+    @model_validator(mode="after")
+    def _pair_or_neither(self) -> UnifiedChallengeVerifyRequest:
+        has_id = self.identifier is not None and self.identifier.strip() != ""
+        has_code = self.code is not None and self.code.strip() != ""
+        if has_id != has_code:
+            raise ValueError("identifier and code come as a pair, or neither")
+        return self
+
+
+class UnifiedChallengeTotpRequest(BaseModel):
+    """Finish the ADMIN second factor (spec §3.1). The field is
+    ``totp_code`` — the spec's own name; the legacy family's ``code``
+    spelling retires with PR-3."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pending_token: str
+    totp_code: str
+    remember_device: bool = False
+
+
+class UnifiedAuthOutcome(BaseModel):
+    """The three-state verify/login answer: ``status`` is the only
+    judgment member (the frontend contract); the payloads ride their
+    named optional fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["authenticated", "totp_required", "unregistered"]
+    role: Role | None = None
+    tokens: TokenPairResponse | None = None
+    pending_token: str | None = None
+    register_token: str | None = None
 
 
 class StaffLoginRequest(BaseModel):

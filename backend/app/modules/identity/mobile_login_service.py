@@ -703,6 +703,20 @@ class MobileLoginService:
             audit_context=audit_context,
         )
 
+    async def mint_staff_pending(self, user_id: UUID) -> str:
+        """PR-1's unified password leg: mint the SAME opaque, single-use,
+        30-minute staff pending credential the staff mobile-code totp
+        leg consumes — for an ADMIN whose password just proved but whose
+        second factor is owed. No challenge is involved (the first
+        factor was the password), so there is nothing to cool down."""
+        pending_token = secrets.token_urlsafe(32)
+        await self._redis.set(
+            _staff_pending_key(_hash_text(pending_token)),
+            str(user_id),
+            ex=STAFF_PENDING_TTL_SECONDS,
+        )
+        return pending_token
+
     async def complete_staff_totp(
         self,
         db: AsyncSession,

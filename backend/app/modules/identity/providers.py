@@ -53,6 +53,7 @@ from app.modules.identity.profile_service import ProfileService
 from app.modules.identity.service import IdentityService
 from app.modules.identity.session_service import SessionService
 from app.modules.identity.staff_service import StaffService
+from app.modules.identity.unified_login_service import UnifiedLoginService
 
 
 @lru_cache
@@ -287,6 +288,24 @@ OtpServiceDep = Annotated[OtpChallengeService, Depends(get_otp_service)]
 SessionsDep = Annotated[SessionService, Depends(get_session_service)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 StorageDep = Annotated[ObjectStorage, Depends(get_object_storage)]
+
+
+def get_unified_login_service(
+    clock: Annotated[Clock, Depends(get_business_clock)],
+    email_login: Annotated[EmailLoginService, Depends(get_email_login_service)],
+    mobile_login: Annotated[MobileLoginService, Depends(get_mobile_login_service)],
+    staff: Annotated[StaffService, Depends(get_staff_service)],
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+) -> UnifiedLoginService:
+    """The spec §3 facade (PR-1): composition only — every arm rides
+    the already-wired challenge services, one shared clock."""
+    return UnifiedLoginService(
+        clock=clock,
+        email_login=email_login,
+        mobile_login=mobile_login,
+        staff=staff,
+        sessions=sessions,
+    )
 
 
 def get_mobile_login_service(

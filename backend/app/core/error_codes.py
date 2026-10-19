@@ -87,6 +87,10 @@ class ErrorCode(StrEnum):
     # surface envelope for PENDING_APPROVAL accounts.
     MOBILE_CODE_INVALID = "MOBILE_CODE_INVALID"
     APPROVAL_PENDING = "APPROVAL_PENDING"
+    # The unified login challenge family (2026-10-19 spec §3.4): one
+    # code for wrong / expired / attempts-exhausted codes on the
+    # unified arms — the branch reason stays in server logs.
+    CHALLENGE_CODE_INVALID = "CHALLENGE_CODE_INVALID"
 
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.

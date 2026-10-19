@@ -277,6 +277,7 @@
     "/api/v1/auth/login": {
       "post": {
         "summary": "Login",
+        "description": "Student or staff password login — BOTH forms (2026-10-19 §3.2).\n\nLegacy: {username, password} answers the flat TokenPairResponse\n(unchanged bytes; the retirement PR removes it). Unified:\n{identifier, password, remember_device?} answers the discriminated\nunion — a phone/student-number reaches the student flow (phone\nfirst), an email reaches the staff flow with the remembered-cookie\nhonoring preserved; an ADMIN without one answers totp_required and\nthe totp leg completes at /auth/challenge/totp.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -293,9 +294,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -306,6 +305,134 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/challenge/request": {
+      "post": {
+        "summary": "Unified Challenge Request",
+        "description": "One code request, routed by identifier shape (2026-10-19 §3.1):\nemail → the staff email-code service; phone by the users row → the\nstudent mobile-code service (unregistered phones included — the\nentry flow) or the staff one. Always the arm's own 202; a student\nnumber is a format-layer 422 with no account query.",
+        "operationId": "unified_challenge_request_api_v1_auth_challenge_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnifiedChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/challenge/verify": {
+      "post": {
+        "summary": "Unified Challenge Verify",
+        "description": "The code leg (or, with BOTH fields empty, the remembered-cookie\nsingle-factor leg): the discriminated union answers authenticated /\ntotp_required / unregistered — ``status`` is the only judgment\nmember. Wrong or expired or exhausted codes answer the single\nCHALLENGE_CODE_INVALID.",
+        "operationId": "unified_challenge_verify_api_v1_auth_challenge_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnifiedChallengeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/challenge/totp": {
+      "post": {
+        "summary": "Unified Challenge Totp",
+        "description": "The ADMIN second factor — ONE endpoint over BOTH pending domains\n(email-login and staff-mobile; a wrong-domain probe burns nothing).\nTransport-peer rate-limited (interfaces.md: the 6-digit factor under\nonline brute force is the login limiter's job; the per-credential\ncaps stay underneath).",
+        "operationId": "unified_challenge_totp_api_v1_auth_challenge_totp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnifiedChallengeTotpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/challenge/remembered": {
+      "get": {
+        "summary": "Unified Remembered Probe",
+        "description": "Is a remembered device alive for the login banner? The §3.1\nremembered read, the mobile-code probe's contract: 200\n{phone_masked} only for the banner's audience (a cookie-bound\nSTUDENT), the same empty 204 for every other shape.",
+        "operationId": "unified_remembered_probe_api_v1_auth_challenge_remembered_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -8660,21 +8787,44 @@
       "LoginRequest": {
         "properties": {
           "username": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Username"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier"
           },
           "password": {
             "type": "string",
             "title": "Password"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "username",
           "password"
         ],
         "title": "LoginRequest",
-        "description": "Student login: student number + password (spec §5.6)."
+        "description": "The /auth/login body — BOTH forms (2026-10-19 spec §3.2).\n\nLegacy: {username, password}. Unified: {identifier, password,\nremember_device?} with the identifier a phone / email / student\nnumber. Exactly one of username/identifier must be present; the\nretirement PR removes the legacy member."
       },
       "LogoutRequest": {
         "properties": {
@@ -12758,6 +12908,81 @@
         ],
         "title": "TotpSetupResponse",
         "description": "A freshly generated TOTP credential, displayed exactly once (§5.8)."
+      },
+      "UnifiedChallengeRequest": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identifier"
+        ],
+        "title": "UnifiedChallengeRequest",
+        "description": "Ask for one login code by identifier (spec §3.1) — always 202\nfrom the routed service; a student number is a format-layer 422."
+      },
+      "UnifiedChallengeTotpRequest": {
+        "properties": {
+          "pending_token": {
+            "type": "string",
+            "title": "Pending Token"
+          },
+          "totp_code": {
+            "type": "string",
+            "title": "Totp Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pending_token",
+          "totp_code"
+        ],
+        "title": "UnifiedChallengeTotpRequest",
+        "description": "Finish the ADMIN second factor (spec §3.1). The field is\n``totp_code`` — the spec's own name; the legacy family's ``code``\nspelling retires with PR-3."
+      },
+      "UnifiedChallengeVerifyRequest": {
+        "properties": {
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "remember_device": {
+            "type": "boolean",
+            "title": "Remember Device",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UnifiedChallengeVerifyRequest",
+        "description": "Trade the code for the discriminated-union answer (spec §3.1).\n\n``identifier``+``code`` is the code leg; BOTH omitted is the\nremembered-cookie single-factor leg (the empty-body verify)."
       },
       "UploadCompleteRequest": {
         "properties": {
