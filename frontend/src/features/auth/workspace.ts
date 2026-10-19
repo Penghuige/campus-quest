@@ -18,12 +18,13 @@ export const STUDENT_LANDING_PATH = "/";
 export const TEACHER_LANDING_PATH = "/teacher/reviews";
 
 /**
- * Where a successful ADMIN login lands: the admin workspace. Owner
- * report (2026-10-15): an admin taken to the teacher cockpit on every
- * login/refresher reads as being routed into someone else's workspace
- * — each staff role lands on its OWN cockpit.
+ * Where a successful ADMIN login lands: the Wave 2a overview (spec
+ * §4.1 — the dashboard IS the admin home; users stays one nav entry
+ * away). Owner report (2026-10-15): each staff role lands on its OWN
+ * cockpit — an admin taken to the teacher queue reads as being routed
+ * into someone else's workspace.
  */
-export const ADMIN_LANDING_PATH = "/admin/users";
+export const ADMIN_LANDING_PATH = "/admin";
 
 /** Landing path by the session's role (login-success redirect target). */
 export function landingPathForRole(role: Role): string {

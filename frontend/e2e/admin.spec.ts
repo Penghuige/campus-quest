@@ -158,7 +158,7 @@ test.describe("admin workspace operations (brief: users / redemptions / settings
   test("an admin login lands on the admin workspace, not the teacher cockpit", async ({
     page,
   }) => {
-    await expect(page).toHaveURL(/\/admin\/users/);
+    await expect(page).toHaveURL(/\/admin$/);
   });
 
   test("user suspend blocks on a blank reason, then applies with one", async ({ page }) => {

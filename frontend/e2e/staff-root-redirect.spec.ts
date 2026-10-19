@@ -59,7 +59,7 @@ async function holdFirstMe(page: Page): Promise<MeGate> {
 test.describe("staff on student routes: redirect, not a card (audit item A)", () => {
   for (const [role, creds, secret, landing] of [
     ["teacher", TEACHER!, TEACHER_TOTP_SECRET!, "/teacher/reviews"],
-    ["admin", ADMIN!, ADMIN_TOTP_SECRET!, "/admin/users"],
+    ["admin", ADMIN!, ADMIN_TOTP_SECRET!, "/admin"],
   ] as const) {
     test(`${role}: root refresh = placeholder frame, then AUTO-redirect to ${landing}`, async ({
       page,
@@ -128,7 +128,7 @@ test.describe("staff on student routes: redirect, not a card (audit item A)", ()
 
   test.describe("staff workspace loading frames are shape-consistent (owner item 3)", () => {
     for (const [role, creds, secret, path] of [
-      ["admin", ADMIN!, ADMIN_TOTP_SECRET!, "/admin/users"],
+      ["admin", ADMIN!, ADMIN_TOTP_SECRET!, "/admin"],
       ["teacher", TEACHER!, TEACHER_TOTP_SECRET!, "/teacher/reviews"],
     ] as const) {
       test(`${role}: refreshing ${path} paints the workspace skeleton, never the white bar`, async ({
