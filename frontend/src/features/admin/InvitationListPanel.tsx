@@ -53,7 +53,7 @@ interface ResentLink {
 
 type Phase = "loading" | "ready" | "error";
 
-export function InvitationListPanel() {
+export function InvitationListPanel({ refreshKey = 0 }: { refreshKey?: number }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [items, setItems] = useState<AdminInvitationDto[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -65,7 +65,7 @@ export function InvitationListPanel() {
   const load = useCallback(() => {
     setPhase("loading");
     setError(null);
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     if (phase !== "loading") {

@@ -133,7 +133,7 @@ test("the reset token's full loop: issue → consume page sets the password → 
   await expect(spenderPage).toHaveURL(new RegExp(`${BASE_URL}/login\\?reset=1`), {
     timeout: 10_000,
   });
-  await spenderPage.getByText("密码已重置，请使用新密码登录").toBeVisible();
+  await expect(spenderPage.getByText("密码已重置，请使用新密码登录")).toBeVisible();
   await spender.close();
 
   // The fresh login rides the NEW password (the teacher's password

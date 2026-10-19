@@ -38,11 +38,11 @@ function harness(role: string) {
   };
 }
 
-describe("landAfterStaffLogin (the owner report's landing rule)", () => {
+describe("landAfterStaffLogin (the owner report's landing rule; the ADMIN cockpit became the Wave 2a overview, spec §4.1)", () => {
   test("an ADMIN session lands on the admin workspace", async () => {
     const h = harness("ADMIN");
     await landAfterStaffLogin(h.deps);
-    assert.ok(h.calls.includes("replace:/admin/users"));
+    assert.ok(h.calls.includes("replace:/admin"));
     assert.ok(!h.calls.includes("replace:/teacher/reviews"));
   });
 
@@ -65,7 +65,7 @@ describe("landAfterStaffLogin (the owner report's landing rule)", () => {
       "login",
       "refreshSession",
       "readMe",
-      "replace:/admin/users",
+      "replace:/admin",
       "routerRefresh",
     ]);
   });
