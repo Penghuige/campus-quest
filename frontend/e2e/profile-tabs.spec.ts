@@ -101,14 +101,14 @@ test.describe("profile tabs (defect #4)", () => {
         buffer: Buffer.from(PNG_BYTES_BASE64, "base64"),
       });
     await pick();
-    await expect(section.getByText("头像已更新。")).toBeVisible({ timeout: 20_000 });
+    await expect(section.getByText("头像已更新")).toBeVisible({ timeout: 20_000 });
     // The bearer-fetch display path replaces the fallback figure.
     await expect(section.locator(".avatar-figure img")).toBeVisible({ timeout: 15_000 });
 
     // Remove: the inline two-step confirm, then the D5 fallback again.
     await section.getByRole("button", { name: "移除头像" }).click();
     await section.getByRole("button", { name: "确认移除？" }).click();
-    await expect(section.getByText("已恢复默认头像。")).toBeVisible();
+    await expect(section.getByText("已恢复默认头像")).toBeVisible();
     await expect(section.locator(".avatar-figure-initial")).toBeVisible();
 
     // The D2 rate limit (1 change / 10 min): a second upload inside

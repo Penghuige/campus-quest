@@ -153,7 +153,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     // Defect #22: the schema rides collapsed in the 高级 section and
     // arrives PRE-FILLED with the per-type default template (CSV is
     // the default type selection).
-    await dialog.getByText("高级：提交校验 schema").click();
+    await dialog.getByText("高级：提交校验规则").click();
     const schemaField = dialog.locator("#task-schema");
     await expect(schemaField).toHaveValue(/"platform"/);
     // §10.1 document family: a DOCX-only selection carries NO schema —
@@ -211,7 +211,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     const editDialog = page.getByRole("dialog", { name: "编辑任务" });
     await expect(editDialog).toBeVisible();
     // The 高级 section is collapsed here too (defect #22).
-    await editDialog.getByText("高级：提交校验 schema").click();
+    await editDialog.getByText("高级：提交校验规则").click();
     await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
     await editDialog.locator("#task-schema-version").fill("1");
     await editDialog.getByRole("button", { name: "保存修改" }).click();
@@ -317,7 +317,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
 
     // 通过 shows the explicit grant confirm.
     await page.getByRole("button", { name: "通过并发放奖励" }).click();
-    await expect(page.getByText(/确认后该领取将标记为已完成/)).toBeVisible();
+    await expect(page.getByText(/该领取将标记完成/)).toBeVisible();
     await page.getByRole("button", { name: "取消" }).click();
   });
 });
