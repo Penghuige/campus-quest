@@ -133,6 +133,10 @@ for (const shot of SHOTS) {
       });
     }
     await page.waitForTimeout(800);
+    // Faces with async panels that must settle (see Shot.ready).
+    if (shot.ready !== undefined) {
+      await shot.ready(page);
+    }
     // Engagement contract: every declared mask must match at least one
     // element on THIS shot, at capture state. A zero-count mask is a
     // silent no-op (nothing painted, nothing protected) — fail hard.

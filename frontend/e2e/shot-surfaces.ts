@@ -32,10 +32,23 @@ export interface Shot {
    * skips are legal through per-title noskip-exemptions entries (the
    * v2 gate watches every spec by default). */
   envPath?: string;
+  /** An async panel whose data must SETTLE before the shutter (dev's
+   * cold API compile outruns the harness's fixed 800ms beat — the
+   * invitation list once shot as a perpetual skeleton). */
+  ready?: (page: Page) => Promise<void>;
 }
 
 export const SHOTS: Shot[] = [
   { name: "auth-login", path: "/login", auth: "anon", masks: [] },
+  {
+    // The §3.2 admin-issued token's PUBLIC consume page (Wave 2a
+    // terminal round): the pristine empty-token form is the face (the
+    // prefilled variant would carry a volatile one-time secret).
+    name: "auth-reset-password",
+    path: "/reset-password",
+    auth: "anon",
+    masks: [],
+  },
   {
     // The staff login page (V1.1 §2.1): the email-code channel is the
     // DEFAULT tab — a new stable screen whose pristine form state (no
@@ -187,6 +200,17 @@ export const SHOTS: Shot[] = [
     path: "/admin/invitations",
     auth: "admin",
     masks: [],
+    // The lifecycle list's first fetch rides dev's cold API compile —
+    // wait for the SETTLED state (a row, or the honest empty copy: the
+    // seeded world carries NO invitation rows; the four states stay
+    // e2e-pinned, the pixel face pins the deterministic empty panel).
+    ready: async (page) => {
+      await page
+        .getByText("还没有邀请记录。")
+        .or(page.locator("table[aria-label='邀请列表'] tbody tr").first())
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 });
+    },
   },
   {
     // The registry listing rides the seeded platforms (deterministic

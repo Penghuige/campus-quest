@@ -32,7 +32,7 @@ test.skip(
 
 test("the dashboard landing renders the overview census", async ({ page }) => {
   await staffLogin(page, ADMIN!, ADMIN_TOTP_SECRET!);
-  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`));
   await expect(page.getByRole("heading", { name: "管理台概览" })).toBeVisible();
   await expect(page.getByText("今日新增用户")).toBeVisible();
   await expect(page.getByText("待审提交")).toBeVisible();
@@ -136,14 +136,17 @@ test("the reset token's full loop: issue → consume page sets the password → 
   await expect(spenderPage.getByText("密码已重置，请使用新密码登录")).toBeVisible();
   await spender.close();
 
-  // The fresh login rides the NEW password (the teacher's password
-  // channel needs no second factor).
+  // The fresh session rides the DEFAULT email-code channel (the
+  // invited teacher carries NO totp credential, and the password form
+  // client-requires a second factor) — the code proves the account is
+  // alive under the NEW credential set either way.
   await page.getByRole("button", { name: "退出登录" }).click();
   await page.goto(`${BASE_URL}/staff/login`);
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("邮箱").fill(email);
-  await page.getByLabel("密码").fill("e2e-new-horse-456");
-  await page.getByRole("textbox", { name: /动态验证码/ }).fill("");
+  await page.getByLabel("邮箱", { exact: true }).fill(email);
+  await page.getByRole("button", { name: "重新发送", exact: true }).click();
+  await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
+  const { recoverEmailCode } = await import("./fixtures");
+  await page.getByLabel("邮箱验证码", { exact: false }).fill(recoverEmailCode(email));
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
 });
@@ -159,20 +162,37 @@ test("the invitation panel: create → revoke → resend a one-time link", async
   await expect(page.getByTestId("invitation-link")).toBeVisible();
   await page.getByRole("button", { name: "再发一个邀请" }).click();
 
-  // The lifecycle list carries it as 待接受.
-  const row = page.locator("tr", { hasText: email });
-  await expect(row.getByText("待接受")).toBeVisible({ timeout: 10_000 });
+  // The lifecycle list carries it as 待接受. The list MASKS emails
+  // (G11: first char + domain), so the row discriminates on the
+  // state AND the domain (battery earlier tests leave their own
+  // PENDING rows on other domains; accepted rows carry no verbs).
+  const row = page
+    .locator("tr")
+    .filter({ hasText: "school.edu" })
+    .filter({ hasText: "待接受" });
+  await expect(row).toBeVisible({ timeout: 10_000 });
 
   // 撤销 (dialog confirm) flips the state; the token dies server-side.
+  // The row re-locates BY its state each phase — the state IS the
+  // discriminator (masked emails can collide, accepted rows carry no
+  // verbs), and a stale pre-revoke reference stops matching the
+  // moment the cell flips.
   await row.getByRole("button", { name: "撤销" }).click();
   await page.getByRole("button", { name: "确认撤销" }).click();
   await expect(page.getByText(/已撤销 .* 的邀请/)).toBeVisible();
-  await expect(row.getByText("已撤销")).toBeVisible();
+  const revokedRow = page.locator("tr").filter({ hasText: "已撤销" });
+  await expect(revokedRow).toBeVisible();
 
-  // 重发 mints a fresh one-time link (the old token is dead).
-  await row.getByRole("button", { name: "重发" }).click();
+  // 重发 mints a fresh one-time link (the old token is dead; the row
+  // reverts to PENDING — the window reopened).
+  await revokedRow.getByRole("button", { name: "重发" }).click();
   await expect(page.getByTestId("resend-link")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(`重发给 ${email}`)).toBeVisible();
+  // The note renders the row's MASKED email (the plain address never
+  // reaches the admin surface — G11/AP7).
+  await expect(page.getByText(/重发给 e\*\*\*@school\.edu/)).toBeVisible();
+  await expect(
+    page.locator("tr").filter({ hasText: "school.edu" }).filter({ hasText: "待接受" }),
+  ).toBeVisible();
 });
 
 test("batch suspend/reactivate flips the selected rows", async ({ page }) => {
