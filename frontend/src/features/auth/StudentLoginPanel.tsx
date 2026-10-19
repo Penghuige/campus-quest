@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session";
 
 import { AuthField } from "./AuthField";
+import { ChannelToggle } from "./ChannelToggle";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import { LoginForm } from "./LoginForm";
@@ -53,18 +54,14 @@ export function StudentLoginPanel() {
   return (
     <>
       <FastLoginHint />
-      <div className="login-channel-toggle" role="group" aria-label="登录方式">
-        {(["mobile", "password"] as const).map((option) => (
-          <Button
-            key={option}
-            variant={channel === option ? "secondary" : "ghost"}
-            aria-pressed={channel === option}
-            onClick={() => setChannel(option)}
-          >
-            {CHANNEL_LABELS[option]}
-          </Button>
-        ))}
-      </div>
+      <ChannelToggle
+        options={[
+          { key: "mobile", label: CHANNEL_LABELS.mobile },
+          { key: "password", label: CHANNEL_LABELS.password },
+        ]}
+        active={channel}
+        onSelect={(key) => setChannel(key as Channel)}
+      />
       {channel === "mobile" ? (
         <MobileLoginForm onSwitchToPassword={() => setChannel("password")} />
       ) : (

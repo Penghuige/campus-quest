@@ -320,63 +320,6 @@ export type EmailCodeVerifyResult =
   | { kind: "tokens"; tokens: LoginTokens }
   | { kind: "totp_required"; pendingToken: string };
 
-/**
- * Ask for a 6-digit login email. 202 with an empty body regardless of
- * whether the address exists / is staff / is active (anti-enumeration);
- * only the 60s-per-email resend cooldown answers 429.
- */
-export function requestEmailLoginCode(email: string): Promise<void> {
-  return apiRequest<void>(`${BASE}/staff/email-code/request`, {
-    method: "POST",
-    body: { email },
-  });
-}
-
-/**
- * Trade the emailed code for a session. A tokens body completes the
- * login (memory-manager adoption + cache invalidation, loginStaff's
- * dance); the ADMIN totp_required body adopts NOTHING — the pending
- * token stays in the caller's React state for the second leg.
- */
-export async function verifyEmailLoginCode(
-  email: string,
-  code: string,
-): Promise<EmailCodeVerifyResult> {
-  const body = await apiRequest<unknown>(`${BASE}/staff/email-code/verify`, {
-    method: "POST",
-    body: { email, code },
-  });
-  const outcome = classifyVerifyResponse(body);
-  if (outcome.kind === "totp_required") {
-    return outcome;
-  }
-  const tokens = body as LoginTokens;
-  adoptFullLogin(tokens);
-  return { kind: "tokens", tokens };
-}
-
-/**
- * Complete the ADMIN second leg: the pending token rides one Bearer
- * header (never the shared manager), a success body is a full login.
- */
-export async function emailLoginTotp(
-  pendingToken: string,
-  code: string,
-  rememberDevice: boolean,
-): Promise<LoginTokens> {
-  // The T5 frozen contract carries the pending token IN THE BODY
-  // ({pending_token, code, remember_device?}) — unlike the invitation
-  // flow's TOTP-setup endpoints, which ride it as a Bearer header.
-  const tokens = await apiRequest<LoginTokens>(`${BASE}/staff/email-code/totp`, {
-    method: "POST",
-    body: rememberDevice
-      ? { pending_token: pendingToken, code, remember_device: true }
-      : { pending_token: pendingToken, code },
-  });
-  adoptFullLogin(tokens);
-  return tokens;
-}
-
 /** The shared explicit-login adoption (loginStaff's dance verbatim). */
 /** The shared explicit-login adoption (exported for the auth-II
  * mobile channel — the same dance every login walks). */
@@ -398,38 +341,6 @@ export function adoptFullLogin(tokens: LoginTokens): void {
 // remembered device must never exempt a sole factor).
 
 /**
- * Ask for a 6-digit staff login SMS. 202 with an empty body for every
- * phone (anti-enumeration); only the 60s cooldown / limiter breach
- * answers 429.
- */
-export function requestStaffMobileCode(phone: string): Promise<void> {
-  return apiRequest<void>(`${BASE}/staff/mobile-code/request`, {
-    method: "POST",
-    body: { phone },
-  });
-}
-
-/**
- * Trade the staff SMS code for a session — the email-code verify's
- * exact outcome union (TEACHER tokens / ADMIN totp_required pending).
- */
-export async function verifyStaffMobileCode(
-  phone: string,
-  code: string,
-): Promise<EmailCodeVerifyResult> {
-  const body = await apiRequest<unknown>(`${BASE}/staff/mobile-code/verify`, {
-    method: "POST",
-    body: { phone, code },
-  });
-  const outcome = classifyVerifyResponse(body);
-  if (outcome.kind === "totp_required") {
-    return outcome;
-  }
-  adoptFullLogin(body as LoginTokens);
-  return { kind: "tokens", tokens: body as LoginTokens };
-}
-
-/**
  * Complete the ADMIN mobile-code login's TOTP leg — the pending token
  * rides the BODY (the family's frozen shape), remember_device
  * presence-based (the ONLY leg the checkbox lives on).
@@ -447,6 +358,48 @@ export async function staffMobileCodeTotp(
   });
   adoptFullLogin(tokens);
   return tokens;
+}
+
+// --- the UNIFIED staff code channel (two-channel convergence,
+// 2026-10-20; frozen contract) ---------------------------------------------
+//
+// ONE identifier field (email or phone) rides both legs; the backend
+// routes the code stream by identifier shape. The TERMINAL
+// remember-device ruling (2026-10-15, option a) holds verbatim: the
+// verify leg a TEACHER completes NEVER carries remember_device — the
+// checkbox's meaning lives on the ADMIN totp leg (which completes on
+// the existing /staff/mobile-code/totp endpoint above).
+
+/**
+ * Ask for a staff login code to the email OR phone in `identifier`.
+ * 202 with an empty body for every identifier (anti-enumeration).
+ */
+export function requestUnifiedStaffCode(identifier: string): Promise<void> {
+  return apiRequest<void>(`${BASE}/staff/code/request`, {
+    method: "POST",
+    body: { identifier },
+  });
+}
+
+/**
+ * Trade the code for a session — the family's exact outcome union
+ * (TEACHER tokens / ADMIN totp_required pending; the pending leg
+ * completes via staffMobileCodeTotp).
+ */
+export async function verifyUnifiedStaffCode(
+  identifier: string,
+  code: string,
+): Promise<EmailCodeVerifyResult> {
+  const body = await apiRequest<unknown>(`${BASE}/staff/code/verify`, {
+    method: "POST",
+    body: { identifier, code },
+  });
+  const outcome = classifyVerifyResponse(body);
+  if (outcome.kind === "totp_required") {
+    return outcome;
+  }
+  adoptFullLogin(body as LoginTokens);
+  return { kind: "tokens", tokens: body as LoginTokens };
 }
 
 /**
