@@ -87,6 +87,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Ratchet direction gate (2026-10-19): coverage floors are
+      # one-way — a lowered or removed floor fails the PR unless its
+      # body carries the [floor-adjust] marker (a deliberate,
+      # reviewer-visible lowering). Stdlib-only; runs before uv sync.
+      - name: Coverage floor direction gate
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CQ_ALLOW_FLOOR_DECREASE: ${{ contains(github.event.pull_request.body || '', '[floor-adjust]') && '1' || '0' }}
+        run: |
+          git fetch --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          python3 scripts/check_ratchet_direction.py
+
       - name: Install uv (Python 3.12)
         uses: astral-sh/setup-uv@v10.1.0
         with:
@@ -117,6 +130,19 @@ jobs:
       - name: import-linter (architecture contracts)
         working-directory: backend
         run: uv run lint-imports
+
+      # Spec-test matrix coherence (G19, owner-approved 2026-10-07):
+      # existed only as backend/scripts/check_test_matrix.py with no
+      # CI entry before 2026-10-19 — covered rows must cite real test
+      # files, gap/mismatch rows must be registered.
+      - name: Spec-test matrix coherence (G19)
+        working-directory: backend
+        run: uv run python scripts/check_test_matrix.py
+
+      # Placeholder guard (G3): no executable placeholder ships in
+      # backend/app. Zero today; grep -c keeps it that way.
+      - name: Placeholder guard (G3)
+        run: '! grep -rn "raise NotImplementedError" backend/app --include="*.py"'
 
       # Contract-freshness gate, backend half (PR #4 review P1): the
       # committed openapi.snapshot.json must match what the CURRENT

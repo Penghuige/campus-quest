@@ -266,7 +266,15 @@ make release-gate
 
 A fresh zero-failure run is required after the final release-gate fix.
 
-During the CI quota pause (2026-10-07 onward), a fresh `make release-gate` log on the exact head is the authoritative local evidence standing in for CI; the CI requirement resumes automatically once the quota resets.
+Before pushing, run the fast local gate:
+
+~~~bash
+make pre-push
+~~~
+
+It covers CI's highest-frequency failure points without a docker stack (~30s–2min): coverage-floor direction (floors only move up), backend lint/format/typecheck, architecture lint (import-linter + dependency-cruiser), spec-test matrix coherence, the G3 placeholder guard, OpenAPI snapshot and frontend TS-type freshness, frontend typecheck/lint/CSS guard, and the frontend coverage ratchet. The `.githooks/pre-push` hook runs it automatically (`git push --no-verify` skips a single push). Backend coverage ratchet, integration, e2e, and pixel/axe need the compose stack and stay in `make pre-push-full` / `make release-gate` / CI.
+
+Branch protection on main enforces the three required CI jobs ("Backend (Python 3.12)", "Frontend (Node 22)", "Pixel visual regression (Playwright)") green on the exact head, strict up-to-date with main, and enforce_admins — local logs are not a substitute for CI. A fresh `make release-gate` run remains the owner's product-level acceptance evidence on merged main after a batch of merges lands; it is not a stand-in for CI.
 
 ## 16. Engineering Golden Rules（PR #2 起，长期 merge gate）
 
@@ -289,5 +297,5 @@ During the CI quota pause (2026-10-07 onward), a fresh `make release-gate` log o
 - **G15 并发不变量需要真实 PostgreSQL 测试。** quota/stock/claim allocation/reward issuance/redemption/version allocation/abandon limits/review races 必须用独立连接的并发 integration test；mock 不算证明。
 - **G16 每个派生缓存/投影需要重建故事。** 回答不了"Redis/worker/cache 全丢后从什么事实重建"的状态不应只存在于 projection。
 - **G17 Merge-carry 债务不得在合并中幸存。** 集成 PR 必须把 carry 当 checklist 全部关闭，而不是把 carry 文档合进 main 当未来承诺。
-- **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。CI 配额暂停期（2026-10-07 起）等价证据：同一组组合 smoke（backend-integration 的 S3 + composition smokes）在 `make release-gate` 内同样执行，同 head 的本地门禁日志即同等组合边界证据；配额恢复后自动回落以 CI 为准。
+- **G18 CI 必须测试组合边界。** 保持至少一组 production-like composition smoke tests，不 override 核心 provider。CI 绿 ≈ 领域规则正确 + 真实 wiring 可启动并跑通关键链路。
 - **G19 测试工件是代码。** 新 spec、no-skip 豁免、像素基线、选择器契约条目、规约-测试矩阵行、覆盖率棘轮地板——随引入它们的特性 PR 同 ship（AGENTS.md 测试工件清单为完整版）；"tests will be updated later" 与降地板强转绿都是阻塞项。

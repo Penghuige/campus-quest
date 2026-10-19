@@ -1,0 +1,5 @@
+#!/bin/sh
+# CampusQuest pre-push: the fast local lane of the CI gates (see the
+# pre-push target in the Makefile). Skip one push with:
+#   git push --no-verify
+exec make pre-push
