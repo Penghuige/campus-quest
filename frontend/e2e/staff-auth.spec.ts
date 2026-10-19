@@ -235,7 +235,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
       await page.getByLabel("动态验证码").fill(totpCode(secret));
       await page.getByRole("button", { name: "完成登录" }).click();
       try {
-        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {
           timeout: 5_000,
         });
         break;
@@ -257,7 +257,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page.getByTestId("unified-login-totp-leg")).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`));
   });
 
   test("teacher invite: optional password, straight into the workspace (V1.1 §2.3)", async ({ page }) => {
@@ -338,7 +338,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await expect(page.getByTestId("unified-login-totp-leg")).toBeVisible();
     await page.getByLabel("动态验证码").fill(totpCode(onboardingSecret));
     await page.getByRole("button", { name: "完成登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), {
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {
       timeout: 8_000,
     });
   });

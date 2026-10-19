@@ -54,13 +54,22 @@ async function fillIdentifierVerified(page: Page, identifier: string): Promise<v
   await expect(field).toHaveValue(identifier);
 }
 
-async function requestCode(page: Page, identifier: string): Promise<string> {
+async function requestCode(
+  page: Page,
+  identifier: string,
+  expectSentNote = true,
+): Promise<string> {
   await fillIdentifierVerified(page, identifier);
   // The FIRST send is the 获取验证码 primary button; the code row (with
-  // its cooldown 重新发送) appears only after it (layer 2's condition).
+  // its cooldown 重新发送) appears after it either way — a fresh send
+  // shows the sent note, a mailbox still inside its 60s bucket answers
+  // RATE_LIMITED and the panel MIRRORS the live cooldown (the prior
+  // code stays valid; recovery reads the live challenge row).
   await page.getByRole("button", { name: "获取验证码", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
-  await expect(page.getByText("验证码已发送", { exact: false })).toBeVisible();
+  if (expectSentNote) {
+    await expect(page.getByText("验证码已发送", { exact: false })).toBeVisible();
+  }
   // The backend routes the stream by shape — recovery rides the
   // matching world action (the login challenge store for phones).
   return identifier.includes("@")
@@ -123,7 +132,27 @@ test.describe("the unified login page (six chains)", () => {
   });
 
   test("a wrong code renders the uniform invalid copy", async ({ page }) => {
-    const [email] = (process.env.CQ_E2E_STAFF ?? "").split(":");
+    // A DEDICATED invited teacher: the shared seeded teacher's mailbox
+    // is spent (the EMAIL chain's successful login CONSUMED its
+    // challenge row; a 429 within the 60s bucket mints no new one) —
+    // same discipline as the lockout chain below.
+    test.setTimeout(120_000);
+    const email = `e2e-wrongcode-${RUN}@school.edu`;
+    const token = await mintToken(ADMIN_ID!);
+    const response = await page.request.post(
+      `${process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1"}/staff/invitations`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { email, role: "TEACHER" },
+      },
+    );
+    expect(response.ok(), await response.text()).toBe(true);
+    const { token: inviteToken } = (await response.json()) as { token: string };
+    await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(inviteToken)}`);
+    await page.getByRole("button", { name: "激活账号" }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+    await page.getByRole("button", { name: "退出登录" }).click();
+
     await page.goto(`${BASE_URL}/login`);
     const code = await requestCode(page, email);
     await page.getByLabel("验证码", { exact: true }).fill(wrongNeighborOf(code));
@@ -148,7 +177,7 @@ test.describe("the unified login page (six chains)", () => {
       await page.getByLabel("动态验证码").fill(totpCode(ADMIN_TOTP_SECRET!));
       await page.getByRole("button", { name: "完成登录" }).click();
       try {
-        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin/`), { timeout: 5_000 });
+        await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), { timeout: 5_000 });
         landed = true;
       } catch {
         /* step rolled over mid-submit */
@@ -167,7 +196,7 @@ test.describe("the unified login page (six chains)", () => {
     const secondCode = await requestCode(second, adminEmail);
     await second.getByLabel("验证码", { exact: true }).fill(secondCode);
     await second.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/admin/`));
+    await expect(second).toHaveURL(new RegExp(`${BASE_URL}/admin$`));
     await expect(second.getByTestId("unified-login-totp-leg")).toHaveCount(0);
     await replay.close();
   });
@@ -212,9 +241,13 @@ test.describe("the unified login page (six chains)", () => {
     page,
   }) => {
     await page.goto(`${BASE_URL}/login`);
-    const weakLink = page.getByRole("button", { name: "使用密码登录" });
-    await weakLink.click();
-    await expect(weakLink).toHaveAttribute("aria-expanded", "true");
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    // The link FLIPS its label with the expansion — the pressed state
+    // rides the flipped control (使用验证码登录), the form proves it.
+    await expect(page.getByRole("button", { name: "使用验证码登录" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     await expect(page.getByLabel("手机号、邮箱或学号", { exact: true })).toBeVisible();
     await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
     // The flip-back link restores the code form.

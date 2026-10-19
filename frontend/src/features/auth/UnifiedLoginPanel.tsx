@@ -60,11 +60,23 @@ const RESEND_COOLDOWN_SECONDS = 60;
 export function UnifiedLoginPanel() {
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [registerToken, setRegisterToken] = useState<string | null>(null);
+  // The remember checkbox's VALUE is panel-level: the user may check it
+  // on the password form and complete the login on the totp leg — the
+  // leg is where its MEANING lives (the terminal ruling), but the
+  // checked state must survive the leg transition (#113's carry, kept).
+  const [rememberDevice, setRememberDevice] = useState(false);
 
   // Layers 2a/2b replace the form wholesale (the family's pattern) —
   // the back links hand the identifier flow back untouched.
   if (pendingToken !== null) {
-    return <TotpLeg pendingToken={pendingToken} onBack={() => setPendingToken(null)} />;
+    return (
+      <TotpLeg
+        pendingToken={pendingToken}
+        rememberDevice={rememberDevice}
+        setRememberDevice={setRememberDevice}
+        onBack={() => setPendingToken(null)}
+      />
+    );
   }
   if (registerToken !== null) {
     return <InlineRegister token={registerToken} onReset={() => setRegisterToken(null)} />;
@@ -72,7 +84,12 @@ export function UnifiedLoginPanel() {
   return (
     <>
       <FastLoginHint onTotpRequired={setPendingToken} />
-      <IdentifierForm onTotpRequired={setPendingToken} onUnregistered={setRegisterToken} />
+      <IdentifierForm
+        rememberDevice={rememberDevice}
+        setRememberDevice={setRememberDevice}
+        onTotpRequired={setPendingToken}
+        onUnregistered={setRegisterToken}
+      />
     </>
   );
 }
@@ -92,9 +109,13 @@ function useLanding() {
 }
 
 function IdentifierForm({
+  rememberDevice,
+  setRememberDevice,
   onTotpRequired,
   onUnregistered,
 }: {
+  rememberDevice: boolean;
+  setRememberDevice: (value: boolean) => void;
   onTotpRequired: (pendingToken: string) => void;
   onUnregistered: (registerToken: string) => void;
 }) {
@@ -105,7 +126,6 @@ function IdentifierForm({
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(false);
   const [identifierError, setIdentifierError] = useState<string | undefined>(undefined);
   const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
   const [codeError, setCodeError] = useState<string | undefined>(undefined);
@@ -150,6 +170,14 @@ function IdentifierForm({
       setCodeSent(true);
       setSentNote(true);
     } catch (cause) {
+      // A 429 means the backend's 60s resend bucket is ALREADY running
+      // (a prior send this mailbox) — mirror it on the button like a
+      // successful send would (useCooldown's display philosophy: show
+      // WHY it is disabled and when it returns).
+      if (isApiError(cause) && cause.code === "RATE_LIMITED") {
+        cooldown.start(RESEND_COOLDOWN_SECONDS);
+        setCodeSent(true);
+      }
       setSummary(toChallengeSummary(cause));
     } finally {
       setSending(false);
@@ -414,15 +442,18 @@ function IdentifierForm({
 /** Layer 2a: the ADMIN second leg (spec §4). */
 function TotpLeg({
   pendingToken,
+  rememberDevice,
+  setRememberDevice,
   onBack,
 }: {
   pendingToken: string;
+  rememberDevice: boolean;
+  setRememberDevice: (value: boolean) => void;
   onBack: () => void;
 }) {
   const land = useLanding();
   const [totpCode, setTotpCode] = useState("");
   const [totpError, setTotpError] = useState<string | undefined>(undefined);
-  const [rememberDevice, setRememberDevice] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [summary, setSummary] = useState<AuthErrorView | null>(null);
 
