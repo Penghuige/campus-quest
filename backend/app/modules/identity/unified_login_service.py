@@ -240,7 +240,14 @@ class UnifiedLoginService:
         if user_id is None:
             raise _challenge_code_invalid()
         user = await db.get(User, user_id)
-        if user is None or user.status != UserStatus.ACTIVE.value:
+        # The SAME audience the probe names (#87): ACTIVE and
+        # PENDING_APPROVAL students alike — a PENDING student logs in
+        # and browses the frozen home (RA3), so a banner that invites
+        # and then refuses is a dead end (the #115 runtime finding).
+        if user is None or user.status not in (
+            UserStatus.ACTIVE.value,
+            UserStatus.PENDING_APPROVAL.value,
+        ):
             raise _challenge_code_invalid()
         if user.role == Role.ADMIN.value:
             pending = await self._mobile_login.mint_staff_pending(user.id)
