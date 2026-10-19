@@ -31,8 +31,9 @@ authoritative record.
 
 | Label | Surface |
 |---|---|
-| 学号 / 密码 | student login (every spec's entry) |
-| 邮箱 / 密码 / 动态验证码 | staff login |
+| 手机号或邮箱 / 验证码 | the unified login's code form (spec 2026-10-19 §4 layer 1/2) |
+| 手机号、邮箱或学号 / 密码 | the unified login's password expansion (layer 1a — the three-state identifier band) |
+| 动态验证码 | the unified login's TOTP leg (layer 2a, testid `unified-login-totp-leg`) |
 | 设置密码 / 确认密码 / 设置密码并继续 | register, staff invite activation |
 | 昵称 / 手机号 | register, profile binding |
 | 受邀人邮箱 / 角色 / 创建邀请 / 复制邀请链接 | admin staff invitations (`/admin/invitations`; the one-time issuance surface) |
@@ -51,21 +52,27 @@ authoritative record.
 Buttons: 登录 · 注册 · 领取任务 · 开始上传 · 上传重试相关 · 兑换 · 确认兑换 ·
 发布评论 · 发布回复 · 回复 · 赞 · 表情 🔥 · 举报 · 提交举报 · 标为已读 ·
 完成 · 取消 · 创建草稿 · 保存修改 · 预览导入 · 重新上传文件 · 通过并发放奖励 ·
-通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 · 获取验证码 ·
-设置密码并继续 · 一键继续 (the login page's conditional fast-login banner,
-owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg) ·
-邮箱验证码登录 / 手机验证码登录 / 密码登录 (the staff login's three channel
-tabs — item ① disambiguated the email tab's bare 验证码登录 copy) ·
+通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 ·
+一键继续 (the unified login's conditional fast-login banner — layer 0,
+owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg,
+now on /auth/challenge/remembered + the empty-body verify) ·
+获取验证码 (the unified login's FIRST send — the code row with its
+重新发送 cooldown appears only after it, layer 2's condition) ·
+使用密码登录 / 使用验证码登录 (the unified login's weak link — the
+password expansion's disclosure control, aria-expanded) ·
+完成登录 (the unified login's TOTP leg, layer 2a) ·
 发送验证码 / 绑定手机号 / 更换手机号 (the staff phone-binding flow,
 PhoneBindSection) ·
 代重置密码 / 踢出全部会话 / 提升为管理员 / 降级为教师 / 批量停用 / 批量恢复 /
 确认执行 / 撤销 / 确认撤销 / 重发 (Wave 2a's admin power-pack: the user-detail
 actions, the batch verbs, and the invitation lifecycle panel)
 
-Checkboxes: 记住此设备 30 天 — the email-code totp leg (V1.1 §2.2) and the
-staff password+TOTP form (owner feedback ② 2026-10-17: the remembered SECOND
-factor is the TOTP, never the password) and the student mobile-code form
-(auth-II §3).
+Checkboxes: 记住此设备 30 天 — the unified login's three seats (the
+code form's copy is audience-neutral; the password expansion's notes the
+totp audience; the TOTP leg is where the meaning LIVES — the 2026-10-15
+terminal ruling: the flag is sent whenever checked and the backend
+routes it by audience, STUDENT verify honoring it, staff arms ignoring
+it, the ADMIN totp leg issuing the cookie).
 
 Links: 未读 · 热门 · 最新 · 全部 · 总榜 · 今日榜 · 本月榜 · 去登录 ·
 前往员工登录 · 返回教师工作台 · 返回任务管理

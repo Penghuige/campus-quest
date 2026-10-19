@@ -22,15 +22,8 @@ import {
   beginTotpSetup,
   confirmPhoneBind,
   confirmTotpSetup,
-  emailLoginTotp,
-  loginStaff,
   readMe,
-  requestEmailLoginCode,
   requestPhoneBind,
-  requestStaffMobileCode,
-  staffMobileCodeTotp,
-  verifyEmailLoginCode,
-  verifyStaffMobileCode,
 } from "../features/auth/api";
 import { describeStaffError } from "../features/auth/staffAuthView";
 import { isApiError } from "../lib/errors";
@@ -130,68 +123,6 @@ describe("acceptStaffInvitation", () => {
   });
 });
 
-describe("loginStaff", () => {
-  test("posts {email, password, totp_code} to the dedicated staff endpoint", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("teacher@school.edu", "correct-horse", "234567");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/login");
-    assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.credentials, "include");
-    assert.equal(recorded?.headers.get("Content-Type"), "application/json");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "teacher@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-    });
-  });
-
-  test("403 TOTP_SETUP_REQUIRED stays a code branch for the form's setup panel", async () => {
-    stubFetch(envelope("TOTP_SETUP_REQUIRED", "该账号必须先绑定 TOTP 动态验证码"), 403);
-    const error = await rejectionOf(loginStaff("teacher@school.edu", "correct-horse", "234567"));
-    assert.ok(isApiError(error));
-    assert.equal((error as { code: string }).code, "TOTP_SETUP_REQUIRED");
-    const view = describeStaffError(error as never, "staff-login");
-    assert.match(view.summary!, /尚未完成动态口令绑定/);
-  });
-
-  // The 2026-10-17 login-iteration batch (owner feedback ②): the
-  // password+TOTP form's 记住此设备 30 天 checkbox — same semantics as
-  // the email-code totp leg (remember = the SECOND factor goes away for
-  // 30 days; the password never does). Presence-based, the frozen
-  // backend contract: an absent/false field behaves exactly like today.
-  test("remember=true rides remember_device in the body; the default omits it entirely", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("admin@school.edu", "correct-horse", "234567", true);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-      remember_device: true,
-    });
-
-    await loginStaff("admin@school.edu", "correct-horse", "234567");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "234567",
-    });
-  });
-
-  // The frozen ② relogin contract (2026-10-17): totp_code "" ≡ omitted
-  // server-side, and the client sends the empty string VERBATIM (never
-  // conditionally omits the key) — a remembered device + password is
-  // the full login; no cookie answers the uniform wrong-factor copy.
-  test("an empty second factor posts totp_code: \"\" (the remembered relogin)", async () => {
-    stubFetch(JSON.stringify({ access_token: "at", csrf_token: "ct", token_type: "bearer" }), 200);
-    await loginStaff("admin@school.edu", "correct-horse", "");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "admin@school.edu",
-      password: "correct-horse",
-      totp_code: "",
-    });
-  });
-});
-
 describe("TOTP setup calls (pending-session bearer)", () => {
   test("begin posts with Authorization: Bearer and no body", async () => {
     stubFetch(
@@ -261,81 +192,7 @@ describe("readMe (the post-login role source; owner report 2026-10-15)", () => {
   });
 });
 
-describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
-  test("request POSTs {email} and resolves the uniform 202 {}", async () => {
-    stubFetch("{}", 202);
-    await requestEmailLoginCode("teacher@school.edu");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/request");
-    assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.credentials, "include");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "teacher@school.edu",
-    });
-  });
 
-  test("verify POSTs {email, code} — NO remember_device from the code step — and records the teacher login", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "teacher-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    const outcome = await verifyEmailLoginCode("teacher@school.edu", "234567");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/verify");
-    assert.equal(recorded?.method, "POST");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      email: "teacher@school.edu",
-      code: "234567",
-    });
-    assert.equal(outcome.kind, "tokens");
-    assert.equal(getAccessToken(), "teacher-at");
-  });
-
-  test("verify classifies the ADMIN totp_required body and adopts NO token", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ status: "totp_required", pending_token: "pending-at" }),
-      200,
-    );
-    const outcome = await verifyEmailLoginCode("admin@school.edu", "234567");
-    assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "pending-at" });
-    assert.equal(getAccessToken(), null);
-  });
-
-  test("the totp leg POSTs {pending_token, code, remember_device} IN THE BODY (T5 contract) and records the login", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    const tokens = await emailLoginTotp("pending-at", "234567", true);
-    assert.equal(tokens.access_token, "admin-at");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/email-code/totp");
-    assert.equal(recorded?.method, "POST");
-    // The pending token rides the BODY, never a Bearer header (the
-    // invitation flow's TOTP-setup endpoints differ — the contract
-    // divergence the e2e run caught).
-    assert.equal(recorded?.headers.get("Authorization"), null);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      pending_token: "pending-at",
-      code: "234567",
-      remember_device: true,
-    });
-    assert.equal(getAccessToken(), "admin-at");
-  });
-
-  test("the totp leg omits remember_device when unchecked (presence-based)", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    await emailLoginTotp("pending-at", "234567", false);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      pending_token: "pending-at",
-      code: "234567",
-    });
-  });
-});
 
 // --- staff mobile-code login + phone binding (login-iteration item ①;
 // frozen contract, backend PR #101 head 69bf413) -------------------------
@@ -348,72 +205,16 @@ describe("email-code login (V1.1 §2.1/§2.2; plan T5 frozen contract)", () => {
 // ruling (2026-10-15) applies verbatim: the UI never sends
 // remember_device on the verify leg a TEACHER can complete — the
 // checkbox lives ONLY on the totp leg.
-describe("staff mobile-code login (item ①)", () => {
-  test("request POSTs {phone} and resolves the uniform 202 {}", async () => {
-    stubFetch("{}", 202);
-    await requestStaffMobileCode("13900001234");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/mobile-code/request");
-    assert.equal(recorded?.method, "POST");
-    assert.equal(recorded?.credentials, "include");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), { phone: "13900001234" });
-  });
 
-  test("verify: the TEACHER tokens body adopts the full login; NO remember_device on this leg", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "teacher-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    const outcome = await verifyStaffMobileCode("13900001234", "234567");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/mobile-code/verify");
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      phone: "13900001234",
-      code: "234567",
-    });
-    assert.equal(outcome.kind, "tokens");
-    assert.equal(getAccessToken(), "teacher-at");
-  });
 
-  test("verify: the ADMIN totp_required body adopts NOTHING", async () => {
-    clearAccessToken();
-    stubFetch(JSON.stringify({ status: "totp_required", pending_token: "pending-at" }), 200);
-    const outcome = await verifyStaffMobileCode("13900001234", "234567");
-    assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "pending-at" });
-    assert.equal(getAccessToken(), null);
-  });
 
-  test("the totp leg POSTs {pending_token, code, remember_device} IN THE BODY and adopts", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    const tokens = await staffMobileCodeTotp("pending-at", "234567", true);
-    assert.equal(tokens.access_token, "admin-at");
-    assert.equal(recorded?.url, "/api/v1/auth/staff/mobile-code/totp");
-    assert.equal(recorded?.headers.get("Authorization"), null);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      pending_token: "pending-at",
-      code: "234567",
-      remember_device: true,
-    });
-    assert.equal(getAccessToken(), "admin-at");
-  });
 
-  test("the totp leg omits remember_device when unchecked (presence-based)", async () => {
-    clearAccessToken();
-    stubFetch(
-      JSON.stringify({ access_token: "admin-at", csrf_token: "ct", token_type: "bearer" }),
-      200,
-    );
-    await staffMobileCodeTotp("pending-at", "234567", false);
-    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), {
-      pending_token: "pending-at",
-      code: "234567",
-    });
-  });
-});
-
+// --- the unified staff code channel (two-channel convergence,
+// 2026-10-20; frozen contract): ONE identifier field (email or phone)
+// rides both legs; the backend routes the code stream by shape. The
+// TERMINAL remember-device ruling holds verbatim (option a): the
+// verify leg a TEACHER completes NEVER sends remember_device — the
+// checkbox's meaning lives on the ADMIN totp leg.
 describe("staff phone binding (item ①; /me/phone/bind family)", () => {
   test("bind POSTs {phone} and yields the challenge", async () => {
     stubFetch(

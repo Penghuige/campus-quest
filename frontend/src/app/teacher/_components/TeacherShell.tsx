@@ -70,7 +70,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
               <p className="auth-subtitle">任务管理与提交审核需要员工账号登录</p>
             </div>
             <Button asChild variant="primary" block>
-              <Link href="/staff/login">前往员工登录</Link>
+              <Link href="/login">前往员工登录</Link>
             </Button>
             <p className="auth-alt-action">
               <Link className="link" href="/login">

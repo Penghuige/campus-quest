@@ -291,7 +291,7 @@ function TotpDone() {
       </div>
       <p className="auth-alt-action">
         下一步：
-        <Link className="link" href="/staff/login">
+        <Link className="link" href="/login">
           前往员工登录
         </Link>
       </p>

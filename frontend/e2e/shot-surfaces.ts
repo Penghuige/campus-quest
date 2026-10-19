@@ -50,16 +50,6 @@ export const SHOTS: Shot[] = [
     masks: [],
   },
   {
-    // The staff login page (V1.1 §2.1): the email-code channel is the
-    // DEFAULT tab — a new stable screen whose pristine form state (no
-    // volatile content) is the face. The password tab stays one toggle
-    // away and is e2e-pinned, not baselined.
-    name: "staff-login",
-    path: "/staff/login",
-    auth: "anon",
-    masks: [],
-  },
-  {
     // The custom 404 (audit item B): a stable anonymous surface with no
     // volatile content — the Chinese copy and the way home ARE the pin.
     name: "not-found",

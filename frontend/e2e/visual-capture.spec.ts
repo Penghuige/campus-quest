@@ -177,7 +177,8 @@ test.describe("visual capture — anonymous auth surfaces", () => {
   test("auth screens", async ({ page }) => {
     await capture(page, "auth-login", "/login", "anonymous", false);
     await capture(page, "auth-register", "/register", "anonymous", false);
-    await capture(page, "auth-staff-login", "/staff/login", "anonymous", false);
+    // auth-staff-login retired with the unified page (/staff/login
+    // redirects to /login — one face, one baseline).
   });
 });
 

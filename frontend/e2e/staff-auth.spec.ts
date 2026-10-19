@@ -182,10 +182,10 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await expect(codesList).toHaveCount(0);
     await expect(secretLocator).toHaveCount(0);
 
-    // Done points at the staff login (the pending session is setup-only).
+    // Done points at the unified login (the pending session is setup-only).
     await expect(page.getByRole("link", { name: "前往员工登录" })).toHaveAttribute(
       "href",
-      "/staff/login",
+      "/login",
     );
   });
 
@@ -221,15 +221,19 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await page.getByRole("button", { name: "我已妥善保存，完成绑定" }).click();
     await expect(page.getByText("动态口令绑定完成，员工账号已激活")).toBeVisible();
 
-    // The remembered FIRST login: password + TOTP + the checkbox.
-    await page.goto(`${BASE_URL}/staff/login`);
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("邮箱").fill(email);
+    // The remembered FIRST login: password + the checkbox + the TOTP
+    // leg (the unified page's two-leg shape — the password submit
+    // answers totp_required, the leg completes the login).
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("手机号、邮箱或学号").fill(email);
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page.getByTestId("unified-login-totp-leg")).toBeVisible();
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await page.getByLabel("动态验证码").fill(totpCode(secret));
-      await page.getByRole("button", { name: "登录", exact: true }).click();
+      await page.getByRole("button", { name: "完成登录" }).click();
       try {
         await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {
           timeout: 5_000,
@@ -240,18 +244,19 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
       }
     }
 
-    // Free the device (the staff logout lands back on the staff login).
+    // Free the device (the staff logout lands back on the unified login).
     await page.getByRole("button", { name: "退出登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
 
-    // The ② PIN — the remembered RELOGIN: password only, the 动态验证码
-    // field LEFT EMPTY (the field's hint says so), no code request, no
-    // second factor. The 30-day cookie is the second factor.
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("邮箱").fill(email);
+    // The ② PIN — the remembered RELOGIN: password alone submits and
+    // the verify answers AUTHENTICATED with no totp leg at all — the
+    // 30-day cookie IS the second factor now (the retired form's
+    // empty-totp_code mechanism folded into the union's arms).
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("手机号、邮箱或学号").fill(email);
     await page.getByLabel("密码").fill("e2e-correct-horse");
-    await page.getByRole("textbox", { name: /动态验证码/ }).fill("");
     await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page.getByTestId("unified-login-totp-leg")).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`));
   });
 
@@ -317,20 +322,20 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await expect(page.getByText("动态口令绑定完成，员工账号已激活")).toBeVisible();
 
     // THE landing pin (owner bug 2026-10-16): the fresh ADMIN logs in
-    // through the production email-code channel and must land on the
-    // ADMIN workspace — the invite-accept and email-code flows both
-    // once hardcoded the teacher queue.
+    // through the production code channel on the UNIFIED page and must
+    // land on the ADMIN workspace — the invite-accept and code flows
+    // both once hardcoded the teacher queue.
     await page.getByRole("link", { name: "前往员工登录" }).click();
-    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/staff/login`));
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
     const invitedEmail = `e2e-admin-invite-land-${RUN}@school.edu`;
-    await page.getByLabel("邮箱", { exact: true }).fill(invitedEmail);
-    await page.getByRole("button", { name: "重新发送", exact: true }).click();
+    await page.getByLabel("手机号或邮箱", { exact: true }).fill(invitedEmail);
+    await page.getByRole("button", { name: "获取验证码", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
     const { recoverEmailCode } = await import("./fixtures");
     const loginCode = recoverEmailCode(invitedEmail);
-    await page.getByLabel("邮箱验证码", { exact: false }).fill(loginCode);
+    await page.getByLabel("验证码", { exact: true }).fill(loginCode);
     await page.getByRole("button", { name: "登录", exact: true }).click();
-    await expect(page.getByTestId("email-login-totp-leg")).toBeVisible();
+    await expect(page.getByTestId("unified-login-totp-leg")).toBeVisible();
     await page.getByLabel("动态验证码").fill(totpCode(onboardingSecret));
     await page.getByRole("button", { name: "完成登录" }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/admin$`), {

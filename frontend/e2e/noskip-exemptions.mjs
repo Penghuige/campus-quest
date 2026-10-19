@@ -73,7 +73,6 @@ export const NOSKIP_EXEMPTIONS = [
     "auth-login",
     "auth-reset-password",
     "not-found",
-    "staff-login",
     "dev-gallery",
     "student-claim",
     "student-dashboard",

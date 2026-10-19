@@ -75,8 +75,8 @@ async function studentLoginTyped(
 ): Promise<void> {
   const [username, password] = credentials.split(":");
   await page.goto(`${BASE}/login`);
-  await page.getByRole("button", { name: "密码登录" }).click();
-  await page.getByLabel("学号").pressSequentially(username, { delay: 2 });
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("手机号、邮箱或学号").pressSequentially(username, { delay: 2 });
   await page.getByLabel("密码").pressSequentially(password, { delay: 2 });
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -123,21 +123,29 @@ test.describe("cross-browser smoke (firefox + webkit subset)", () => {
       "needs CQ_E2E_STAFF + CQ_E2E_STAFF_TOTP_SECRET (the seeded staff contract)",
     );
     const page = await browser.newPage();
-    await page.goto(`${BASE}/staff/login`);
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("邮箱").pressSequentially(staff[0], { delay: 2 });
+    await page.goto(`${BASE}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("手机号、邮箱或学号").pressSequentially(staff[0], { delay: 2 });
     await page.getByLabel("密码").pressSequentially(staff[1] ?? "", { delay: 2 });
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await page.getByLabel("动态验证码").pressSequentially(totpCode(totpSecret), { delay: 2 });
       await page.getByRole("button", { name: "登录", exact: true }).click();
+      const legAppeared = await page
+        .getByTestId("unified-login-totp-leg")
+        .waitFor({ state: "visible", timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (legAppeared) {
+        await page.getByLabel("动态验证码").pressSequentially(totpCode(totpSecret), { delay: 2 });
+        await page.getByRole("button", { name: "完成登录" }).click();
+      }
       try {
-        await expect(page).not.toHaveURL(/\/staff\/login/, { timeout: 5_000 });
+        await expect(page).not.toHaveURL(/\/login/, { timeout: 5_000 });
         break;
       } catch {
         /* TOTP step rollover — recompute like a user would */
       }
     }
-    await expect(page).not.toHaveURL(/\/staff\/login/);
+    await expect(page).not.toHaveURL(/\/login/);
     await page.goto(`${BASE}/teacher/reviews`);
     await expect(page.locator(".review-item, .section").first()).toBeVisible({
       timeout: 20_000,
