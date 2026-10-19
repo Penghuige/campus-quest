@@ -59,7 +59,6 @@ def test_create_app_mounts_identity_routes_under_api_v1() -> None:
         "/api/v1/auth/phone/challenges/{challenge_id}/verify",
         "/api/v1/auth/register",
         "/api/v1/auth/login",
-        "/api/v1/auth/staff/login",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
         "/api/v1/auth/password/forgot",

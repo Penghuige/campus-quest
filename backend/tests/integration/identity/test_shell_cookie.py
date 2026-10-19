@@ -171,7 +171,7 @@ def _assert_cookie_flags(header: str) -> None:
 
 async def _student_login(client: httpx.AsyncClient) -> httpx.Response:
     return await client.post(
-        "/api/v1/auth/login", json={"username": _STUDENT, "password": _PASSWORD}
+        "/api/v1/auth/login", json={"identifier": _STUDENT, "password": _PASSWORD}
     )
 
 
@@ -196,15 +196,15 @@ async def test_staff_email_code_login_writes_staff_shell(
     await _seed_passwordless_teacher(db_session)
 
     requested = await client.post(
-        "/api/v1/auth/staff/email-code/request", json={"email": _TEACHER_EMAIL}
+        "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
     )
     assert requested.status_code == 202, requested.text
     from tests.e2e.email_code_probe import recover_email_code
 
     _, code = await recover_email_code(db_session, _TEACHER_EMAIL)
     verified = await client.post(
-        "/api/v1/auth/staff/email-code/verify",
-        json={"email": _TEACHER_EMAIL, "code": code},
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": _TEACHER_EMAIL, "code": code},
     )
 
     assert verified.status_code == 200, verified.text
@@ -253,7 +253,7 @@ async def test_refresh_rotation_rewrites_the_shell(
 ) -> None:
     await _seed_student(db_session)
     login = await _student_login(client)
-    csrf = login.json()["csrf_token"]
+    csrf = login.json()["tokens"]["csrf_token"]
     # Explicit cookies (the test_identity_api pattern): the ASGI client
     # runs over http://, and a real cookie jar must not replay Secure
     # cookies over plain http.
@@ -292,7 +292,7 @@ async def test_logout_clears_the_shell(
 ) -> None:
     await _seed_student(db_session)
     login = await _student_login(client)
-    csrf = login.json()["csrf_token"]
+    csrf = login.json()["tokens"]["csrf_token"]
     from app.modules.identity.routing_common import REFRESH_COOKIE_NAME as _RC
 
     jar = http_cookies.SimpleCookie()

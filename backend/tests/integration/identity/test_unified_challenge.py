@@ -709,8 +709,7 @@ async def test_login_identifier_form_covers_three_identifiers(
     """The /auth/login identifier form: student number and student
     phone both reach the student password flow (phone first — the #73
     semantics), a staff email reaches the staff password flow, and the
-    OLD {username, password} shape still works (the transition, PR-3
-    retires it)."""
+    RETIRED {username, password} shape answers the schema 422 (PR-3)."""
     student = await _seed_user(
         db_session,
         username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
@@ -750,12 +749,13 @@ async def test_login_identifier_form_covers_three_identifiers(
     assert staff_body["status"] == "authenticated"
     assert staff_body["role"] == "TEACHER"
 
+    # PR-3: the legacy {username, password} form is RETIRED — a 422
+    # naming the unknown member, the unified form the only shape.
     legacy = await client.post(
         "/api/v1/auth/login",
         json={"username": student.username, "password": _PASSWORD},
     )
-    assert legacy.status_code == 200, legacy.text
-    assert legacy.json()["access_token"]
+    assert legacy.status_code == 422, legacy.text
 
 
 async def test_login_admin_leg_honors_the_remembered_cookie(

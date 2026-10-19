@@ -38,8 +38,9 @@ from app.modules.identity.providers import (
     get_email_sender,
     get_identity_redis,
     get_rate_limiter,
+    get_sms_sender,
 )
-from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter
+from tests.fakes.integrations import FakeEmailSender, FakeRateLimiter, FakeSmsSender
 
 pytestmark = pytest.mark.integration
 
@@ -48,6 +49,7 @@ _T0 = datetime.now(UTC).replace(microsecond=0)
 _STUDENT = "20250017777"
 _PASSWORD = "correct-horse-battery"
 _STAFF_EMAIL = "lockout-staff@campus.example.edu"
+_STAFF_PHONE = "+8613800160081"
 _STAFF_PASSWORD = "staff-correct-horse"
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -82,6 +84,11 @@ def api_email() -> FakeEmailSender:
 
 
 @pytest.fixture
+def api_sms() -> FakeSmsSender:
+    return FakeSmsSender()
+
+
+@pytest.fixture
 def fake_limiter() -> FakeRateLimiter:
     return FakeRateLimiter()
 
@@ -92,6 +99,7 @@ def api_app(
     api_redis: aioredis.Redis,
     api_clock: FrozenClock,
     api_email: FakeEmailSender,
+    api_sms: FakeSmsSender,
     fake_limiter: FakeRateLimiter,
 ) -> FastAPI:
     app = create_app()
@@ -104,6 +112,7 @@ def api_app(
     app.dependency_overrides[get_identity_redis] = lambda: api_redis
     app.dependency_overrides[get_rate_limiter] = lambda: fake_limiter
     app.dependency_overrides[get_email_sender] = lambda: api_email
+    app.dependency_overrides[get_sms_sender] = lambda: api_sms
     return app
 
 
@@ -132,15 +141,37 @@ async def _seed_student(db: AsyncSession) -> User:
     return user
 
 
+_TEACHER_EMAIL = "lockout-teacher@pku.edu.cn"
+
+
+async def _seed_teacher(db: AsyncSession) -> User:
+    """A passwordless TEACHER (V1.1 §2.3) — the cooldown test's shape,
+    inlined from the retired email-code suite it used to import."""
+    user = User(
+        username=_TEACHER_EMAIL,
+        password_hash=None,
+        nickname="锁账教师",
+        email_normalized=_TEACHER_EMAIL,
+        email_verified_at=_T0,
+        role=Role.TEACHER,
+        status=UserStatus.ACTIVE,
+    )
+    db.add(user)
+    await db.flush()
+    return user
+
+
 async def _seed_staff_with_totp(db: AsyncSession) -> str:
-    """ACTIVE TEACHER with password + confirmed TOTP (the V1 staff
-    channel); returns the TOTP secret for pyotp."""
+    """ACTIVE ADMIN with password + confirmed TOTP — the unified door's
+    totp_required mid-state is ADMIN-only (a TEACHER completes at
+    verify by §2.3), and these lockout legs walk that mid-state."""
     user = User(
         username=_STAFF_EMAIL,
         password_hash=hash_password(_STAFF_PASSWORD),
         nickname="锁定测试员工",
         email_normalized=_STAFF_EMAIL,
-        role=Role.TEACHER,
+        phone_e164=_STAFF_PHONE,
+        role=Role.ADMIN,
         status=UserStatus.ACTIVE,
     )
     db.add(user)
@@ -161,16 +192,7 @@ async def _seed_staff_with_totp(db: AsyncSession) -> str:
 
 async def _student_login(client: httpx.AsyncClient, password: str) -> httpx.Response:
     return await client.post(
-        "/api/v1/auth/login", json={"username": _STUDENT, "password": password}
-    )
-
-
-async def _staff_login(
-    client: httpx.AsyncClient, totp_code: str, *, password: str = _STAFF_PASSWORD
-) -> httpx.Response:
-    return await client.post(
-        "/api/v1/auth/staff/login",
-        json={"email": _STAFF_EMAIL, "password": password, "totp_code": totp_code},
+        "/api/v1/auth/login", json={"identifier": _STUDENT, "password": password}
     )
 
 
@@ -191,43 +213,129 @@ async def test_student_five_wrong_passwords_then_correct_is_locked(
     assert 0 < error["details"]["retry_after_seconds"] <= 900
 
 
-async def test_staff_wrong_totp_counts_and_locks(
-    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+async def _staff_totp_attempt(
+    client: httpx.AsyncClient,
+    api_clock: FrozenClock,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+    *,
+    totp_code: str,
+) -> httpx.Response:
+    """One full staff code-login cycle at the unified door. The email
+    cooldown's TTL runs on the WALL clock (redis ex=), so a FrozenClock
+    advance cannot expire it — the key is deleted between cycles
+    instead (the cooldown CRAFT has its own suite; this one targets the
+    lockout counter). Each cycle mints a fresh pending (single-use) and
+    spends ``totp_code`` on the totp leg."""
+    await api_redis.delete(f"emailcode:cooldown:{_STAFF_EMAIL}")
+    requested = await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": _STAFF_EMAIL}
+    )
+    assert requested.status_code == 202, requested.text
+    code = str(api_email.messages[-1].variables["code"])
+    pending = (
+        await client.post(
+            "/api/v1/auth/challenge/verify",
+            json={"identifier": _STAFF_EMAIL, "code": code},
+        )
+    ).json()
+    assert pending["status"] == "totp_required", pending
+    return await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={"pending_token": pending["pending_token"], "totp_code": totp_code},
+    )
+
+
+async def _staff_mobile_code_attempt(
+    client: httpx.AsyncClient,
+    api_sms: FakeSmsSender,
+    api_redis: aioredis.Redis,
+    *,
+    code: str,
+) -> httpx.Response:
+    """One staff MOBILE-code verify attempt: past the wall-clock SMS
+    cooldown (the key is deleted — the craft has its own suite), a
+    fresh code is SMSed, then ``code`` is spent on the verify. A WRONG
+    code here counts against the lockout WITHOUT any interleaved
+    success reset (the email arm's verify success resets the streak —
+    this arm is how the count actually accumulates at the unified
+    door)."""
+    await api_redis.delete(f"staffmobilecode:cooldown:{_STAFF_PHONE}")
+    requested = await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": _STAFF_PHONE}
+    )
+    assert requested.status_code == 202, requested.text
+    smsed = str(api_sms.messages[-1].variables["code"])
+    return await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": _STAFF_PHONE, "code": code if code else smsed},
+    )
+
+
+async def test_staff_wrong_codes_count_and_lock(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+    api_redis: aioredis.Redis,
 ) -> None:
-    secret = await _seed_staff_with_totp(db_session)
-    valid_code = pyotp.TOTP(secret).at(api_clock.now())
+    """Five wrong login codes against one staff account lock it (V1.1
+    §6) — at the unified door via the staff MOBILE arm, where a wrong
+    code counts with no interleaved success to reset the streak (the
+    email arm's verify success resets it)."""
+    await _seed_staff_with_totp(db_session)
 
     for _ in range(5):
-        # Right password, wrong second factor — a credential failure.
-        wrong = await _staff_login(client, "000000")
-        assert wrong.status_code == 401, wrong.text
+        wrong = await _staff_mobile_code_attempt(
+            client, api_sms, api_redis, code="000000"
+        )
+        assert wrong.status_code == 400, wrong.text
+        assert wrong.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
 
-    correct = await _staff_login(client, valid_code)
-    assert correct.status_code == 429, correct.text
-    assert _envelope(correct)["code"] == "ACCOUNT_LOCKED"
+    locked = await _staff_mobile_code_attempt(client, api_sms, api_redis, code="")
+    assert locked.status_code == 429, locked.text
+    assert _envelope(locked)["code"] == "ACCOUNT_LOCKED"
 
 
 async def test_staff_wrong_password_counts_before_second_factor(
-    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
 ) -> None:
     secret = await _seed_staff_with_totp(db_session)
     valid_code = pyotp.TOTP(secret).at(api_clock.now())
 
     for _ in range(4):
-        wrong = await _staff_login(client, valid_code, password="wrong-password")
+        wrong = await client.post(
+            "/api/v1/auth/login",
+            json={"identifier": _STAFF_EMAIL, "password": "wrong-password"},
+        )
         assert wrong.status_code == 401, wrong.text
 
-    # A success between failures resets the streak (V1.1 §6).
-    ok = await _staff_login(client, valid_code)
+    # A success between failures resets the streak (V1.1 §6) — for an
+    # ADMIN that means the FULL cycle (password leg + totp leg), not
+    # the totp_required mid-state.
+    ok = await _staff_totp_attempt(
+        client, api_clock, api_email, api_redis,
+        totp_code=pyotp.TOTP(secret).at(api_clock.now()),
+    )
     assert ok.status_code == 200, ok.text
 
     for _ in range(4):
-        wrong = await _staff_login(client, "000000")
+        wrong = await client.post(
+            "/api/v1/auth/login",
+            json={"identifier": _STAFF_EMAIL, "password": "wrong-password"},
+        )
         assert wrong.status_code == 401, wrong.text
 
     # 4 new failures after the reset: still below the threshold.
-    fifth = await _staff_login(client, valid_code)
+    fifth = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": _STAFF_EMAIL, "password": _STAFF_PASSWORD},
+    )
     assert fifth.status_code == 200, fifth.text
+    assert fifth.json()["status"] == "totp_required"
 
 
 async def test_rate_limit_429_never_counts_as_failure(
@@ -239,21 +347,16 @@ async def test_rate_limit_429_never_counts_as_failure(
     """Review Focus 4: the email-code request path's 429s (cooldown) are
     traffic shaping — the account failure counter stays untouched, and a
     later correct login succeeds without ever being locked."""
-    from tests.integration.identity.test_email_code_login_api import (
-        _TEACHER_EMAIL,  # noqa: PLC0415 — cross-file seed helper reuse
-        _seed_teacher,
-    )
-
     teacher = await _seed_teacher(db_session)
     # Two requests inside the cooldown window: the second is a 429 that
     # must NOT reach the per-account counter.
     assert (
         await client.post(
-            "/api/v1/auth/staff/email-code/request", json={"email": _TEACHER_EMAIL}
+            "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
         )
     ).status_code == 202
     throttled = await client.post(
-        "/api/v1/auth/staff/email-code/request", json={"email": _TEACHER_EMAIL}
+        "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
     )
     assert throttled.status_code == 429
     assert await api_redis.get(f"login:fail:{teacher.id}") is None
@@ -261,8 +364,8 @@ async def test_rate_limit_429_never_counts_as_failure(
     # The mailed code still verifies cleanly — nothing was counted.
     code = str(api_email.messages[-1].variables["code"])
     verified = await client.post(
-        "/api/v1/auth/staff/email-code/verify",
-        json={"email": _TEACHER_EMAIL, "code": code},
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": _TEACHER_EMAIL, "code": code},
     )
     assert verified.status_code == 200, verified.text
-    assert verified.json()["access_token"]
+    assert verified.json()["tokens"]["access_token"]

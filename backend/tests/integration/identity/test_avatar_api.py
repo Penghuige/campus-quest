@@ -176,10 +176,11 @@ async def _seed_student(db: AsyncSession, username: str, nickname: str) -> User:
 
 async def _login(client: httpx.AsyncClient, username: str) -> dict:
     response = await client.post(
-        "/api/v1/auth/login", json={"username": username, "password": _PASSWORD}
+        "/api/v1/auth/login", json={"identifier": username, "password": _PASSWORD}
     )
     assert response.status_code == 200, response.text
-    return response.json()
+    # The unified identifier form: tokens ride the union's nested pair.
+    return response.json()["tokens"]
 
 
 def _bearer(tokens: dict) -> dict[str, str]:

@@ -208,15 +208,15 @@ async def test_delete_revokes_every_device_and_kills_the_cookie(
     # The stolen-cookie fallback, end to end.
     client.cookies.set(DEVICE_COOKIE_NAME, cookie_value)
     requested = await client.post(
-        "/api/v1/auth/staff/email-code/request", json={"email": _TEACHER_EMAIL}
+        "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
     )
     assert requested.status_code == 202, requested.text
     from tests.e2e.email_code_probe import recover_email_code
 
     _, code = await recover_email_code(db_session, _TEACHER_EMAIL)
     verified = await client.post(
-        "/api/v1/auth/staff/email-code/verify",
-        json={"email": _TEACHER_EMAIL, "code": code},
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": _TEACHER_EMAIL, "code": code},
     )
     assert verified.status_code == 200, verified.text
     assert verified.json()["status"] == "totp_required"
