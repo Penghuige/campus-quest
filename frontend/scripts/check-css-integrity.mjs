@@ -50,9 +50,19 @@ for (const m of compiledCss.matchAll(
 // File list: pathspec form ('' pattern matches every line, so -l lists
 // all .tsx under src); the plan's `git grep -l -- '*.tsx' -- src` treated
 // the glob as the match pattern and listed nothing.
+// Env immunity (2026-10-19, the push-hook class): the pre-push hook
+// exports GIT_DIR/GIT_WORK_TREE for its own re-anchoring — inherited by
+// this checker's git child, a pathspec-relative grep then matches
+// NOTHING and exits 1 (the css-guard test run inside the hook's
+// coverage child was the first visible casualty). A tree-walking
+// checker must discover git from ITS cwd: strip the ambient plumbing.
+const gitEnv = { ...process.env };
+delete gitEnv.GIT_DIR;
+delete gitEnv.GIT_WORK_TREE;
+delete gitEnv.GIT_INDEX_FILE;
 const files = execSync(
   "git grep -l '' -- 'src/*.tsx' | grep -v __tests__",
-  { encoding: "utf8" },
+  { encoding: "utf8", env: gitEnv },
 ).trim().split("\n").filter(Boolean);
 const used = new Map(); // class -> [file]
 for (const f of files) {
