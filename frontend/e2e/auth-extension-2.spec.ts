@@ -57,7 +57,7 @@ async function fillPhoneVerified(page: Page, phone: string): Promise<void> {
 
 /** The unified LOGIN page's identifier field (手机号或邮箱). */
 async function fillLoginIdentifierVerified(page: Page, identifier: string): Promise<void> {
-  const field = page.getByLabel("手机号或邮箱", { exact: true });
+  const field = page.getByLabel("账号", { exact: true });
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await field.fill(identifier);
     await page.waitForTimeout(400);
@@ -145,7 +145,7 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     // form and the three-state identifier carries the seeded 学号.
     await page.getByRole("button", { name: "使用密码登录" }).click();
     const [username, password] = (STUDENT ?? "").split(":");
-    await page.getByLabel("手机号、邮箱或学号").fill(username);
+    await page.getByLabel("账号", { exact: true }).fill(username);
     await page.getByLabel("密码").fill(password);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -169,7 +169,7 @@ test.describe("mobile-code login (spec §3/§4)", () => {
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
     const { recoverMobileCode } = await import("./fixtures");
     await page.getByLabel("验证码", { exact: true }).fill(recoverMobileCode(`+86${phone}`));
-    await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+    await page.getByRole("checkbox", { name: /30 天内免登录/ }).check();
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
 

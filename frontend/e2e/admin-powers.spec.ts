@@ -142,7 +142,7 @@ test("the reset token's full loop: issue → consume page sets the password → 
   // alive under the NEW credential set either way.
   await page.getByRole("button", { name: "退出登录" }).click();
   await page.goto(`${BASE_URL}/login`);
-  await page.getByLabel("手机号或邮箱", { exact: true }).fill(email);
+  await page.getByLabel("账号", { exact: true }).fill(email);
   await page.getByRole("button", { name: "获取验证码", exact: true }).click();
   await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
   const { recoverEmailCode } = await import("./fixtures");

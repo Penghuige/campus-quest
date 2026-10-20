@@ -103,7 +103,7 @@ async function loginAsStaff(
   // The unified page: the weak link expands the password form; an
   // ADMIN's password answers totp_required (the leg completes it).
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").fill(email);
+  await page.getByLabel("账号", { exact: true }).fill(email);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -259,7 +259,7 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     const [username, password] = (process.env.CQ_E2E_STUDENT ?? "").split(":");
     await studentPage.goto(`${BASE_URL}/login`);
     await studentPage.getByRole("button", { name: "使用密码登录" }).click();
-    await studentPage.getByLabel("手机号、邮箱或学号").fill(username);
+    await studentPage.getByLabel("账号", { exact: true }).fill(username);
     await studentPage.getByLabel("密码").fill(password);
     await studentPage.getByRole("button", { name: "登录", exact: true }).click();
     // Wait for the login to actually LAND before navigating (the same

@@ -5,9 +5,9 @@
  * condition holds:
  *
  *   0  the remembered one-click banner (no cookie → no element);
- *   1  手机号或邮箱 identifier + 获取验证码 + the password weak link;
- *   1a the password expansion — the identifier widens to the
- *      three-state band (手机号、邮箱或学号);
+ *   1  the 账号 identifier (the band rides the PLACEHOLDER: 手机号
+ *      或邮箱 on the code form, 手机号、邮箱、学号 once the password
+ *      form expands) + 获取验证码 + the password weak link;
  *   2  the code inputs, after the first 获取验证码;
  *   2a the ADMIN TOTP leg (totp_required — the checkbox's meaning
  *      lives HERE; the code leg a TEACHER completes never sends a
@@ -284,7 +284,7 @@ function IdentifierForm({
           <FormErrorSummary view={summary} />
           <AuthField
             name="unified-login-identifier"
-            label="手机号、邮箱或学号"
+            label="账号"
             error={identifierError}
             inputProps={{
               value: identifier,
@@ -298,7 +298,7 @@ function IdentifierForm({
               autoComplete: "username",
               autoCapitalize: "none",
               autoCorrect: "off",
-              placeholder: "请输入手机号、邮箱或学号",
+              placeholder: "请输入手机号、邮箱、学号",
               disabled: verifying,
             }}
           />
@@ -336,8 +336,7 @@ function IdentifierForm({
           <FormErrorSummary view={summary} />
           <AuthField
             name="unified-login-identifier"
-            label="手机号或邮箱"
-            hint="将向该手机号或邮箱发送验证码"
+            label="账号"
             error={identifierError}
             inputProps={{
               value: identifier,
@@ -408,7 +407,7 @@ function IdentifierForm({
                   onChange={(event) => setRememberDevice(event.target.checked)}
                   disabled={verifying}
                 />{" "}
-                记住此设备 30 天
+                30 天内免登录
               </label>
               <SubmitButton loading={verifying}>登录</SubmitButton>
             </>

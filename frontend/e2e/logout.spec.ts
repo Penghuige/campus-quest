@@ -63,7 +63,7 @@ test.describe("student logout (defect #11)", () => {
     // the freed device right away.
     const [username, password] = AUTHOR_STUDENT!.split(":");
     await page.getByRole("button", { name: "使用密码登录" }).click();
-    await page.getByLabel("手机号、邮箱或学号").fill(username);
+    await page.getByLabel("账号", { exact: true }).fill(username);
     await page.getByLabel("密码").fill(password);
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));

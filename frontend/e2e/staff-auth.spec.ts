@@ -226,7 +226,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     // answers totp_required, the leg completes the login).
     await page.goto(`${BASE_URL}/login`);
     await page.getByRole("button", { name: "使用密码登录" }).click();
-    await page.getByLabel("手机号、邮箱或学号").fill(email);
+    await page.getByLabel("账号", { exact: true }).fill(email);
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
     await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -253,7 +253,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     // 30-day cookie IS the second factor now (the retired form's
     // empty-totp_code mechanism folded into the union's arms).
     await page.getByRole("button", { name: "使用密码登录" }).click();
-    await page.getByLabel("手机号、邮箱或学号").fill(email);
+    await page.getByLabel("账号", { exact: true }).fill(email);
     await page.getByLabel("密码").fill("e2e-correct-horse");
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page.getByTestId("unified-login-totp-leg")).toHaveCount(0);
@@ -328,7 +328,7 @@ test.describe("staff invitation acceptance (brief step 1)", () => {
     await page.getByRole("link", { name: "前往员工登录" }).click();
     await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
     const invitedEmail = `e2e-admin-invite-land-${RUN}@school.edu`;
-    await page.getByLabel("手机号或邮箱", { exact: true }).fill(invitedEmail);
+    await page.getByLabel("账号", { exact: true }).fill(invitedEmail);
     await page.getByRole("button", { name: "获取验证码", exact: true }).click();
     await expect(page.getByRole("button", { name: /重新发送（\d+ 秒）/ })).toBeVisible();
     const { recoverEmailCode } = await import("./fixtures");
