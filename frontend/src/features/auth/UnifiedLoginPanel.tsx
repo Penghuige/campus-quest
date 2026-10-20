@@ -20,7 +20,7 @@
  * state).
  */
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session";
@@ -54,6 +54,13 @@ import {
   validateChallengeIdentifier,
   validatePasswordIdentifier,
 } from "./unifiedLoginView";
+import {
+  listRecentLogins,
+  maskIdentifier,
+  recordRecentLogin,
+  removeRecentLogin,
+  type RecentLoginEntry,
+} from "./recentLogins";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -65,6 +72,30 @@ export function UnifiedLoginPanel() {
   // leg is where its MEANING lives (the terminal ruling), but the
   // checked state must survive the leg transition (#113's carry, kept).
   const [rememberDevice, setRememberDevice] = useState(false);
+  // The identifier rides panel level too (batch 2): the recent-logins
+  // card's click PREFILLS it, and every login-completion records it.
+  const [identifier, setIdentifier] = useState("");
+  const [recent, setRecent] = useState<RecentLoginEntry[]>([]);
+  const refreshRecent = () => setRecent(listRecentLogins());
+  useEffect(() => {
+    refreshRecent();
+  }, []);
+
+  /** Record a completed login (the jar upserts, caps, and never throws). */
+  function recordLogin(role: string, nickname = "") {
+    const trimmed = identifier.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    recordRecentLogin({
+      identifier: trimmed,
+      masked: maskIdentifier(trimmed),
+      role: role === "ADMIN" || role === "TEACHER" ? role : "STUDENT",
+      nickname,
+      lastUsedAt: Date.now(),
+    });
+    refreshRecent();
+  }
 
   // Layers 2a/2b replace the form wholesale (the family's pattern) —
   // the back links hand the identifier flow back untouched.
@@ -74,23 +105,98 @@ export function UnifiedLoginPanel() {
         pendingToken={pendingToken}
         rememberDevice={rememberDevice}
         setRememberDevice={setRememberDevice}
+        identifier={identifier}
+        recordLogin={recordLogin}
         onBack={() => setPendingToken(null)}
       />
     );
   }
   if (registerToken !== null) {
-    return <InlineRegister token={registerToken} onReset={() => setRegisterToken(null)} />;
+    return (
+      <InlineRegister
+        token={registerToken}
+        identifier={identifier.trim()}
+        onReset={() => setRegisterToken(null)}
+      />
+    );
   }
   return (
     <>
       <FastLoginHint onTotpRequired={setPendingToken} />
+      <RecentLogins
+        entries={recent}
+        onPick={(value) => {
+          setIdentifier(value);
+        }}
+        onRemove={(value) => {
+          removeRecentLogin(value);
+          refreshRecent();
+        }}
+      />
       <IdentifierForm
+        identifier={identifier}
+        setIdentifier={setIdentifier}
         rememberDevice={rememberDevice}
         setRememberDevice={setRememberDevice}
         onTotpRequired={setPendingToken}
         onUnregistered={setRegisterToken}
+        onAuthenticated={recordLogin}
       />
     </>
+  );
+}
+
+/** Batch 2 (owner brief 2026-10-20): the recent-logins quick-switch
+ * cards. ZERO entries → ZERO elements (the layer-0 discipline). The
+ * card shows the G11 mask + role badge + nickname; the avatar slot is
+ * a role-tinted initial (the anonymous page cannot fetch avatars —
+ * avatarUrl needs a signed-in bearer; noted as the batch's one
+ * deviation from the brief). */
+function RecentLogins({
+  entries,
+  onPick,
+  onRemove,
+}: {
+  entries: RecentLoginEntry[];
+  onPick: (identifier: string) => void;
+  onRemove: (identifier: string) => void;
+}) {
+  if (entries.length === 0) {
+    return null;
+  }
+  const badge: Record<string, string> = { STUDENT: "学生", TEACHER: "教师", ADMIN: "管理员" };
+  return (
+    <div className="login-recent" aria-label="最近登录">
+      {entries.map((entry) => (
+        <div className="login-recent-card" key={entry.identifier}>
+          <button
+            type="button"
+            className="login-recent-pick"
+            onClick={() => onPick(entry.identifier)}
+            aria-label={`切换到 ${entry.masked}`}
+          >
+            <span className={`login-recent-avatar role-${entry.role.toLowerCase()}`} aria-hidden="true">
+              {(entry.nickname || entry.masked)[0]}
+            </span>
+            <span className="login-recent-meta">
+              <span className="mono">{entry.masked}</span>
+              <span className="login-recent-sub">
+                {badge[entry.role] ?? entry.role}
+                {entry.nickname ? ` · ${entry.nickname}` : ""}
+              </span>
+            </span>
+          </button>
+          <Button
+            variant="ghost"
+            className="login-recent-remove"
+            onClick={() => onRemove(entry.identifier)}
+            aria-label={`从本机移除 ${entry.masked}`}
+          >
+            移除
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -109,20 +215,25 @@ function useLanding() {
 }
 
 function IdentifierForm({
+  identifier,
+  setIdentifier,
   rememberDevice,
   setRememberDevice,
   onTotpRequired,
   onUnregistered,
+  onAuthenticated,
 }: {
+  identifier: string;
+  setIdentifier: (value: string) => void;
   rememberDevice: boolean;
   setRememberDevice: (value: boolean) => void;
   onTotpRequired: (pendingToken: string) => void;
   onUnregistered: (registerToken: string) => void;
+  onAuthenticated: (role: string, nickname?: string) => void;
 }) {
   const land = useLanding();
   const cooldown = useCooldown();
   const [mode, setMode] = useState<"code" | "password">("code");
-  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -215,6 +326,7 @@ function IdentifierForm({
         onUnregistered(outcome.registerToken);
         return;
       }
+      onAuthenticated(outcome.kind === "authenticated" ? outcome.role : "");
       await land();
     } catch (cause) {
       setSummary(toChallengeSummary(cause));
@@ -251,6 +363,7 @@ function IdentifierForm({
         onTotpRequired(outcome.pendingToken);
         return;
       }
+      onAuthenticated(outcome.kind === "authenticated" ? outcome.role : "");
       await land();
     } catch (cause) {
       if (!isApiError(cause)) {
@@ -443,11 +556,15 @@ function TotpLeg({
   pendingToken,
   rememberDevice,
   setRememberDevice,
+  identifier,
+  recordLogin,
   onBack,
 }: {
   pendingToken: string;
   rememberDevice: boolean;
   setRememberDevice: (value: boolean) => void;
+  identifier: string;
+  recordLogin: (role: string, nickname?: string) => void;
   onBack: () => void;
 }) {
   const land = useLanding();
@@ -471,7 +588,10 @@ function TotpLeg({
     try {
       // The checkbox's meaning lives HERE (the ADMIN second leg) —
       // this is the only leg remember_device may ever exempt.
-      await unifiedChallengeTotp(pendingToken, totpCode.trim(), rememberDevice);
+      const outcome = await unifiedChallengeTotp(pendingToken, totpCode.trim(), rememberDevice);
+      if (outcome.kind === "authenticated") {
+        recordLogin(outcome.role);
+      }
       await land();
     } catch (cause) {
       const view = describeChallengeError(cause, "登录失败，请稍后重试");
@@ -532,9 +652,11 @@ function TotpLeg({
  * register_token + /auth/mobile-code/register semantics, unchanged). */
 function InlineRegister({
   token,
+  identifier,
   onReset,
 }: {
   token: string;
+  identifier: string;
   onReset: () => void;
 }) {
   const router = useRouter();
@@ -569,6 +691,13 @@ function InlineRegister({
         studentNumber.trim(),
         password.length === 0 ? null : password,
       );
+      recordRecentLogin({
+        identifier,
+        masked: maskIdentifier(identifier),
+        role: "STUDENT",
+        nickname: studentNumber.trim(),
+        lastUsedAt: Date.now(),
+      });
       refreshSession();
       router.replace("/"); // registered AND logged in — straight home
       router.refresh();

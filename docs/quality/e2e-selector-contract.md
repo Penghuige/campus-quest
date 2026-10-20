@@ -67,7 +67,11 @@ PhoneBindSection) ·
 确认执行 / 撤销 / 确认撤销 / 重发 (Wave 2a's admin power-pack: the user-detail
 actions, the batch verbs, and the invitation lifecycle panel)
 
-Checkboxes: 30 天内免登录 (the code form, the 2026-10-20 owner copy) · 记住此设备 30 天 — the password/totp seats (the
+Checkboxes: 30 天内免登录 (the code form, the 2026-10-20 owner copy) · 记住此设备 30 天 — the password/totp seats
+
+Buttons (batch 2): 切换到 <mask> / 从本机移除 <mask> (the recent-logins
+cards' pick and device-local removal verbs — the aria-labels carry the
+G11 mask, never the full address) (the
 code form's copy is audience-neutral; the password expansion's notes the
 totp audience; the TOTP leg is where the meaning LIVES — the 2026-10-15
 terminal ruling: the flag is sent whenever checked and the backend
