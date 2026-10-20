@@ -9,7 +9,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 10 | U1-U10 |
+| 已覆盖 | 11 | U1-U11 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 
@@ -27,6 +27,7 @@
 | U8 | §5.1 裁定 | 空体 verify 对 ADMIN 恒 totp_required——cookie 不因码腿豁免二因子（免 TOTP 语义只在 /auth/login 密码腿的 cookie honoring）；员工 cookie 非探针受众（204） | `tests/integration/identity/test_unified_challenge.py::test_empty_body_verify_still_owes_admin_the_second_factor` | 已覆盖 |
 | U9 | §3.2 | login 标识形态：学号→学生密码流；手机（学生先手机后学号=#73 并入）→学生密码流；邮箱→员工密码流（TEACHER 密码即全认证 §2.3）；旧形态 {username,password} 并存收（PR-3 清） | `tests/integration/identity/test_unified_challenge.py::test_login_identifier_form_covers_three_identifiers` | 已覆盖 |
 | U10 | §3.2 + §2.2 | ADMIN 密码腿：无 cookie→totp_required；有效 remembered cookie→authenticated 直落（staff/login 30 天重登语义保持）；cookie 经码流 totp 腿+remember_device 铸造 | `tests/integration/identity/test_unified_challenge.py::test_login_admin_leg_honors_the_remembered_cookie` | 已覆盖 |
+| U11 | 裁定 c) 修订 2026-10-20（owner 统一页精简） | **全受众 remember_device 铸造**：TEACHER 码流 verify（邮箱/手机臂）勾选→铸 30 天设备凭据，空体腿免码直落（对齐 ADMIN cq_staff_device 语义）；ADMIN 不变（totp 腿发）；cookie 恒 30 天窗口（Set-Cookie max-age=30d 断言）；铸造类跨连接耐久（真会话+独立连接读回） | `tests/integration/identity/test_unified_challenge.py::test_teacher_email_code_remember_mints_and_reopens` / `test_teacher_mobile_code_remember_mints` / `test_every_remembered_cookie_rides_a_30_day_window` / `test_teacher_remember_mint_survives_a_fresh_connection` | 已覆盖 |
 
 ## 缺口明细
 

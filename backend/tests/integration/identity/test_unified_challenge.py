@@ -1041,3 +1041,203 @@ async def test_email_totp_leg_forces_setup_for_unconfirmed_admin(
     )
     assert forced.status_code == 403, forced.text
     assert forced.json()["error"]["code"] == "TOTP_SETUP_REQUIRED"
+
+
+async def test_teacher_email_code_remember_mints_and_reopens(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+    db_engine: AsyncEngine,
+) -> None:
+    """The owner's revision of ruling (c) (2026-10-20): the TEACHER code
+    arms honor remember_device too — a verified email code with the box
+    checked mints the 30-day device credential, and the empty-body leg
+    re-opens the session on it (the ADMIN cq_staff_device semantics,
+    now audience-wide)."""
+    teacher = await _seed_user(
+        db_session,
+        username=f"uni-teacher-rem-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    await db_session.commit()
+
+    await api_redis.delete(f"emailcode:cooldown:{teacher.email_normalized}")
+    requested = await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": teacher.email_normalized}
+    )
+    assert requested.status_code == 202, requested.text
+    code = str(api_email.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": teacher.email_normalized,
+            "code": code,
+            "remember_device": True,
+        },
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["status"] == "authenticated"
+    cookie = _device_cookie(login)
+
+    continued = await client.post(
+        "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["status"] == "authenticated"
+    assert continued.json()["role"] == "TEACHER"
+
+
+async def test_teacher_mobile_code_remember_mints(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The mobile arm's TEACHER completion honors remember_device the
+    same way (the audience-wide revision)."""
+    teacher = await _seed_user(
+        db_session,
+        username=f"uni-teacher2-rem-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+        phone="+8613800160091",
+    )
+    await db_session.commit()
+
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": teacher.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": teacher.phone_e164,
+            "code": code,
+            "remember_device": True,
+        },
+    )
+    assert login.status_code == 200, login.text
+    cookie = _device_cookie(login)
+
+    continued = await client.post(
+        "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["role"] == "TEACHER"
+
+
+async def test_every_remembered_cookie_rides_a_30_day_window(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The student edition's TTL check (the batch's item 2): the
+    cookie's Set-Cookie max-age and the credential row's expiry both
+    carry the one 30-day window — the ADMIN semantics, audience-wide."""
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800160092",
+    )
+    await db_session.commit()
+
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": student.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": student.phone_e164,
+            "code": code,
+            "remember_device": True,
+        },
+    )
+    assert login.status_code == 200, login.text
+    from app.modules.identity.device_credentials import DEVICE_TTL_DAYS
+
+    for header in login.headers.get_list("set-cookie"):
+        if header.startswith("cq_staff_device="):
+            assert f"max-age={DEVICE_TTL_DAYS * 24 * 3600}" in header.lower()
+
+
+async def test_teacher_remember_mint_survives_a_fresh_connection(
+    db_engine: AsyncEngine,
+    api_clock: FrozenClock,
+    api_email: FakeEmailSender,
+    api_redis: aioredis.Redis,
+) -> None:
+    """The mint-class durability leg (the #85/#101 discipline): the
+    remembered-device row a 200 hands out must be COMMITTED — the
+    savepoint harness cannot see a missing commit, so this leg drives
+    the REAL email service on REAL sessions and a fresh connection
+    reads the row back."""
+    from sqlalchemy import delete, select
+
+    from app.core.config import get_settings as _get_settings
+    from app.modules.identity.email_login_service import EmailLoginService
+    from app.modules.identity.models import LoginEmailChallenge, RememberedDevice
+
+    mail = f"durable-rem-{uuid4().hex[:8]}@pku.edu.cn"
+    async with AsyncSession(db_engine) as session:
+        user = User(
+            username=mail,
+            password_hash=None,
+            nickname="durable-rem",
+            email_normalized=mail,
+            email_verified_at=_T0,
+            role=Role.TEACHER,
+            status=UserStatus.ACTIVE,
+        )
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+        await session.commit()
+
+    from app.core.security import AccessTokenCodec
+    from app.modules.identity.login_failure_guard import LoginFailureGuard
+    from app.modules.identity.session_service import SessionService
+
+    service = EmailLoginService(
+        sender=api_email,
+        redis=api_redis,
+        clock=api_clock,
+        sessions=SessionService(
+            clock=api_clock,
+            access_codec=AccessTokenCodec(
+                secret="durability-test-secret-0123456789", ttl_minutes=15
+            ),
+        ),
+        guard=LoginFailureGuard(redis=api_redis),
+        hmac_secret=_get_settings().otp_hmac_secret,
+    )
+    async with AsyncSession(db_engine) as session:
+        await service.request_code(session, mail)
+    code = str(api_email.messages[-1].variables["code"])
+    async with AsyncSession(db_engine) as session:
+        outcome = await service.verify_code(
+            session, email=mail, code=code, remember_device=True
+        )
+    assert outcome.device_cookie is not None
+
+    async with AsyncSession(db_engine) as verify:
+        row = await verify.scalar(
+            select(RememberedDevice).where(RememberedDevice.user_id == user_id)
+        )
+    assert row is not None, "the remembered device died with the transaction"
+
+    async with AsyncSession(db_engine) as cleanup:
+        from app.modules.identity.models import UserSession
+
+        await cleanup.execute(
+            delete(RememberedDevice).where(RememberedDevice.user_id == user_id)
+        )
+        await cleanup.execute(delete(UserSession).where(UserSession.user_id == user_id))
+        await cleanup.execute(
+            delete(LoginEmailChallenge).where(
+                LoginEmailChallenge.email_normalized == mail
+            )
+        )
+        await cleanup.execute(delete(User).where(User.id == user_id))
+        await cleanup.commit()
+    await api_redis.flushdb()
