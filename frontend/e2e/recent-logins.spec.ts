@@ -24,7 +24,7 @@ test.skip(!(E2E_ENABLED && RUN), "set CQ_E2E=1 (and the CQ_E2E_* vars) to run th
 
 test("cards record on login, prefill on click, and removal is device-local", async ({ page }) => {
   test.setTimeout(120_000);
-  const [teacherEmail, teacherPassword] = (process.env.CQ_E2E_STAFF ?? "").split(":");
+  const [teacherEmail] = (process.env.CQ_E2E_STAFF ?? "").split(":");
 
   // The TEACHER rides the email-code flow (the six chains' helper
   // shape, inline): request → recover → verify → workspace.

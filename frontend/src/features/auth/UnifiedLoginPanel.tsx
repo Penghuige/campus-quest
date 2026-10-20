@@ -104,7 +104,6 @@ export function UnifiedLoginPanel() {
         pendingToken={pendingToken}
         rememberDevice={rememberDevice}
         setRememberDevice={setRememberDevice}
-        identifier={identifier}
         recordLogin={recordLogin}
         onBack={() => setPendingToken(null)}
       />
@@ -555,14 +554,12 @@ function TotpLeg({
   pendingToken,
   rememberDevice,
   setRememberDevice,
-  identifier,
   recordLogin,
   onBack,
 }: {
   pendingToken: string;
   rememberDevice: boolean;
   setRememberDevice: (value: boolean) => void;
-  identifier: string;
   recordLogin: (role: string, nickname?: string) => void;
   onBack: () => void;
 }) {
