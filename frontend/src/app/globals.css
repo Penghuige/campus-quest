@@ -395,6 +395,79 @@ body {
   margin-bottom: var(--space-4);
 }
 
+/* --- recent-logins quick-switch cards (batch 2, 2026-10-20) ---------------
+ * One row per remembered account: a role-tinted initial (the anonymous
+ * page cannot fetch avatars), the G11 mask, the badge + nickname, and
+ * the device-local removal verb. Zero entries render nothing at all.
+ */
+.login-recent {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.login-recent-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.login-recent-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.login-recent-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: var(--text-md);
+  flex-shrink: 0;
+}
+
+.login-recent-avatar.role-student {
+  background: var(--surface-3);
+  color: var(--primary-strong);
+}
+
+.login-recent-avatar.role-teacher,
+.login-recent-avatar.role-admin {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.login-recent-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.login-recent-sub {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.login-recent-remove {
+  flex-shrink: 0;
+}
+
 .field {
   display: grid;
   gap: var(--space-1);
