@@ -370,10 +370,12 @@ The verify response is a discriminated union — judgment rides the
 `status` member alone: `authenticated` (with `role` and `tokens` — the
 `TokenPairResponse` shape, nested as in `RegisterResponse`),
 `totp_required` (with `pending_token`), `unregistered` (with
-`register_token`). `remember_device` is honored server-side by
-audience only (STUDENT verify arm and the ADMIN totp arm; the staff
-code arms never exempt a factor) — the frontend sends it
-unconditionally and holds no audience knowledge.
+`register_token`). `remember_device` mints the 30-day device
+credential on whichever leg COMPLETES a login (the owner's revision of
+ruling (c), 2026-10-20: the STUDENT verify arm, the TEACHER code arms
+— email and mobile — and the ADMIN totp arm; a cookie never exempts a
+factor on the code legs, an ADMIN still owes totp there) — the
+frontend sends it unconditionally and holds no audience knowledge.
 
 ### System / framework codes
 
