@@ -20,7 +20,7 @@
  * state).
  */
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session";
@@ -75,11 +75,10 @@ export function UnifiedLoginPanel() {
   // The identifier rides panel level too (batch 2): the recent-logins
   // card's click PREFILLS it, and every login-completion records it.
   const [identifier, setIdentifier] = useState("");
-  const [recent, setRecent] = useState<RecentLoginEntry[]>([]);
+  // The ledger's first read rides a LAZY initializer (no mount effect —
+  // the react-compiler rule); refreshes happen in event handlers only.
+  const [recent, setRecent] = useState<RecentLoginEntry[]>(() => listRecentLogins());
   const refreshRecent = () => setRecent(listRecentLogins());
-  useEffect(() => {
-    refreshRecent();
-  }, []);
 
   /** Record a completed login (the jar upserts, caps, and never throws). */
   function recordLogin(role: string, nickname = "") {
@@ -115,7 +114,7 @@ export function UnifiedLoginPanel() {
     return (
       <InlineRegister
         token={registerToken}
-        identifier={identifier.trim()}
+        recordLogin={recordLogin}
         onReset={() => setRegisterToken(null)}
       />
     );
@@ -652,11 +651,11 @@ function TotpLeg({
  * register_token + /auth/mobile-code/register semantics, unchanged). */
 function InlineRegister({
   token,
-  identifier,
+  recordLogin,
   onReset,
 }: {
   token: string;
-  identifier: string;
+  recordLogin: (role: string, nickname?: string) => void;
   onReset: () => void;
 }) {
   const router = useRouter();
@@ -691,13 +690,7 @@ function InlineRegister({
         studentNumber.trim(),
         password.length === 0 ? null : password,
       );
-      recordRecentLogin({
-        identifier,
-        masked: maskIdentifier(identifier),
-        role: "STUDENT",
-        nickname: studentNumber.trim(),
-        lastUsedAt: Date.now(),
-      });
+      recordLogin("STUDENT", studentNumber.trim());
       refreshSession();
       router.replace("/"); // registered AND logged in — straight home
       router.refresh();
