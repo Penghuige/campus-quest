@@ -83,7 +83,7 @@ async function loginAs(
   const [username, password] = credentials.split(":");
   await page.goto(LOGIN_URL);
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").fill(username);
+  await page.getByLabel("账号", { exact: true }).fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
@@ -136,7 +136,7 @@ async function loginAsStaff(
   // The unified page: the weak link expands the password form; an
   // ADMIN's password answers totp_required (the leg completes it).
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").fill(username);
+  await page.getByLabel("账号", { exact: true }).fill(username);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.getByRole("button", { name: "登录", exact: true }).click();

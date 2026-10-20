@@ -43,7 +43,7 @@ function wrongNeighborOf(code: string): string {
 
 /** Settle-verified identifier fill (the hydration-wipe lesson). */
 async function fillIdentifierVerified(page: Page, identifier: string): Promise<void> {
-  const field = page.getByLabel("手机号或邮箱", { exact: true });
+  const field = page.getByLabel("账号", { exact: true });
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await field.fill(identifier);
     await page.waitForTimeout(400);
@@ -248,10 +248,13 @@ test.describe("the unified login page (six chains)", () => {
       "aria-expanded",
       "true",
     );
-    await expect(page.getByLabel("手机号、邮箱或学号", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("账号", { exact: true })).toBeVisible();
     await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
     // The flip-back link restores the code form.
     await page.getByRole("button", { name: "使用验证码登录" }).click();
-    await expect(page.getByLabel("手机号或邮箱", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("账号", { exact: true })).toHaveAttribute(
+      "placeholder",
+      "请输入手机号或邮箱",
+    );
   });
 });

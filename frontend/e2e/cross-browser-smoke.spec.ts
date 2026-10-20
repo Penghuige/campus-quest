@@ -76,7 +76,7 @@ async function studentLoginTyped(
   const [username, password] = credentials.split(":");
   await page.goto(`${BASE}/login`);
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").pressSequentially(username, { delay: 2 });
+  await page.getByLabel("账号", { exact: true }).pressSequentially(username, { delay: 2 });
   await page.getByLabel("密码").pressSequentially(password, { delay: 2 });
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -125,7 +125,7 @@ test.describe("cross-browser smoke (firefox + webkit subset)", () => {
     const page = await browser.newPage();
     await page.goto(`${BASE}/login`);
     await page.getByRole("button", { name: "使用密码登录" }).click();
-    await page.getByLabel("手机号、邮箱或学号").pressSequentially(staff[0], { delay: 2 });
+    await page.getByLabel("账号", { exact: true }).pressSequentially(staff[0], { delay: 2 });
     await page.getByLabel("密码").pressSequentially(staff[1] ?? "", { delay: 2 });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await page.getByRole("button", { name: "登录", exact: true }).click();

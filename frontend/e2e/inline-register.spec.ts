@@ -27,7 +27,7 @@ function freshPhone(): string {
 
 /** Settle-verified phone fill (the hydration-wipe lesson). */
 async function fillPhoneVerified(page: Page, phone: string): Promise<void> {
-  const field = page.getByLabel("手机号或邮箱", { exact: true });
+  const field = page.getByLabel("账号", { exact: true });
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await field.fill(phone);
     await page.waitForTimeout(400);

@@ -546,13 +546,23 @@ body {
 .link {
   color: var(--primary);
   font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
 }
 
 .link:hover {
   color: var(--primary-strong);
-  text-decoration-thickness: 2px;
+}
+
+/* --- global link underlines (owner ruling 2026-10-20) -----------------------
+ * ZERO underlines on every link shape site-wide — the accent color and
+ * the 500 weight carry the affordance; hover speaks through the color
+ * step, never a restored line. ONE layer here beats per-site patches;
+ * focus-visible outlines (the accessibility red line) are untouched.
+ */
+a,
+a:hover,
+a:visited {
+  text-decoration: none;
 }
 
 /* --- alerts / result summaries -------------------------------------------- */

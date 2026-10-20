@@ -31,8 +31,8 @@ authoritative record.
 
 | Label | Surface |
 |---|---|
-| 手机号或邮箱 / 验证码 | the unified login's code form (spec 2026-10-19 §4 layer 1/2) |
-| 手机号、邮箱或学号 / 密码 | the unified login's password expansion (layer 1a — the three-state identifier band) |
+| 账号 / 验证码 | the unified login's code form (the band rides the PLACEHOLDER: 请输入手机号或邮箱 — the 2026-10-20 refinement) |
+| 账号 / 密码 | the unified login's password expansion (placeholder 请输入手机号、邮箱、学号 — three-state incl 学号) |
 | 动态验证码 | the unified login's TOTP leg (layer 2a, testid `unified-login-totp-leg`) |
 | 设置密码 / 确认密码 / 设置密码并继续 | register, staff invite activation |
 | 昵称 / 手机号 | register, profile binding |
@@ -67,7 +67,7 @@ PhoneBindSection) ·
 确认执行 / 撤销 / 确认撤销 / 重发 (Wave 2a's admin power-pack: the user-detail
 actions, the batch verbs, and the invitation lifecycle panel)
 
-Checkboxes: 记住此设备 30 天 — the unified login's three seats (the
+Checkboxes: 30 天内免登录 (the code form, the 2026-10-20 owner copy) · 记住此设备 30 天 — the password/totp seats (the
 code form's copy is audience-neutral; the password expansion's notes the
 totp audience; the TOTP leg is where the meaning LIVES — the 2026-10-15
 terminal ruling: the flag is sent whenever checked and the backend

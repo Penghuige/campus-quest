@@ -95,9 +95,10 @@ test.describe("student registration and login", () => {
 
   test("wrong password shows the stable failure copy, both fields resettable", async ({ page }) => {
     await page.goto(`${BASE_URL}/login`);
-    // The password tab (the default is the mobile channel since auth II).
-    await page.getByRole("button", { name: "密码登录" }).click();
-    await page.getByLabel("学号").fill(freshStudentNumber());
+    // The unified page's password expansion (the weak link); the
+    // student number rides the three-state identifier.
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("账号", { exact: true }).fill(freshStudentNumber());
     await page.getByLabel("密码").fill("wrong-password");
     await page.getByRole("button", { name: "登录", exact: true }).click();
 

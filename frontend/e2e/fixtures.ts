@@ -110,7 +110,7 @@ export async function loginThroughUi(
   // weak link's expansion — the identifier field is THREE-state there
   // (手机号、邮箱或学号), and the seeded student rides its 学号.
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").fill(account.username);
+  await page.getByLabel("账号", { exact: true }).fill(account.username);
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -237,7 +237,7 @@ export async function staffLogin(
   // password answers totp_required — the second leg completes on the
   // page's TOTP layer; a TEACHER password lands directly.
   await page.getByRole("button", { name: "使用密码登录" }).click();
-  await page.getByLabel("手机号、邮箱或学号").fill(email);
+  await page.getByLabel("账号", { exact: true }).fill(email);
   await page.getByLabel("密码").fill(password);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.getByRole("button", { name: "登录", exact: true }).click();
