@@ -24,11 +24,29 @@ test.skip(!(E2E_ENABLED && RUN), "set CQ_E2E=1 (and the CQ_E2E_* vars) to run th
 
 test("cards record on login, prefill on click, and removal is device-local", async ({ page }) => {
   test.setTimeout(120_000);
-  const [teacherEmail] = (process.env.CQ_E2E_STAFF ?? "").split(":");
+  const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
+  // A DEDICATED invited teacher: the shared seeded teacher's mailbox
+  // bucket must stay clean for the six chains that run after this file
+  // (the same-file arms proved the pooled mailbox reds them).
+  const teacherEmail = `e2e-recent-${RUN}@school.edu`;
+  const token = await mintToken(ADMIN_ID!);
+  const invite = await page.request.post(
+    `${process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1"}/staff/invitations`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { email: teacherEmail, role: "TEACHER" },
+    },
+  );
+  expect(invite.ok(), await invite.text()).toBe(true);
+  const { token: inviteToken } = (await invite.json()) as { token: string };
+  await page.goto(`${BASE_URL}/staff/invite/${encodeURIComponent(inviteToken)}`);
+  await page.getByRole("button", { name: "激活账号" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
 
   // The TEACHER rides the email-code flow (the six chains' helper
   // shape, inline): request → recover → verify → workspace.
-  await page.goto(`${BASE_URL}/login`);
   const field = page.getByLabel("账号", { exact: true });
   await field.fill(teacherEmail);
   await page.getByRole("button", { name: "获取验证码", exact: true }).click();
@@ -38,7 +56,7 @@ test("cards record on login, prefill on click, and removal is device-local", asy
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
 
   // Logout: the card for the teacher session greets the login page.
-  // The mask keeps the address's FIRST local char (e2e-teacher… → e***).
+  // The mask keeps the address's FIRST local char (e2e-recent… → e***).
   await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
   const teacherMask = `${teacherEmail[0]}***@school.edu`;

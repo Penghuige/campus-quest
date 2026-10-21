@@ -86,9 +86,17 @@ export function UnifiedLoginPanel() {
   // request. seq-keyed so repeated picks of the SAME card re-fire.
   const [autoSend, setAutoSend] = useState<{ seq: number; identifier: string } | null>(null);
   const autoSendSeq = useRef(0);
-  // The ledger's first read rides a LAZY initializer (no mount effect —
-  // the react-compiler rule); refreshes happen in event handlers only.
-  const [recent, setRecent] = useState<RecentLoginEntry[]>(() => listRecentLogins());
+  // The ledger reads localStorage — a BROWSER-only source: the first
+  // render (server included) starts empty and the mount fills it on a
+  // deferred tick. A lazy initializer would read localStorage during
+  // render — the server has none, so the client's first HTML disagrees
+  // (a hydration mismatch, caught in the terminal round); a synchronous
+  // setState in the effect body trips the react-compiler rule instead.
+  const [recent, setRecent] = useState<RecentLoginEntry[]>([]);
+  useEffect(() => {
+    const timer = setTimeout(() => setRecent(listRecentLogins()), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const refreshRecent = () => setRecent(listRecentLogins());
   // The remembered-device probe is PANEL-level (batch 3): ONE anonymous
   // read feeds both the banner and the cards' one-click branch (a
