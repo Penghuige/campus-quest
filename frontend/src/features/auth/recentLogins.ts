@@ -31,11 +31,17 @@ export interface RecentLoginEntry {
 }
 
 /** The G11 mask: a CN mobile keeps its last four; an email its first
- * local char + domain; a student number its bookends. */
+ * local char + domain; a student number its bookends. E.164 forms
+ * (the probe's own shape) mask like the bare mobile — an unmasked
+ * passthrough would leak the whole number AND never match the probe. */
 export function maskIdentifier(identifier: string): string {
   const trimmed = identifier.trim();
   if (/^1[3-9]\d{9}$/.test(trimmed)) {
     return `+86****${trimmed.slice(-4)}`;
+  }
+  const e164 = /^\+?(86)?[\s-]*(1[3-9]\d{9})$/.exec(trimmed);
+  if (e164 !== null) {
+    return `+86****${e164[2].slice(-4)}`;
   }
   const at = trimmed.indexOf("@");
   if (at > 0) {
@@ -43,6 +49,12 @@ export function maskIdentifier(identifier: string): string {
   }
   if (/^\d{6,20}$/.test(trimmed)) {
     return `${trimmed.slice(0, 2)}****${trimmed.slice(-2)}`;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    // The backend's short-value rule (mask_student_number): a value
+    // shorter than the student-number minimum is masked FULLY — four
+    // kept digits would give a five-digit value away.
+    return "****";
   }
   return trimmed;
 }

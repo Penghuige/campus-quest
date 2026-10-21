@@ -192,13 +192,20 @@ describe("unifiedChallengeTotp", () => {
 });
 
 describe("the remembered-device layer-0 pair (the migrated paths)", () => {
-  test("the probe rides GET /auth/challenge/remembered and yields the mask", async () => {
-    stubFetch(JSON.stringify({ phone_masked: "+861****5555" }), 200);
+  test("the probe rides GET /auth/challenge/remembered and reads identifier_masked", async () => {
+    // The backend's fast-track rename (2026-10-21): the field speaks
+    // for BOTH audiences — a phone mask or an email mask.
+    stubFetch(JSON.stringify({ identifier_masked: "+86****5555" }), 200);
     const mask = await fetchRememberedHint();
-    assert.equal(mask, "+861****5555");
+    assert.equal(mask, "+86****5555");
     assert.equal(recorded?.url, "/api/v1/auth/challenge/remembered");
     assert.equal(recorded?.method, "GET");
     assert.equal(recorded?.credentials, "include");
+  });
+
+  test("an email-shaped remembered device answers an email mask through the SAME field", async () => {
+    stubFetch(JSON.stringify({ identifier_masked: "t***@school.edu" }), 200);
+    assert.equal(await fetchRememberedHint(), "t***@school.edu");
   });
 
   test("the probe answers null for the uniform 204 — and NEVER throws (any failure is null)", async () => {

@@ -388,19 +388,21 @@ export async function unifiedChallengeTotp(
 
 /**
  * The remembered-device LAYER-0 probe (spec §3.1's read path, frozen
- * with reviewer amendment 5e3636d): GET /auth/challenge/remembered
- * answers 200 {phone_masked} when the HttpOnly cq_staff_device cookie
- * names a live remembered device (the backend's mask — the client
- * never sees the full number), 204 otherwise. Every non-answer
- * resolves null quietly: the probe only decides whether the page
- * renders its one-click banner.
+ * with reviewer amendment 5e3636d; the field renamed to
+ * `identifier_masked` in the 2026-10-21 fast-track — it speaks for
+ * BOTH audiences, a phone mask or an email mask): GET
+ * /auth/challenge/remembered answers 200 {identifier_masked} when the
+ * HttpOnly cq_staff_device cookie names a live remembered device (the
+ * backend's mask — the client never sees the full address), 204
+ * otherwise. Every non-answer resolves null quietly: the probe only
+ * decides whether the page renders its one-click banner.
  */
 export async function fetchRememberedHint(): Promise<string | null> {
   try {
-    const body = await apiRequest<{ phone_masked?: string } | null>(
+    const body = await apiRequest<{ identifier_masked?: string } | null>(
       `${BASE}/challenge/remembered`,
     );
-    return body?.phone_masked ?? null;
+    return body?.identifier_masked ?? null;
   } catch {
     return null;
   }

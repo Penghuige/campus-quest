@@ -20,7 +20,7 @@
  * state).
  */
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session";
@@ -31,6 +31,8 @@ import { FastLoginHint } from "./FastLoginHint";
 import { FormErrorSummary } from "./FormErrorSummary";
 import { SubmitButton } from "./SubmitButton";
 import {
+  fastLoginCookieOnly,
+  fetchRememberedHint,
   loginWithPassword,
   readMe,
   requestUnifiedChallenge,
@@ -75,14 +77,50 @@ export function UnifiedLoginPanel() {
   // The identifier rides panel level too (batch 2): the recent-logins
   // card's click PREFILLS it, and every login-completion records it.
   const [identifier, setIdentifier] = useState("");
-  // The ledger's first read rides a LAZY initializer (no mount effect —
-  // the react-compiler rule); refreshes happen in event handlers only.
-  const [recent, setRecent] = useState<RecentLoginEntry[]>(() => listRecentLogins());
+  // The form mode rides panel level (batch 3): a card click forces the
+  // CODE form back on before its auto-send (the card's flow is always
+  // the code leg — the password form would demand a second factor).
+  const [mode, setMode] = useState<"code" | "password">("code");
+  // The auto-send nudge: a card click that owes a code bumps the seq;
+  // the form's effect (async, post-await setState only) fires the
+  // request. seq-keyed so repeated picks of the SAME card re-fire.
+  const [autoSend, setAutoSend] = useState<{ seq: number; identifier: string } | null>(null);
+  const autoSendSeq = useRef(0);
+  // The ledger reads localStorage — a BROWSER-only source: the first
+  // render (server included) starts empty and the mount fills it on a
+  // deferred tick. A lazy initializer would read localStorage during
+  // render — the server has none, so the client's first HTML disagrees
+  // (a hydration mismatch, caught in the terminal round); a synchronous
+  // setState in the effect body trips the react-compiler rule instead.
+  const [recent, setRecent] = useState<RecentLoginEntry[]>([]);
+  useEffect(() => {
+    const timer = setTimeout(() => setRecent(listRecentLogins()), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const refreshRecent = () => setRecent(listRecentLogins());
+  // The remembered-device probe is PANEL-level (batch 3): ONE anonymous
+  // read feeds both the banner and the cards' one-click branch (a
+  // card whose mask matches the probe's IS the remembered device).
+  const [probeMask, setProbeMask] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      // Async read; the setState lands after the await (never the
+      // synchronous-in-effect shape the compiler rule rejects).
+      const hint = await fetchRememberedHint();
+      if (!cancelled) {
+        setProbeMask(hint);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const land = useLanding();
 
   /** Record a completed login (the jar upserts, caps, and never throws). */
-  function recordLogin(role: string, nickname = "") {
-    const trimmed = identifier.trim();
+  function recordLogin(role: string, nickname = "", explicitIdentifier?: string) {
+    const trimmed = (explicitIdentifier ?? identifier).trim();
     if (trimmed.length === 0) {
       return;
     }
@@ -94,6 +132,46 @@ export function UnifiedLoginPanel() {
       lastUsedAt: Date.now(),
     });
     refreshRecent();
+  }
+
+  /**
+   * The card click's smart branch (batch 3, owner feedback): a card
+   * whose mask MATCHES the probe's is the remembered device — the
+   * click rides the cookie-only verify (authenticated lands by role;
+   * totp_required hands the ADMIN leg up). Any other card (no
+   * credential, or a probe that went stale) prefills and AUTO-SENDS
+   * its code — the owner's second-click complaint.
+   */
+  async function onPickCard(entry: RecentLoginEntry) {
+    setIdentifier(entry.identifier);
+    // Only a CODE-STREAM identifier (phone/email) can auto-send — a
+    // student number (or anything the code band refuses) has no code
+    // stream (学号 is the password channel's identifier): the click
+    // hands the password form back instead of firing into a 422.
+    if (validateChallengeIdentifier(entry.identifier) !== undefined) {
+      setMode("password");
+      return;
+    }
+    setMode("code");
+    if (probeMask !== null && entry.masked === probeMask) {
+      try {
+        const outcome = await fastLoginCookieOnly();
+        if (outcome.kind === "totp_required") {
+          setPendingToken(outcome.pendingToken);
+          return;
+        }
+        if (outcome.kind === "authenticated") {
+          recordLogin(outcome.role, "", entry.identifier);
+          await land();
+          return;
+        }
+      } catch {
+        // The cookie raced out between probe and click — fall through
+        // to the code leg (the banner's same honest degradation).
+      }
+    }
+    autoSendSeq.current += 1;
+    setAutoSend({ seq: autoSendSeq.current, identifier: entry.identifier });
   }
 
   // Layers 2a/2b replace the form wholesale (the family's pattern) —
@@ -120,11 +198,14 @@ export function UnifiedLoginPanel() {
   }
   return (
     <>
-      <FastLoginHint onTotpRequired={setPendingToken} />
+      <FastLoginHint mask={probeMask} onTotpRequired={setPendingToken} />
       <RecentLogins
         entries={recent}
         onPick={(value) => {
-          setIdentifier(value);
+          const entry = recent.find((row) => row.identifier === value);
+          if (entry !== undefined) {
+            void onPickCard(entry);
+          }
         }}
         onRemove={(value) => {
           removeRecentLogin(value);
@@ -134,6 +215,9 @@ export function UnifiedLoginPanel() {
       <IdentifierForm
         identifier={identifier}
         setIdentifier={setIdentifier}
+        mode={mode}
+        setMode={setMode}
+        autoSend={autoSend}
         rememberDevice={rememberDevice}
         setRememberDevice={setRememberDevice}
         onTotpRequired={setPendingToken}
@@ -215,6 +299,9 @@ function useLanding() {
 function IdentifierForm({
   identifier,
   setIdentifier,
+  mode,
+  setMode,
+  autoSend,
   rememberDevice,
   setRememberDevice,
   onTotpRequired,
@@ -223,6 +310,9 @@ function IdentifierForm({
 }: {
   identifier: string;
   setIdentifier: (value: string) => void;
+  mode: "code" | "password";
+  setMode: (value: "code" | "password") => void;
+  autoSend: { seq: number; identifier: string } | null;
   rememberDevice: boolean;
   setRememberDevice: (value: boolean) => void;
   onTotpRequired: (pendingToken: string) => void;
@@ -231,7 +321,6 @@ function IdentifierForm({
 }) {
   const land = useLanding();
   const cooldown = useCooldown();
-  const [mode, setMode] = useState<"code" | "password">("code");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -242,6 +331,30 @@ function IdentifierForm({
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [summary, setSummary] = useState<AuthErrorView | null>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  // The card click's AUTO-SEND (batch 3): a seq bump fires the request
+  // for the picked identifier — the async body's setStates land after
+  // awaits (never the synchronous-in-effect shape the rule rejects).
+  const lastAutoSendSeq = useRef(0);
+  useEffect(() => {
+    if (autoSend === null || autoSend.seq === lastAutoSendSeq.current) {
+      return;
+    }
+    lastAutoSendSeq.current = autoSend.seq;
+    void onSendCode(autoSend.identifier);
+    // onSendCode reads only refs/state through its parameters here —
+    // the dependency is the nudge itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend]);
+
+  // The code field takes focus the moment it renders (auto-send's
+  // "cursor lands where the work is" half — the owner's ask).
+  useEffect(() => {
+    if (codeSent) {
+      codeInputRef.current?.focus();
+    }
+  }, [codeSent]);
 
   function switchMode() {
     // The bands differ per mode; re-validate on the next submit. The
@@ -259,13 +372,14 @@ function IdentifierForm({
       : "验证码已发送，请查收短信（5 分钟内有效）。";
   }
 
-  async function onSendCode() {
+  async function onSendCode(nextIdentifier?: string) {
     if (sending || cooldown.remaining > 0) {
       return;
     }
     setSummary(null);
     setSentNote(false);
-    const error = validateChallengeIdentifier(identifier) ?? undefined;
+    const target = (nextIdentifier ?? identifier).trim();
+    const error = validateChallengeIdentifier(target) ?? undefined;
     setIdentifierError(error);
     if (error !== undefined) {
       return;
@@ -274,7 +388,7 @@ function IdentifierForm({
     try {
       // 202 always — anti-enumeration: the response never tells which
       // identifiers exist.
-      await requestUnifiedChallenge(identifier.trim());
+      await requestUnifiedChallenge(target);
       cooldown.start(RESEND_COOLDOWN_SECONDS);
       setCodeSent(true);
       setSentNote(true);
@@ -473,6 +587,7 @@ function IdentifierForm({
                 </label>
                 <div className="otp-row">
                   <input
+                    ref={codeInputRef}
                     id="unified-login-code"
                     className="input"
                     type="text"

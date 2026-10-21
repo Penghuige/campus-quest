@@ -1,10 +1,11 @@
 "use client";
 /**
  * The unified login page's LAYER-0 banner (spec §4; owner feedback ③
- * 2026-10-17): one anonymous probe on mount decides everything — a
- * remembered device answers its masked phone and the banner offers
- * the one-click continuation; every other answer renders NOTHING (无
- * cookie 时登录页零多余元素 — the page is byte-identical without one).
+ * 2026-10-17; the probe lifted to the PANEL 2026-10-21 so one anonymous
+ * read feeds both the banner and the cards' one-click branch): a
+ * remembered device answers its masked identifier and the banner
+ * offers the one-click continuation; the panel hands `mask` down —
+ * null renders NOTHING (无 cookie 时登录页零多余元素).
  *
  * A click rides the cookie-only EMPTY-body verify (spec §3.1's read
  * path): authenticated lands by role through the shared readMe seam;
@@ -14,37 +15,26 @@
  * offer for the honest code-form guidance, never an error state.
  */
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/session";
 
-import { fastLoginCookieOnly, fetchRememberedHint, readMe } from "./api";
+import { fastLoginCookieOnly, readMe } from "./api";
 import { landAfterStaffLogin } from "./staffLoginFlow";
 
 export function FastLoginHint({
+  mask,
   onTotpRequired,
 }: {
+  /** The panel's ONE probe answer — null means no remembered device. */
+  mask: string | null;
   onTotpRequired: (pendingToken: string) => void;
 }) {
   const router = useRouter();
   const { refresh: refreshSession } = useSession();
-  const [mask, setMask] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const hint = await fetchRememberedHint();
-      if (!cancelled && hint !== null) {
-        setMask(hint);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (mask === null) {
     return null; // the zero-extra-elements login page
