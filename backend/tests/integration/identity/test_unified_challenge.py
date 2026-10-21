@@ -628,7 +628,7 @@ async def test_remembered_probe_and_empty_body_verify_leg(
         cookies=_cookies(cookie),
     )
     assert probed.status_code == 200, probed.text
-    masked = probed.json()["phone_masked"]
+    masked = probed.json()["identifier_masked"]
     assert masked.startswith("+86")
     assert student.phone_e164 not in masked
 
@@ -688,11 +688,14 @@ async def test_empty_body_verify_still_owes_admin_the_second_factor(
     assert finished.json()["status"] == "authenticated"
     cookie = _device_cookie(finished)
 
-    # A STAFF binding is not the banner's audience: the probe stays 204.
+    # The 2026-10-20 widening: a STAFF binding IS banner audience now —
+    # the probe answers its masked identifier (the verify leg below
+    # still owes the second factor; the probe only advertises).
     probed = await client.get(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(cookie)
     )
-    assert probed.status_code == 204, probed.text
+    assert probed.status_code == 200, probed.text
+    assert probed.json()["identifier_masked"].startswith("+86")
 
     continued = await client.post(
         "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
@@ -1241,3 +1244,92 @@ async def test_teacher_remember_mint_survives_a_fresh_connection(
         await cleanup.execute(delete(User).where(User.id == user_id))
         await cleanup.commit()
     await api_redis.flushdb()
+
+
+async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+) -> None:
+    """The probe's audience is every role that the empty-body verify
+    can re-open (the owner's fast-track, 2026-10-20): a live device
+    credential answers 200 with the account's masked IDENTIFIER —
+    mask_phone when a phone is bound, mask_email otherwise (invited
+    teachers often hold only an email). Status gate mirrors the verify
+    leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every other
+    shape stays the empty 204."""
+    from app.modules.identity.device_credentials import issue as issue_device
+
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800160101",
+    )
+    teacher_mail = f"probe-teacher-{uuid4().hex[:8]}@campus.example.edu"
+    teacher = await _seed_user(
+        db_session,
+        username=teacher_mail,
+        role=Role.TEACHER,
+    )
+    admin = await _seed_user(
+        db_session,
+        username=f"probe-admin-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        phone="+8613800160102",
+    )
+    suspended = await _seed_user(
+        db_session,
+        username=f"probe-susp-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+        phone="+8613800160103",
+    )
+    suspended.status = UserStatus.SUSPENDED
+    await db_session.commit()
+
+    student_cookie = await issue_device(db_session, student.id, clock=api_clock)
+    teacher_cookie = await issue_device(db_session, teacher.id, clock=api_clock)
+    admin_cookie = await issue_device(db_session, admin.id, clock=api_clock)
+    suspended_cookie = await issue_device(db_session, suspended.id, clock=api_clock)
+    await db_session.commit()
+
+    # STUDENT, phone bound → masked phone.
+    as_student = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(student_cookie)
+    )
+    assert as_student.status_code == 200, as_student.text
+    student_masked = as_student.json()["identifier_masked"]
+    assert student_masked.startswith("+86")
+    assert "****" in student_masked
+    assert student.phone_e164 not in student_masked
+
+    # TEACHER, email only → masked email (c***@domain shape).
+    as_teacher = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(teacher_cookie)
+    )
+    assert as_teacher.status_code == 200, as_teacher.text
+    teacher_masked = as_teacher.json()["identifier_masked"]
+    assert teacher_masked == f"{teacher_mail[:1]}***@{teacher_mail.split('@')[1]}"
+    assert teacher_mail not in teacher_masked
+
+    # ADMIN, phone bound → masked phone (the totp leg completes the
+    # login; the probe just advertises the device).
+    as_admin = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(admin_cookie)
+    )
+    assert as_admin.status_code == 200, as_admin.text
+    assert as_admin.json()["identifier_masked"].startswith("+86")
+
+    # A SUSPENDED account is outside the verify leg's gate: empty 204.
+    as_suspended = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(suspended_cookie)
+    )
+    assert as_suspended.status_code == 204, as_suspended.text
+
+    # A garbage cookie and NO cookie stay the same empty 204.
+    garbage = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies("not-a-cookie")
+    )
+    assert garbage.status_code == 204, garbage.text
+    none_at_all = await client.get("/api/v1/auth/challenge/remembered")
+    assert none_at_all.status_code == 204, none_at_all.text

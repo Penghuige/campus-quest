@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.core.clock import Clock
-from app.integrations.masking import mask_phone
+from app.integrations.masking import mask_email, mask_phone
 from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import get_business_clock
 from app.modules.identity.device_credentials import (
@@ -369,22 +369,40 @@ async def unified_remembered_probe(
     db: DbSession,
 ) -> Response:
     """Is a remembered device alive for the login banner? The §3.1
-    remembered read, the mobile-code probe's contract: 200
-    {phone_masked} only for the banner's audience (a cookie-bound
-    STUDENT), the same empty 204 for every other shape."""
+    remembered read (2026-10-20 audience widening): every role the
+    empty-body verify leg can serve answers 200 {identifier_masked} —
+    the account's masked phone when one is bound, its masked email
+    otherwise (invited teachers often hold only an email). The status
+    gate mirrors the verify leg: students ACTIVE/PENDING_APPROVAL,
+    staff ACTIVE. Every other shape (no cookie, unknown/expired value,
+    a status outside the gate, no identifier on the row) answers the
+    same empty 204 — existence is never an answer."""
     cookie = request.cookies.get(DEVICE_COOKIE_NAME)
     if cookie is not None:
         user_id = await validate_device(db, cookie, clock=clock)
         if user_id is not None:
             user = await db.get(User, user_id)
-            if (
-                user is not None
-                and user.role == Role.STUDENT
-                and user.status in (UserStatus.ACTIVE, UserStatus.PENDING_APPROVAL)
-                and user.phone_e164
-            ):
-                return JSONResponse({"phone_masked": mask_phone(user.phone_e164)})
+            if user is not None and _remembered_probe_serves(user):
+                if user.phone_e164:
+                    return JSONResponse(
+                        {"identifier_masked": mask_phone(user.phone_e164)}
+                    )
+                if user.email_normalized:
+                    return JSONResponse(
+                        {"identifier_masked": mask_email(user.email_normalized)}
+                    )
     return Response(status_code=204)
+
+
+def _remembered_probe_serves(user: User) -> bool:
+    """The probe's audience: the verify leg's status gate, role-split
+    (students may be PENDING_APPROVAL; staff must be ACTIVE)."""
+    if user.role == Role.STUDENT.value:
+        return user.status in (
+            UserStatus.ACTIVE.value,
+            UserStatus.PENDING_APPROVAL.value,
+        )
+    return user.status == UserStatus.ACTIVE.value
 
 
 @router.post(

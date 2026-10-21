@@ -210,9 +210,14 @@ export interface paths {
         /**
          * Unified Remembered Probe
          * @description Is a remembered device alive for the login banner? The §3.1
-         *     remembered read, the mobile-code probe's contract: 200
-         *     {phone_masked} only for the banner's audience (a cookie-bound
-         *     STUDENT), the same empty 204 for every other shape.
+         *     remembered read (2026-10-20 audience widening): every role the
+         *     empty-body verify leg can serve answers 200 {identifier_masked} —
+         *     the account's masked phone when one is bound, its masked email
+         *     otherwise (invited teachers often hold only an email). The status
+         *     gate mirrors the verify leg: students ACTIVE/PENDING_APPROVAL,
+         *     staff ACTIVE. Every other shape (no cookie, unknown/expired value,
+         *     a status outside the gate, no identifier on the row) answers the
+         *     same empty 204 — existence is never an answer.
          */
         get: operations["unified_remembered_probe_api_v1_auth_challenge_remembered_get"];
         put?: never;
