@@ -72,6 +72,16 @@ describe("maskIdentifier (G11 — the card never shows the full address)", () =>
     assert.equal(maskIdentifier("20240001"), "20****01");
     assert.equal(maskIdentifier("123456"), "12****56");
   });
+
+  test("an E.164 form masks like the bare CN mobile (the backend's mask_phone shape)", () => {
+    // The probe hands E.164; a card's identifier may be stored in it
+    // too — an unmasked passthrough would leak the whole number (G11)
+    // AND never match the probe's mask. Every recognisable mobile form
+    // normalizes to the SAME +86****tail shape.
+    assert.equal(maskIdentifier("+8613812345678"), "+86****5678");
+    assert.equal(maskIdentifier("+86 13812345678"), "+86****5678");
+    assert.equal(maskIdentifier("8613812345678"), "+86****5678");
+  });
 });
 
 describe("recordRecentLogin / listRecentLogins", () => {
