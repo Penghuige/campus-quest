@@ -18,9 +18,15 @@
  * Chain C (the menu): teacher remembered login → 退出登录 → student
  * login (the jar now holds student + teacher, student at the head) →
  * 切换账号 opens the POPOVER in place (URL unmoved; the teacher card
- * listed, the student's own card NOT) → picking the teacher card →
- * /login auto-drives the remembered branch → the teacher cockpit, zero
- * code requests (the switch loop closed through the menu).
+ * listed with the 免登录 chip, the student's own card NOT) → picking
+ * the teacher card → /login auto-drives the TARGETED slot verify →
+ * the teacher cockpit, zero code requests.
+ * Chain D (multi-slot, the owner scenario): teacher A remembers →
+ * 退出登录 → student B REMEMBERS TOO (B's remember must not evict A's
+ * slot — the retired single-name cookie did, the owner-reported
+ * 切换账号仍要验证码 bug) → switch back to A through the menu → A's
+ * card carries 免登录 → the targeted slot verify lands the teacher
+ * cockpit, zero code requests.
  */
 import { expect, test } from "@playwright/test";
 
@@ -126,25 +132,76 @@ test("the menu: pick another device account and /login auto-drives its card", as
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
 
   // 切换账号 opens the popover IN PLACE: the URL does not move, the
-  // teacher's card is offered, and the student's OWN card (the head)
-  // is not.
+  // teacher's card is offered (with the 免登录 chip — its slot is in
+  // the probe array), and the student's OWN card (the head) is not.
   await page.getByRole("button", { name: "切换账号" }).click();
   const menu = page.locator(".switch-menu");
   await expect(menu).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
-  await expect(menu.getByText(teacherMask)).toBeVisible();
+  const teacherCard = menu.locator(".login-recent-card", { hasText: teacherMask });
+  await expect(teacherCard).toBeVisible();
+  await expect(teacherCard.getByText("免登录")).toBeVisible();
   await expect(menu.getByText("使用其他账号")).toBeVisible();
   await expect(menu.getByText(studentMask)).toHaveCount(0);
 
   // The pick hands off through the logout hop; /login auto-drives the
-  // teacher's remembered card — the cockpit, zero code requests.
+  // teacher's remembered card through the TARGETED slot verify — the
+  // cockpit, zero code requests.
   let requestCount = 0;
   page.on("request", (request) => {
     if (request.url().includes("/auth/challenge/request")) {
       requestCount += 1;
     }
   });
-  await menu.getByRole("button", { name: `切换到 ${teacherMask}` }).click();
+  await teacherCard.getByRole("button", { name: `切换到 ${teacherMask}` }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
   expect(requestCount, "the menu pick's remembered switch must not request a code").toBe(0);
+});
+
+test("multi-slot: A remembers, B remembers, switching back to A needs no code (the owner scenario)", async ({
+  page,
+}) => {
+  const [email, staffPassword] = STAFF!.split(":");
+  const account = parseSeededAccount(process.env.CQ_E2E_STUDENT, "CQ_E2E_STUDENT");
+  const teacherMask = `${email[0]}***@school.edu`;
+
+  // Account A (teacher) remembers — its slot cookie is armed.
+  await page.goto(`${BASE_URL}/login`);
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("账号", { exact: true }).fill(email);
+  await page.getByLabel("密码").fill(staffPassword);
+  await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+
+  // Account B (student) remembers too — the multi-slot batch: B's
+  // remember must NOT evict A's slot (the retired single-name cookie
+  // did; the owner-reported 切换账号仍要验证码 bug).
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("账号", { exact: true }).fill(account.username);
+  await page.getByLabel("密码").fill(account.password);
+  await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+
+  // Switching back to A through the menu: A's card carries the 免登录
+  // chip (its slot survived B's remember), and the pick lands in the
+  // teacher cockpit with ZERO code requests — the owner scenario.
+  await page.getByRole("button", { name: "切换账号" }).click();
+  const menu = page.locator(".switch-menu");
+  await expect(menu).toBeVisible();
+  const teacherCard = menu.locator(".login-recent-card", { hasText: teacherMask });
+  await expect(teacherCard).toBeVisible();
+  await expect(teacherCard.getByText("免登录")).toBeVisible();
+  let requestCount = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/auth/challenge/request")) {
+      requestCount += 1;
+    }
+  });
+  await teacherCard.getByRole("button", { name: `切换到 ${teacherMask}` }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
+  expect(requestCount, "switching back to a remembered account must not request a code").toBe(0);
 });

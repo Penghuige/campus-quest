@@ -9,7 +9,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 20 | U1-U20 |
+| 已覆盖 | 22 | U1-U22 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 
@@ -37,6 +37,8 @@
 | U18 | 多槽批空体 target | 空体 verify 增 `{target?: slot}`：**无 target=最近槽**（判定基准与探针排序一致=横幅首位即点击所登，reviewer 裁定 2026-10-24；仅选中槽 bump）；target 命中→登该账号；ADMIN 槽仍 totp_required；target 无匹配槽（缺席/失效/他人）→单码 CHALLENGE_CODE_INVALID（无槽枚举面） | `tests/integration/identity/test_unified_challenge.py::test_empty_body_verify_without_target_takes_the_most_recent_slot` / `::test_empty_body_verify_with_target_logs_into_that_slot` / `::test_admin_target_slot_still_owes_totp` / `::test_empty_body_verify_target_without_a_matching_slot_is_the_uniform_invalid` | 已覆盖 |
 | U19 | 多槽批旧名退役+模块面 | 旧单名 `cq_staff_device` 不再读（**有效值**旧名呈递→探针 204+空体 400 CHALLENGE_CODE_INVALID；持有者重登一次可接受）；模块件：slot_suffix 稳定 10 位句柄/canonical 链三臂+None/slots_from 只收 cq_dev_*/issue 返回 (value,slot) 只存哈希/resolve_remembered 排序-不 bump-改名账号双槽去重-过期剔除/validate bump 语义保留 | `::test_the_retired_staff_cookie_name_is_no_longer_read` + `tests/integration/identity/test_device_credentials.py`（15 件） | 已覆盖 |
 | U20 | 多槽批 honoring 槽化 | 密码腿 honoring=任意在座槽值**归属**到目标账号（槽名不参与判定——改名后仍 honoring；命中槽 bump、他人槽不 bump）；本账号槽在座→ADMIN 密码直落；仅他人槽在座→totp 照欠；mobile 服务两条空 code 旧 cookie 腿退役（facade 唯一调用方从不传空 code） | `tests/integration/identity/test_unified_challenge.py::test_staff_password_honoring_reads_only_its_own_slot`（跨 U10 腿保留于既有件） | 已覆盖 |
+| U21 | 多槽批前端·探针数组消费（U17 下游） | `fetchRememberedHint` → `RememberedSlot[]`（{identifier_masked, slot}，序保持）；204/传输失败/脏行（缺 mask 或 slot）/非数组体**一律降级空数组不抛**；横幅显示 remembered[0]（掩码），多账号时追加「（等 N 个）」；横幅点击腿仍空体（U18 无 target=最近槽=remembered[0]，语义自洽） | `frontend/src/__tests__/unified-challenge-api.test.ts`（数组序/脏行过滤/204 与传输空/空体与 target 体四钉）；横幅「等 N 个」渲染由 `frontend/src/features/auth/FastLoginHint.tsx` 承载（**行为级注记**，无独立 e2e 断言——基线面匿名无 cookie 不见横幅） | 已覆盖（行为级注记） |
+| U22 | 多槽批前端·匹配契约+target 回传（U18 下游） | 卡片/菜单/switch-pick 自动流的匹配=**entry.masked ∈ 探针数组任一项 identifier_masked → 空体 verify 带 {target: 命中项 slot}**→直进（ADMIN 转 totp 腿）；不匹配（含本地有卡但凭据已失）与不命中统一走码流；popover 菜单 matched 卡显示「免登录」chip（探针随菜单打开取，失败静默隐藏 chip 不碍拾取） | 匹配纯函数：`frontend/src/__tests__/unified-challenge-api.test.ts`（命中回槽/未命中 null 两钉，`matchRememberedSlot`）；target 体线缆：同文件（`fastLoginCookieOnly("f6g7h8i9j0")` 体钉）；e2e：`frontend/e2e/switch-account.spec.ts` 链 B/C/D（零发码 target 直进）+链 C/D 免登录 chip 断言；owner 场景=链 D（A 记住→B 记住→切回 A 零码） | 已覆盖 |
 
 ## 缺口明细
 

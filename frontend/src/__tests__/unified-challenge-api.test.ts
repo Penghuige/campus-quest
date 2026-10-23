@@ -28,6 +28,7 @@ import {
   unifiedChallengeTotp,
   verifyUnifiedChallenge,
 } from "../features/auth/api";
+import { matchRememberedSlot } from "../features/auth/unifiedLoginView";
 import { clearAccessToken, getAccessToken } from "../lib/accessToken";
 
 type RecordedRequest = {
@@ -191,35 +192,58 @@ describe("unifiedChallengeTotp", () => {
   });
 });
 
-describe("the remembered-device layer-0 pair (the migrated paths)", () => {
-  test("the probe rides GET /auth/challenge/remembered and reads identifier_masked", async () => {
-    // The backend's fast-track rename (2026-10-21): the field speaks
-    // for BOTH audiences — a phone mask or an email mask.
-    stubFetch(JSON.stringify({ identifier_masked: "+86****5555" }), 200);
-    const mask = await fetchRememberedHint();
-    assert.equal(mask, "+86****5555");
+describe("the remembered-slot layer-0 pair (the multi-slot batch, 2026-10-24)", () => {
+  test("the probe answers the slot ARRAY — mask + handle, order preserved", async () => {
+    stubFetch(
+      JSON.stringify({
+        remembered: [
+          { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+          { identifier_masked: "+86****5555", slot: "f6g7h8i9j0" },
+        ],
+      }),
+      200,
+    );
+    const slots = await fetchRememberedHint();
+    assert.deepEqual(slots, [
+      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+      { identifier_masked: "+86****5555", slot: "f6g7h8i9j0" },
+    ]);
     assert.equal(recorded?.url, "/api/v1/auth/challenge/remembered");
     assert.equal(recorded?.method, "GET");
     assert.equal(recorded?.credentials, "include");
   });
 
-  test("an email-shaped remembered device answers an email mask through the SAME field", async () => {
-    stubFetch(JSON.stringify({ identifier_masked: "t***@school.edu" }), 200);
-    assert.equal(await fetchRememberedHint(), "t***@school.edu");
+  test("dirty rows filter out; a non-array body degrades to empty — never throws", async () => {
+    stubFetch(
+      JSON.stringify({
+        remembered: [
+          { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+          { identifier_masked: "missing-slot" },
+          { slot: "missing-mask" },
+          "garbage",
+        ],
+      }),
+      200,
+    );
+    assert.deepEqual(await fetchRememberedHint(), [
+      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+    ]);
+    stubFetch(JSON.stringify({ remembered: "nope" }), 200);
+    assert.deepEqual(await fetchRememberedHint(), []);
   });
 
-  test("the probe answers null for the uniform 204 — and NEVER throws (any failure is null)", async () => {
+  test("the probe answers EMPTY for the uniform 204 — and NEVER throws (any failure is empty)", async () => {
     stubFetch("", 204);
-    assert.equal(await fetchRememberedHint(), null);
-    // A surprise status also resolves null quietly — the probe decides
+    assert.deepEqual(await fetchRememberedHint(), []);
+    // A surprise status also resolves empty quietly — the probe decides
     // a banner's existence, nothing more.
     responseFor = () => {
       throw new Error("transport");
     };
-    assert.equal(await fetchRememberedHint(), null);
+    assert.deepEqual(await fetchRememberedHint(), []);
   });
 
-  test("the one-click posts an EMPTY body verify — the cookie alone locates the user", async () => {
+  test("the one-click posts an EMPTY body verify — no target takes the most recent slot", async () => {
     clearAccessToken();
     stubFetch(
       JSON.stringify({
@@ -236,12 +260,48 @@ describe("the remembered-device layer-0 pair (the migrated paths)", () => {
     assert.equal(getAccessToken(), "s-at");
   });
 
+  test("a TARGET ride names the matched slot handle — the popover pick's account", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        status: "authenticated",
+        role: "TEACHER",
+        tokens: { access_token: "t-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      200,
+    );
+    const outcome = await fastLoginCookieOnly("f6g7h8i9j0");
+    assert.equal(recorded?.url, "/api/v1/auth/challenge/verify");
+    assert.deepEqual(JSON.parse(recorded?.body ?? "{}"), { target: "f6g7h8i9j0" });
+    assert.deepEqual(outcome, { kind: "authenticated", role: "TEACHER" });
+    assert.equal(getAccessToken(), "t-at");
+  });
+
   test("a remembered ADMIN's one-click answers totp_required — the exemption never resets", async () => {
     clearAccessToken();
     stubFetch(JSON.stringify({ status: "totp_required", pending_token: "p-at" }), 200);
     const outcome = await fastLoginCookieOnly();
     assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "p-at" });
     assert.equal(getAccessToken(), null);
+  });
+});
+
+describe("matchRememberedSlot (the client matching contract — mask ∈ array, echo the slot)", () => {
+  test("a mask present in the probe array answers THAT entry's slot", async () => {
+    const slots = await Promise.resolve([
+      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+      { identifier_masked: "+86****5555", slot: "f6g7h8i9j0" },
+    ]);
+    assert.equal(matchRememberedSlot("+86****5555", slots), "f6g7h8i9j0");
+    assert.equal(matchRememberedSlot("t***@school.edu", slots), "a1b2c3d4e5");
+  });
+
+  test("a mask matching nothing answers null — the code flow's turn (credential gone unifies with unmatched)", async () => {
+    const slots = await Promise.resolve([
+      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
+    ]);
+    assert.equal(matchRememberedSlot("+86****9999", slots), null);
+    assert.equal(matchRememberedSlot("+86****9999", []), null);
   });
 });
 

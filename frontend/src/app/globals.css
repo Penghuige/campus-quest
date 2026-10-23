@@ -531,6 +531,25 @@ body {
   color: inherit;
 }
 
+/* The multi-slot batch (2026-10-24): a card whose mask matches the
+   remembered-slot probe shows the 免登录 chip — this pick lands without
+   a code. A quiet local accent, not a page-wide tint. */
+.switch-menu-fast {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+/* The banner's multi-account note (等 N 个) — the same quiet register. */
+.login-fast-count {
+  color: var(--text-2);
+}
+
 .field {
   display: grid;
   gap: var(--space-1);

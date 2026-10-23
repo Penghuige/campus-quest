@@ -79,7 +79,10 @@ G11 mask, never the full address; the card FACE is the shared
 `RecentLoginCardButton`, rendered by BOTH the login page's cards and
 the shells' 切换账号 menu — the 2026-10-23 popover batch) ·
 使用其他账号 (the switch menu's bottom verb — the direct-hop escape
-hatch) · (the
+hatch) · 免登录 (the multi-slot batch's chip: a menu card whose mask
+matches the remembered-slot probe — this pick lands without a code) ·
+（等 N 个） (the banner's multi-account note, component-level — not
+e2e-asserted; the banner's zero-cookie face is what the baselines hold) · (the
 code form's copy is audience-neutral; the password expansion's notes the
 totp audience; the TOTP leg is where the meaning LIVES — the 2026-10-15
 terminal ruling: the flag is sent whenever checked and the backend
@@ -168,6 +171,7 @@ owner-approved product decision — never "to fit the new DOM".
 | `.meta-deadline` · `.reward-window` | zero-weight mask anchors | visual-suite mask hooks (shot-surfaces): the task card's clock-derived deadline line and the reward card's window line; the classes carry no styles by design |
 | `.login-fast-hint` · `.login-fast-stale` | login fast-login banner (owner feedback ③) | the two-state pin's structural zero-element anchor (auth-extension-2: no cookie → count 0); the banner's own text/button assertions are the A-class pair |
 | `.switch-menu` · `.switch-scrim` · `.switch-anchor` | the shells' 切换账号 popover (2026-10-23) | the menu's presence/absence is the empty-fallback pin (chains A/B assert count 0); the region carries aria-label 切换账号; a transient floating layer — deliberately outside the pixel baselines |
+| `.switch-menu-fast` | the menu card's 免登录 chip (multi-slot batch, 2026-10-24) | chains C/D assert it on the remembered card; absent on unmatched cards |
 | `[data-testid='mobile-login-totp-leg']` | staff mobile-code login's ADMIN second leg (item ①) | mirrors `email-login-totp-leg`; the leg's presence/absence is the TEACHER-vs-ADMIN branch pin |
 
 ## Rules for the visual workstream

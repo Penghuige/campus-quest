@@ -397,29 +397,60 @@ export async function unifiedChallengeTotp(
  * otherwise. Every non-answer resolves null quietly: the probe only
  * decides whether the page renders its one-click banner.
  */
-export async function fetchRememberedHint(): Promise<string | null> {
+/** One remembered-credential slot (the multi-slot batch, 2026-10-24):
+ * the probe's array row — the masked identifier the cards match by,
+ * and the opaque handle the targeted empty-body verify echoes. */
+export interface RememberedSlot {
+  identifier_masked: string;
+  slot: string;
+}
+
+/**
+ * The remembered-slot probe: every live, servable slot in the
+ * presented cookie jar, most recent first (≤5 server-side). The
+ * banner shows the FIRST; the cards match by mask. 204 / transport /
+ * dirty shapes all degrade to the empty array — the probe decides a
+ * banner's existence, nothing more.
+ */
+export async function fetchRememberedHint(): Promise<RememberedSlot[]> {
   try {
-    const body = await apiRequest<{ identifier_masked?: string } | null>(
+    const body = await apiRequest<{ remembered?: unknown } | null>(
       `${BASE}/challenge/remembered`,
     );
-    return body?.identifier_masked ?? null;
+    const rows = body?.remembered;
+    if (!Array.isArray(rows)) {
+      return [];
+    }
+    return rows.filter(
+      (row): row is RememberedSlot =>
+        typeof row === "object" &&
+        row !== null &&
+        typeof (row as { identifier_masked?: unknown }).identifier_masked ===
+          "string" &&
+        typeof (row as { slot?: unknown }).slot === "string",
+    );
   } catch {
-    return null;
+    return [];
   }
 }
 
 /**
- * The banner's CLICK leg: the page holds only the probe's MASK, so the
- * cookie alone locates the user and the verify body is EMPTY. The
+ * The banner's CLICK leg: the page holds only the probe's masks, so
+ * the cookie alone locates the user and the verify body stays empty —
+ * no `target` takes the MOST RECENT slot (interfaces.md: the banner's
+ * first face is the click's account). The popover/card branch passes
+ * the matched entry's `slot` handle to pick a DIFFERENT account. The
  * answer rides the SAME three-arm union — a remembered ADMIN still
  * answers totp_required (the cookie never exempts the ADMIN second
- * factor, the frozen §3.1 semantics), and the banner hands that leg
+ * factor, the frozen §3.1 semantics), and the caller hands that leg
  * to the page's TOTP layer.
  */
-export async function fastLoginCookieOnly(): Promise<ChallengeOutcome> {
+export async function fastLoginCookieOnly(
+  target?: string,
+): Promise<ChallengeOutcome> {
   const body = await apiRequest<unknown>(`${BASE}/challenge/verify`, {
     method: "POST",
-    body: {},
+    body: target === undefined ? {} : { target },
   });
   const outcome = classifyChallengeEnvelope(body);
   if (outcome.kind === "authenticated") {

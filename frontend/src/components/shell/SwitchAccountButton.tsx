@@ -31,73 +31,87 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useLogoutAction } from "@/features/auth/LogoutSection";
 import { RecentLoginCardButton } from "@/features/auth/RecentLoginCard";
+import { fetchRememberedHint, type RememberedSlot } from "@/features/auth/api";
 import { listRecentLogins, type RecentLoginEntry } from "@/features/auth/recentLogins";
 import { setSwitchPick, switchMenuEntries } from "@/features/auth/switchAccount";
+import { matchRememberedSlot } from "@/features/auth/unifiedLoginView";
+
+/** The open menu's model: the offerable rows plus the remembered-slot
+ * probe answer that feeds the 免登录 badges. */
+interface SwitchMenuState {
+  rows: RecentLoginEntry[];
+  slots: RememberedSlot[];
+}
 
 export function SwitchAccountButton() {
   const { busy, handle } = useLogoutAction("/login");
-  const [entries, setEntries] = useState<RecentLoginEntry[] | null>(null);
+  const [menu, setMenu] = useState<SwitchMenuState | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Escape closes the menu and returns focus to the trigger (the
   // keyboard contract; the scrim already covers pointer-outsides).
   useEffect(() => {
-    if (entries === null) {
+    if (menu === null) {
       return;
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setEntries(null);
+        setMenu(null);
         triggerRef.current?.focus();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [entries]);
+  }, [menu]);
 
   // The opened menu hands focus to its first item — the keyboard user
   // lands where the work is (the code-input focus pattern).
   useEffect(() => {
-    if (entries !== null) {
+    if (menu !== null) {
       menuRef.current?.querySelector<HTMLElement>("button")?.focus();
     }
-  }, [entries]);
+  }, [menu]);
 
   function closeMenu() {
-    setEntries(null);
+    setMenu(null);
     triggerRef.current?.focus();
   }
 
-  function onToggle() {
+  async function onToggle() {
     if (busy) {
       return;
     }
-    if (entries !== null) {
+    if (menu !== null) {
       closeMenu();
       return;
     }
     // The jar read happens ON CLICK, never during render —
     // localStorage is a browser-only source (the hydration rule; the
     // login page reads the same jar on a deferred tick).
-    const menu = switchMenuEntries(listRecentLogins());
-    if (menu.length === 0) {
+    const rows = switchMenuEntries(listRecentLogins());
+    if (rows.length === 0) {
       // No other account on this device: the direct hop is the
       // honest fallback (the owner-batch v1 behavior).
       void handle();
       return;
     }
-    setEntries(menu);
+    // The 免登录 badges ride the remembered-slot probe (the multi-slot
+    // batch): opened WITH the answer so the badges never pop in late.
+    // The probe is fail-safe — any failure answers [] and the badges
+    // simply stay hidden (the pick still works through the code flow).
+    const slots = await fetchRememberedHint();
+    setMenu({ rows, slots });
   }
 
   async function onPick(entry: RecentLoginEntry) {
-    setEntries(null);
+    setMenu(null);
     setSwitchPick(entry.identifier);
     await handle();
   }
 
   function useOtherAccount() {
-    setEntries(null);
+    setMenu(null);
     void handle();
   }
 
@@ -106,20 +120,22 @@ export function SwitchAccountButton() {
       <Button
         ref={triggerRef}
         variant="ghost"
-        onClick={onToggle}
+        onClick={() => {
+          void onToggle();
+        }}
         disabled={busy}
         aria-busy={busy}
-        aria-expanded={entries !== null}
+        aria-expanded={menu !== null}
       >
         切换账号
       </Button>
-      {entries !== null ? (
+      {menu !== null ? (
         <>
           <div className="switch-scrim" onClick={closeMenu} aria-hidden="true" />
           <div className="switch-menu" ref={menuRef} aria-label="切换账号">
             <p className="switch-menu-title">切换账号</p>
             <div className="switch-menu-cards">
-              {entries.map((entry) => (
+              {menu.rows.map((entry) => (
                 <div className="login-recent-card" key={entry.identifier}>
                   <RecentLoginCardButton
                     entry={entry}
@@ -127,6 +143,9 @@ export function SwitchAccountButton() {
                       void onPick(picked);
                     }}
                   />
+                  {matchRememberedSlot(entry.masked, menu.slots) !== null ? (
+                    <span className="switch-menu-fast">免登录</span>
+                  ) : null}
                 </div>
               ))}
             </div>

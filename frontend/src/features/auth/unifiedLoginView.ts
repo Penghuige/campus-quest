@@ -16,6 +16,7 @@
  */
 import { isApiError } from "@/lib/errors";
 
+import type { RememberedSlot } from "./api";
 import { NETWORK_ERROR_TEXT } from "./errors";
 import { validateStudentNumber } from "./validation";
 
@@ -103,4 +104,22 @@ export function describeChallengeError(
     return { message: "发送过于频繁，请 1 分钟后再试", requestId: error.requestId };
   }
   return { message: error.message || fallback, requestId: error.requestId };
+}
+
+// --- the remembered-slot matching (multi-slot batch, 2026-10-24) -----------------------
+
+/**
+ * The client matching contract (interfaces.md): a local account card
+ * matches the probe array BY MASKED IDENTIFIER and the caller echoes
+ * the matched entry's `slot` as the targeted verify's `target`. A
+ * card matching nothing — including its credential having left the
+ * jar — answers null and goes the code flow: "card in localStorage
+ * but not in the array" and "unmatched" are ONE condition.
+ */
+export function matchRememberedSlot(
+  masked: string,
+  slots: readonly RememberedSlot[],
+): string | null {
+  const hit = slots.find((row) => row.identifier_masked === masked);
+  return hit === undefined ? null : hit.slot;
 }
