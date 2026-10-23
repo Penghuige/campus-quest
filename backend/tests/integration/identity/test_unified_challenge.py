@@ -1333,3 +1333,133 @@ async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
     assert garbage.status_code == 204, garbage.text
     none_at_all = await client.get("/api/v1/auth/challenge/remembered")
     assert none_at_all.status_code == 204, none_at_all.text
+
+
+# --- 10-digit student numbers vs the phone-shape classifier (the
+# owner-account bug, 2026-10-23): phonenumbers parses 10 digits as a
+# valid CN landline, so the identifier never reached the student-number
+# arm. Both samples below are REAL-shaped student numbers that the
+# parser classifies as phones.
+
+_TEN_DIGIT_NUMBERS = ("2099000001", "2021023456")
+
+
+async def test_ten_digit_student_numbers_password_login(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Every 10-digit student number logs in by password (#73's
+    phone-first-THEN-number fallback — the phone arm's row-less miss
+    falls through to the student door)."""
+    for number in _TEN_DIGIT_NUMBERS:
+        await _seed_user(db_session, username=number, role=Role.STUDENT)
+    await db_session.commit()
+
+    for number in _TEN_DIGIT_NUMBERS:
+        logged_in = await client.post(
+            "/api/v1/auth/login",
+            json={"identifier": number, "password": _PASSWORD},
+        )
+        assert logged_in.status_code == 200, logged_in.text
+        body = logged_in.json()
+        assert body["status"] == "authenticated", body
+        assert body["role"] == "STUDENT"
+        assert body["tokens"]["access_token"]
+
+
+async def test_ten_digit_student_number_wrong_password_is_uniform(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """A wrong password on the fallback door answers the student
+    flow's own uniform failure — the fallback adds no oracle."""
+    await _seed_user(db_session, username=_TEN_DIGIT_NUMBERS[0], role=Role.STUDENT)
+    await db_session.commit()
+
+    rejected = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": _TEN_DIGIT_NUMBERS[0], "password": "wrong-horse!"},
+    )
+    assert rejected.status_code == 401, rejected.text
+    assert rejected.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+
+async def test_eight_digit_student_number_still_logs_in(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """The student-number arm's regression: an 8-digit number never
+    parses as a phone and rides the old path untouched."""
+    await _seed_user(db_session, username="20250001", role=Role.STUDENT)
+    await db_session.commit()
+
+    logged_in = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "20250001", "password": _PASSWORD},
+    )
+    assert logged_in.status_code == 200, logged_in.text
+    assert logged_in.json()["status"] == "authenticated"
+
+
+async def test_ten_digit_student_number_is_refused_on_the_code_door(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_sms: FakeSmsSender
+) -> None:
+    """The code door must never SMS a student number (it would text a
+    stranger's landline): a registered username behind the number
+    shape answers the student-number guidance, no code sent."""
+    for number in _TEN_DIGIT_NUMBERS:
+        await _seed_user(db_session, username=number, role=Role.STUDENT)
+    await db_session.commit()
+
+    for number in _TEN_DIGIT_NUMBERS:
+        refused = await client.post(
+            "/api/v1/auth/challenge/request", json={"identifier": number}
+        )
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["error"]["code"] == "VALIDATION_ERROR"
+        assert "学号" in refused.json()["error"]["message"]
+    assert api_sms.messages == [], "a student number reached the SMS sender"
+
+
+async def test_unregistered_ten_digit_number_still_enters_the_code_flow(
+    client: httpx.AsyncClient, api_sms: FakeSmsSender
+) -> None:
+    """A 10-digit number that is NOT anyone's username keeps the
+    unregistered-phone entry flow: 202 and a real send (发码即入口)."""
+    response = await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": "2099999999"}
+    )
+    assert response.status_code == 202, response.text
+    assert len(api_sms.messages) == 1
+
+
+async def test_stale_challenge_for_a_ten_digit_student_number_is_refused(
+    client: httpx.AsyncClient, db_session: AsyncSession, api_clock: FrozenClock
+) -> None:
+    """The verify arm's same-shape defense: even a stale challenge
+    minted before the fix (seeded directly here) must not convert a
+    student number into the entry flow — the answer is the single
+    code-family envelope, never tokens or a register_token."""
+    from datetime import timedelta as _timedelta
+
+    from app.core.config import get_settings as _get_settings
+    from app.core.security import hmac_challenge_code
+    from app.modules.identity.models import LoginMobileChallenge
+    from app.modules.identity.otp import normalize_phone
+
+    number = _TEN_DIGIT_NUMBERS[0]
+    await _seed_user(db_session, username=number, role=Role.STUDENT)
+    phone = normalize_phone(number, "CN")
+    code = "123456"
+    db_session.add(
+        LoginMobileChallenge(
+            phone_e164=phone,
+            code_hash=hmac_challenge_code(_get_settings().otp_hmac_secret, code),
+            expires_at=api_clock.now() + _timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    refused = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": number, "code": code},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
