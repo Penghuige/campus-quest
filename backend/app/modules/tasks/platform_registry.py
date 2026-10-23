@@ -33,6 +33,10 @@ SEED_PLATFORMS: tuple[dict[str, Any], ...] = (
     {"code": "zhaopin", "display_name": "智联招聘", "sort_order": 50},
     {"code": "58city", "display_name": "58同城", "sort_order": 60},
     {"code": "lietou", "display_name": "猎聘", "sort_order": 70},
+    # The simplification batch (2026-10-23 spec §3.3): the one-step
+    # creation's default platform — migration 0033 seeds it (idempotent
+    # ON CONFLICT for databases where 0029 already ran).
+    {"code": "generic", "display_name": "通用", "sort_order": 1000},
 )
 
 

@@ -66,6 +66,9 @@ class TaskCreateRequest(BaseModel):
     claim_cutoff_minutes: int = 240
     submission_schema: dict[str, Any] | None = None
     submission_schema_version: int | None = None
+    #: The simplification batch (2026-10-23 spec §3.2): create this many
+    #: generic task units in the same transaction. Absent = import flow.
+    target_count: int | None = None
     notify_24h: bool = True
     notify_4h: bool = True
     notification_channels: list[str] = list(DEFAULT_NOTIFICATION_CHANNELS)

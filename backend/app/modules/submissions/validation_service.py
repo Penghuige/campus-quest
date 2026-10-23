@@ -96,7 +96,7 @@ from __future__ import annotations
 
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
@@ -215,6 +215,43 @@ class ValidationRunResult:
     detected_type: FileType | None
     run_id: UUID | None
     already_terminal: bool
+
+
+#: The lenient family's next-step first lines (spec §2.3): the report
+#: keeps its stable codes and details; only the FIRST error's message
+#: is rewritten to say what the student should DO next.
+_LENIENT_NEXT_STEPS: dict[ValidationCode, str] = {
+    ValidationCode.EMPTY_FILE: "请确认文件包含表头后重新上传",
+    ValidationCode.NO_DATA_ROWS: "请确认文件有表头并至少一行数据后重新上传",
+    ValidationCode.MIN_ROWS_NOT_MET: "请确认文件有表头并至少一行数据后重新上传",
+    ValidationCode.MALFORMED_CSV: "文件无法解析，请确认是有效的 CSV 后重新上传",
+    ValidationCode.MALFORMED_XLSX: "文件无法解析，请确认是有效的 Excel 文件后重新上传",
+    ValidationCode.MALFORMED_SQLITE: "文件无法解析，请确认是有效的 SQLite 后重新上传",
+    ValidationCode.INVALID_ENCODING: "文件编码无法识别，请改用 UTF-8 后重新上传",
+    ValidationCode.BINARY_CONTENT: "文件内容不是可读的数据表，请检查后重新上传",
+}
+
+
+def _lenient_failure_report(report: ValidationReport) -> ValidationReport:
+    """Rewrite the first error's message to the lenient next-step line.
+
+    Codes, rows, and every other finding stay byte-identical — only the
+    headline students read first gains the actionable sentence (spec
+    §2.3). Unknown codes keep their validator message.
+    """
+    if not report.errors:
+        return report
+    first = report.errors[0]
+    next_step = _LENIENT_NEXT_STEPS.get(first.code)
+    if next_step is None:
+        return report
+    return replace(
+        report,
+        errors=(
+            replace(first, message=next_step),
+            *report.errors[1:],
+        ),
+    )
 
 
 def _synthetic_report(
@@ -511,7 +548,17 @@ class ValidationService:
         if task is None:
             raise SubmissionNotFoundError(submission_id)
 
-        raw_schema = dict(task.submission_schema) if task.submission_schema else {}
+        # Simplification batch (2026-10-23 spec §2.1): a schema-less
+        # structured task validates LENIENTLY — parseable in its format
+        # family, a header row, at least one data row; no column/type/
+        # uniqueness checks. The strict §12 DSL applies only when the
+        # task configured one.
+        if task.submission_schema:
+            strict_schema = True
+            raw_schema = dict(task.submission_schema)
+        else:
+            strict_schema = False
+            raw_schema = {"allow_extra_columns": True, "min_rows": 1}
         try:
             schema = SubmissionSchema.parse(raw_schema)
         except SchemaParseError as exc:
@@ -559,7 +606,10 @@ class ValidationService:
         # with row_count=None — uniform UX, teacher review beyond).
         if declared in DOCUMENT_FILE_TYPES:
             return self._assemble_document(outcome, declared=declared)
-        return self._assemble(outcome, declared=declared, schema=schema)
+        report, detected = self._assemble(outcome, declared=declared, schema=schema)
+        if not strict_schema and detected is not None and not report.passed:
+            report = _lenient_failure_report(report)
+        return report, detected
 
     def _assemble_document(
         self, outcome: SandboxedValidation, *, declared: FileType

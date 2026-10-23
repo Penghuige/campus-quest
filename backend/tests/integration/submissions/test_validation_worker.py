@@ -458,6 +458,86 @@ def test_valid_csv_validates_and_persists_the_full_report() -> None:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
 
 
+# --- the simplification batch (2026-10-23): lenient validation -----------
+
+
+def _drop_task_schema(factory: async_sessionmaker[AsyncSession], seed: Seed) -> None:
+    """Flip the seeded task to the schema-less (lenient) shape."""
+
+    async def _flip() -> None:
+        async with factory() as session:
+            task = await session.get(Task, seed.task.id)
+            assert task is not None
+            task.submission_schema = None
+            task.submission_schema_version = None
+            await session.commit()
+
+    asyncio.run(_flip())
+
+
+@pytest.mark.integration
+def test_schema_less_task_validates_leniently() -> None:
+    """No schema = parseable + header + >=1 data row passes (spec §2.1):
+    a plain CSV with any columns and one row enters human review."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                content=_valid_csv(rows=1),
+                allowed_types=["CSV"],
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        _drop_task_schema(factory, seed)
+        storage = asyncio.run(_store(factory, seed, _valid_csv(rows=1)))
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+        assert result.report.passed, result.report
+        assert result.report.row_count == 1
+        assert result.report.errors == ()
+        assert result.status.value == "VALIDATED"
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_schema_less_failure_leads_with_the_next_step() -> None:
+    """A lenient failure's first line says what to DO (spec §2.3):
+    header-only -> header+one-row guidance; empty -> header guidance.
+    The stable codes stay in place underneath."""
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                content=b"url,title\n",
+                allowed_types=["CSV"],
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        _drop_task_schema(factory, seed)
+        storage = asyncio.run(_store(factory, seed, b"url,title\n"))
+        service = _service(storage)
+        result = _validate(service, factory, seed.submission.id)
+        assert not result.report.passed
+        first = result.report.errors[0]
+        assert "至少一行数据" in first.message, first.message
+        assert result.status.value == "VALIDATION_FAILED"
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
 @pytest.mark.integration
 def test_second_job_run_is_idempotent_no_duplicate_history() -> None:
     factory = _new_factory()

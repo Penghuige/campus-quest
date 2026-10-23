@@ -323,6 +323,7 @@ async def test_platform_set_matches_spec_codes() -> None:
         "zhaopin",
         "58city",
         "lietou",
+        "generic",
     } == {row["code"] for row in SEED_PLATFORMS}
 
 

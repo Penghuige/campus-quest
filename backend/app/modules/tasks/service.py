@@ -59,7 +59,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
@@ -69,8 +69,14 @@ from app.core.rbac import is_admin, is_staff
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.events import Actor
 from app.modules.tasks.commands import CreateTask, UpdateTask
-from app.modules.tasks.enums import DeadlineMode, TaskRarity, TaskStatus, TaskType
-from app.modules.tasks.models import Task
+from app.modules.tasks.enums import (
+    AssignmentAvailability,
+    DeadlineMode,
+    TaskRarity,
+    TaskStatus,
+    TaskType,
+)
+from app.modules.tasks.models import Assignment, Task
 from app.modules.tasks.schemas import PublishResult
 
 # --- frozen value sets -------------------------------------------------------
@@ -146,6 +152,11 @@ _PAST_DEADLINE_MESSAGE = "固定截止时间必须晚于当前时间"
 _MISSING_FIXED_DEADLINE_MESSAGE = "FIXED 模式必须设置固定截止时间"
 _INVALID_DURATION_MESSAGE = "RELATIVE 模式必须设置正的时长（分钟）"
 _INVALID_SCHEMA_MESSAGE = "发布前必须配置提交校验 schema 及其版本"
+#: The simplification batch (2026-10-23 spec §2.2/§3.2).
+_UNITS_REQUIRED_MESSAGE = "请先设置完成人数（任务单元）再发布"
+_INVALID_TARGET_COUNT_MESSAGE = "完成人数必须在 1–200 之间"
+MAX_TARGET_COUNT = 200
+GENERIC_PLATFORM_CODE = "generic"
 _INVALID_FILE_POLICY_MESSAGE = "发布前必须至少配置一种允许的文件类型"
 # §10.1: document-family tasks declare no schema; structured tasks must.
 _DOCUMENT_SCHEMA_FORBIDDEN_MESSAGE = (
@@ -344,6 +355,15 @@ class TaskService:
             raise BusinessError(
                 ErrorCode.VALIDATION_ERROR, _INVALID_SCHEMA_MESSAGE, status_code=400
             )
+        if command.target_count is not None and not (
+            1 <= command.target_count <= MAX_TARGET_COUNT
+        ):
+            raise BusinessError(
+                ErrorCode.VALIDATION_ERROR,
+                _INVALID_TARGET_COUNT_MESSAGE,
+                status_code=400,
+                details={"field": "target_count", "max": MAX_TARGET_COUNT},
+            )
 
         task = Task(
             owner_teacher_id=actor.user_id,
@@ -379,6 +399,21 @@ class TaskService:
             ),
         )
         db.add(task)
+        if command.target_count is not None:
+            # One-step creation (spec §3.2): the task and its units are
+            # ONE transaction — a crash leaves neither.
+            await db.flush()  # populate the server-generated task id
+            db.add_all(
+                [
+                    Assignment(
+                        task_id=task.id,
+                        platform=GENERIC_PLATFORM_CODE,
+                        keyword=f"单元{index}",
+                        availability_status=AssignmentAvailability.AVAILABLE.value,
+                    )
+                    for index in range(1, command.target_count + 1)
+                ]
+            )
         await db.commit()
         return task
 
@@ -561,6 +596,24 @@ class TaskService:
         if target is TaskStatus.PUBLISHED:
             now = self._clock.now()
             self._validate_publishable(task, now)
+            if before_status is TaskStatus.DRAFT:
+                # Simplification batch (2026-10-23 spec §2.2): a FIRST
+                # publish needs at least one task unit — resuming a
+                # PAUSED task is exempt (it published before).
+                units = (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(Assignment)
+                        .where(Assignment.task_id == task.id)
+                    )
+                    or 0
+                )
+                if units == 0:
+                    raise BusinessError(
+                        ErrorCode.TASK_UNITS_REQUIRED,
+                        _UNITS_REQUIRED_MESSAGE,
+                        status_code=409,
+                    )
             if task.published_at is None:  # first publish; pause/resume keeps it
                 task.published_at = now
         elif target is TaskStatus.CLOSED:
@@ -657,30 +710,15 @@ class TaskService:
                     status_code=400,
                 )
 
-        # §10.1 two-family split: the schema leg applies only to
-        # structured tasks; document tasks carry an EMPTY schema by
-        # contract (nothing to declare — content judgment rides the
-        # teacher review).
+        # §10.1 two-family split: document tasks carry an EMPTY schema
+        # by contract (nothing to declare — content judgment rides the
+        # teacher review). Structured tasks may OMIT the schema (the
+        # simplification batch, 2026-10-23 spec §2.1/§2.2: a schema-less
+        # structured task validates leniently at submission time).
         allowed = set(task.allowed_file_types)
         is_document_task = bool(allowed & DOCUMENT_FILE_TYPE_CODES)
 
-        if not is_document_task:
-            if not task.submission_schema:
-                raise BusinessError(
-                    ErrorCode.VALIDATION_ERROR,
-                    _INVALID_SCHEMA_MESSAGE,
-                    status_code=400,
-                )
-            if (
-                task.submission_schema_version is None
-                or task.submission_schema_version < 1
-            ):
-                raise BusinessError(
-                    ErrorCode.VALIDATION_ERROR,
-                    _INVALID_SCHEMA_MESSAGE,
-                    status_code=400,
-                )
-        elif task.submission_schema:
+        if is_document_task and task.submission_schema:
             raise BusinessError(
                 ErrorCode.VALIDATION_ERROR,
                 _DOCUMENT_SCHEMA_FORBIDDEN_MESSAGE,

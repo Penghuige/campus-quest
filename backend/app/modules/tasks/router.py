@@ -695,6 +695,7 @@ async def create_task(
             claim_cutoff_minutes=body.claim_cutoff_minutes,
             submission_schema=body.submission_schema,
             submission_schema_version=body.submission_schema_version,
+            target_count=body.target_count,
             notify_24h=body.notify_24h,
             notify_4h=body.notify_4h,
             notification_channels=body.notification_channels,

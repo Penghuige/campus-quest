@@ -34,6 +34,9 @@ class ErrorCode(StrEnum):
     # miss and from a phone conflict (spec §5.2, §31.1).
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     TASK_NOT_CLAIMABLE = "TASK_NOT_CLAIMABLE"
+    # The simplification batch (2026-10-23 spec §2.2): a first publish
+    # with zero task units refuses with this stable code.
+    TASK_UNITS_REQUIRED = "TASK_UNITS_REQUIRED"
     NO_ASSIGNMENT_AVAILABLE = "NO_ASSIGNMENT_AVAILABLE"
     ASSIGNMENT_LIMIT_REACHED = "ASSIGNMENT_LIMIT_REACHED"
     TASK_ACTIVE_CLAIM_EXISTS = "TASK_ACTIVE_CLAIM_EXISTS"

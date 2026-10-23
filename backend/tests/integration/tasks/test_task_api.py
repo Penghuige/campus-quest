@@ -68,7 +68,13 @@ from app.modules.tasks.enums import (
     TaskStatus,
     TaskType,
 )
-from app.modules.tasks.models import Assignment, AssignmentClaim, Task, TaskCollaborator
+from app.modules.tasks.models import (
+    Assignment,
+    AssignmentClaim,
+    Platform,
+    Task,
+    TaskCollaborator,
+)
 from app.modules.tasks.router import (
     get_event_publisher,
     get_rate_limiter,
@@ -695,20 +701,6 @@ async def test_teacher_creates_publishes_imports_student_claims_and_abandons(
     assert task_body["submission_schema"] == {"columns": ["title", "likes"]}
     task_id = task_body["id"]
 
-    # -- teacher: publish -----------------------------------------------------
-    published = await client.post(
-        f"/api/v1/teacher/tasks/{task_id}/publish", headers=_bearer(teacher_tokens)
-    )
-    assert published.status_code == 200, published.text
-    transition = published.json()
-    assert transition == {
-        "task_id": task_id,
-        "status": "PUBLISHED",
-        "claimable": True,
-        "published_at": transition["published_at"],
-        "closed_at": None,
-    }
-
     # -- teacher: import preview + confirm -------------------------------------
     keywords = ["关键词甲", "关键词乙", "关键词丙"]
     csv_rows = "".join(f"xiaohongshu,{keyword}\n" for keyword in keywords)
@@ -734,6 +726,21 @@ async def test_teacher_creates_publishes_imports_student_claims_and_abandons(
     )
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json() == {"task_id": task_id, "inserted": 3}
+
+    # -- teacher: publish (units first — the first-publish gate, spec
+    # §2.2; the import above is the unit source in this flow) ---------
+    published = await client.post(
+        f"/api/v1/teacher/tasks/{task_id}/publish", headers=_bearer(teacher_tokens)
+    )
+    assert published.status_code == 200, published.text
+    transition = published.json()
+    assert transition == {
+        "task_id": task_id,
+        "status": "PUBLISHED",
+        "claimable": True,
+        "published_at": transition["published_at"],
+        "closed_at": None,
+    }
 
     # -- student: the task list shows the card, never the assignment list ------
     listed = await client.get("/api/v1/tasks", headers=_bearer(student_tokens))
@@ -927,9 +934,22 @@ async def test_lifecycle_verbs_and_claim_conflicts(
         headers=_bearer(teacher_tokens),
     )
     task_id = created.json()["id"]
+    seed_csv = (_CSV_HEADER + "xiaohongshu,预置单元\n").encode()
+    seed_preview = await client.post(
+        f"/api/v1/teacher/tasks/{task_id}/assignments/import/preview",
+        content=seed_csv,
+        headers={**_bearer(teacher_tokens), "Content-Type": "text/csv"},
+    )
+    assert seed_preview.status_code == 200, seed_preview.text
     await client.post(
+        f"/api/v1/teacher/tasks/{task_id}/assignments/import/confirm",
+        json={"preview_token": seed_preview.json()["preview_token"]},
+        headers=_bearer(teacher_tokens),
+    )
+    first_publish = await client.post(
         f"/api/v1/teacher/tasks/{task_id}/publish", headers=_bearer(teacher_tokens)
     )
+    assert first_publish.status_code == 200, first_publish.text
 
     paused = await client.post(
         f"/api/v1/teacher/tasks/{task_id}/pause", headers=_bearer(teacher_tokens)
@@ -952,25 +972,17 @@ async def test_lifecycle_verbs_and_claim_conflicts(
     assert resumed.json()["status"] == "PUBLISHED"
     assert resumed.json()["claimable"] is True
 
-    # No units imported yet: claiming is NO_ASSIGNMENT_AVAILABLE (409).
+    # The NO_ASSIGNMENT_AVAILABLE branch still exists for the legacy
+    # shape (a hand-planted PUBLISHED row without units — the publish
+    # gate now prevents creating one through the API).
+    planted = _seed_task(teacher.id)
+    db_session.add(planted)
+    await db_session.flush()
     empty = await client.post(
-        f"/api/v1/tasks/{task_id}/claim", headers=_bearer(student_tokens)
+        f"/api/v1/tasks/{planted.id}/claim", headers=_bearer(student_tokens)
     )
     assert empty.status_code == 409
     assert _envelope(empty)["code"] == "NO_ASSIGNMENT_AVAILABLE"
-
-    csv_bytes = (_CSV_HEADER + "xiaohongshu,关键词甲\n").encode()
-    preview = await client.post(
-        f"/api/v1/teacher/tasks/{task_id}/assignments/import/preview",
-        content=csv_bytes,
-        headers={**_bearer(teacher_tokens), "Content-Type": "text/csv"},
-    )
-    assert preview.status_code == 200, preview.text
-    await client.post(
-        f"/api/v1/teacher/tasks/{task_id}/assignments/import/confirm",
-        json={"preview_token": preview.json()["preview_token"]},
-        headers=_bearer(teacher_tokens),
-    )
 
     claimed = await client.post(
         f"/api/v1/tasks/{task_id}/claim", headers=_bearer(student_tokens)
@@ -1381,3 +1393,194 @@ async def test_claim_and_abandon_are_rate_limited_per_user(
     )
     assert throttled.status_code == 429
     assert _envelope(throttled)["code"] == "RATE_LIMITED"
+
+
+# --- the simplification batch (2026-10-23): one-step creation and the
+# revised publish/claim gates -----------------------------------------------
+
+
+def _schema_less_create(**overrides: object) -> dict[str, object]:
+    payload = _create_payload(**overrides)
+    payload.pop("submission_schema")
+    payload.pop("submission_schema_version")
+    return payload
+
+
+@pytest.mark.integration
+async def test_create_with_target_count_creates_generic_units(
+    db_session: AsyncSession, client: httpx.AsyncClient, api_clock: FrozenClock
+) -> None:
+    """target_count creates 单元1..N on the generic platform in the SAME
+    transaction as the task (spec §3.2): one create answers 201 with the
+    task AND its claimable units; the registry row carries 通用."""
+    _, tokens = await _seed_management_teacher(
+        db_session, api_clock, username="sim-teacher@pku.edu.cn"
+    )
+    created = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(target_count=3),
+        headers=_bearer(tokens),
+    )
+    assert created.status_code == 201, created.text
+    task_id = UUID(created.json()["id"])
+
+    units = (
+        await db_session.scalars(
+            select(Assignment).where(Assignment.task_id == task_id)
+        )
+    ).all()
+    assert {(unit.platform, unit.keyword) for unit in units} == {
+        ("generic", f"单元{index}") for index in (1, 2, 3)
+    }
+    assert all(
+        unit.availability_status == AssignmentAvailability.AVAILABLE.value
+        for unit in units
+    )
+
+    platform_row = await db_session.get(Platform, "generic")
+    assert platform_row is not None
+    assert platform_row.display_name == "通用"
+    assert platform_row.sort_order == 1000
+
+
+@pytest.mark.integration
+async def test_create_without_target_count_leaves_units_to_import(
+    db_session: AsyncSession, client: httpx.AsyncClient, api_clock: FrozenClock
+) -> None:
+    """Absent target_count = unchanged: no units from creation."""
+    _, tokens = await _seed_management_teacher(
+        db_session, api_clock, username="sim-teacher2@pku.edu.cn"
+    )
+    created = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(),
+        headers=_bearer(tokens),
+    )
+    assert created.status_code == 201, created.text
+    task_id = UUID(created.json()["id"])
+    units = (
+        await db_session.scalars(
+            select(Assignment).where(Assignment.task_id == task_id)
+        )
+    ).all()
+    assert units == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("bad_value", [0, 201, -1])
+async def test_create_target_count_is_bounded(
+    db_session: AsyncSession,
+    client: httpx.AsyncClient,
+    api_clock: FrozenClock,
+    bad_value: int,
+) -> None:
+    """The 1..200 band (the import-row cap's twin) is a typed 400."""
+    _, tokens = await _seed_management_teacher(
+        db_session, api_clock, username=f"sim-teacher-b{bad_value}@pku.edu.cn"
+    )
+    rejected = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(target_count=bad_value),
+        headers=_bearer(tokens),
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert _envelope(rejected)["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.integration
+async def test_first_publish_requires_a_task_unit(
+    db_session: AsyncSession, client: httpx.AsyncClient, api_clock: FrozenClock
+) -> None:
+    """DRAFT→PUBLISHED with zero units answers the stable 409 (spec
+    §2.2): the "forgot the completion count" guard."""
+    _, tokens = await _seed_management_teacher(
+        db_session, api_clock, username="sim-teacher3@pku.edu.cn"
+    )
+    created = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(),
+        headers=_bearer(tokens),
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+
+    refused = await client.post(
+        f"/api/v1/teacher/tasks/{task_id}/publish", headers=_bearer(tokens)
+    )
+    assert refused.status_code == 409, refused.text
+    error = _envelope(refused)
+    assert error["code"] == "TASK_UNITS_REQUIRED"
+    assert "完成人数" in error["message"]
+
+
+@pytest.mark.integration
+async def test_schema_less_structured_task_publishes_and_is_claimable(
+    db_session: AsyncSession, client: httpx.AsyncClient, api_clock: FrozenClock
+) -> None:
+    """The P1 chain end to end: a structured task with NO schema and
+    units publishes, and a student claim lands (the old schema-version
+    claim gate is gone — lenient validation owns submissions)."""
+    _, teacher_tokens = await _seed_management_teacher(
+        db_session, api_clock, username="sim-teacher4@pku.edu.cn"
+    )
+    student = await _seed_user(db_session, username="20250199001", role=Role.STUDENT)
+    student_tokens = await _session_tokens(db_session, api_clock, student)
+
+    created = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(target_count=1),
+        headers=_bearer(teacher_tokens),
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+
+    published = await client.post(
+        f"/api/v1/teacher/tasks/{task_id}/publish", headers=_bearer(teacher_tokens)
+    )
+    assert published.status_code == 200, published.text
+
+    claimed = await client.post(
+        f"/api/v1/tasks/{task_id}/claim", headers=_bearer(student_tokens)
+    )
+    assert claimed.status_code == 201, claimed.text
+
+
+@pytest.mark.integration
+async def test_resume_from_paused_skips_the_unit_gate(
+    db_session: AsyncSession, client: httpx.AsyncClient, api_clock: FrozenClock
+) -> None:
+    """PAUSED→PUBLISHED is exempt (spec §2.2): the gate is first-publish
+    only. The units are removed under the paused row to prove it."""
+    _, tokens = await _seed_management_teacher(
+        db_session, api_clock, username="sim-teacher5@pku.edu.cn"
+    )
+    created = await client.post(
+        "/api/v1/teacher/tasks",
+        json=_schema_less_create(target_count=1),
+        headers=_bearer(tokens),
+    )
+    assert created.status_code == 201, created.text
+    task_id_raw = created.json()["id"]
+    published = await client.post(
+        f"/api/v1/teacher/tasks/{task_id_raw}/publish", headers=_bearer(tokens)
+    )
+    assert published.status_code == 200, published.text
+    paused = await client.post(
+        f"/api/v1/teacher/tasks/{task_id_raw}/pause", headers=_bearer(tokens)
+    )
+    assert paused.status_code == 200, paused.text
+
+    task_id = UUID(task_id_raw)
+    units = (
+        await db_session.scalars(
+            select(Assignment).where(Assignment.task_id == task_id)
+        )
+    ).all()
+    for unit in units:
+        await db_session.delete(unit)
+    await db_session.flush()
+
+    resumed = await client.post(
+        f"/api/v1/teacher/tasks/{task_id_raw}/resume", headers=_bearer(tokens)
+    )
+    assert resumed.status_code == 200, resumed.text
