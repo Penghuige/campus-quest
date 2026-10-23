@@ -98,13 +98,21 @@ _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
         # tracer's thread/greenlet bookkeeping) is pulled FORWARD from
         # the backlog into its own PR — this waiver unblocks main and
         # retires with that fix.
-        "beyond": frozenset({465, 623, 651, 683, 684}),
+        #
+        # 2026-10-23 (#135 CI rerun): the endpoint set drifted to seven
+        # under CI timing. Evidence: validate_submission.py is 287 lines
+        # total, all seven endpoints are beyond EOF — same host, same
+        # character as the original five. The full-set diagnostic (the
+        # `{beyond}` print below, #135) is what made the extra 687/793
+        # visible; the set stays exact so the next drift still goes red.
+        "beyond": frozenset({465, 623, 651, 683, 684, 687, 793}),
         "seen_in": ("app/workers/jobs/validate_submission.py",),
         "reason": (
             "the workers-job host of the greenlet cross-talk: the "
             "eager-mode worker tests' execution shape (suspected "
-            "thread-pool job runs) leaks a five-arc signature; root "
-            "fix in flight (reviewer directive 2026-10-17)"
+            "thread-pool job runs) leaks a seven-arc signature "
+            "(five originally; 687/793 added 2026-10-23 #135); root fix "
+            "in flight (reviewer directive 2026-10-17)"
         ),
     },
 )
