@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
+import { SwitchAccountButton } from "@/components/shell/SwitchAccountButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import { StaffShellSkeleton } from "@/components/shell/StaffShellSkeleton";
@@ -156,6 +157,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
                   {state.me.role === "ADMIN" ? "管理员" : "教师"}
                 </span>
               </span>
+              <SwitchAccountButton />
               <StaffLogoutButton />
               <StaffMenuSheet label="教师工作台菜单" items={NAV_ITEMS} />
             </div>

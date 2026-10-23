@@ -101,7 +101,12 @@ export function UnifiedLoginPanel() {
   // The remembered-device probe is PANEL-level (batch 3): ONE anonymous
   // read feeds both the banner and the cards' one-click branch (a
   // card whose mask matches the probe's IS the remembered device).
+  // probeSettledRef separates "still in flight" from "answered null" —
+  // a card clicked before the mount probe returns must AWAIT a settled
+  // answer, or every fresh-page click races into the auto-send branch
+  // (the terminal-round failure: /login just mounted, click, code sent).
   const [probeMask, setProbeMask] = useState<string | null>(null);
+  const probeSettledRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -109,6 +114,7 @@ export function UnifiedLoginPanel() {
       // synchronous-in-effect shape the compiler rule rejects).
       const hint = await fetchRememberedHint();
       if (!cancelled) {
+        probeSettledRef.current = true;
         setProbeMask(hint);
       }
     })();
@@ -153,7 +159,16 @@ export function UnifiedLoginPanel() {
       return;
     }
     setMode("code");
-    if (probeMask !== null && entry.masked === probeMask) {
+    // The probe must be SETTLED before the branch judges: a click on a
+    // freshly mounted page could otherwise race the in-flight read and
+    // mistake "not answered yet" for "no remembered device".
+    let mask = probeMask;
+    if (!probeSettledRef.current) {
+      mask = await fetchRememberedHint();
+      probeSettledRef.current = true;
+      setProbeMask(mask);
+    }
+    if (mask !== null && entry.masked === mask) {
       try {
         const outcome = await fastLoginCookieOnly();
         if (outcome.kind === "totp_required") {
