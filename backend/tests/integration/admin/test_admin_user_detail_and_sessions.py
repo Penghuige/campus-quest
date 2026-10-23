@@ -193,7 +193,7 @@ async def _seed_panorama_world(
     )
     db.add(session)
     await db.flush()
-    await issue_device(db, student.id, clock=clock)
+    await issue_device(db, student, clock=clock)
     await db.commit()
     return student, session
 

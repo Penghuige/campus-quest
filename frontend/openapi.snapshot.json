@@ -250,7 +250,7 @@
     "/api/v1/auth/challenge/verify": {
       "post": {
         "summary": "Unified Challenge Verify",
-        "description": "The code leg (or, with BOTH fields empty, the remembered-cookie\nsingle-factor leg): the discriminated union answers authenticated /\ntotp_required / unregistered — ``status`` is the only judgment\nmember. Wrong or expired or exhausted codes answer the single\nCHALLENGE_CODE_INVALID.",
+        "description": "The code leg (or, with BOTH fields empty, the remembered-cookie\nsingle-factor leg): the discriminated union answers authenticated /\ntotp_required / unregistered — ``status`` is the only judgment\nmember. Wrong or expired or exhausted codes answer the single\nCHALLENGE_CODE_INVALID. On the empty-body leg ``target`` names the\nslot handle from the probe's ``remembered[]`` entry — the popover\npick; omitted takes the most recent slot.",
         "operationId": "unified_challenge_verify_api_v1_auth_challenge_verify_post",
         "requestBody": {
           "content": {
@@ -324,7 +324,7 @@
     "/api/v1/auth/challenge/remembered": {
       "get": {
         "summary": "Unified Remembered Probe",
-        "description": "Is a remembered device alive for the login banner? The §3.1\nremembered read (2026-10-20 audience widening): every role the\nempty-body verify leg can serve answers 200 {identifier_masked} —\nthe account's masked phone when one is bound, its masked email\notherwise (invited teachers often hold only an email). Staff rows\nwhose mailbox lives ONLY in the username (email_normalized NULL —\nthe e2e world's shape and the pre-normalization invite shape) fall\nthrough to the username's mailbox. The status gate mirrors the\nverify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every\nother shape (no cookie, unknown/expired value, a status outside the\ngate, no identifier on the row) answers the same empty 204 —\nexistence is never an answer.",
+        "description": "The login banner's remembered faces — an ARRAY, one entry per\npresented account slot (the multi-slot batch, 2026-10-24), most\nrecent first, at most five:\n\n    200 {\"remembered\": [{\"identifier_masked\", \"slot\"}, ...]}\n    204 (no live, servable slot at all)\n\n``slot`` is the account's opaque handle — the cookie-name suffix\nthe verify leg's ``target`` echoes back. ``identifier_masked``\ncarries the account's masked phone when one is bound, its masked\nemail otherwise (invited teachers often hold only an email); staff\nrows whose mailbox lives ONLY in the username fall through to that\nmailbox. The status gate mirrors the verify leg: students\nACTIVE/PENDING_APPROVAL, staff ACTIVE. Enumeration never bumps\nlast_used_at — the ordering signal stays truthful (only a login\nspends recency). Every other shape (no slot cookies, unknown or\nexpired values, statuses outside the gate, rows with no identifier)\ncontributes nothing — existence is never an answer.",
         "operationId": "unified_remembered_probe_api_v1_auth_challenge_remembered_get",
         "responses": {
           "200": {
@@ -12336,12 +12336,23 @@
             "type": "boolean",
             "title": "Remember Device",
             "default": false
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "UnifiedChallengeVerifyRequest",
-        "description": "Trade the code for the discriminated-union answer (spec §3.1).\n\n``identifier``+``code`` is the code leg; BOTH omitted is the\nremembered-cookie single-factor leg (the empty-body verify)."
+        "description": "Trade the code for the discriminated-union answer (spec §3.1).\n\n``identifier``+``code`` is the code leg; BOTH omitted is the\nremembered-cookie single-factor leg (the empty-body verify).\n``target`` rides only the empty-body leg: the slot handle from the\nprobe's ``remembered[]`` entry names WHICH remembered account to\nopen — omitted (or blank) takes the most recent slot, the same\nface the banner lists first."
       },
       "UploadCompleteRequest": {
         "properties": {

@@ -146,9 +146,11 @@ async def _verify(
     *,
     remember: bool = False,
     device_cookie: str | None = None,
+    device_cookie_name: str = "cq_dev_x",
 ) -> httpx.Response:
     # The unified door: identifier+code pair, or BOTH omitted for the
-    # remembered-cookie single-factor leg.
+    # remembered-cookie single-factor leg. The slot cookie rides under
+    # the caller-provided NAME (cq_dev_<slot>).
     body: dict[str, object] = {}
     if phone is not None:
         body["identifier"] = phone
@@ -156,7 +158,7 @@ async def _verify(
         body["code"] = code
     if remember:
         body["remember_device"] = True
-    cookies = {"cq_staff_device": device_cookie} if device_cookie else None
+    cookies = {device_cookie_name: device_cookie} if device_cookie else None
     return await client.post(
         "/api/v1/auth/challenge/verify", json=body, cookies=cookies
     )
@@ -258,19 +260,26 @@ async def test_remembered_device_cookie_logs_in_without_any_code(
     first = await _verify(client, _PHONE, _last_code(api_sms), remember=True)
     assert first.status_code == 200, first.text
     jar = http_cookies.SimpleCookie()
-    jar.load(
-        next(
-            h
-            for h in first.headers.get_list("set-cookie")
-            if h.startswith("cq_staff_device=")
-        )
-    )
-    cookie_value = jar["cq_staff_device"].value
+    slot_headers = [
+        h for h in first.headers.get_list("set-cookie") if h.startswith("cq_dev_")
+    ]
+    assert len(slot_headers) == 1
+    jar.load(slot_headers[0])
+    cookie_name, morsel = next(iter(jar.items()))
+    assert cookie_name.startswith("cq_dev_")
+    cookie_value = morsel.value
     assert cookie_value
 
     # The remembered path: NO identifier and NO code — the cookie is
-    # the credential (the unified door's empty-body leg).
-    remembered = await _verify(client, None, None, device_cookie=cookie_value)
+    # the credential (the unified door's empty-body leg), riding under
+    # the account's slot name.
+    remembered = await _verify(
+        client,
+        None,
+        None,
+        device_cookie=cookie_value,
+        device_cookie_name=cookie_name,
+    )
     assert remembered.status_code == 200, remembered.text
     assert remembered.json()["tokens"]["access_token"]
     # And it SMSed nothing new.

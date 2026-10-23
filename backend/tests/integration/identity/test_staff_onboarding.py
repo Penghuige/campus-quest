@@ -677,7 +677,7 @@ async def test_correct_totp_enables_staff_login(db_session: AsyncSession) -> Non
     for code in codes:
         assert code not in {row.code_hash for row in stored}
 
-    tokens, device_cookie = await service.authenticate_staff(
+    tokens, device_cookie, _slot = await service.authenticate_staff(
         db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, _code_for(secret, clock)
     )
     assert isinstance(tokens, SessionTokens)
@@ -786,7 +786,7 @@ async def test_recovery_code_works_once_only(db_session: AsyncSession) -> None:
         db_session, clock, service, role=Role.TEACHER
     )
 
-    tokens, _device_cookie = await service.authenticate_staff(
+    tokens, _device_cookie, _slot = await service.authenticate_staff(
         db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, codes[0]
     )
     assert isinstance(tokens, SessionTokens)
@@ -798,11 +798,11 @@ async def test_recovery_code_works_once_only(db_session: AsyncSession) -> None:
     assert replay_exc.value.code == ErrorCode.AUTHENTICATION_REQUIRED
 
     # Other codes remain usable, and the TOTP path still works alongside.
-    again, _again_cookie = await service.authenticate_staff(
+    again, _again_cookie, _slot = await service.authenticate_staff(
         db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, codes[1]
     )
     assert isinstance(again, SessionTokens)
-    via_totp, _totp_cookie = await service.authenticate_staff(
+    via_totp, _totp_cookie, _slot = await service.authenticate_staff(
         db_session, _TEACHER_EMAIL_NORMALIZED, _PASSWORD, _code_for(secret, clock)
     )
     assert isinstance(via_totp, SessionTokens)
@@ -920,7 +920,7 @@ async def test_onboarding_flow_never_logs_secrets(
         codes = await service.confirm_totp_setup(
             db_session, pending.user_id, _code_for(setup.secret, clock)
         )
-        tokens, _cookie = await service.authenticate_staff(
+        tokens, _cookie, _slot = await service.authenticate_staff(
             db_session,
             _TEACHER_EMAIL_NORMALIZED,
             _PASSWORD,
@@ -1002,7 +1002,7 @@ async def _authenticate_on_own_session(
     pattern)."""
     async with AsyncSession(engine) as session:
         try:
-            tokens, _device_cookie = await service.authenticate_staff(
+            tokens, _device_cookie, _slot = await service.authenticate_staff(
                 session, email, _PASSWORD, code
             )
             return tokens

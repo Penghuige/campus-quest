@@ -28,7 +28,7 @@ from app.db.session import get_db_session
 from app.main import create_app
 from app.modules.audit.models import AuditLog
 from app.modules.identity.dependencies import get_business_clock
-from app.modules.identity.device_credentials import DEVICE_COOKIE_NAME, issue
+from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX, issue
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import RememberedDevice, User
 from app.modules.identity.providers import (
@@ -146,9 +146,9 @@ async def test_list_returns_only_caller_devices_without_hashes(
 ) -> None:
     mine = await _seed_staff(db_session, _TEACHER_EMAIL)
     other = await _seed_staff(db_session, _OTHER_EMAIL)
-    await issue(db_session, mine.id, clock=FrozenClock(_T0))
-    await issue(db_session, mine.id, clock=FrozenClock(_T0))
-    await issue(db_session, other.id, clock=FrozenClock(_T0))
+    await issue(db_session, mine, clock=FrozenClock(_T0))
+    await issue(db_session, mine, clock=FrozenClock(_T0))
+    await issue(db_session, other, clock=FrozenClock(_T0))
     await db_session.commit()
     bearer = await _mint_bearer(db_session, mine)
 
@@ -180,7 +180,7 @@ async def test_delete_revokes_every_device_and_kills_the_cookie(
     the (stolen) cookie falls back to the TOTP leg."""
     admin = await _seed_staff(db_session, _TEACHER_EMAIL)
     bearer = await _mint_bearer(db_session, admin)
-    cookie_value = await issue(db_session, admin.id, clock=FrozenClock(_T0))
+    cookie_value, cookie_slot = await issue(db_session, admin, clock=FrozenClock(_T0))
     await db_session.commit()
 
     deleted = await client.request(
@@ -205,8 +205,9 @@ async def test_delete_revokes_every_device_and_kills_the_cookie(
     )
     assert "OWN_DEVICES_REVOKED" in actions
 
-    # The stolen-cookie fallback, end to end.
-    client.cookies.set(DEVICE_COOKIE_NAME, cookie_value)
+    # The stolen-cookie fallback, end to end (under the account's slot
+    # name — the multi-slot batch's cookie scheme).
+    client.cookies.set(DEVICE_COOKIE_PREFIX + cookie_slot, cookie_value)
     requested = await client.post(
         "/api/v1/auth/challenge/request", json={"identifier": _TEACHER_EMAIL}
     )

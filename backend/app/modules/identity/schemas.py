@@ -97,13 +97,18 @@ class UnifiedChallengeVerifyRequest(BaseModel):
     """Trade the code for the discriminated-union answer (spec §3.1).
 
     ``identifier``+``code`` is the code leg; BOTH omitted is the
-    remembered-cookie single-factor leg (the empty-body verify)."""
+    remembered-cookie single-factor leg (the empty-body verify).
+    ``target`` rides only the empty-body leg: the slot handle from the
+    probe's ``remembered[]`` entry names WHICH remembered account to
+    open — omitted (or blank) takes the most recent slot, the same
+    face the banner lists first."""
 
     model_config = ConfigDict(extra="forbid")
 
     identifier: str | None = None
     code: str | None = None
     remember_device: bool = False
+    target: str | None = None
 
     @model_validator(mode="after")
     def _pair_or_neither(self) -> UnifiedChallengeVerifyRequest:

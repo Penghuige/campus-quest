@@ -184,22 +184,27 @@ def _totp_code(secret: str, clock: FrozenClock) -> str:
     return pyotp.TOTP(secret).at(clock.now())
 
 
-def _device_cookie(response: httpx.Response) -> str:
-    """The minted device cookie off a Set-Cookie header — the jar will
-    not carry a Secure cookie over http://test, so the cookie rides the
-    request explicitly (the remembered-tests' established pattern)."""
-    from app.modules.identity.device_credentials import DEVICE_COOKIE_NAME
+def _device_cookie(response: httpx.Response) -> tuple[str, str]:
+    """The minted slot cookie as (name, value) — the jar will not carry
+    a Secure cookie over http://test, so the cookie rides the request
+    explicitly under its slot name (the remembered-tests' established
+    pattern, retooled for the multi-slot naming)."""
+    from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX
 
     for header in response.headers.get_list("set-cookie"):
-        if header.startswith(f"{DEVICE_COOKIE_NAME}="):
-            return header.split("=", 1)[1].split(";", 1)[0]
+        if header.startswith(DEVICE_COOKIE_PREFIX):
+            name, _, rest = header.partition("=")
+            return name, rest.split(";", 1)[0]
     raise AssertionError("no device cookie on the response")
 
 
-def _cookies(value: str) -> dict[str, str]:
-    from app.modules.identity.device_credentials import DEVICE_COOKIE_NAME
-
-    return {DEVICE_COOKIE_NAME: value}
+def _cookies(cookie: str | tuple[str, str]) -> dict[str, str]:
+    """The explicit jar for one remembered credential: a minted
+    (name, value) pair, or a bare value under a placeholder slot name
+    (the invalid-value legs — the name is not the credential)."""
+    if isinstance(cookie, tuple):
+        return {cookie[0]: cookie[1]}
+    return {"cq_dev_invalid": cookie}
 
 
 async def test_request_routes_by_identifier_shape(
@@ -628,7 +633,7 @@ async def test_remembered_probe_and_empty_body_verify_leg(
         cookies=_cookies(cookie),
     )
     assert probed.status_code == 200, probed.text
-    masked = probed.json()["identifier_masked"]
+    masked = probed.json()["remembered"][0]["identifier_masked"]
     assert masked.startswith("+86")
     assert student.phone_e164 not in masked
 
@@ -695,7 +700,7 @@ async def test_empty_body_verify_still_owes_admin_the_second_factor(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(cookie)
     )
     assert probed.status_code == 200, probed.text
-    assert probed.json()["identifier_masked"].startswith("+86")
+    assert probed.json()["remembered"][0]["identifier_masked"].startswith("+86")
 
     continued = await client.post(
         "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
@@ -1258,6 +1263,7 @@ async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
     teachers often hold only an email). Status gate mirrors the verify
     leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every other
     shape stays the empty 204."""
+    from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX
     from app.modules.identity.device_credentials import issue as issue_device
 
     student = await _seed_user(
@@ -1287,18 +1293,24 @@ async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
     suspended.status = UserStatus.SUSPENDED
     await db_session.commit()
 
-    student_cookie = await issue_device(db_session, student.id, clock=api_clock)
-    teacher_cookie = await issue_device(db_session, teacher.id, clock=api_clock)
-    admin_cookie = await issue_device(db_session, admin.id, clock=api_clock)
-    suspended_cookie = await issue_device(db_session, suspended.id, clock=api_clock)
+    minted = [
+        await issue_device(db_session, user, clock=api_clock)
+        for user in (student, teacher, admin, suspended)
+    ]
     await db_session.commit()
+    # issue answers (value, slot); the browser jar keys by the full
+    # slot cookie name.
+    student_cookie = DEVICE_COOKIE_PREFIX + minted[0][1], minted[0][0]
+    teacher_cookie = DEVICE_COOKIE_PREFIX + minted[1][1], minted[1][0]
+    admin_cookie = DEVICE_COOKIE_PREFIX + minted[2][1], minted[2][0]
+    suspended_cookie = DEVICE_COOKIE_PREFIX + minted[3][1], minted[3][0]
 
     # STUDENT, phone bound → masked phone.
     as_student = await client.get(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(student_cookie)
     )
     assert as_student.status_code == 200, as_student.text
-    student_masked = as_student.json()["identifier_masked"]
+    student_masked = as_student.json()["remembered"][0]["identifier_masked"]
     assert student_masked.startswith("+86")
     assert "****" in student_masked
     assert student.phone_e164 not in student_masked
@@ -1308,7 +1320,7 @@ async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(teacher_cookie)
     )
     assert as_teacher.status_code == 200, as_teacher.text
-    teacher_masked = as_teacher.json()["identifier_masked"]
+    teacher_masked = as_teacher.json()["remembered"][0]["identifier_masked"]
     assert teacher_masked == f"{teacher_mail[:1]}***@{teacher_mail.split('@')[1]}"
     assert teacher_mail not in teacher_masked
 
@@ -1318,7 +1330,7 @@ async def test_remembered_probe_serves_all_roles_with_a_masked_identifier(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(admin_cookie)
     )
     assert as_admin.status_code == 200, as_admin.text
-    assert as_admin.json()["identifier_masked"].startswith("+86")
+    assert as_admin.json()["remembered"][0]["identifier_masked"].startswith("+86")
 
     # A SUSPENDED account is outside the verify leg's gate: empty 204.
     as_suspended = await client.get(
@@ -1477,19 +1489,21 @@ async def test_remembered_probe_masks_the_username_mailbox(
     the same cookie completes the empty-body verify, so a 204 here would
     be a banner that invites and then refuses."""
     from app.modules.identity import device_credentials as devices
+    from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX
 
     mail = f"probe-username-{uuid4().hex[:8]}@campus.example.edu"
     teacher = await _seed_user(db_session, username=mail, role=Role.TEACHER)
     teacher.email_normalized = None
     await db_session.commit()
-    cookie = await devices.issue(db_session, teacher.id, clock=api_clock)
+    value, slot = await devices.issue(db_session, teacher, clock=api_clock)
     await db_session.commit()
+    cookie = (DEVICE_COOKIE_PREFIX + slot, value)
 
     probed = await client.get(
         "/api/v1/auth/challenge/remembered", cookies=_cookies(cookie)
     )
     assert probed.status_code == 200, probed.text
-    masked = probed.json()["identifier_masked"]
+    masked = probed.json()["remembered"][0]["identifier_masked"]
     assert masked == f"{mail[:1]}***@{mail.split('@')[1]}"
     assert mail not in masked
 
@@ -1498,3 +1512,622 @@ async def test_remembered_probe_masks_the_username_mailbox(
     )
     assert continued.status_code == 200, continued.text
     assert continued.json()["status"] == "authenticated"
+
+
+# --- the multi-slot batch (2026-10-24): one cookie NAME per account ------------
+
+from app.modules.identity.device_credentials import (  # noqa: E402
+    DEVICE_COOKIE_PREFIX,
+    slot_suffix,
+    slots_from,
+)
+
+
+def _slot_cookies(*responses: httpx.Response) -> dict[str, str]:
+    """Harvest every cq_dev_* Set-Cookie as {full cookie name: value} —
+    the exact jar a browser would hold after these responses (Secure
+    cookies do not ride the http://test transport, so the jar is
+    manual). Pass THIS to the client; ``slots_from`` derives the
+    {slot: value} view for assertions."""
+    from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX
+
+    jar: dict[str, str] = {}
+    for response in responses:
+        for header in response.headers.get_list("set-cookie"):
+            if not header.startswith(DEVICE_COOKIE_PREFIX):
+                continue
+            name, _, rest = header.partition("=")
+            jar[name] = rest.split(";", 1)[0]
+    return jar
+
+
+def _cookie_names(response: httpx.Response) -> list[str]:
+    """Every cookie NAME the response sets (the slot-overwrite proof)."""
+    from app.modules.identity.device_credentials import DEVICE_COOKIE_PREFIX
+
+    return [
+        header.split("=", 1)[0]
+        for header in response.headers.get_list("set-cookie")
+        if header.startswith(DEVICE_COOKIE_PREFIX)
+    ]
+
+
+async def _remember_teacher_by_email(
+    client: httpx.AsyncClient, api_email: FakeEmailSender, email: str
+) -> httpx.Response:
+    """The teacher email-code leg with remember_device — one minted slot."""
+    await client.post("/api/v1/auth/challenge/request", json={"identifier": email})
+    code = str(api_email.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": email, "code": code, "remember_device": True},
+    )
+    assert login.status_code == 200, login.text
+    return login
+
+
+async def _remember_student_by_phone(
+    client: httpx.AsyncClient, api_sms: FakeSmsSender, phone: str
+) -> httpx.Response:
+    """The student mobile-code leg with remember_device — one minted slot."""
+    await client.post("/api/v1/auth/challenge/request", json={"identifier": phone})
+    code = str(api_sms.messages[-1].variables["code"])
+    login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"identifier": phone, "code": code, "remember_device": True},
+    )
+    assert login.status_code == 200, login.text
+    return login
+
+
+async def _stagger_mint_recency(
+    db_session: AsyncSession, user_ids_in_recency_order: list[object]
+) -> None:
+    """Force a deterministic (last_used_at or created_at) order across
+    one harness transaction's mints: PostgreSQL's ``now()`` is the
+    TRANSACTION timestamp, so every mint inside this savepoint harness
+    shares one created_at and the recency order would be a coin flip.
+    Production mints ride separate transactions with distinct
+    timestamps; this setup reaches the same fixture state explicitly
+    (most recent LAST in the argument)."""
+    from datetime import timedelta
+
+    from sqlalchemy import select, update
+
+    from app.modules.identity.models import RememberedDevice
+
+    rows = list(
+        (
+            await db_session.execute(
+                select(RememberedDevice).where(
+                    RememberedDevice.user_id.in_(user_ids_in_recency_order)
+                )
+            )
+        ).scalars()
+    )
+    by_user = {row.user_id: row for row in rows}
+    base = min(row.created_at for row in rows)
+    for offset, user_id in enumerate(user_ids_in_recency_order, start=1):
+        await db_session.execute(
+            update(RememberedDevice)
+            .where(RememberedDevice.id == by_user[user_id].id)
+            .values(created_at=base + timedelta(seconds=offset))
+        )
+    await db_session.commit()
+
+
+async def test_remembering_a_second_account_leaves_the_first_slot_alive(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+    api_email: FakeEmailSender,
+) -> None:
+    """The batch's root fix (owner report: 切换账号仍要验证码): slots are
+    per-ACCOUNT — remembering B must not overwrite A's credential. Both
+    slots coexist in one jar; the probe names both; the target leg
+    re-opens A without any code."""
+    from hashlib import sha256
+
+    teacher = await _seed_user(
+        db_session,
+        username=f"slot-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171001",
+    )
+    await db_session.commit()
+
+    teacher_login = await _remember_teacher_by_email(
+        client, api_email, teacher.email_normalized or ""
+    )
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    jar = _slot_cookies(teacher_login, student_login)
+    teacher_slot = slot_suffix(teacher.email_normalized or "")
+    student_slot = slot_suffix(student.phone_e164 or "")
+    assert set(slots_from(jar)) == {teacher_slot, student_slot}
+
+    probed = await client.get("/api/v1/auth/challenge/remembered", cookies=jar)
+    assert probed.status_code == 200, probed.text
+    entries = probed.json()["remembered"]
+    assert {entry["slot"] for entry in entries} == {teacher_slot, student_slot}
+    by_slot = {entry["slot"]: entry for entry in entries}
+    # The masked faces stay masked (the identifier never rides the body).
+    assert by_slot[teacher_slot]["identifier_masked"].startswith(
+        (teacher.email_normalized or "")[:1]
+    )
+    assert teacher.email_normalized not in by_slot[teacher_slot]["identifier_masked"]
+    assert by_slot[student_slot]["identifier_masked"].startswith("+86")
+    assert student.phone_e164 not in by_slot[student_slot]["identifier_masked"]
+
+    # The slot handle is exactly the cookie-name suffix — sha256 of the
+    # canonical identifier, never the identifier itself.
+    assert (
+        teacher_slot
+        == sha256((teacher.email_normalized or "").encode()).hexdigest()[:10]
+    )
+
+
+async def test_probe_answers_the_array_and_orders_by_recency(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+    api_email: FakeEmailSender,
+) -> None:
+    """The probe's array shape ({remembered: [...]}, most recent first)
+    and the enumeration's no-bump discipline: listing never touches
+    last_used_at — only the credential a login actually uses bumps (the
+    bump rides the chosen slot alone)."""
+    from sqlalchemy import select
+
+    from app.modules.identity.models import RememberedDevice
+
+    teacher = await _seed_user(
+        db_session,
+        username=f"array-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171002",
+    )
+    await db_session.commit()
+
+    teacher_login = await _remember_teacher_by_email(
+        client, api_email, teacher.email_normalized or ""
+    )
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    jar = _slot_cookies(teacher_login, student_login)
+
+    # The probe lists both, most recent first (the stagger makes the
+    # student mint the newest — production reaches this naturally via
+    # separate-transaction timestamps).
+    await _stagger_mint_recency(db_session, [teacher.id, student.id])
+    probed = await client.get("/api/v1/auth/challenge/remembered", cookies=jar)
+    assert probed.status_code == 200, probed.text
+    entries = probed.json()["remembered"]
+    assert [entry["slot"] for entry in entries] == [
+        slot_suffix(student.phone_e164 or ""),
+        slot_suffix(teacher.email_normalized or ""),
+    ]
+
+    # Enumeration bumped nothing.
+    rows = {
+        row.user_id: row
+        for row in (
+            await db_session.execute(
+                select(RememberedDevice).where(
+                    RememberedDevice.user_id.in_([teacher.id, student.id])
+                )
+            )
+        ).scalars()
+    }
+    assert all(row.last_used_at is None for row in rows.values())
+
+
+async def test_empty_body_verify_without_target_takes_the_most_recent_slot(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+    api_email: FakeEmailSender,
+    api_clock: FrozenClock,
+) -> None:
+    """The banner contract (reviewer ruling 2026-10-24): no target =
+    the MOST RECENT slot — the same recency the probe's array is sorted
+    by, so the face the banner shows first is the face the click logs
+    in. The chosen credential alone bumps last_used_at."""
+    from sqlalchemy import select
+
+    from app.modules.identity.models import RememberedDevice
+
+    teacher = await _seed_user(
+        db_session,
+        username=f"recent-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171003",
+    )
+    await db_session.commit()
+
+    teacher_login = await _remember_teacher_by_email(
+        client, api_email, teacher.email_normalized or ""
+    )
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    jar = _slot_cookies(teacher_login, student_login)
+    # Deterministic recency: the student's mint is the newest.
+    await _stagger_mint_recency(db_session, [teacher.id, student.id])
+
+    continued = await client.post("/api/v1/auth/challenge/verify", json={}, cookies=jar)
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["status"] == "authenticated"
+    # The student mint happened last → its slot is the most recent one.
+    assert continued.json()["role"] == "STUDENT"
+
+    rows = {
+        row.user_id: row
+        for row in (
+            await db_session.execute(
+                select(RememberedDevice).where(
+                    RememberedDevice.user_id.in_([teacher.id, student.id])
+                )
+            )
+        ).scalars()
+    }
+    assert rows[student.id].last_used_at == api_clock.now()
+    assert rows[teacher.id].last_used_at is None
+
+
+async def test_empty_body_verify_with_target_logs_into_that_slot(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+    api_email: FakeEmailSender,
+) -> None:
+    """The popover pick: target names a slot handle from the probe's
+    array; the verify leg opens THAT account — the other slots ride
+    along untouched."""
+    teacher = await _seed_user(
+        db_session,
+        username=f"target-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171004",
+    )
+    await db_session.commit()
+
+    teacher_login = await _remember_teacher_by_email(
+        client, api_email, teacher.email_normalized or ""
+    )
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    jar = _slot_cookies(teacher_login, student_login)
+
+    picked = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"target": slot_suffix(teacher.email_normalized or "")},
+        cookies=jar,
+    )
+    assert picked.status_code == 200, picked.text
+    assert picked.json()["status"] == "authenticated"
+    assert picked.json()["role"] == "TEACHER"
+
+
+async def test_empty_body_verify_target_without_a_matching_slot_is_uniform_invalid(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """A target naming no presented slot (absent, stale, or someone
+    else's) answers the single CHALLENGE_CODE_INVALID — no oracle about
+    WHICH slot handles exist."""
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171005",
+    )
+    await db_session.commit()
+    login = await _remember_student_by_phone(client, api_sms, student.phone_e164 or "")
+    jar = _slot_cookies(login)
+
+    refused = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"target": "deadbeef99"},
+        cookies=jar,
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
+
+
+async def test_the_retired_staff_cookie_name_is_no_longer_read(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """cq_staff_device is retired (2026-10-24): even a VALID minted
+    value under the old name answers nothing — the probe 204s and the
+    empty-body verify refuses. Re-login re-remembers under the slot
+    name (the retirement cost the proposal accepted)."""
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171006",
+    )
+    await db_session.commit()
+    login = await _remember_student_by_phone(client, api_sms, student.phone_e164 or "")
+    jar = _slot_cookies(login)
+    (value,) = jar.values()
+
+    probed = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies={"cq_staff_device": value}
+    )
+    assert probed.status_code == 204, probed.text
+
+    refused = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={},
+        cookies={"cq_staff_device": value},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
+
+
+async def test_same_account_remember_keeps_exactly_one_slot(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_email: FakeEmailSender,
+) -> None:
+    """同账号覆盖: re-remembering the SAME account re-uses its one slot
+    name — the second Set-Cookie overwrites the first in the jar, and
+    the banner lists the account once (never once per login). The two
+    mints ride two different legs (email-code, then the password leg)
+    on purpose: the slot name is the ACCOUNT's, not the login
+    surface's."""
+    teacher = await _seed_user(
+        db_session,
+        username=f"once-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    await db_session.commit()
+
+    first = await _remember_teacher_by_email(
+        client, api_email, teacher.email_normalized or ""
+    )
+    second = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "identifier": teacher.email_normalized,
+            "password": _PASSWORD,
+            "remember_device": True,
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "authenticated"
+    assert _cookie_names(first) == _cookie_names(second)
+
+    jar = _slot_cookies(first, second)
+    assert list(slots_from(jar)) == [slot_suffix(teacher.email_normalized or "")]
+
+    probed = await client.get("/api/v1/auth/challenge/remembered", cookies=jar)
+    assert probed.status_code == 200, probed.text
+    entries = probed.json()["remembered"]
+    assert len(entries) == 1
+
+
+async def test_admin_target_slot_still_owes_totp(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The empty-body leg's audience rule is per-SLOT, unchanged: the
+    ADMIN's slot answers totp_required while the STUDENT's slot in the
+    same jar authenticates."""
+    secret = pyotp.random_base32()
+    admin = await _seed_user(
+        db_session,
+        username=f"slot-admin-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        phone="+8613800171007",
+        totp_secret=secret,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171008",
+    )
+    await db_session.commit()
+
+    # The admin mint ride the full totp completion.
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": admin.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    pending = (
+        await client.post(
+            "/api/v1/auth/challenge/verify",
+            json={
+                "identifier": admin.phone_e164,
+                "code": code,
+                "remember_device": True,
+            },
+        )
+    ).json()
+    assert pending["status"] == "totp_required"
+    admin_login = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={
+            "pending_token": pending["pending_token"],
+            "totp_code": _totp_code(secret, api_clock),
+            "remember_device": True,
+        },
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    jar = _slot_cookies(admin_login, student_login)
+
+    admin_pick = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"target": slot_suffix(admin.phone_e164 or "")},
+        cookies=jar,
+    )
+    assert admin_pick.status_code == 200, admin_pick.text
+    assert admin_pick.json()["status"] == "totp_required"
+
+    student_pick = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={"target": slot_suffix(student.phone_e164 or "")},
+        cookies=jar,
+    )
+    assert student_pick.status_code == 200, student_pick.text
+    assert student_pick.json()["status"] == "authenticated"
+    assert student_pick.json()["role"] == "STUDENT"
+
+
+async def test_staff_password_honoring_reads_only_its_own_slot(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The password leg's cookie honoring (the free-TOTP craft): the
+    ADMIN's own slot in the jar completes the login; a jar holding only
+    ANOTHER account's slot changes nothing (totp still owed)."""
+    secret = pyotp.random_base32()
+    admin = await _seed_user(
+        db_session,
+        username=f"honor-admin-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        phone="+8613800171009",
+        totp_secret=secret,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171010",
+    )
+    await db_session.commit()
+
+    # Mint both slots (the admin's through the full totp completion).
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": admin.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    pending = (
+        await client.post(
+            "/api/v1/auth/challenge/verify",
+            json={
+                "identifier": admin.phone_e164,
+                "code": code,
+                "remember_device": True,
+            },
+        )
+    ).json()
+    admin_login = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={
+            "pending_token": pending["pending_token"],
+            "totp_code": _totp_code(secret, api_clock),
+            "remember_device": True,
+        },
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    student_login = await _remember_student_by_phone(
+        client, api_sms, student.phone_e164 or ""
+    )
+    both = _slot_cookies(admin_login, student_login)
+    admin_slot = slot_suffix(admin.phone_e164 or "")
+    student_slot = slot_suffix(student.phone_e164 or "")
+
+    honored = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": admin.email_normalized, "password": _PASSWORD},
+        cookies=both,
+    )
+    assert honored.status_code == 200, honored.text
+    assert honored.json()["status"] == "authenticated"
+    assert honored.json()["role"] == "ADMIN"
+
+    # Only the student's slot in the jar: the admin still owes totp.
+    only_foreign = {
+        name: value
+        for name, value in both.items()
+        if name == DEVICE_COOKIE_PREFIX + student_slot
+    }
+    assert len(only_foreign) == 1
+    owed = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": admin.email_normalized, "password": _PASSWORD},
+        cookies=only_foreign,
+    )
+    assert owed.status_code == 200, owed.text
+    assert owed.json()["status"] == "totp_required"
+    assert admin_slot not in owed.json()
+
+
+async def test_probe_caps_the_array_at_five_entries(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The banner contract: at most five faces, the most recent ones —
+    a jar older than that keeps its oldest slot silent (still usable
+    by target, just not listed)."""
+    logins = []
+    for index in range(6):
+        student = await _seed_user(
+            db_session,
+            username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+            role=Role.STUDENT,
+            phone=f"+86138001710{11 + index}",
+        )
+        await db_session.commit()
+        logins.append(
+            (
+                student,
+                await _remember_student_by_phone(
+                    client, api_sms, student.phone_e164 or ""
+                ),
+            )
+        )
+    jar = _slot_cookies(*(login for _, login in logins))
+    assert len(jar) == 6
+    # Deterministic recency: mint order = age order (index 0 oldest).
+    await _stagger_mint_recency(db_session, [student.id for student, _ in logins])
+
+    probed = await client.get("/api/v1/auth/challenge/remembered", cookies=jar)
+    assert probed.status_code == 200, probed.text
+    entries = probed.json()["remembered"]
+    assert len(entries) == 5
+    # The five most recent mints — the FIRST (oldest) account is the
+    # one left off the banner.
+    listed = {entry["slot"] for entry in entries}
+    assert slot_suffix(logins[0][0].phone_e164 or "") not in listed
+    assert all(
+        slot_suffix(student.phone_e164 or "") in listed for student, _ in logins[1:]
+    )

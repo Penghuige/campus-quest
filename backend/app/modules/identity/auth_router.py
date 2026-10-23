@@ -28,11 +28,12 @@ from app.integrations.masking import mask_email, mask_phone
 from app.modules.audit.context import AuditContext
 from app.modules.identity.dependencies import get_business_clock
 from app.modules.identity.device_credentials import (
-    DEVICE_COOKIE_NAME,
+    DEVICE_COOKIE_PREFIX,
     DEVICE_TTL_DAYS,
-)
-from app.modules.identity.device_credentials import (
-    validate as validate_device,
+    PROBE_MAX_ENTRIES,
+    canonical_identifier,
+    resolve_remembered,
+    slots_from,
 )
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.mobile_login_service import MobileLoginService
@@ -247,7 +248,7 @@ async def login(
         db,
         identifier=body.identifier or "",
         password=body.password,
-        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        device_cookies=slots_from(request.cookies),
         remember_device=body.remember_device,
     )
     return _unified_outcome_response(response, outcome, settings)
@@ -258,16 +259,20 @@ def _unified_outcome_response(
 ) -> UnifiedAuthOutcome:
     """Shape one facade outcome: tokens ride the refresh-cookie pair
     (the HttpOnly delivery, never the body), a minted device cookie
-    rides its own HttpOnly Set-Cookie, and only the union's named
-    members reach the body."""
+    rides its own HttpOnly Set-Cookie NAMED FOR THE ACCOUNT'S SLOT
+    (cq_dev_<handle> — remembering one account never touches another
+    account's slot in the jar), and only the union's named members
+    reach the body."""
     tokens = getattr(outcome, "tokens", None)
     pair = None
     if tokens is not None:
         pair = _token_pair_response(response, tokens, settings)
     device_cookie = getattr(outcome, "device_cookie", None)
     if device_cookie is not None:
+        device_slot = getattr(outcome, "device_slot", None)
+        assert device_slot, "a minted device cookie always carries its slot"
         response.set_cookie(
-            DEVICE_COOKIE_NAME,
+            DEVICE_COOKIE_PREFIX + device_slot,
             device_cookie,
             max_age=DEVICE_TTL_DAYS * 24 * 3600,
             secure=True,
@@ -319,14 +324,17 @@ async def unified_challenge_verify(
     single-factor leg): the discriminated union answers authenticated /
     totp_required / unregistered — ``status`` is the only judgment
     member. Wrong or expired or exhausted codes answer the single
-    CHALLENGE_CODE_INVALID."""
+    CHALLENGE_CODE_INVALID. On the empty-body leg ``target`` names the
+    slot handle from the probe's ``remembered[]`` entry — the popover
+    pick; omitted takes the most recent slot."""
     outcome = await unified.verify(
         db,
         identifier=body.identifier,
         code=body.code,
-        device_cookie=request.cookies.get(DEVICE_COOKIE_NAME),
+        device_cookies=slots_from(request.cookies),
         remember_device=body.remember_device,
         audit_context=AuditContext.from_request(request),
+        target=body.target,
     )
     return _unified_outcome_response(response, outcome, settings)
 
@@ -368,41 +376,40 @@ async def unified_remembered_probe(
     clock: Annotated[Clock, Depends(get_business_clock)],
     db: DbSession,
 ) -> Response:
-    """Is a remembered device alive for the login banner? The §3.1
-    remembered read (2026-10-20 audience widening): every role the
-    empty-body verify leg can serve answers 200 {identifier_masked} —
-    the account's masked phone when one is bound, its masked email
-    otherwise (invited teachers often hold only an email). Staff rows
-    whose mailbox lives ONLY in the username (email_normalized NULL —
-    the e2e world's shape and the pre-normalization invite shape) fall
-    through to the username's mailbox. The status gate mirrors the
-    verify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every
-    other shape (no cookie, unknown/expired value, a status outside the
-    gate, no identifier on the row) answers the same empty 204 —
-    existence is never an answer."""
-    cookie = request.cookies.get(DEVICE_COOKIE_NAME)
-    if cookie is not None:
-        user_id = await validate_device(db, cookie, clock=clock)
-        if user_id is not None:
-            user = await db.get(User, user_id)
-            if user is not None and _remembered_probe_serves(user):
-                if user.phone_e164:
-                    return JSONResponse(
-                        {"identifier_masked": mask_phone(user.phone_e164)}
-                    )
-                if user.email_normalized:
-                    return JSONResponse(
-                        {"identifier_masked": mask_email(user.email_normalized)}
-                    )
-                if user.username and "@" in user.username:
-                    # The third arm (the frontend's 200-vs-204 finding):
-                    # the mailbox rides the username when the row never
-                    # normalized one — the verify leg already logs these
-                    # accounts in, so the banner must speak for them.
-                    return JSONResponse(
-                        {"identifier_masked": mask_email(user.username)}
-                    )
-    return Response(status_code=204)
+    """The login banner's remembered faces — an ARRAY, one entry per
+    presented account slot (the multi-slot batch, 2026-10-24), most
+    recent first, at most five:
+
+        200 {"remembered": [{"identifier_masked", "slot"}, ...]}
+        204 (no live, servable slot at all)
+
+    ``slot`` is the account's opaque handle — the cookie-name suffix
+    the verify leg's ``target`` echoes back. ``identifier_masked``
+    carries the account's masked phone when one is bound, its masked
+    email otherwise (invited teachers often hold only an email); staff
+    rows whose mailbox lives ONLY in the username fall through to that
+    mailbox. The status gate mirrors the verify leg: students
+    ACTIVE/PENDING_APPROVAL, staff ACTIVE. Enumeration never bumps
+    last_used_at — the ordering signal stays truthful (only a login
+    spends recency). Every other shape (no slot cookies, unknown or
+    expired values, statuses outside the gate, rows with no identifier)
+    contributes nothing — existence is never an answer."""
+    entries = await resolve_remembered(db, slots_from(request.cookies), clock=clock)
+    remembered: list[dict[str, str]] = []
+    for entry in entries:
+        if len(remembered) >= PROBE_MAX_ENTRIES:
+            break
+        if not _remembered_probe_serves(entry.user):
+            continue
+        canonical = canonical_identifier(entry.user)
+        if canonical is None:
+            continue
+        identifier, kind = canonical
+        masked = mask_phone(identifier) if kind == "phone" else mask_email(identifier)
+        remembered.append({"identifier_masked": masked, "slot": entry.slot})
+    if not remembered:
+        return Response(status_code=204)
+    return JSONResponse({"remembered": remembered})
 
 
 def _remembered_probe_serves(user: User) -> bool:

@@ -167,7 +167,9 @@ export interface paths {
          *     single-factor leg): the discriminated union answers authenticated /
          *     totp_required / unregistered — ``status`` is the only judgment
          *     member. Wrong or expired or exhausted codes answer the single
-         *     CHALLENGE_CODE_INVALID.
+         *     CHALLENGE_CODE_INVALID. On the empty-body leg ``target`` names the
+         *     slot handle from the probe's ``remembered[]`` entry — the popover
+         *     pick; omitted takes the most recent slot.
          */
         post: operations["unified_challenge_verify_api_v1_auth_challenge_verify_post"];
         delete?: never;
@@ -209,18 +211,24 @@ export interface paths {
         };
         /**
          * Unified Remembered Probe
-         * @description Is a remembered device alive for the login banner? The §3.1
-         *     remembered read (2026-10-20 audience widening): every role the
-         *     empty-body verify leg can serve answers 200 {identifier_masked} —
-         *     the account's masked phone when one is bound, its masked email
-         *     otherwise (invited teachers often hold only an email). Staff rows
-         *     whose mailbox lives ONLY in the username (email_normalized NULL —
-         *     the e2e world's shape and the pre-normalization invite shape) fall
-         *     through to the username's mailbox. The status gate mirrors the
-         *     verify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every
-         *     other shape (no cookie, unknown/expired value, a status outside the
-         *     gate, no identifier on the row) answers the same empty 204 —
-         *     existence is never an answer.
+         * @description The login banner's remembered faces — an ARRAY, one entry per
+         *     presented account slot (the multi-slot batch, 2026-10-24), most
+         *     recent first, at most five:
+         *
+         *         200 {"remembered": [{"identifier_masked", "slot"}, ...]}
+         *         204 (no live, servable slot at all)
+         *
+         *     ``slot`` is the account's opaque handle — the cookie-name suffix
+         *     the verify leg's ``target`` echoes back. ``identifier_masked``
+         *     carries the account's masked phone when one is bound, its masked
+         *     email otherwise (invited teachers often hold only an email); staff
+         *     rows whose mailbox lives ONLY in the username fall through to that
+         *     mailbox. The status gate mirrors the verify leg: students
+         *     ACTIVE/PENDING_APPROVAL, staff ACTIVE. Enumeration never bumps
+         *     last_used_at — the ordering signal stays truthful (only a login
+         *     spends recency). Every other shape (no slot cookies, unknown or
+         *     expired values, statuses outside the gate, rows with no identifier)
+         *     contributes nothing — existence is never an answer.
          */
         get: operations["unified_remembered_probe_api_v1_auth_challenge_remembered_get"];
         put?: never;
@@ -5537,6 +5545,10 @@ export interface components {
          *
          *     ``identifier``+``code`` is the code leg; BOTH omitted is the
          *     remembered-cookie single-factor leg (the empty-body verify).
+         *     ``target`` rides only the empty-body leg: the slot handle from the
+         *     probe's ``remembered[]`` entry names WHICH remembered account to
+         *     open — omitted (or blank) takes the most recent slot, the same
+         *     face the banner lists first.
          */
         UnifiedChallengeVerifyRequest: {
             /** Identifier */
@@ -5548,6 +5560,8 @@ export interface components {
              * @default false
              */
             remember_device: boolean;
+            /** Target */
+            target?: string | null;
         };
         /**
          * UploadCompleteRequest

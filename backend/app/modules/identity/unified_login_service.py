@@ -24,6 +24,7 @@ device-credential craft are untouched. What this module owns:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -87,6 +88,7 @@ class UnifiedOutcome:
     user_id: UUID | None = None
     tokens: SessionTokens | None = None
     device_cookie: str | None = None
+    device_slot: str | None = None
     pending_token: str | None = None
     register_token: str | None = None
 
@@ -187,12 +189,15 @@ class UnifiedLoginService:
         *,
         identifier: str | None,
         code: str | None,
-        device_cookie: str | None,
+        device_cookies: Mapping[str, str] | None,
         remember_device: bool,
         audit_context: AuditContext | None,
+        target: str | None = None,
     ) -> UnifiedOutcome:
         if identifier is None and (code is None or code.strip() == ""):
-            return await self._verify_on_cookie_alone(db, device_cookie=device_cookie)
+            return await self._verify_on_cookie_alone(
+                db, slots=device_cookies or {}, target=target
+            )
         if identifier is None or code is None or code.strip() == "":
             raise BusinessError(
                 ErrorCode.VALIDATION_ERROR,
@@ -213,7 +218,7 @@ class UnifiedLoginService:
                     db,
                     email=value,
                     code=code,
-                    device_cookie=device_cookie,
+                    device_cookies=dict(device_cookies or {}),
                     remember_device=remember_device,
                     audit_context=audit_context,
                 )
@@ -232,7 +237,7 @@ class UnifiedLoginService:
                     db,
                     phone=value,
                     code=code,
-                    device_cookie=device_cookie,
+                    device_cookies=dict(device_cookies or {}),
                     remember_device=remember_device,
                     audit_context=audit_context,
                 )
@@ -241,7 +246,7 @@ class UnifiedLoginService:
                 db,
                 phone=value,
                 code=code,
-                device_cookie=device_cookie,
+                device_cookies=dict(device_cookies or {}),
                 remember_device=remember_device,
                 audit_context=audit_context,
             )
@@ -250,30 +255,47 @@ class UnifiedLoginService:
             raise self._map_code_family(exc) from exc
 
     async def _verify_on_cookie_alone(
-        self, db: AsyncSession, *, device_cookie: str | None
+        self,
+        db: AsyncSession,
+        *,
+        slots: Mapping[str, str],
+        target: str | None,
     ) -> UnifiedOutcome:
-        """The empty-body leg: the remembered cookie is the single
-        factor. A STUDENT/TEACHER cookie re-opens its session; an ADMIN
-        still owes the totp leg — the cookie never exempts a factor on
-        the code legs (the free-TOTP semantics live on the password
-        leg's honoring only)."""
-        user_id: UUID | None = None
-        if device_cookie is not None:
-            user_id = await device_credentials.validate(
-                db, device_cookie, clock=self._clock
-            )
-        if user_id is None:
+        """The empty-body leg: a presented remembered credential is the
+        single factor. ``target`` names the slot handle the popover pick
+        carried (the probe's ``remembered[]`` entry); without one the
+        MOST RECENT slot serves — the same recency the probe's array is
+        sorted by, so the banner's first face is the click's account.
+        Only the chosen credential bumps ``last_used_at``; enumeration
+        never spends the other slots' recency. A STUDENT/TEACHER
+        credential re-opens its session; an ADMIN still owes the totp
+        leg — the cookie never exempts a factor on the code legs (the
+        free-TOTP semantics live on the password leg's honoring only)."""
+        entries = await device_credentials.resolve_remembered(
+            db, slots, clock=self._clock
+        )
+        wanted = (target or "").strip()
+        if wanted:
+            chosen = next((entry for entry in entries if entry.slot == wanted), None)
+        else:
+            chosen = entries[0] if entries else None
+        if chosen is None:
+            # No presented credential at all, or a target naming none
+            # of them — the single uniform invalid (no slot oracle).
             raise _challenge_code_invalid()
-        user = await db.get(User, user_id)
+        user = chosen.user
         # The SAME audience the probe names (#87): ACTIVE and
         # PENDING_APPROVAL students alike — a PENDING student logs in
         # and browses the frozen home (RA3), so a banner that invites
         # and then refuses is a dead end (the #115 runtime finding).
-        if user is None or user.status not in (
+        if user.status not in (
             UserStatus.ACTIVE.value,
             UserStatus.PENDING_APPROVAL.value,
         ):
             raise _challenge_code_invalid()
+        # The one bump: this credential just carried a login.
+        chosen.row.last_used_at = self._clock.now()
+        await db.flush()
         if user.role == Role.ADMIN.value:
             pending = await self._mobile_login.mint_staff_pending(user.id)
             return UnifiedOutcome(
@@ -305,6 +327,7 @@ class UnifiedLoginService:
         envelope."""
         tokens: SessionTokens | None = None
         device_cookie: str | None = None
+        device_slot: str | None = None
         user_id: UUID | None = None
         try:
             outcome = await self._email_login.verify_totp(
@@ -315,9 +338,10 @@ class UnifiedLoginService:
                 audit_context=audit_context,
             )
             assert outcome.tokens is not None
-            tokens, device_cookie, user_id = (
+            tokens, device_cookie, device_slot, user_id = (
                 outcome.tokens,
                 outcome.device_cookie,
+                outcome.device_slot,
                 outcome.user_id,
             )
         except BusinessError as exc:
@@ -334,6 +358,7 @@ class UnifiedLoginService:
                 (
                     staff_tokens,
                     staff_cookie,
+                    staff_slot,
                 ) = await self._mobile_login.complete_staff_totp(
                     db,
                     pending_token=pending_token,
@@ -341,7 +366,11 @@ class UnifiedLoginService:
                     remember_device=remember_device,
                     audit_context=audit_context,
                 )
-                tokens, device_cookie = staff_tokens, staff_cookie
+                tokens, device_cookie, device_slot = (
+                    staff_tokens,
+                    staff_cookie,
+                    staff_slot,
+                )
             except BusinessError as mobile_exc:
                 raise self._map_code_family(mobile_exc) from mobile_exc
         assert tokens is not None
@@ -351,6 +380,7 @@ class UnifiedLoginService:
             user_id=user_id,
             tokens=tokens,
             device_cookie=device_cookie,
+            device_slot=device_slot,
         )
 
     # --- the password form --------------------------------------------------
@@ -361,7 +391,7 @@ class UnifiedLoginService:
         *,
         identifier: str,
         password: str,
-        device_cookie: str | None,
+        device_cookies: Mapping[str, str] | None,
         remember_device: bool,
     ) -> UnifiedOutcome:
         kind, value, row = await self._resolve(db, identifier)
@@ -402,12 +432,12 @@ class UnifiedLoginService:
                 status="authenticated", role=Role.STUDENT.value, tokens=tokens
             )
 
-        staff_tokens, cookie = await self._staff.authenticate_staff(
+        staff_tokens, cookie, slot = await self._staff.authenticate_staff(
             db,
             value,
             password,
             "",
-            device_cookie=device_cookie,
+            device_cookies=dict(device_cookies or {}),
             remember_device=remember_device,
             second_factor_policy="unified",
         )
@@ -425,6 +455,7 @@ class UnifiedLoginService:
             role=staff_tokens.role,
             tokens=staff_tokens,
             device_cookie=cookie,
+            device_slot=slot,
         )
 
     # --- helpers -----------------------------------------------------------
@@ -448,6 +479,7 @@ class UnifiedLoginService:
             user_id=outcome.user_id,
             tokens=outcome.tokens,
             device_cookie=outcome.device_cookie,
+            device_slot=outcome.device_slot,
         )
 
     def _from_mobile(
@@ -464,6 +496,7 @@ class UnifiedLoginService:
             role=role if role is not None else outcome.tokens.role,
             tokens=outcome.tokens,
             device_cookie=outcome.device_cookie,
+            device_slot=outcome.device_slot,
         )
 
     def _from_staff_mobile(self, outcome: StaffMobileCodeOutcome) -> UnifiedOutcome:
@@ -477,4 +510,5 @@ class UnifiedLoginService:
             role=outcome.tokens.role,
             tokens=outcome.tokens,
             device_cookie=outcome.device_cookie,
+            device_slot=outcome.device_slot,
         )
