@@ -266,6 +266,7 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `PHONE_ALREADY_BOUND` | §29 |
 | `USERNAME_ALREADY_EXISTS` | §5.2, §31.1 |
 | `TASK_NOT_CLAIMABLE` | §29, §8.4 |
+| `TASK_UNITS_REQUIRED` | 简化批 2026-10-23 §2.2（DRAFT→PUBLISHED 零任务单元拒绝） |
 | `NO_ASSIGNMENT_AVAILABLE` | §29, §8.4 |
 | `ASSIGNMENT_LIMIT_REACHED` | §29, §8.4 |
 | `TASK_ACTIVE_CLAIM_EXISTS` | §29, §8.4 |
@@ -308,6 +309,24 @@ code for 409 state/conflict refusals — concurrent ownership (an unfinished
 cleanup deletion claim), replay-integrity failures (whitelist confirm digest
 mismatch, whitelist import collisions), and illegal state transitions (account
 status §5.7). It never replaces a more specific code that exists above.
+
+### Task creation & publish gate (simplification batch, 2026-10-23)
+
+`POST /teacher/tasks` accepts optional **`target_count` (1–200)**: when
+provided, the SAME transaction creates that many Assignment units —
+platform `generic` (the registry row seeded by migration 0033, display
+「通用」, sort tail), keyword `单元1..N`, availability AVAILABLE. Absent =
+unchanged (units arrive via the import flow). Out-of-band values answer
+`VALIDATION_ERROR` (400).
+
+`submission_schema` / `submission_schema_version` are OPTIONAL for
+structured tasks (lenient validation at submission time: parseable in
+its format family + header + ≥1 data row; the strict §12 DSL applies
+only when configured). Document tasks still forbid a schema.
+
+The first DRAFT→PUBLISHED refuses with **`TASK_UNITS_REQUIRED`** (409,
+「请先设置完成人数（任务单元）再发布」) when the task holds zero units;
+PAUSED→PUBLISHED is exempt.
 
 ### Identity typed-exception mapping (Plan 02)
 

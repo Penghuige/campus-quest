@@ -5180,6 +5180,8 @@ export interface components {
             } | null;
             /** Submission Schema Version */
             submission_schema_version?: number | null;
+            /** Target Count */
+            target_count?: number | null;
             /**
              * Notify 24H
              * @default true

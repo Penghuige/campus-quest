@@ -125,6 +125,20 @@ def _service(clock: FrozenClock) -> TaskService:
     return TaskService(clock=clock, max_upload_bytes=10 * 1024 * 1024)
 
 
+async def _seed_one_unit(db_session: AsyncSession, task_id: Any) -> None:
+    """The first-publish gate (2026-10-23 spec §2.2) needs >=1 unit:
+    the audit tests plant one before the publish verb."""
+    db_session.add(
+        Assignment(
+            task_id=task_id,
+            platform="xiaohongshu",
+            keyword="审计单元",
+            availability_status=AssignmentAvailability.AVAILABLE.value,
+        )
+    )
+    await db_session.flush()
+
+
 async def _task_audit_rows(db: AsyncSession, task_id: Any) -> list[AuditLog]:
     return list(
         await db.scalars(
@@ -146,6 +160,7 @@ async def test_lifecycle_verbs_each_append_one_audited_row(
     task = _seed_task(teacher.id)
     db_session.add(task)
     await db_session.flush()
+    await _seed_one_unit(db_session, task.id)
 
     service = _service(FrozenClock(_T0))
     actor = Actor(user_id=teacher.id, role=Role.TEACHER)
@@ -210,6 +225,7 @@ async def test_repeated_pause_writes_exactly_one_row(
     task = _seed_task(teacher.id)
     db_session.add(task)
     await db_session.flush()
+    await _seed_one_unit(db_session, task.id)
 
     service = _service(FrozenClock(_T0))
     actor = Actor(user_id=teacher.id, role=Role.TEACHER)

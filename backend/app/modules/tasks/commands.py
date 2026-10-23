@@ -59,7 +59,11 @@ class CreateTask:
     claim_cutoff_minutes: int = 240
     submission_schema: Mapping[str, Any] | None = None
     submission_schema_version: int | None = None
-    # spec §25.1 defaults, explicit at the command layer.
+    #: The simplification batch (2026-10-23 spec §3.2): when provided,
+    #: create that many task units in the SAME transaction
+    #: (platform=generic, keyword=单元1..N). None = unchanged (units via
+    #: the import flow). Range checked in the service (1..200).
+    target_count: int | None = None
     notify_24h: bool = True
     notify_4h: bool = True
     notification_channels: Sequence[str] = DEFAULT_NOTIFICATION_CHANNELS
