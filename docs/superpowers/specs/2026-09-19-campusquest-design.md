@@ -341,7 +341,7 @@ Task 表示“一个可由多人参与的任务”。
 - duration_minutes，可空
 - grace_period_minutes，V1 固定为 1440（24 小时）；V1 不提供按 Task 修改宽限期的产品入口
 - claim_cutoff_minutes，FIXED 模式默认 240
-- submission_schema JSONB
+- submission_schema JSONB（**2026-10-23 简化批起可选**：未配置=宽松校验——可解析、有表头、至少一行数据即通过；配置才走 §12 严格校验。见 `2026-10-23-simplification-design.md`）
 - allowed_file_types（§10.1 两族互斥：结构化 {CSV,XLSX,SQLITE} 或文档 {DOCX,PDF}）
 - max_file_size_bytes
 - notify_24h
@@ -376,7 +376,7 @@ MUST NOT：
 语义：
 
 - DRAFT：学生不可见。
-- PUBLISHED：学生可见，可领取。
+- PUBLISHED：学生可见，可领取。**2026-10-23 简化批**：DRAFT→PUBLISHED 要求至少 1 个任务单元（修复"忘记设置完成人数"）；PAUSED→PUBLISHED 不受此限。结构化任务发布不再强制 schema。
 - PAUSED：已有 Claim 继续有效，停止新领取。
 - CLOSED：不允许新领取；已有 Claim 如何处理由关闭动作明确选择，默认继续有效。
 - ARCHIVED：仅历史查询。
@@ -669,7 +669,9 @@ Task 可限制允许格式。
 任务模态分两族：
 
 - **结构化格式族**：CSV / XLSX / SQLite——机器校验走 §12 的 JSON
-  Schema DSL（列/类型/唯一性/行数）。
+  Schema DSL（列/类型/唯一性/行数）。**2026-10-23 简化批起 DSL 为可选**：
+  未配置 schema 时走宽松校验（可解析+有表头+至少一行数据）；配置后才执行
+  §12 的严格检查（见 `2026-10-23-simplification-design.md`）。
 - **文档格式族**：DOCX / PDF——机器校验只做**完整性检查**：魔数与格式
   一致（DOCX 为 ZIP 本地头 + OOXML manifest 且与 XLSX 可区分——DOCX 的
   manifest 含 `word/` 前缀成员；PDF 为 `%PDF-` 头与 `%%EOF` 尾）、可
@@ -803,6 +805,8 @@ INVALIDATE_REWARD_LOCK：
 ## 12. Submission Schema
 
 V1 使用有限、可解释的 JSON Schema DSL，而不是任意代码。
+
+**2026-10-23 简化批**：本 DSL 为**可选能力**。任务未配置 schema 时走宽松校验（可解析+有表头+至少一行数据即通过，进入人工审核）；配置后才按本节规则校验。普通任务默认不配置——"严格"是显式开启的选项（见 `2026-10-23-simplification-design.md`）。
 
 至少支持：
 
