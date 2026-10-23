@@ -9,7 +9,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 11 | U1-U11 |
+| 已覆盖 | 12 | U1-U12 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 
@@ -28,6 +28,7 @@
 | U9 | §3.2 | login 标识形态：学号→学生密码流；手机（学生先手机后学号=#73 并入）→学生密码流；邮箱→员工密码流（TEACHER 密码即全认证 §2.3）；旧形态 {username,password} 并存收（PR-3 清） | `tests/integration/identity/test_unified_challenge.py::test_login_identifier_form_covers_three_identifiers` | 已覆盖 |
 | U10 | §3.2 + §2.2 | ADMIN 密码腿：无 cookie→totp_required；有效 remembered cookie→authenticated 直落（staff/login 30 天重登语义保持）；cookie 经码流 totp 腿+remember_device 铸造 | `tests/integration/identity/test_unified_challenge.py::test_login_admin_leg_honors_the_remembered_cookie` | 已覆盖 |
 | U11 | 裁定 c) 修订 2026-10-20（owner 统一页精简） | **全受众 remember_device 铸造**：TEACHER 码流 verify（邮箱/手机臂）勾选→铸 30 天设备凭据，空体腿免码直落（对齐 ADMIN cq_staff_device 语义）；ADMIN 不变（totp 腿发）；cookie 恒 30 天窗口（Set-Cookie max-age=30d 断言）；铸造类跨连接耐久（真会话+独立连接读回） | `tests/integration/identity/test_unified_challenge.py::test_teacher_email_code_remember_mints_and_reopens` / `test_teacher_mobile_code_remember_mints` / `test_every_remembered_cookie_rides_a_30_day_window` / `test_teacher_remember_mint_survives_a_fresh_connection` | 已覆盖 |
+| U12 | §3.2 #73 语义（owner 测试账号 bug 2026-10-23） | **10 位学号 vs 手机形状歧义**：phonenumbers 视 10 位数字为合法 CN 固话——密码腿 phone 臂 row 缺失时回退学号登录（双真实样例 2099000001/2021023456；错密码走 login_student 统一 401）；码门（request）phone 臂 row 缺失且 username 命中→422 学号引导「学号请使用密码登录」且零短信；未注册 10 位数仍 202 发码（入口流不变）；verify 同形防御（陈旧挑战不得转化学号→入口流，恒 CHALLENGE_CODE_INVALID）；8 位学号回归不动 | `tests/integration/identity/test_unified_challenge.py::test_ten_digit_student_numbers_password_login` / `test_ten_digit_student_number_wrong_password_is_uniform` / `test_eight_digit_student_number_still_logs_in` / `test_ten_digit_student_number_is_refused_on_the_code_door` / `test_unregistered_ten_digit_number_still_enters_the_code_flow` / `test_stale_challenge_for_a_ten_digit_student_number_is_refused` | 已覆盖 |
 
 ## 缺口明细
 
