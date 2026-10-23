@@ -30,10 +30,11 @@
  * seeds on the browser teacher's own task.
  */
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { expect, test } from "@playwright/test";
 
-import { mintToken } from "./fixtures";
+import { mintToken, runValidationJob } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -146,9 +147,20 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     page,
     browser,
   }) => {
+    // The one chain walks create -> publish -> two student sessions ->
+    // import -> publish -> a lenient submission: the default 60s budget
+    // cannot hold the two claim-login hops plus the validation poll.
+    test.setTimeout(180_000);
     const apiBase =
       process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
-    const teacherToken = mintToken(process.env.CQ_E2E_TEACHER_ID!);
+    // The API-minted token must belong to the BROWSER teacher — the
+    // session that will open the API-created draft. CQ_E2E_TEACHER_ID is
+    // the factory teacher (a different user); the world file publishes
+    // the browser teacher's id for exactly this kind of mint.
+    const world = JSON.parse(
+      readFileSync(process.env.CQ_E2E_WORLD_FILE!, "utf8"),
+    ) as { browser_teacher_id: string };
+    const teacherToken = mintToken(world.browser_teacher_id);
 
     // The 2026-10-23 simplification: the UI's one-click create fills
     // ONLY the business questions; every advanced field arrives with a
@@ -197,25 +209,14 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
       page.locator(".metric-row").getByText("3", { exact: true }).first(),
     ).toBeVisible();
 
-    // The one-click form's OFF notification policy is what the server
-    // stored (the §3.1 default is not a client-side illusion).
     const createdId = detailUrl.split("/").pop();
     // The student-facing detail lives at /tasks/{id} — the teacher URL
     // is staff-guarded and would never show the claim panel.
     const studentTaskUrl = `${BASE_URL}/tasks/${createdId}`;
-    const createdResp = await page.request.get(
-      `${apiBase}/teacher/tasks/${createdId}`,
-      { headers: { Authorization: `Bearer ${teacherToken}` } },
-    );
-    expect(createdResp.ok(), await createdResp.text()).toBe(true);
-    const createdJson = (await createdResp.json()) as {
-      notify_24h: boolean;
-      notify_4h: boolean;
-      notification_channels: string[];
-    };
-    expect(createdJson.notify_24h).toBe(false);
-    expect(createdJson.notify_4h).toBe(false);
-    expect(createdJson.notification_channels).toEqual([]);
+    // (The notification policy's wire landing is verified on the EDIT
+    // read-back below: the dialog seeds from the server DTO. An API
+    // read here would need this page session's memory-only access
+    // token, which page.request does not carry.)
 
     // Edit-in the schema exactly as the create dialog left it; the
     // detail refetch renders the stored schema in the facts.
@@ -223,6 +224,16 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     const editDialog = page.getByRole("dialog", { name: "编辑任务" });
     await expect(editDialog).toBeVisible();
     await editDialog.getByText("高级（可选）：奖励、文件类型、校验规则等").click();
+    // The §3.1 OFF default is what the SERVER stored: the edit dialog
+    // seeds its fields from the task DTO, so these unchecked boxes are
+    // the round-trip proof (not just the create form's initial state).
+    await expect(
+      editDialog.getByRole("checkbox", { name: "提前 24 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(
+      editDialog.getByRole("checkbox", { name: "提前 4 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(editDialog.getByRole("checkbox", { name: "短信" })).not.toBeChecked();
     await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
     await editDialog.locator("#task-schema-version").fill("1");
     await editDialog.getByRole("button", { name: "保存修改" }).click();
@@ -339,7 +350,13 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     // passes the machine check and waits for the teacher's review.
     const lenientCtx = await browser.newContext();
     const lenientPage = await lenientCtx.newPage();
-    const [lenientNumber, lenientPassword] = (process.env.CQ_E2E_STUDENT ?? "").split(":");
+    // A DIFFERENT student from the claim-cap holder: the main seeded
+    // student already holds one active claim from the loop above (the
+    // one-active-claim cap answers 进行中的任务已达上限 otherwise). The
+    // seeded author student has no active claim.
+    const [lenientNumber, lenientPassword] = (
+      process.env.CQ_E2E_AUTHOR_STUDENT ?? process.env.CQ_E2E_STUDENT ?? ""
+    ).split(":");
     await lenientPage.goto(`${BASE_URL}/login`);
     await lenientPage.getByRole("button", { name: "使用密码登录" }).click();
     await lenientPage.getByLabel("账号", { exact: true }).fill(lenientNumber);
@@ -347,16 +364,35 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await lenientPage.getByRole("button", { name: "登录", exact: true }).click();
     await expect(lenientPage).not.toHaveURL(/\/login/, { timeout: 10_000 });
     await lenientPage.goto(`${BASE_URL}/tasks/${bare.id}`);
+    const claimResponse = lenientPage.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v1/tasks/${bare.id}/claim`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
     await lenientPage.getByRole("button", { name: "领取任务" }).click();
     await expect(lenientPage.locator(".claim-panel")).toBeVisible();
+    const claim = (await (await claimResponse).json()) as { claim_id: string };
+    // The upload lives on the claim page, not the task detail.
+    await lenientPage.goto(`${BASE_URL}/claims/${claim.claim_id}`);
     // A CSV the strict DSL would refuse (no schema is configured, so
     // the columns are free): header + one data row.
+    const submissionReady = lenientPage.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/submissions/upload-complete") &&
+        response.status() === 200,
+    );
     await lenientPage.locator("#submission-file").setInputFiles({
       name: "lenient.csv",
       mimeType: "text/csv",
       buffer: Buffer.from("anything,goes\nhello,world\n", "utf8"),
     });
     await lenientPage.getByRole("button", { name: "开始上传" }).click();
+    const submission = (await (await submissionReady).json()) as { id: string };
+    // No broker consumer in the orchestrated stack: run the real
+    // validation entry, then the page's polling picks up the verdict
+    // (the lenient pass lands UNDER_REVIEW — 已提交，等待老师审核).
+    runValidationJob(submission.id);
     await expect(
       lenientPage.getByText("已提交，等待老师审核").first(),
     ).toBeVisible({ timeout: 120_000 });
