@@ -189,15 +189,15 @@ function ClaimsSection({
 }
 
 function ClaimsBody({ claims, now }: { claims: MyClaimDto[]; now: number }) {
-  const hero = nextActionView(claims);
-  // The hero already carries the most urgent claim; the rows show the rest.
-  const rest = claims.filter(
-    (claim) => hero === null || claim.claim_id !== hero.claimId,
-  );
-  if (rest.length === 0) {
+  // The LIST is the "my tasks" surface: it carries EVERY claim — the
+  // hero above merely repeats the most urgent one. Filtering that claim
+  // out of the list left a lone claim's section permanently empty (the
+  // owner-reported defect 2026-10-23: "我领取的任务没显示"); the repeat
+  // in the hero is the accepted cost, the list is the complete set.
+  if (claims.length === 0) {
     return (
       <EmptyState
-        title="没有其他进行中的任务"
+        title="还没有进行中的任务"
         hint="去任务广场看看还有什么可领取的"
       >
         <Link className="link" href="/tasks">
@@ -206,7 +206,7 @@ function ClaimsBody({ claims, now }: { claims: MyClaimDto[]; now: number }) {
       </EmptyState>
     );
   }
-  const { active, revision } = claimsSummaryView(rest);
+  const { active, revision } = claimsSummaryView(claims);
   return (
     <div className="claim-rows">
       {revision.map((claim) => (

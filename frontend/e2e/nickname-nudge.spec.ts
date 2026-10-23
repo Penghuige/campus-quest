@@ -25,7 +25,7 @@ const ADMIN = process.env.CQ_E2E_ADMIN;
 const ADMIN_TOTP_SECRET = process.env.CQ_E2E_ADMIN_TOTP_SECRET;
 // Run-unique number: this flow OWNS its registration (the shared
 // CQ_E2E_REGISTER_NUMBER belongs to auth.spec's register test).
-const NUDGE_NUMBER = process.env.CQ_E2E_NUDGE_NUMBER ?? `5${String(Date.now()).slice(-9)}`;
+const NUDGE_NUMBER = process.env.CQ_E2E_NUDGE_NUMBER ?? `6${String(Date.now()).slice(-11)}`;
 
 test.skip(
   !(E2E_ENABLED && RUN && ADMIN && ADMIN_TOTP_SECRET),

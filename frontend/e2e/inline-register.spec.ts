@@ -43,7 +43,7 @@ test("a fresh phone registers inline from the login page and lands logged in", a
 }) => {
   test.setTimeout(90_000);
   const phone = freshPhone();
-  const studentNumber = `6${String(Date.now()).slice(-9)}`;
+  const studentNumber = `6${String(Date.now()).slice(-11)}`;
 
   await page.goto(`${BASE_URL}/login`);
   await fillPhoneVerified(page, phone);
