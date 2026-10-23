@@ -39,6 +39,7 @@ import {
   requestUnifiedChallenge,
   unifiedChallengeTotp,
   verifyUnifiedChallenge,
+  type RememberedSlot,
 } from "./api";
 import { registerViaMobileCode } from "./mobileLoginApi";
 import {
@@ -53,6 +54,7 @@ import { useCooldown } from "./useCooldown";
 import { validatePassword, validateStudentNumber } from "./validation";
 import {
   describeChallengeError,
+  matchRememberedSlot,
   validateChallengeCode,
   validateChallengeIdentifier,
   validatePasswordIdentifier,
@@ -118,24 +120,28 @@ export function UnifiedLoginPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once by design; onPickCard's own awaits re-read what they need.
   }, []);
   const refreshRecent = () => setRecent(listRecentLogins());
-  // The remembered-device probe is PANEL-level (batch 3): ONE anonymous
-  // read feeds both the banner and the cards' one-click branch (a
-  // card whose mask matches the probe's IS the remembered device).
-  // probeSettledRef separates "still in flight" from "answered null" —
-  // a card clicked before the mount probe returns must AWAIT a settled
-  // answer, or every fresh-page click races into the auto-send branch
-  // (the terminal-round failure: /login just mounted, click, code sent).
-  const [probeMask, setProbeMask] = useState<string | null>(null);
+  // The remembered-slot probe is PANEL-level (batch 3): ONE anonymous
+  // read feeds the banner, the cards' one-click branch, and — since
+  // the multi-slot batch — the popover's 免登录 badges. probeSettledRef
+  // separates "still in flight" from "answered empty" — a card clicked
+  // before the mount probe returns must AWAIT a settled answer, or
+  // every fresh-page click races into the auto-send branch (the
+  // terminal-round failure: /login just mounted, click, code sent).
+  // The multi-slot batch (2026-10-24): the probe answers the ARRAY
+  // (mask + slot handle, most recent first); the banner shows [0], the
+  // cards match by mask and echo the matched slot on the targeted
+  // verify.
+  const [probeSlots, setProbeSlots] = useState<RememberedSlot[]>([]);
   const probeSettledRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       // Async read; the setState lands after the await (never the
       // synchronous-in-effect shape the compiler rule rejects).
-      const hint = await fetchRememberedHint();
+      const slots = await fetchRememberedHint();
       if (!cancelled) {
         probeSettledRef.current = true;
-        setProbeMask(hint);
+        setProbeSlots(slots);
       }
     })();
     return () => {
@@ -182,15 +188,19 @@ export function UnifiedLoginPanel() {
     // The probe must be SETTLED before the branch judges: a click on a
     // freshly mounted page could otherwise race the in-flight read and
     // mistake "not answered yet" for "no remembered device".
-    let mask = probeMask;
+    let slots = probeSlots;
     if (!probeSettledRef.current) {
-      mask = await fetchRememberedHint();
+      slots = await fetchRememberedHint();
       probeSettledRef.current = true;
-      setProbeMask(mask);
+      setProbeSlots(slots);
     }
-    if (mask !== null && entry.masked === mask) {
+    // The multi-slot matching contract (interfaces.md): mask ∈ array →
+    // the targeted verify echoes the matched SLOT; a miss (including
+    // the credential having left the jar) falls to the code leg.
+    const slot = matchRememberedSlot(entry.masked, slots);
+    if (slot !== null) {
       try {
-        const outcome = await fastLoginCookieOnly();
+        const outcome = await fastLoginCookieOnly(slot);
         if (outcome.kind === "totp_required") {
           setPendingToken(outcome.pendingToken);
           return;
@@ -233,7 +243,11 @@ export function UnifiedLoginPanel() {
   }
   return (
     <>
-      <FastLoginHint mask={probeMask} onTotpRequired={setPendingToken} />
+      <FastLoginHint
+        mask={probeSlots[0]?.identifier_masked ?? null}
+        count={probeSlots.length}
+        onTotpRequired={setPendingToken}
+      />
       <RecentLogins
         entries={recent}
         onPick={(entry) => {

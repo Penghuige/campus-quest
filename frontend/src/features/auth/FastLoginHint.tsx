@@ -25,10 +25,13 @@ import { landAfterStaffLogin } from "./staffLoginFlow";
 
 export function FastLoginHint({
   mask,
+  count = 1,
   onTotpRequired,
 }: {
-  /** The panel's ONE probe answer — null means no remembered device. */
+  /** The panel's probe head (remembered[0]) — null means no remembered slot. */
   mask: string | null;
+  /** The probe array's size — a multi-account device adds 「等 N 个」. */
+  count?: number;
   onTotpRequired: (pendingToken: string) => void;
 }) {
   const router = useRouter();
@@ -76,6 +79,9 @@ export function FastLoginHint({
     <div className="login-fast-hint">
       <p>
         继续以 <span className="mono">{mask}</span> 登录
+        {count > 1 ? (
+          <span className="login-fast-count">（等 {count} 个）</span>
+        ) : null}
       </p>
       <Button
         variant="secondary"
