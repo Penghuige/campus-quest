@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { BottomNav } from "@/components/shell/BottomNav";
+import { SwitchAccountButton } from "@/components/shell/SwitchAccountButton";
 import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
 import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
@@ -322,6 +323,7 @@ export function StudentShell({
             <span className="app-brand">CampusQuest</span>
             <MediumTopNav pathname={pathname} />
             <div className="app-topbar-actions">
+              <SwitchAccountButton />
               <NotificationBell />
               <Link
                 className="avatar-chip"

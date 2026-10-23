@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
 import { StaffLogoutButton } from "@/components/shell/StaffLogoutButton";
+import { SwitchAccountButton } from "@/components/shell/SwitchAccountButton";
 import { StaffMenuSheet } from "@/components/shell/StaffMenuSheet";
 import { navItemActive, WorkspaceSidebar } from "@/components/shell/WorkspaceSidebar";
 import { StaffShellSkeleton } from "@/components/shell/StaffShellSkeleton";
@@ -168,6 +169,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <span className="app-user-name">{state.me.nickname}</span>
                 <span className="staff-role-tag">管理员</span>
               </span>
+              <SwitchAccountButton />
               <StaffLogoutButton />
               <StaffMenuSheet label="管理后台菜单" items={NAV_ITEMS} />
             </div>
