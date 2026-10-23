@@ -70,6 +70,10 @@ _CODE_FAMILY: frozenset[str] = frozenset(
 
 _CHALLENGE_CODE_INVALID_MESSAGE = "验证码错误或已过期"
 _IDENTIFIER_SHAPE_MESSAGE = "标识符须为手机号或邮箱"
+#: The code door's refusal for a STUDENT NUMBER that the phone-shape
+#: classifier swallows (10 digits parse as a valid CN landline — the
+#: owner-account bug, 2026-10-23): students log in by password there.
+_STUDENT_NUMBER_CODE_DOOR_MESSAGE = "学号请使用密码登录"
 
 
 @dataclass(slots=True)
@@ -158,7 +162,19 @@ class UnifiedLoginService:
         if kind == "email":
             await self._email_login.request_code(db, value)
             return
-        if row is None or row.role == Role.STUDENT.value:
+        if row is None:
+            # A 10-digit student number classifies as a phone (valid CN
+            # landline shape). Never text a landline: a registered
+            # username behind the number shape answers the student
+            # guidance; an unregistered number keeps the entry flow.
+            if await self._users.find_by_username(db, identifier.strip()) is not None:
+                raise BusinessError(
+                    ErrorCode.VALIDATION_ERROR,
+                    _STUDENT_NUMBER_CODE_DOOR_MESSAGE,
+                    status_code=422,
+                )
+            await self._mobile_login.request_code(db, value)
+        elif row.role == Role.STUDENT.value:
             await self._mobile_login.request_code(db, value)
         else:
             await self._mobile_login.request_staff_code(db, value)
@@ -203,6 +219,15 @@ class UnifiedLoginService:
                 )
                 return self._from_email(email_outcome)
             if row is None or row.role == Role.STUDENT.value:
+                if row is None and (
+                    await self._users.find_by_username(db, identifier.strip())
+                    is not None
+                ):
+                    # Same-shape defense as the request door: a student
+                    # number behind the phone shape must never enter
+                    # the entry flow, even on a stale challenge minted
+                    # before the fix. Deterministic, code-family shape.
+                    raise _challenge_code_invalid()
                 mobile_outcome = await self._mobile_login.verify_code(
                     db,
                     phone=value,
@@ -340,19 +365,24 @@ class UnifiedLoginService:
         remember_device: bool,
     ) -> UnifiedOutcome:
         kind, value, row = await self._resolve(db, identifier)
+        if kind == "phone" and row is None:
+            # #73's phone-first-THEN-number fallback (the owner-account
+            # bug, 2026-10-23: 10-digit student numbers parse as valid
+            # CN landlines): the row-less phone arm re-tries the raw
+            # value as a student number. login_student's own uniform
+            # failure covers an actually-unregistered number — no new
+            # oracle, no role leak (staff usernames are emails).
+            tokens = await self._sessions.login_student(
+                db, identifier.strip(), password
+            )
+            return UnifiedOutcome(
+                status="authenticated",
+                role=Role.STUDENT.value,
+                tokens=tokens,
+            )
         if kind == "phone":
-            if row is None:
-                # An unregistered phone cannot password-login: the
-                # entry door is the challenge flow, never a refusal
-                # that names the account state... but here the caller
-                # explicitly asked for the password form of a phone
-                # that binds nothing — a validation answer, same as
-                # the student-number arm's unknown account.
-                raise BusinessError(
-                    ErrorCode.VALIDATION_ERROR,
-                    "该手机号未注册",
-                    status_code=422,
-                )
+            # The row-less arm returned through the #73 fallback above.
+            assert row is not None
             if row.role == Role.STUDENT.value:
                 tokens = await self._sessions.login_student(db, row.username, password)
                 return UnifiedOutcome(
