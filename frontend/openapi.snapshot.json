@@ -324,7 +324,7 @@
     "/api/v1/auth/challenge/remembered": {
       "get": {
         "summary": "Unified Remembered Probe",
-        "description": "Is a remembered device alive for the login banner? The §3.1\nremembered read (2026-10-20 audience widening): every role the\nempty-body verify leg can serve answers 200 {identifier_masked} —\nthe account's masked phone when one is bound, its masked email\notherwise (invited teachers often hold only an email). The status\ngate mirrors the verify leg: students ACTIVE/PENDING_APPROVAL,\nstaff ACTIVE. Every other shape (no cookie, unknown/expired value,\na status outside the gate, no identifier on the row) answers the\nsame empty 204 — existence is never an answer.",
+        "description": "Is a remembered device alive for the login banner? The §3.1\nremembered read (2026-10-20 audience widening): every role the\nempty-body verify leg can serve answers 200 {identifier_masked} —\nthe account's masked phone when one is bound, its masked email\notherwise (invited teachers often hold only an email). Staff rows\nwhose mailbox lives ONLY in the username (email_normalized NULL —\nthe e2e world's shape and the pre-normalization invite shape) fall\nthrough to the username's mailbox. The status gate mirrors the\nverify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every\nother shape (no cookie, unknown/expired value, a status outside the\ngate, no identifier on the row) answers the same empty 204 —\nexistence is never an answer.",
         "operationId": "unified_remembered_probe_api_v1_auth_challenge_remembered_get",
         "responses": {
           "200": {

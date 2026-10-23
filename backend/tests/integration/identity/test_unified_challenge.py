@@ -1463,3 +1463,38 @@ async def test_stale_challenge_for_a_ten_digit_student_number_is_refused(
     )
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["code"] == "CHALLENGE_CODE_INVALID"
+
+
+async def test_remembered_probe_masks_the_username_mailbox(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+) -> None:
+    """The identifier chain's third arm (the frontend's 200-vs-204
+    contrast): staff rows whose mailbox lives only in ``username``
+    (email_normalized NULL — the e2e world's shape; invitations written
+    the same way before normalization) must still get their banner —
+    the same cookie completes the empty-body verify, so a 204 here would
+    be a banner that invites and then refuses."""
+    from app.modules.identity import device_credentials as devices
+
+    mail = f"probe-username-{uuid4().hex[:8]}@campus.example.edu"
+    teacher = await _seed_user(db_session, username=mail, role=Role.TEACHER)
+    teacher.email_normalized = None
+    await db_session.commit()
+    cookie = await devices.issue(db_session, teacher.id, clock=api_clock)
+    await db_session.commit()
+
+    probed = await client.get(
+        "/api/v1/auth/challenge/remembered", cookies=_cookies(cookie)
+    )
+    assert probed.status_code == 200, probed.text
+    masked = probed.json()["identifier_masked"]
+    assert masked == f"{mail[:1]}***@{mail.split('@')[1]}"
+    assert mail not in masked
+
+    continued = await client.post(
+        "/api/v1/auth/challenge/verify", json={}, cookies=_cookies(cookie)
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["status"] == "authenticated"

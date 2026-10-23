@@ -350,7 +350,9 @@ route FACADE over the existing challenge services — storage, cooldown,
 lockout, HMAC, GETDEL, and device-credential craft are untouched, and
 the legacy per-leg codes above stay until the retirement PR (PR-3).
 `GET /auth/challenge/remembered` answers `{identifier_masked}` (the
-masked phone when bound, the masked EMAIL otherwise) for every role
+masked phone when bound, the masked EMAIL otherwise; a row whose
+mailbox lives only in `username` — email_normalized NULL — falls
+through to it) for every role
 the empty-body verify leg serves; the status gate mirrors that leg
 (students ACTIVE/PENDING_APPROVAL, staff ACTIVE). The 2026-10-20
 owner fast-track widened it from STUDENT+`phone_masked`.
