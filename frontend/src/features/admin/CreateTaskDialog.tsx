@@ -32,7 +32,6 @@ import { FormErrorSummary } from "@/features/auth/FormErrorSummary";
 
 import { createTeacherTask, type TeacherTaskDto } from "./teacherApi";
 import {
-  defaultSchemaFor,
   describeTaskMutationError,
   EMPTY_TASK_FORM,
   taskFormToBody,
@@ -63,14 +62,10 @@ function CreateTaskDialogInner({
   onClose,
   onCreated,
 }: Omit<CreateTaskDialogProps, "open">) {
-  const [values, setValues] = useState<TaskFormValues>(() => ({
-    ...EMPTY_TASK_FORM,
-    // Defect #22: the schema starts from the per-type default template
-    // (the field rides collapsed in the 高级 section) — the default
-    // teacher never authors JSON by hand.
-    submissionSchema: defaultSchemaFor(EMPTY_TASK_FORM.fileTypes),
-    submissionSchemaVersion: "1",
-  }));
+  // The 2026-10-23 simplification (spec §2.1): the schema starts EMPTY
+  // — lenient validation is the default; the 高级 panel's 使用模板
+  // button offers the strict DSL's starting point on demand.
+  const [values, setValues] = useState<TaskFormValues>(() => ({ ...EMPTY_TASK_FORM }));
   const [fieldErrors, setFieldErrors] = useState<TaskFormErrors>({});
   const [summary, setSummary] = useState<ReturnType<typeof describeTaskMutationError> | null>(null);
   const [submitting, setSubmitting] = useState(false);

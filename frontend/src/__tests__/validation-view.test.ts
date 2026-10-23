@@ -196,3 +196,33 @@ describe("whole-report view", () => {
     assert.equal(view.errors[0]!.label, "缺少必需列");
   });
 });
+
+describe("the strict family's missing-column line (spec 2026-10-23 §2.3)", () => {
+  test("renders the actionable copy with the column name", () => {
+    const view = findingItemView(
+      {
+        code: "MISSING_REQUIRED_COLUMN",
+        message: "缺少必填列: platform",
+        row: null,
+        column: "platform",
+        value: null,
+      },
+      0,
+    );
+    assert.equal(view.message, "缺少列 platform，可下载本任务模板");
+  });
+
+  test("without a column the server message stands", () => {
+    const view = findingItemView(
+      {
+        code: "MISSING_REQUIRED_COLUMN",
+        message: "缺少必填列",
+        row: null,
+        column: null,
+        value: null,
+      },
+      0,
+    );
+    assert.equal(view.message, "缺少必填列");
+  });
+});

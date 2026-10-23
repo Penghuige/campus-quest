@@ -29,8 +29,11 @@ import type { TaskFormValues } from "../features/admin/teacherView";
 import {
   capRowErrors,
   COLLABORATOR_PERMISSIONS,
+  daysToMinutesInput,
   defaultSchemaFor,
   describeEditError,
+  describeTaskMutationError,
+  minutesToDaysInput,
   envelopeFields,
   EMPTY_TASK_FORM,
   fileFactsText,
@@ -41,6 +44,8 @@ import {
   lockedTierText,
   moderationRowView,
   parseSubmissionSchema,
+  publishBlockedReason,
+  PUBLISH_UNITS_REQUIRED_HINT,
   shouldAutoFillSchema,
   permissionLabels,
   reportStatusView,
@@ -65,14 +70,18 @@ function form(
   return { ...EMPTY_TASK_FORM, ...overrides };
 }
 
-/** A create-ready FIXED form (baseline for the band tests). */
+/** A create-ready FIXED form (baseline for the band tests). The
+ * 2026-10-23 simplification made target_count a required create field
+ * and the deadline RELATIVE-by-default — the baseline pins both. */
 function readyForm() {
   return form({
     title: "图书馆书影采集",
     description: "拍摄图书馆藏书",
     baseRewardPoints: "160",
+    deadlineMode: "FIXED",
     fixedDeadlineLocal: "2026-10-30T18:00",
     fileTypes: ["CSV"],
+    targetCount: "40",
   });
 }
 
@@ -424,13 +433,16 @@ describe("create-form band mirrors (server authoritative)", () => {
     const body = result.body!;
     assert.equal(body.base_reward_points, 160);
     assert.equal(body.deadline_mode, "FIXED");
-    assert.equal(body.max_file_size_bytes, 50 * 1024 * 1024);
+    assert.equal(body.max_file_size_bytes, 10 * 1024 * 1024); // §3.1 default
     assert.equal(body.submission_schema, null);
     assert.equal(body.submission_schema_version, null);
     assert.equal(body.fixed_deadline_at, new Date("2026-10-30T18:00").toISOString());
     assert.equal(body.duration_minutes, null);
-    assert.equal(body.claim_cutoff_minutes, 240);
-    assert.deepEqual(body.notification_channels, ["SMS", "EMAIL", "IN_APP"]);
+    assert.equal(body.claim_cutoff_minutes, 60); // §3.1 default
+    // §3.1's 通知关闭: the one-click form sends the policy OFF by default.
+    assert.equal(body.notify_24h, false);
+    assert.equal(body.notify_4h, false);
+    assert.deepEqual(body.notification_channels, []);
   });
 
   test("RELATIVE maps duration and nulls the fixed deadline", () => {
@@ -464,12 +476,18 @@ describe("create-form band mirrors (server authoritative)", () => {
   });
 
   test("FIXED requires a future deadline; RELATIVE requires positive duration", () => {
-    const missing = validateTaskForm(form({ fixedDeadlineLocal: "" }), NOW);
+    const missing = validateTaskForm(
+      form({ deadlineMode: "FIXED", fixedDeadlineLocal: "" }),
+      NOW,
+    );
     assert.equal(missing.deadline, "固定截止模式必须设置截止时间");
-    const past = validateTaskForm(form({ fixedDeadlineLocal: "2020-01-01T10:00" }), NOW);
+    const past = validateTaskForm(
+      form({ deadlineMode: "FIXED", fixedDeadlineLocal: "2020-01-01T10:00" }),
+      NOW,
+    );
     assert.equal(past.deadline, "截止时间必须晚于当前时间");
     const malformed = validateTaskForm(
-      form({ fixedDeadlineLocal: "not-a-date" }),
+      form({ deadlineMode: "FIXED", fixedDeadlineLocal: "not-a-date" }),
       NOW,
     );
     assert.equal(malformed.deadline, "截止时间格式不正确");
@@ -735,5 +753,172 @@ describe("file facts line (detail head)", () => {
       }),
       "重命名.bin · CSV · 1.0 MB",
     );
+  });
+});
+
+describe("the simplification batch (spec 2026-10-23: P1 optional schema + P2 one-click create)", () => {
+  const base = {
+    ...EMPTY_TASK_FORM,
+    title: "采集任务",
+    description: "说明",
+    durationMinutes: "10080",
+  };
+
+  test("EMPTY_TASK_FORM carries the one-click defaults (spec §3.1)", () => {
+    assert.equal(EMPTY_TASK_FORM.baseRewardPoints, "10");
+    assert.equal(EMPTY_TASK_FORM.claimCutoffMinutes, "60");
+    assert.equal(EMPTY_TASK_FORM.maxFileSizeMb, "10");
+    assert.equal(EMPTY_TASK_FORM.durationMinutes, "10080"); // seven days
+    assert.equal(EMPTY_TASK_FORM.rarity, "NORMAL");
+    assert.equal(EMPTY_TASK_FORM.targetCount, ""); // required, author-supplied
+  });
+
+  test("targetCount: required, integer, 1-200 (the target_count band)", () => {
+    const cases: Array<[string, boolean]> = [
+      ["", true],
+      ["0", true],
+      ["201", true],
+      ["abc", true],
+      ["1", false],
+      ["200", false],
+      ["25", false],
+    ];
+    for (const [value, shouldErr] of cases) {
+      const errors = validateTaskForm({ ...base, targetCount: value }, 0);
+      assert.equal(errors.targetCount !== undefined, shouldErr, `value=${value}`);
+    }
+    assert.match(
+      validateTaskForm({ ...base, targetCount: "201" }, 0).targetCount!,
+      /1-200/,
+    );
+  });
+
+  test("the create body carries target_count", () => {
+    const result = taskFormToBody({ ...base, targetCount: "25" }, 0);
+    assert.equal(result.ok, true);
+    assert.equal(result.body?.target_count, 25);
+  });
+
+  test("an empty schema field is create-legal (schema optional now)", () => {
+    const result = taskFormToBody(
+      { ...base, targetCount: "5", submissionSchema: "", submissionSchemaVersion: "" },
+      0,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.body?.submission_schema, null);
+  });
+
+  test("the days<->minutes helpers keep the primary field integral", () => {
+    assert.equal(daysToMinutesInput("7"), "10080");
+    assert.equal(daysToMinutesInput(""), "");
+    assert.equal(daysToMinutesInput("abc"), "");
+    assert.equal(minutesToDaysInput("10080"), "7");
+    assert.equal(minutesToDaysInput(""), "");
+    assert.equal(minutesToDaysInput("90"), "0.06"); // off-day values surface as-is
+  });
+
+  test("TASK_UNITS_REQUIRED maps to the friendly publish copy", () => {
+    const error = new ApiError({
+      code: "TASK_UNITS_REQUIRED",
+      message: "【请先设置完成人数（任务单元）再发布】", // server wrapper noise
+      details: null,
+      status: 409,
+      requestId: "req-1",
+    });
+    const view = describeTaskMutationError(error, "fallback");
+    assert.equal(view.summary, PUBLISH_UNITS_REQUIRED_HINT);
+  });
+
+  // --- notification policy (spec §3.1 通知关闭 + §3.2 高级折叠保留通知通道) ---
+
+  test("notifications default OFF in the one-click form (spec §3.1)", () => {
+    assert.equal(EMPTY_TASK_FORM.notify24h, false);
+    assert.equal(EMPTY_TASK_FORM.notify4h, false);
+    assert.deepEqual(EMPTY_TASK_FORM.notificationChannels, []);
+  });
+
+  test("the create body carries the form's notification choices", () => {
+    const result = taskFormToBody(
+      {
+        ...base,
+        targetCount: "5",
+        notify24h: true,
+        notify4h: false,
+        notificationChannels: ["IN_APP"],
+      },
+      0,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.body?.notify_24h, true);
+    assert.equal(result.body?.notify_4h, false);
+    assert.deepEqual(result.body?.notification_channels, ["IN_APP"]);
+  });
+
+  test("reminders ON with zero channels is a client band error", () => {
+    const errors = validateTaskForm(
+      {
+        ...base,
+        targetCount: "5",
+        notify24h: true,
+        notify4h: false,
+        notificationChannels: [],
+      },
+      0,
+    );
+    assert.match(errors.notificationChannels!, /至少选择一个通知通道/);
+    // and OFF with zero channels stays create-legal (the default).
+    const legal = validateTaskForm(
+      { ...base, targetCount: "5", notificationChannels: [] },
+      0,
+    );
+    assert.equal(legal.notificationChannels, undefined);
+  });
+
+  test("taskFormFromTask round-trips the stored notification policy", () => {
+    const values = taskFormFromTask(
+      draftTask({
+        notify_24h: false,
+        notify_4h: true,
+        notification_channels: ["EMAIL"],
+      }),
+    );
+    assert.equal(values.notify24h, false);
+    assert.equal(values.notify4h, true);
+    assert.deepEqual(values.notificationChannels, ["EMAIL"]);
+  });
+
+  test("notification policy stays editable after publish (presentation field)", () => {
+    const task = draftTask({
+      status: "PUBLISHED",
+      published_at: "2026-09-21T00:00:00Z",
+    });
+    const values = {
+      ...taskFormFromTask(task),
+      notify24h: false,
+      notificationChannels: ["EMAIL"] as typeof EMPTY_TASK_FORM.notificationChannels,
+    };
+    const result = taskFormToUpdateBody(values, task, NOW);
+    assert.equal(result.body?.notify_24h, false);
+    assert.deepEqual(result.body?.notification_channels, ["EMAIL"]);
+    // Unchanged policy stays home (diff-only PATCH).
+    const untouched = taskFormToUpdateBody(taskFormFromTask(task), task, NOW);
+    assert.equal(untouched.body?.notify_24h, undefined);
+    assert.equal(untouched.body?.notification_channels, undefined);
+  });
+
+  // --- the publish precondition (task brief P1.3: 前置提示 before the call) ---
+
+  test("publishBlockedReason: only a zero-unit DRAFT is pre-blocked", () => {
+    assert.equal(
+      publishBlockedReason("DRAFT", 0),
+      PUBLISH_UNITS_REQUIRED_HINT,
+    );
+    assert.equal(publishBlockedReason("DRAFT", 3), null);
+    // Unknown counts (statistics still loading / failed) never block: the
+    // server remains the verdict.
+    assert.equal(publishBlockedReason("DRAFT", null), null);
+    // The gate is the FIRST publish only — PAUSED resumes regardless.
+    assert.equal(publishBlockedReason("PAUSED", 0), null);
+    assert.equal(publishBlockedReason("PUBLISHED", 0), null);
   });
 });

@@ -30,8 +30,11 @@
  * seeds on the browser teacher's own task.
  */
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { expect, test } from "@playwright/test";
+
+import { mintToken, runValidationJob } from "./fixtures";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -144,40 +147,48 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     page,
     browser,
   }) => {
-    await page.goto(`${BASE_URL}/teacher/tasks`);
+    // The one chain walks create -> publish -> two student sessions ->
+    // import -> publish -> a lenient submission: the default 60s budget
+    // cannot hold the two claim-login hops plus the validation poll.
+    test.setTimeout(180_000);
+    const apiBase =
+      process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
+    // The API-minted token must belong to the BROWSER teacher — the
+    // session that will open the API-created draft. CQ_E2E_TEACHER_ID is
+    // the factory teacher (a different user); the world file publishes
+    // the browser teacher's id for exactly this kind of mint.
+    const world = JSON.parse(
+      readFileSync(process.env.CQ_E2E_WORLD_FILE!, "utf8"),
+    ) as { browser_teacher_id: string };
+    const teacherToken = mintToken(world.browser_teacher_id);
 
-    // Create dialog: the publish-validation fields; obvious mistakes stay
-    // client-side (a too-short reward never sends).
+    // The 2026-10-23 simplification: the UI's one-click create fills
+    // ONLY the business questions; every advanced field arrives with a
+    // working default. The edit surface gets exercised below.
+    await page.goto(`${BASE_URL}/teacher/tasks`);
     await page.getByRole("button", { name: "新建任务" }).first().click();
     const dialog = page.getByRole("dialog", { name: "新建任务" });
     await expect(dialog).toBeVisible();
-    await dialog.getByLabel("基础奖励积分").fill("0");
-    await dialog.getByRole("button", { name: "创建草稿" }).click();
-    await expect(dialog.getByText("基础奖励积分必须大于 0")).toBeVisible();
-
     await dialog.getByLabel("任务标题").fill(`e2e 教师任务 ${Date.now()}`);
     await dialog.getByLabel("任务描述").fill("e2e 创建的采集任务");
-    await dialog.getByLabel("基础奖励积分").fill("120");
-    await dialog.getByLabel("固定截止时间").fill("2030-09-30T18:00");
-    // Defect #22: the schema rides collapsed in the 高级 section and
-    // arrives PRE-FILLED with the per-type default template (CSV is
-    // the default type selection).
-    await dialog.getByText("高级：提交校验规则").click();
+    // target_count is the one required number (spec §3.1).
+    await dialog.getByLabel("需要多少人完成").fill("3");
+    // The schema is OPTIONAL now and starts EMPTY; 使用模板 offers the
+    // strict DSL's starting point on demand.
+    await dialog.getByText("高级（可选）：奖励、文件类型、校验规则等").click();
     const schemaField = dialog.locator("#task-schema");
-    await expect(schemaField).toHaveValue(/"platform"/);
-    // §10.1 document family: a DOCX-only selection carries NO schema —
-    // the pristine template blanks; back on CSV it returns. The type
-    // checkboxes reuse the identity-option pattern (hidden native
-    // inputs): act on the visible label text, exactly like the
-    // community identity radios.
-    await dialog.getByText("DOCX", { exact: true }).click();
-    await dialog.getByText("CSV", { exact: true }).click();
     await expect(schemaField).toHaveValue("");
-    await dialog.getByText("CSV", { exact: true }).click();
+    // Spec §3.1's 通知关闭: the advanced fold carries the policy OFF by
+    // default — the wire check after creation proves this is what lands.
+    await expect(
+      dialog.getByRole("checkbox", { name: "提前 24 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(
+      dialog.getByRole("checkbox", { name: "提前 4 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(dialog.getByRole("checkbox", { name: "短信" })).not.toBeChecked();
+    await dialog.getByRole("button", { name: "使用模板" }).click();
     await expect(schemaField).toHaveValue(/"platform"/);
-    // Return DOCX to off: the flow's task below stays CSV-only (the
-    // toggle dance above is the assertion itself, not the task shape).
-    await dialog.getByText("DOCX", { exact: true }).click();
     await schemaField.fill('{"columns":["platform","keyword"]}');
     await dialog.locator("#task-schema-version").fill("1");
     await dialog.getByRole("button", { name: "创建草稿" }).click();
@@ -187,14 +198,126 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await expect(row).toBeVisible();
     await expect(row.getByText("草稿")).toBeVisible();
 
-    // Detail: import flow (spec §7.1 preview -> explicit confirm -> summary).
+    // Detail: the one-click create minted three 通用 units in the same
+    // transaction (spec §3.2) — the statistics show them up front.
     await row.getByRole("link").click();
-    // Settle the navigation BEFORE reading the URL: page.url() right
-    // after the link click still names the list page (Playwright does
-    // not auto-wait for link navigations), and the unrelated-teacher
-    // negative below deep-links exactly this value.
     await expect(page).toHaveURL(/\/teacher\/tasks\/.+/);
     const detailUrl = page.url();
+    await expect(page.getByText("可领取单元")).toBeVisible();
+    await expect(page.getByText("总单元")).toBeVisible();
+    await expect(
+      page.locator(".metric-row").getByText("3", { exact: true }).first(),
+    ).toBeVisible();
+
+    const createdId = detailUrl.split("/").pop();
+    // The student-facing detail lives at /tasks/{id} — the teacher URL
+    // is staff-guarded and would never show the claim panel.
+    const studentTaskUrl = `${BASE_URL}/tasks/${createdId}`;
+    // (The notification policy's wire landing is verified on the EDIT
+    // read-back below: the dialog seeds from the server DTO. An API
+    // read here would need this page session's memory-only access
+    // token, which page.request does not carry.)
+
+    // Edit-in the schema exactly as the create dialog left it; the
+    // detail refetch renders the stored schema in the facts.
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    const editDialog = page.getByRole("dialog", { name: "编辑任务" });
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByText("高级（可选）：奖励、文件类型、校验规则等").click();
+    // The §3.1 OFF default is what the SERVER stored: the edit dialog
+    // seeds its fields from the task DTO, so these unchecked boxes are
+    // the round-trip proof (not just the create form's initial state).
+    await expect(
+      editDialog.getByRole("checkbox", { name: "提前 24 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(
+      editDialog.getByRole("checkbox", { name: "提前 4 小时提醒" }),
+    ).not.toBeChecked();
+    await expect(editDialog.getByRole("checkbox", { name: "短信" })).not.toBeChecked();
+    await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
+    await editDialog.locator("#task-schema-version").fill("1");
+    await editDialog.getByRole("button", { name: "保存修改" }).click();
+    await expect(editDialog).not.toBeVisible();
+    await expect(page.getByText(/v1.*columns/)).toBeVisible();
+
+    // Publish straight off the minted units: explicit confirm, badge flips.
+    await page.getByRole("button", { name: "发布", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: "发布任务" });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText(/发布后任务立即对学生可见/)).toBeVisible();
+    await expect(confirm.getByText(/不可修改/)).toBeVisible();
+    await confirm.getByRole("button", { name: "确认发布" }).click();
+    await expect(page.locator(".page-head").getByText("已发布")).toBeVisible();
+
+    // The published task is claimable: a student session walks its
+    // detail and lands the claim panel (the one-click loop closed).
+    const studentCtx = await browser.newContext();
+    const studentPage = await studentCtx.newPage();
+    const [studentNumber, studentPassword] = (process.env.CQ_E2E_STUDENT ?? "").split(":");
+    await studentPage.goto(`${BASE_URL}/login`);
+    await studentPage.getByRole("button", { name: "使用密码登录" }).click();
+    await studentPage.getByLabel("账号", { exact: true }).fill(studentNumber);
+    await studentPage.getByLabel("密码").fill(studentPassword);
+    await studentPage.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(studentPage).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    await studentPage.goto(studentTaskUrl);
+    await studentPage.getByRole("button", { name: "领取任务" }).click();
+    await expect(studentPage.locator(".claim-panel")).toBeVisible();
+    await studentCtx.close();
+
+    // F6: an UNRELATED teacher (no ownership/collaboration) opening this
+    // task's detail gets the access-denied panel, not broken sections.
+    const context = await browser.newContext();
+    const other = await context.newPage();
+    await loginAsStaff(other, STAFF2!, STAFF2_TOTP_SECRET!);
+    await other.goto(detailUrl);
+    await expect(
+      other.getByText("任务不存在，或您不是该任务的所有者 / 协作者，无法访问。"),
+    ).toBeVisible();
+    await expect(other.getByRole("link", { name: "返回任务管理" })).toBeVisible();
+    await context.close();
+
+    // The import path keeps its coverage on a UNITS-LESS draft (minted
+    // through the API — the UI requires target_count): publish is
+    // GATED with the friendly copy, then the import unlocks it.
+    const bareDraft = await page.request.post(`${apiBase}/teacher/tasks`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+      data: {
+        title: `e2e 导入任务 ${Date.now()}`,
+        description: "手动导入单元的任务",
+        base_reward_points: 10,
+        deadline_mode: "RELATIVE",
+        allowed_file_types: ["CSV"],
+        max_file_size_bytes: 10 * 1024 * 1024,
+        task_type: "DATA_CRAWL",
+        rarity: "NORMAL",
+        fixed_deadline_at: null,
+        duration_minutes: 10080,
+        claim_cutoff_minutes: 60,
+        submission_schema: null,
+        submission_schema_version: null,
+        notify_24h: true,
+        notify_4h: true,
+        notification_channels: ["SMS", "EMAIL", "IN_APP"],
+      },
+    });
+    expect(bareDraft.ok(), await bareDraft.text()).toBe(true);
+    const bare = (await bareDraft.json()) as { id: string };
+    await page.goto(`${BASE_URL}/teacher/tasks/${bare.id}`);
+
+    // Zero units: the precondition is VISIBLE before the call (task
+    // brief P1.3) — the publish verb renders disabled with its reason,
+    // and the lenient-schema fact says so. The server-side gate's copy
+    // mapping stays pinned by the unit test (the UI cannot open the
+    // dialog while the precondition holds).
+    await expect(page.getByText("未配置（宽松校验）")).toBeVisible();
+    const zeroPublish = page.getByRole("button", { name: "发布", exact: true });
+    await expect(zeroPublish).toBeDisabled();
+    await expect(
+      page.getByText("请先设置完成人数（任务单元）再发布"),
+    ).toBeVisible();
+
+    // The import flow (spec §7.1 preview -> explicit confirm -> summary).
     await page.getByLabel("任务单元导入").scrollIntoViewIfNeeded();
     await page.locator("#assignment-import-file").setInputFiles({
       name: "assignments.csv",
@@ -214,42 +337,67 @@ test.describe("teacher workspace (brief: create -> import -> publish)", () => {
     await preview.getByRole("button", { name: /确认导入 1 行/ }).click();
     await expect(page.getByText("已成功导入 1 个任务单元")).toBeVisible();
 
-    // Edit-in the publish-required schema (the create dialog left it
-    // draft-legal): the edit dialog reuses the create fields, prefilled.
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
-    const editDialog = page.getByRole("dialog", { name: "编辑任务" });
-    await expect(editDialog).toBeVisible();
-    // The 高级 section is collapsed here too (defect #22).
-    await editDialog.getByText("高级：提交校验规则").click();
-    await editDialog.locator("#task-schema").fill('{"columns":["platform","keyword"]}');
-    await editDialog.locator("#task-schema-version").fill("1");
-    await editDialog.getByRole("button", { name: "保存修改" }).click();
-    await expect(editDialog).not.toBeVisible();
-    // The detail refetch renders the stored schema in the facts.
-    await expect(page.getByText(/v1.*columns/)).toBeVisible();
-
-    // Publish from the detail head: explicit confirm, then the badge flips.
-    await page.getByRole("button", { name: "发布", exact: true }).click();
-    const confirm = page.getByRole("dialog", { name: "发布任务" });
-    await expect(confirm).toBeVisible();
-    await expect(confirm.getByText(/发布后任务立即对学生可见/)).toBeVisible();
-    await expect(confirm.getByText(/不可修改/)).toBeVisible();
-    await confirm.getByRole("button", { name: "确认发布" }).click();
+    // The landed import refetches the statistics; the precondition
+    // clears and the same verb publishes.
+    await expect(zeroPublish).toBeEnabled();
+    await zeroPublish.click();
+    const secondConfirm = page.getByRole("dialog", { name: "发布任务" });
+    await secondConfirm.getByRole("button", { name: "确认发布" }).click();
     await expect(page.locator(".page-head").getByText("已发布")).toBeVisible();
 
-    // F6: an UNRELATED teacher (no ownership/collaboration) opening this
-    // task's detail gets the access-denied panel, not broken sections.
-    const context = await browser.newContext();
-    const other = await context.newPage();
-    await loginAsStaff(other, STAFF2!, STAFF2_TOTP_SECRET!);
-    await other.goto(detailUrl);
+    // The LENIENT validation (spec 2026-10-23 §2.1): the bare task has
+    // NO schema — any parseable CSV with a header and one data row
+    // passes the machine check and waits for the teacher's review.
+    const lenientCtx = await browser.newContext();
+    const lenientPage = await lenientCtx.newPage();
+    // A DIFFERENT student from the claim-cap holder: the main seeded
+    // student already holds one active claim from the loop above (the
+    // one-active-claim cap answers 进行中的任务已达上限 otherwise). The
+    // seeded author student has no active claim.
+    const [lenientNumber, lenientPassword] = (
+      process.env.CQ_E2E_AUTHOR_STUDENT ?? process.env.CQ_E2E_STUDENT ?? ""
+    ).split(":");
+    await lenientPage.goto(`${BASE_URL}/login`);
+    await lenientPage.getByRole("button", { name: "使用密码登录" }).click();
+    await lenientPage.getByLabel("账号", { exact: true }).fill(lenientNumber);
+    await lenientPage.getByLabel("密码").fill(lenientPassword);
+    await lenientPage.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(lenientPage).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    await lenientPage.goto(`${BASE_URL}/tasks/${bare.id}`);
+    const claimResponse = lenientPage.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v1/tasks/${bare.id}/claim`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
+    await lenientPage.getByRole("button", { name: "领取任务" }).click();
+    await expect(lenientPage.locator(".claim-panel")).toBeVisible();
+    const claim = (await (await claimResponse).json()) as { claim_id: string };
+    // The upload lives on the claim page, not the task detail.
+    await lenientPage.goto(`${BASE_URL}/claims/${claim.claim_id}`);
+    // A CSV the strict DSL would refuse (no schema is configured, so
+    // the columns are free): header + one data row.
+    const submissionReady = lenientPage.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/submissions/upload-complete") &&
+        response.status() === 200,
+    );
+    await lenientPage.locator("#submission-file").setInputFiles({
+      name: "lenient.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("anything,goes\nhello,world\n", "utf8"),
+    });
+    await lenientPage.getByRole("button", { name: "开始上传" }).click();
+    const submission = (await (await submissionReady).json()) as { id: string };
+    // No broker consumer in the orchestrated stack: run the real
+    // validation entry, then the page's polling picks up the verdict
+    // (the lenient pass lands UNDER_REVIEW — 已提交，等待老师审核).
+    runValidationJob(submission.id);
     await expect(
-      other.getByText("任务不存在，或您不是该任务的所有者 / 协作者，无法访问。"),
-    ).toBeVisible();
-    await expect(other.getByRole("link", { name: "返回任务管理" })).toBeVisible();
-    await context.close();
+      lenientPage.getByText("已提交，等待老师审核").first(),
+    ).toBeVisible({ timeout: 120_000 });
+    await lenientCtx.close();
   });
-
   test("student session gets the permission-denied panel, not broken controls", async ({
     browser,
   }) => {

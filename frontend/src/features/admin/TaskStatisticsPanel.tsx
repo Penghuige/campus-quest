@@ -22,9 +22,17 @@ export interface TaskStatisticsPanelProps {
   taskId: string;
   /** Bump to refetch (e.g. after a confirmed assignment import). */
   reloadSeed: number;
+  /** Boundary hook: the KNOWN unit total (all four states summed) so
+   * the detail can apply the first-publish precondition. Fires on every
+   * landed read; the panel stays the counts' single owner. */
+  onTotalUnits?: (taskId: string, total: number) => void;
 }
 
-export function TaskStatisticsPanel({ taskId, reloadSeed }: TaskStatisticsPanelProps) {
+export function TaskStatisticsPanel({
+  taskId,
+  reloadSeed,
+  onTotalUnits,
+}: TaskStatisticsPanelProps) {
   const [refetchSeed, setRefetchSeed] = useState(0);
   const [state, setState] = useState<
     { kind: "loading" } | { kind: "ready"; data: TaskStatisticsDto } | { kind: "error"; error: unknown }
@@ -40,6 +48,13 @@ export function TaskStatisticsPanel({ taskId, reloadSeed }: TaskStatisticsPanelP
       (data) => {
         if (!cancelled) {
           setState({ kind: "ready", data });
+          onTotalUnits?.(
+            taskId,
+            data.assignments_available +
+              data.assignments_occupied +
+              data.assignments_completed +
+              data.assignments_retired,
+          );
         }
       },
       (error: unknown) => {
@@ -51,7 +66,7 @@ export function TaskStatisticsPanel({ taskId, reloadSeed }: TaskStatisticsPanelP
     return () => {
       cancelled = true;
     };
-  }, [taskId, reloadSeed, refetchSeed]);
+  }, [taskId, reloadSeed, refetchSeed, onTotalUnits]);
 
   return (
     <section className="section" aria-label="任务统计">
@@ -73,6 +88,15 @@ export function TaskStatisticsPanel({ taskId, reloadSeed }: TaskStatisticsPanelP
         <>
           <div className="metric-row">
             <Metric label="可领取单元" value={state.data.assignments_available} />
+            <Metric
+              label="总单元"
+              value={
+                state.data.assignments_available +
+                state.data.assignments_occupied +
+                state.data.assignments_completed +
+                state.data.assignments_retired
+              }
+            />
             <Metric label="进行中领取" value={state.data.active_claims} />
             <Metric label="占用中单元" value={state.data.assignments_occupied} />
             <Metric label="已完成单元" value={state.data.assignments_completed} />

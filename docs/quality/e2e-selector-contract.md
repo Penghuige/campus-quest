@@ -45,13 +45,15 @@ authoritative record.
 | 积分余额 (`getByLabel` + `[aria-label='积分余额']`) | student shell points readout |
 | 我的附近 | rankings around-me |
 | 操作原因 / 基础奖励积分 / 任务评分 | teacher task form, admin/moderation dialogs |
+| 任务标题 / 任务描述 / 需要多少人完成 / 领取后截止（天） | the 2026-10-23 one-click create dialog (需要多少人完成 is the one required number, spec §3.1; the days field is the main-area deadline input) |
 | 选择星级 (radiogroup) / 发布身份 (radiogroup) | review dialog, comment compose |
 
 ### Roles + accessible names
 
 Buttons: 登录 · 注册 · 领取任务 · 开始上传 · 上传重试相关 · 兑换 · 确认兑换 ·
 发布评论 · 发布回复 · 回复 · 赞 · 表情 🔥 · 举报 · 提交举报 · 标为已读 ·
-完成 · 取消 · 创建草稿 · 保存修改 · 预览导入 · 重新上传文件 · 通过并发放奖励 ·
+完成 · 取消 · 创建草稿 · 保存修改 · 使用模板 (the optional schema's
+starting-point filler — never a requirement) · 预览导入 · 重新上传文件 · 通过并发放奖励 ·
 通过并扣减积分 · 退回修改 · 确认停用 · 确认绑定 · 确认揭示身份 ·
 一键继续 (the unified login's conditional fast-login banner — layer 0,
 owner feedback ③ 2026-10-17: the remembered-device probe's one-click leg,
@@ -67,7 +69,9 @@ PhoneBindSection) ·
 确认执行 / 撤销 / 确认撤销 / 重发 (Wave 2a's admin power-pack: the user-detail
 actions, the batch verbs, and the invitation lifecycle panel)
 
-Checkboxes: 30 天内免登录 (the code form, the 2026-10-20 owner copy) · 记住此设备 30 天 — the password/totp seats
+Checkboxes: 30 天内免登录 (the code form, the 2026-10-20 owner copy) · 记住此设备 30 天 — the password/totp seats ·
+提前 24 小时提醒 / 提前 4 小时提醒 / 短信 / 邮件 / 站内通知 (the advanced
+notification policy; OFF by default per the 2026-10-23 spec §3.1)
 
 Buttons (batch 2): 切换到 <mask> / 从本机移除 <mask> (the recent-logins
 cards' pick and device-local removal verbs — the aria-labels carry the
@@ -116,7 +120,9 @@ fast-login banner's masked-phone offer, owner feedback ③) · 该设备尚未�
 或已过期，请使用下方短信验证码登录。 (the banner's stale-click honest
 fallback) · 手机号已绑定。 (the staff phone-binding success note, item ①) ·
 恢复代码只显示这一次 · 已复制 · 动态口令绑定完成，员工账号已激活。 ·
-已成功导入 1 个任务单元 · 已发布 · 草稿 · 已批准 · 待发放 · 已发放 · 已停用 ·
+已成功导入 1 个任务单元 · 请先设置完成人数（任务单元）再发布 (the zero-unit
+publish precondition AND the server verdict's mapping — one copy) ·
+未配置（宽松校验） (the optional-schema fact) · 已发布 · 草稿 · 已批准 · 待发放 · 已发放 · 已停用 ·
 启用 · 正常 · 累计获得 · 可花费/当前可花费/消耗积分 · 匿名用户 · 暂无通知 ·
 暂无附近排名 · 判无效会取消锁定的奖励与积分，学生需重新提交。审计记录不可删除。
 
@@ -149,8 +155,9 @@ owner-approved product decision — never "to fit the new DOM".
 | `.import-preview` · `.moderation-key` · `.mono` | teacher import / moderation | |
 | `dialog.dialog` | generic dialog scoping | retired at C3; the `getByRole("dialog")` replacement landed |
 | `#submission-file` · `#assignment-import-file` | file inputs | keep as file-upload ids or replace with `getByLabel` of equal strength |
-| `#task-schema` · `#task-schema-version` · `input[name='assignment_id']` | task form fields | |
+| `#task-schema` · `#task-schema-version` · `#task-target-count` · `#task-duration-days` · `input[name='assignment_id']` | task form fields | the 2026-10-23 one-click create adds the target-count and days inputs; the schema stays optional |
 | `[data-assignments-list]` · `[data-user-id]` | teacher assignments list, admin user rows | |
+| `.metric-row` · `.metric` | teacher task statistics (detail) | the 2026-10-23 总单元 metric joins the row; teacher.spec asserts the minted count here |
 | `.app-shell[data-shell]` | student shell state marker | shell-refresh spec pins the chrome verdict per state (loading/workspace/anonymous/error/gate); the optimistic frame reuses the existing `.app-sidebar`/`.app-nav`/`.app-bottomnav` structural locators |
 | `.task-card[data-depleted='true']` | depleted square card marker | same verdict as the 已被领完 badge (defect #20 / batch ④); the recede treatment assertions (dashed border, dimmed content) key on it |
 | `[data-testid='invitation-link']` | admin one-time invitation link box | admin-invitations.spec pins the link text shape (origin + `/staff/invite/<urlsafe-token>`) and follows it to the accept page; CopyButton beside it is label-anchored (A-table) |

@@ -141,6 +141,7 @@ function EditTaskDialogInner({
           <FormErrorSummary view={summary} />
 
           <TaskFormFields
+        hideTargetCount
             values={values}
             fieldErrors={fieldErrors}
             disabled={submitting}
