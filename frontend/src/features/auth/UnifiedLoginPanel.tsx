@@ -29,6 +29,7 @@ import { COPY_GENERIC_FAIL, isApiError } from "@/lib/errors";
 import { AuthField } from "./AuthField";
 import { FastLoginHint } from "./FastLoginHint";
 import { FormErrorSummary } from "./FormErrorSummary";
+import { RecentLoginCardButton } from "./RecentLoginCard";
 import { SubmitButton } from "./SubmitButton";
 import {
   fastLoginCookieOnly,
@@ -63,6 +64,7 @@ import {
   removeRecentLogin,
   type RecentLoginEntry,
 } from "./recentLogins";
+import { takeSwitchPick } from "./switchAccount";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -94,8 +96,26 @@ export function UnifiedLoginPanel() {
   // setState in the effect body trips the react-compiler rule instead.
   const [recent, setRecent] = useState<RecentLoginEntry[]>([]);
   useEffect(() => {
-    const timer = setTimeout(() => setRecent(listRecentLogins()), 0);
+    const timer = setTimeout(() => {
+      const rows = listRecentLogins();
+      setRecent(rows);
+      // The 切换账号 menu's handoff (popover batch, owner feedback
+      // 2026-10-23): the popover stored its pick right before logging
+      // out; once the rows are in, drive the picked card through the
+      // SAME smart branch a click takes (remembered fast-landing /
+      // auto-send / the password hand-back). The read deletes — the
+      // pick fires once, and an unknown identifier (jar cleared,
+      // another device) degrades to the plain page.
+      const pick = takeSwitchPick();
+      if (pick !== null) {
+        const entry = rows.find((row) => row.identifier === pick);
+        if (entry !== undefined) {
+          void onPickCard(entry);
+        }
+      }
+    }, 0);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once by design; onPickCard's own awaits re-read what they need.
   }, []);
   const refreshRecent = () => setRecent(listRecentLogins());
   // The remembered-device probe is PANEL-level (batch 3): ONE anonymous
@@ -216,11 +236,8 @@ export function UnifiedLoginPanel() {
       <FastLoginHint mask={probeMask} onTotpRequired={setPendingToken} />
       <RecentLogins
         entries={recent}
-        onPick={(value) => {
-          const entry = recent.find((row) => row.identifier === value);
-          if (entry !== undefined) {
-            void onPickCard(entry);
-          }
+        onPick={(entry) => {
+          void onPickCard(entry);
         }}
         onRemove={(value) => {
           removeRecentLogin(value);
@@ -245,44 +262,26 @@ export function UnifiedLoginPanel() {
 
 /** Batch 2 (owner brief 2026-10-20): the recent-logins quick-switch
  * cards. ZERO entries → ZERO elements (the layer-0 discipline). The
- * card shows the G11 mask + role badge + nickname; the avatar slot is
- * a role-tinted initial (the anonymous page cannot fetch avatars —
- * avatarUrl needs a signed-in bearer; noted as the batch's one
- * deviation from the brief). */
+ * card FACE is the shared `RecentLoginCardButton` (the shells'
+ * 切换账号 menu renders the same face); the remove verb stays a
+ * login-page affordance. */
 function RecentLogins({
   entries,
   onPick,
   onRemove,
 }: {
   entries: RecentLoginEntry[];
-  onPick: (identifier: string) => void;
+  onPick: (entry: RecentLoginEntry) => void;
   onRemove: (identifier: string) => void;
 }) {
   if (entries.length === 0) {
     return null;
   }
-  const badge: Record<string, string> = { STUDENT: "学生", TEACHER: "教师", ADMIN: "管理员" };
   return (
     <div className="login-recent" aria-label="最近登录">
       {entries.map((entry) => (
         <div className="login-recent-card" key={entry.identifier}>
-          <button
-            type="button"
-            className="login-recent-pick"
-            onClick={() => onPick(entry.identifier)}
-            aria-label={`切换到 ${entry.masked}`}
-          >
-            <span className={`login-recent-avatar role-${entry.role.toLowerCase()}`} aria-hidden="true">
-              {(entry.nickname || entry.masked)[0]}
-            </span>
-            <span className="login-recent-meta">
-              <span className="mono">{entry.masked}</span>
-              <span className="login-recent-sub">
-                {badge[entry.role] ?? entry.role}
-                {entry.nickname ? ` · ${entry.nickname}` : ""}
-              </span>
-            </span>
-          </button>
+          <RecentLoginCardButton entry={entry} onPick={onPick} />
           <Button
             variant="ghost"
             className="login-recent-remove"
