@@ -155,8 +155,12 @@ def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str
             print(f"WAIVED cross-talk residual: {measured} {beyond}")
             continue
         if beyond:
+            # Print the FULL set: the waivers match by exact fingerprint,
+            # and a truncated list hides the extra endpoint that defeats
+            # them (#135 CI, 2026-10-23 — the logged five matched a
+            # waiver while the comparison still failed).
             hits.append(
-                f"{measured}: arc endpoints beyond EOF {beyond[:5]} — an "
+                f"{measured}: arc endpoints beyond EOF {beyond} — an "
                 "undeclared concurrency library is corrupting the trace "
                 "(pyproject [tool.coverage.run] concurrency)"
             )
