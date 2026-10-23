@@ -11409,6 +11409,17 @@
             ],
             "title": "Submission Schema Version"
           },
+          "target_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Count"
+          },
           "notify_24h": {
             "type": "boolean",
             "title": "Notify 24H",

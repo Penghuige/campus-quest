@@ -329,20 +329,18 @@ def test_non_published_task_is_not_claimable(status: TaskStatus) -> None:
     assert error.details["reason"] == "task_not_published"
 
 
-def test_published_task_without_schema_version_is_not_claimable() -> None:
-    """A PUBLISHED STRUCTURED task always carries a schema version;
-    reaching the claim without one means publish validation was
-    bypassed (T6 rule, kept — §10.1 made it family-conditional)."""
-    error = _assert_blocked(
+def test_published_task_without_schema_version_is_claimable() -> None:
+    """The simplification batch (2026-10-23 spec §2.1/§2.2): a
+    schema-less structured task is a LEGAL published shape — lenient
+    validation owns its submissions, so the old claim-side schema
+    gate is gone (this pin used to refuse)."""
+    _assert_allowed(
         ClaimEligibilityService(),
         _claimer(),
         _task(submission_schema_version=None),
         NOW,
         (),
-        ErrorCode.TASK_NOT_CLAIMABLE,
-        409,
     )
-    assert error.details["reason"] == "missing_submission_schema_version"
 
 
 def test_document_family_task_without_schema_is_claimable() -> None:
@@ -353,10 +351,13 @@ def test_document_family_task_without_schema_is_claimable() -> None:
     _assert_allowed(ClaimEligibilityService(), _claimer(), task, NOW, ())
 
 
-def test_mixed_family_task_without_schema_is_not_claimable() -> None:
-    """A gate holding ANY structured format keeps the schema check —
-    the exemption is purity-scoped, not a blanket skip."""
-    error = _assert_blocked(
+def test_mixed_family_published_row_is_claimable_at_the_claim_layer() -> None:
+    """The family-policy policing lives at the PUBLISH gate
+    (TaskService._validate_publishable), never the claim layer: a
+    hand-planted PUBLISHED row with a mixed gate is not the claim
+    service's to re-adjudicate (the simplification batch removed the
+    schema-version check that used to catch this row first)."""
+    _assert_allowed(
         ClaimEligibilityService(),
         _claimer(),
         _task(
@@ -365,10 +366,7 @@ def test_mixed_family_task_without_schema_is_not_claimable() -> None:
         ),
         NOW,
         (),
-        ErrorCode.TASK_NOT_CLAIMABLE,
-        409,
     )
-    assert error.details["reason"] == "missing_submission_schema_version"
 
 
 @pytest.mark.parametrize(

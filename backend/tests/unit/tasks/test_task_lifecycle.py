@@ -76,6 +76,13 @@ class FakeSession:
 
     def __init__(self, *tasks: Task) -> None:
         self.tasks: dict[UUID, Task] = {t.id: t for t in tasks}
+        # The simplification batch (2026-10-23 spec §2.2): the first
+        # publish counts the task's units. The fake world models every
+        # flushed task as publish-ready (one unit); a test that wants
+        # the zero-unit refusal sets this to 0 explicitly.
+        self.assignment_counts: dict[UUID, int] = {
+            t.id: 1 for t in tasks if t.id is not None
+        }
         self._pending: list[Task] = []
         self.commits = 0
         self.locked_ids: list[UUID] = []
@@ -91,14 +98,22 @@ class FakeSession:
             if task.created_at is None:
                 task.created_at = NOW
             self.tasks[task.id] = task
+            self.assignment_counts.setdefault(task.id, 1)
         self._pending.clear()
 
     async def commit(self) -> None:
         await self.flush()
         self.commits += 1
 
-    async def scalar(self, stmt: Any) -> Task | None:
-        assert stmt.column_descriptions[0]["entity"] is Task
+    async def scalar(self, stmt: Any) -> Any:
+        entity = stmt.column_descriptions[0]["entity"]
+        if entity is None:
+            # The first-publish unit count (select(func.count()) from
+            # assignments): the fake world answers from its own map.
+            task_id = stmt.whereclause.right.value
+            assert isinstance(task_id, UUID)
+            return self.assignment_counts.get(task_id, 0)
+        assert entity is Task
         task_id = stmt.whereclause.right.value
         assert isinstance(task_id, UUID)
         if stmt._for_update_arg is not None:
@@ -490,16 +505,17 @@ async def test_publish_rejects_non_positive_reward(service: TaskService) -> None
         ({"submission_schema_version": 0}, "版本"),
     ],
 )
-async def test_publish_requires_submission_schema_and_version(
+async def test_publish_accepts_any_schema_shape_for_structured(
     service: TaskService, overrides: dict[str, Any], expected_detail: str
 ) -> None:
+    """The simplification batch (2026-10-23 spec §2.1/§2.2): the schema
+    legs are optional — a structured task publishes with a missing or
+    empty schema (lenient validation owns its submissions). The
+    parameter list keeps the four historical shapes as its cover."""
     task = planted_task(**overrides)
-    with pytest.raises(BusinessError) as excinfo:
-        await service.publish_task(FakeSession(task), OWNER, task.id)
-    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
-    assert expected_detail in str(excinfo.value.message) + str(
-        excinfo.value.details or {}
-    )
+    session = FakeSession(task)
+    await service.publish_task(session, OWNER, task.id)
+    assert task.status == TaskStatus.PUBLISHED
 
 
 @pytest.mark.parametrize("file_types", [[], ["PARQUET"], ["CSV", "DOCX"]])
@@ -559,19 +575,24 @@ async def test_publish_rejects_mixed_family_file_types(service: TaskService) -> 
     }
 
 
-async def test_publish_still_requires_schema_for_structured(
+async def test_first_publish_refuses_without_task_units(
     service: TaskService,
 ) -> None:
-    """The schema leg stays for the structured family — a CSV task
-    without a schema is as unpublishable as ever."""
+    """The replacement gate (2026-10-23 spec §2.2): a schema-less CSV
+    task IS publishable — but a DRAFT with ZERO task units is not; the
+    refusal is the stable TASK_UNITS_REQUIRED code."""
     task = planted_task(
         allowed_file_types=["CSV"],
         submission_schema=None,
         submission_schema_version=None,
     )
+    session = FakeSession(task)
+    session.assignment_counts[task.id] = 0
     with pytest.raises(BusinessError) as excinfo:
-        await service.publish_task(FakeSession(task), OWNER, task.id)
-    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR
+        await service.publish_task(session, OWNER, task.id)
+    assert excinfo.value.code == ErrorCode.TASK_UNITS_REQUIRED
+    assert excinfo.value.status_code == 409
+    assert "完成人数" in excinfo.value.message
 
 
 @pytest.mark.parametrize("size", [0, -1, MAX_UPLOAD_BYTES + 1])

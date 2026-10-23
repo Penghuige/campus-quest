@@ -41,6 +41,8 @@ _EXPECTED_CODES = {
     "zhaopin",
     "58city",
     "lietou",
+    # The simplification batch (2026-10-23 spec §3.3).
+    "generic",
 }
 
 
