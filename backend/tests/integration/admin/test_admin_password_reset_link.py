@@ -201,7 +201,7 @@ async def test_reset_token_sets_password_revokes_sessions_and_consumes(
     _, _tokens = await sessions.issue_session(
         db_session, user=target, now=api_clock.now()
     )
-    await issue_device(db_session, target.id, clock=api_clock)
+    await issue_device(db_session, target, clock=api_clock)
     await db_session.commit()
 
     issued = await client.post(

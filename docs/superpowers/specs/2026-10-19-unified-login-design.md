@@ -32,7 +32,9 @@ users 单表三角色（STUDENT/TEACHER/ADMIN）；`phone_e164`、`email_normali
     - `{status:"unregistered", register_token}`（仅未注册手机号；内联注册三步复用现有 register_token + `/auth/register` 语义）
 - `POST /auth/challenge/totp` — body `{pending_token, totp_code, remember_device?}` → authenticated
 - `GET /auth/challenge/remembered` — 层 0"一键继续"落点（原 /auth/mobile-code 族内 remembered 腿迁移）：200 `{identifier_masked}`（本机有免码 cookie/凭据；掩码通用标识——有手机用 mask_phone，否则邮箱用 mask_email；受众=空体 verify 腿可服务的全部角色，状态门槛镜像：学生 ACTIVE/PENDING_APPROVAL、员工 ACTIVE。2026-10-20 owner 快轨放开，原为仅学生+`phone_masked`）| 204（无）。只查本机状态，无枚举面。
-- `POST /auth/challenge/verify` **空体变体** — 学生免码 cookie 单因子腿（cookie 即因子）；ADMIN 不因 cookie 豁免，仍 `totp_required`。员工免 TOTP 语义只在 cq_staff_device 设备凭据腿（Wave 1 既有语义不变）。
+  - **多槽修订（2026-10-24 批）**：探针改**数组** `200 {"remembered":[{"identifier_masked","slot"},…]}`——枚举请求里全部 `cq_dev_*` 槽（每账号一 cookie，名=`cq_dev_<sha256(canonical identifier)[:10]>`；旧单名 `cq_staff_device` 退役不再读），按最近使用（`last_used_at` or `created_at`）降序，≤5 项；`slot` 为不透明句柄（cookie 名后缀）供 verify `target` 回传，前端永不持明文标识符。空仍 204。枚举不 bump `last_used_at`（排序信号只被真实登录消耗）。
+- `POST /auth/challenge/verify` **空体变体** — 学生免码 cookie 单因子腿（cookie 即因子）；ADMIN 不因 cookie 豁免，仍 `totp_required`。员工免 TOTP 语义只在设备凭据腿（Wave 1 既有语义不变；2026-10-24 起凭据按账号分槽，honoring=任意在座槽值可归属到目标账号）。
+  - **多槽修订（2026-10-24 批）**：空体变体 body 增可选项 `{target?: slot}`——`target` 命名探针数组某项的槽句柄，登该账号；无 `target`（或缺省/空白）取**最近槽**（判定基准与探针排序一致：`last_used_at` desc 首项，即横幅首位=点击所登）。`target` 无匹配槽（缺席/失效/他人）→ 单码 `CHALLENGE_CODE_INVALID`（无槽枚举面）；仅被选中凭据 bump `last_used_at`。
 
 ### 3.2 密码登录（既有 `/auth/login` 扩展）
 

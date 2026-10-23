@@ -76,6 +76,13 @@ _EPSILON = 0.15
 #: appearing, retire its waiver entry and file the upstream report with
 #: the material already collected (the PR trail holds the six-shape
 #: reproduction matrix and the arc anatomy).
+#:
+#: TWO WAIVER KINDS since ruling C (2026-10-24): exact-set entries
+#: (``beyond``) as above, and HOST entries (``hosts``) for the one
+#: file whose leaked endpoint set is a timing FUNCTION — three CI runs
+#: measured three different sets there (see the entry's comment), so
+#: exact-set matching could only false-red. A host waiver waives every
+#: beyond-EOF set on ITS one host; any other file still fails red.
 _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
     {
         "beyond": frozenset({1910, 1971, 1988}),
@@ -92,37 +99,53 @@ _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
         ),
     },
     {
-        # The second signature, a WORKERS-job host (main 4ecd77d CI,
-        # 2026-10-17): three hosts/two signatures = a widening surface,
-        # so the root fix (the eager worker-test execution shape x the
-        # tracer's thread/greenlet bookkeeping) is pulled FORWARD from
-        # the backlog into its own PR — this waiver unblocks main and
-        # retires with that fix.
-        #
-        # 2026-10-23 (#135 CI rerun): the endpoint set drifted to seven
-        # under CI timing. Evidence: validate_submission.py is 287 lines
-        # total, all seven endpoints are beyond EOF — same host, same
-        # character as the original five. The full-set diagnostic (the
-        # `{beyond}` print below, #135) is what made the extra 687/793
-        # visible; the set stays exact so the next drift still goes red.
-        "beyond": frozenset({465, 623, 651, 683, 684, 687, 793}),
-        "seen_in": ("app/workers/jobs/validate_submission.py",),
+        # The workers-job host, waived BY HOST (reviewer ruling C,
+        # 2026-10-24): three CI runs measured THREE DIFFERENT endpoint
+        # sets on this one file —
+        #   {465, 623, 651, 683, 684}
+        #     (main 4ecd77d CI, 2026-10-17; the original five),
+        #   {465, 623, 651, 683, 684, 687, 793}
+        #     (#135, run 39916783972, 2026-10-23; waived by set
+        #     expansion then),
+        #   28 endpoints — 475, 587, 593, 599, 600, 601, 627, 640,
+        #     641, 642, 643, 645, 646, 647, 648, 649, 656, 657, 662,
+        #     663, 664, 673, 675, 677, 678, 679, 680, 793
+        #     (#138, run 40004437400, 2026-10-23; the full-set
+        #     diagnostic made it visible).
+        # The fingerprint is UNSTABLE BY NATURE — the leaked endpoint
+        # set is a function of CI timing, not a fixed residual — so an
+        # exact-set waiver here can only produce false reds. The waiver
+        # is therefore scoped to this one host: any beyond-EOF set on
+        # this file is the known cross-talk; any OTHER file surfacing
+        # out-of-range arcs still fails the gate. The ROOT FIX (the
+        # eager worker-test execution shape x the tracer's
+        # thread/greenlet bookkeeping) stays on the owner's quality
+        # backlog as its own item — this waiver retires with it.
+        "hosts": ("app/workers/jobs/validate_submission.py",),
         "reason": (
             "the workers-job host of the greenlet cross-talk: the "
-            "eager-mode worker tests' execution shape (suspected "
-            "thread-pool job runs) leaks a seven-arc signature "
-            "(five originally; 687/793 added 2026-10-23 #135); root fix "
-            "in flight (reviewer directive 2026-10-17)"
+            "eager-mode worker tests' execution shape leaks a "
+            "TIMING-DEPENDENT beyond-EOF endpoint set (three distinct "
+            "sets measured 2026-10-17..23, see the comment) — waived "
+            "by host, ruling C 2026-10-24; root fix on the backlog"
         ),
     },
 )
 
 
-def _waived(beyond: set[int]) -> bool:
-    return any(
-        beyond == set(waiver["beyond"])  # type: ignore[arg-type]
-        for waiver in _CROSSTALK_WAIVERS
-    )
+def _waived(beyond: set[int], measured: str) -> bool:
+    """Exact-set waivers match the fingerprint on any host; host
+    waivers match ANY fingerprint on their one host (the workers-job
+    host's set is a timing function — see the waiver comment)."""
+    for waiver in _CROSSTALK_WAIVERS:
+        if "beyond" in waiver:
+            if beyond == set(waiver["beyond"]):  # type: ignore[arg-type]
+                return True
+        else:
+            hosts = waiver["hosts"]  # type: ignore[assignment]
+            if any(measured.endswith("/" + str(host)) for host in hosts):
+                return True
+    return False
 
 
 def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str]:
@@ -159,7 +182,7 @@ def _undeclared_concurrency_signatures(data_file: str | None = None) -> list[str
                 if endpoint > total_lines
             }
         )
-        if beyond and _waived(set(beyond)):
+        if beyond and _waived(set(beyond), measured):
             print(f"WAIVED cross-talk residual: {measured} {beyond}")
             continue
         if beyond:

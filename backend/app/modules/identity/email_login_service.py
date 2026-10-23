@@ -56,8 +56,8 @@ from app.integrations.errors import ProviderError
 from app.integrations.masking import mask_email
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.device_credentials import any_valid_for
 from app.modules.identity.device_credentials import issue as issue_device
-from app.modules.identity.device_credentials import validate as validate_device
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.login_failure_guard import LoginFailureGuard
@@ -118,6 +118,7 @@ class EmailCodeLoginOutcome:
     tokens: SessionTokens | None = None
     pending_token: str | None = None
     device_cookie: str | None = None
+    device_slot: str | None = None
 
 
 class EmailLoginService:
@@ -295,7 +296,7 @@ class EmailLoginService:
         *,
         email: str,
         code: str,
-        device_cookie: str | None = None,
+        device_cookies: dict[str, str] | None = None,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
     ) -> EmailCodeLoginOutcome:
@@ -376,8 +377,10 @@ class EmailLoginService:
         remember = bool(remember_device)
         if role_value is Role.TEACHER:
             _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-            device_cookie = (
-                await issue_device(db, user_id, clock=self._clock) if remember else None
+            device_cookie, device_slot = (
+                await issue_device(db, user, clock=self._clock)
+                if remember
+                else ("", "")
             )
             await self._audit.append(
                 db,
@@ -395,17 +398,19 @@ class EmailLoginService:
                 user_id=user_id,
                 role=role_value,
                 tokens=tokens,
-                device_cookie=device_cookie,
+                device_cookie=device_cookie or None,
+                device_slot=device_slot or None,
             )
 
         # ADMIN: a valid remembered device finishes the login here.
-        if (
-            device_cookie is not None
-            and (await validate_device(db, device_cookie, clock=self._clock)) == user_id
+        if device_cookies and await any_valid_for(
+            db, device_cookies, user_id, clock=self._clock
         ):
             _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-            new_cookie = (
-                await issue_device(db, user_id, clock=self._clock) if remember else None
+            new_cookie, new_slot = (
+                await issue_device(db, user, clock=self._clock)
+                if remember
+                else ("", "")
             )
             await self._audit.append(
                 db,
@@ -425,7 +430,8 @@ class EmailLoginService:
                 user_id=user_id,
                 role=role_value,
                 tokens=tokens,
-                device_cookie=new_cookie,
+                device_cookie=new_cookie or None,
+                device_slot=new_slot or None,
             )
 
         # ADMIN without the device: an OPAQUE pending credential for the
@@ -529,10 +535,10 @@ class EmailLoginService:
 
         await self._guard.reset(user_id)
         _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-        device_cookie = (
-            await issue_device(db, user_id, clock=self._clock)
+        device_cookie, device_slot = (
+            await issue_device(db, user, clock=self._clock)
             if remember_device
-            else None
+            else ("", "")
         )
         await self._audit.append(
             db,
@@ -550,7 +556,8 @@ class EmailLoginService:
             user_id=user_id,
             role=Role.ADMIN,
             tokens=tokens,
-            device_cookie=device_cookie,
+            device_cookie=device_cookie or None,
+            device_slot=device_slot or None,
         )
 
 

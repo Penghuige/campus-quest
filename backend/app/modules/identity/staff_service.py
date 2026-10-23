@@ -860,10 +860,10 @@ class StaffService:
         password: str,
         totp_code: str,
         *,
-        device_cookie: str | None = None,
+        device_cookies: dict[str, str] | None = None,
         remember_device: bool = False,
         second_factor_policy: Literal["strict", "unified"] = "strict",
-    ) -> tuple[SessionTokens | None, str | None]:
+    ) -> tuple[SessionTokens | None, str | None, str | None]:
         """Staff login: verified email + password + valid second factor.
 
         ``totp_code`` accepts a current RFC 6238 code or one unused
@@ -876,13 +876,14 @@ class StaffService:
         would leak the account's role).
 
         V1.1 login iteration item 2: an EMPTY ``totp_code`` plus a valid
-        remembered-device cookie bound to this account completes the
-        login (the 30-day re-login: the cookie IS the second factor,
-        mirroring the email-code ADMIN leg); an empty code without one
-        is the uniform authentication failure. ``remember_device`` mints
-        a fresh cookie on any successful login. Returns
-        ``(tokens, device_cookie)`` — the cookie value is None unless
-        the response should set one.
+        remembered-device credential bound to this account (any slot in
+        the presented jar — ownership, not the cookie's name, is the
+        proof) completes the login (the 30-day re-login: the cookie IS
+        the second factor, mirroring the email-code ADMIN leg); an
+        empty code without one is the uniform authentication failure.
+        ``remember_device`` mints a fresh cookie on any successful
+        login. Returns ``(tokens, device_cookie, device_slot)`` — the
+        cookie pair is None unless the response should set one.
         """
         now = self._clock.now()
         email = identifier.strip().lower()
@@ -918,28 +919,28 @@ class StaffService:
             raise self._staff_authentication_required()
 
         # The 30-day re-login leg (V1.1 item 2): an empty second factor
-        # is accepted ONLY when the remembered-device cookie resolves to
-        # this account — the cookie replaces the factor. Anything else
-        # empty is the uniform failure, decided BEFORE the credential
-        # lookup so the setup-required signal never leaks.
+        # is accepted ONLY when a presented remembered-device credential
+        # resolves to this account — the credential replaces the factor.
+        # Anything else empty is the uniform failure, decided BEFORE the
+        # credential lookup so the setup-required signal never leaks.
         empty_code = totp_code is None or totp_code.strip() == ""
-        cookie_user_id: UUID | None = None
+        cookie_login = False
         if empty_code:
-            if device_cookie is not None:
-                cookie_user_id = await device_credentials.validate(
-                    db, device_cookie, clock=self._clock
+            if device_cookies:
+                cookie_login = await device_credentials.any_valid_for(
+                    db, device_cookies, user.id, clock=self._clock
                 )
-            if cookie_user_id != user.id:
+            if not cookie_login:
                 # PR-1's unified password form (2026-10-19 spec §3.2,
                 # ``second_factor_policy="unified"``) reshapes ONLY this
                 # arm for the new caller: a TEACHER's password is the
                 # whole auth (§2.3 — no TOTP by design), and an ADMIN's
                 # proven password owes the totp leg — signaled as a
-                # (None, None) return for the facade to mint the pending
-                # credential. The legacy "strict" callers keep the
-                # uniform failure byte-for-byte.
+                # (None, None, None) return for the facade to mint the
+                # pending credential. The legacy "strict" callers keep
+                # the uniform failure byte-for-byte.
                 if second_factor_policy == "unified" and user.role == Role.ADMIN:
-                    return None, None
+                    return None, None, None
                 if second_factor_policy == "unified" and user.role == Role.TEACHER:
                     logger.info("staff unified login password-only user_id=%s", user.id)
                 else:
@@ -977,10 +978,15 @@ class StaffService:
         session_row, tokens = await self._sessions.issue_session(db, user=user, now=now)
         user_id, session_id = user.id, session_row.id
         new_cookie: str | None = None
-        if remember_device or cookie_user_id == user.id:
+        new_slot: str | None = None
+        if remember_device or cookie_login:
             # Checkbox mint, or the renewal-on-use rotation (the #87
             # discipline: every successful cookie login re-issues).
-            new_cookie = await device_credentials.issue(db, user.id, clock=self._clock)
+            new_cookie, new_slot = await device_credentials.issue(
+                db, user, clock=self._clock
+            )
+            new_cookie = new_cookie or None
+            new_slot = new_slot or None
         await db.commit()
         if self._guard is not None:
             await self._guard.reset(user_id)
@@ -990,7 +996,7 @@ class StaffService:
             session_id,
             "password+device" if empty_code else "password+totp",
         )
-        return tokens, new_cookie
+        return tokens, new_cookie, new_slot
 
     async def _consume_recovery_code(
         self, db: AsyncSession, user_id: UUID, code: str, now: datetime

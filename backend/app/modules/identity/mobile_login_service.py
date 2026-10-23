@@ -4,10 +4,10 @@
 The EmailLoginService discipline mirrored onto SMS — constant 202 with
 the cooldown armed for ANY phone before any lookup, one live challenge
 per phone with the keyed digest (hmac_challenge_code), the 5-attempt
-cap, the shared account lockout — plus the student edition of the
-remembered device (#87 craft): with a valid ``cq_staff_device`` cookie
-the verify leg answers tokens with NO code at all (the cookie is the
-credential; it also re-issues a fresh 30-day value, rotating it).
+cap, the shared account lockout. The student edition of the remembered
+device (#87 craft) now lives in the unified facade's empty-body verify
+(the multi-slot batch, 2026-10-24): this service mints slot cookies on
+remember_device but no longer carries its own cookie leg.
 
 Design decisions:
 - **The phone IS the login name** (owner decision): the user is located
@@ -16,11 +16,6 @@ Design decisions:
   the silent no-op, same 202, nothing stored or sent.
 - **PENDING_APPROVAL logs in** (spec §2): the freeze is per-acting
   surface; the session itself is browsing-grade.
-- **The remembered-device leg never needs a code**: a valid cookie
-  matching the phone's user is a full credential (single factor by
-  design — the student channel is single-factor; the cookie's 30-day
-  lifetime is the documented equivalence). A wrong/absent cookie with
-  no code is the uniform invalid-code answer, never a branch oracle.
 - The code exists in two places only: the SMS send call and the
   recipient's handset. Never logged; masked phone in every log line.
 """
@@ -51,9 +46,6 @@ from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.device_credentials import (
     issue as issue_device,
-)
-from app.modules.identity.device_credentials import (
-    validate as validate_device,
 )
 from app.modules.identity.email_login_service import (
     CODE_TTL_MINUTES,
@@ -115,6 +107,7 @@ class MobileVerifyOutcome:
 
     tokens: SessionTokens | None = None
     device_cookie: str | None = None
+    device_slot: str | None = None
     register_token: str | None = None
 
     @property
@@ -130,6 +123,7 @@ class StaffMobileCodeOutcome:
 
     tokens: SessionTokens | None = None
     device_cookie: str | None = None
+    device_slot: str | None = None
     pending_token: str | None = None
 
 
@@ -255,26 +249,26 @@ class MobileLoginService:
         *,
         phone: str | None,
         code: str | None,
-        device_cookie: str | None = None,
+        device_cookies: dict[str, str] | None = None,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
     ) -> MobileVerifyOutcome:
-        """Consume the SMS code (or the remembered-device cookie) and
-        open a browsing-grade student session — or, for a code-checked
-        phone with NO account, hand back the 5-minute single-use ENTRY
-        token (the queue-jump batch's register door).
+        """Consume the SMS code and open a browsing-grade student
+        session — or, for a code-checked phone with NO account, hand
+        back the 5-minute single-use ENTRY token (the queue-jump
+        batch's register door).
 
-        Returns (tokens, device_cookie): the cookie is a freshly minted
-        30-day value when the login should set one (remember_device on
-        the code leg, or ALWAYS on the cookie leg — the rotation is the
-        renewal), else None.
+        Returns the outcome with a freshly minted 30-day device cookie
+        (value + slot) when the login should set one (remember_device
+        on the code leg), else both None.
 
-        The user is resolved by the LEG's own key: the code leg by the
-        phone; the cookie leg by the device row alone (the login-banner
-        click has no phone — only the masked form, which is not a
-        locator). A phone still accompanying the cookie leg is accepted
-        for the pre-iteration callers and must agree with the device's
-        user, exactly as before.
+        The empty-code cookie-as-credential leg this service once
+        carried is RETIRED (2026-10-24, the multi-slot batch): the
+        unified facade owns that leg (its empty-body verify enumerates
+        the whole presented jar); this service's only caller never
+        sends an empty code. ``device_cookies`` rides the signature for
+        the arms that honor a remembered credential; the student code
+        leg does not.
         """
         assert self._sessions is not None and self._guard is not None, (
             "verify legs require sessions and guard wiring"
@@ -283,68 +277,28 @@ class MobileLoginService:
         def _invalid() -> BusinessError:
             return BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
 
-        empty_code = code is None or code.strip() == ""
-        if not empty_code:
-            assert code is not None  # empty_code is False, for the type reader
-            if phone is None:
-                # A code with no phone has no challenge to match.
-                raise _invalid()
-            try:
-                normalized = normalize_phone(phone, "CN")
-            except InvalidPhoneError as exc:
-                raise _invalid() from exc
-            user = await self._users.find_by_phone_e164(db, normalized)
-            if user is not None and (
-                user.role != Role.STUDENT.value
-                or user.status
-                not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
-            ):
-                # A phone bound to staff/non-student is not an entry.
-                raise _invalid()
-        else:
-            # The remembered-device leg: a valid cookie is a full
-            # credential — no code, no SMS, no phone needed — and a
-            # fresh 30-day value (the rotation is the renewal).
-            device_user_id = (
-                await validate_device(db, device_cookie, clock=self._clock)
-                if device_cookie is not None
-                else None
-            )
-            if device_user_id is None:
-                raise _invalid()
-            user = await db.get(User, device_user_id)
-            if (
-                user is None
-                or user.role != Role.STUDENT.value
-                or user.status
-                not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
-            ):
-                raise _invalid()
+        if code is None or code.strip() == "":
+            # The cookie-as-credential leg lives in the unified facade
+            # (the empty-body verify); an empty code here is simply an
+            # invalid request — the uniform envelope, no oracle.
+            raise _invalid()
+        if phone is None:
+            # A code with no phone has no challenge to match.
+            raise _invalid()
+        try:
+            normalized = normalize_phone(phone, "CN")
+        except InvalidPhoneError as exc:
+            raise _invalid() from exc
+        user = await self._users.find_by_phone_e164(db, normalized)
+        if user is not None and (
+            user.role != Role.STUDENT.value
+            or user.status
+            not in (UserStatus.ACTIVE.value, UserStatus.PENDING_APPROVAL.value)
+        ):
+            # A phone bound to staff/non-student is not an entry.
+            raise _invalid()
 
         now = self._clock.now()
-
-        if empty_code:
-            # cookie leg: its gate already raised on a missing user
-            assert user is not None
-            _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-            new_cookie: str | None = await issue_device(db, user.id, clock=self._clock)
-            await self._audit.append(
-                db,
-                actor=Actor(user_id=user.id, role=Role.STUDENT),
-                action=AUDIT_MOBILE_LOGIN_SUCCEEDED,
-                target_type=_AUDIT_TARGET_TYPE,
-                target_id=str(user.id),
-                after_snapshot={"channel": "mobile_code+device"},
-                ip_address=audit_context.ip_address if audit_context else None,
-                request_id=audit_context.request_id if audit_context else None,
-            )
-            await db.commit()
-            await self._guard.reset(user.id)
-            logger.info(
-                "mobile login succeeded user_id=%s channel=mobile_code+device",
-                user.id,
-            )
-            return MobileVerifyOutcome(tokens=tokens, device_cookie=new_cookie)
 
         if user is not None and await self._guard.is_locked(user.id):
             raise await self._account_locked(user.id)
@@ -403,10 +357,10 @@ class MobileLoginService:
         assert user is not None  # every accountless path returned above
         await self._guard.reset(user.id)
         _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-        new_cookie = (
-            await issue_device(db, user.id, clock=self._clock)
+        new_cookie, new_slot = (
+            await issue_device(db, user, clock=self._clock)
             if remember_device
-            else None
+            else ("", "")
         )
         await self._audit.append(
             db,
@@ -420,7 +374,11 @@ class MobileLoginService:
         )
         await db.commit()
         logger.info("mobile login succeeded user_id=%s channel=mobile_code", user.id)
-        return MobileVerifyOutcome(tokens=tokens, device_cookie=new_cookie)
+        return MobileVerifyOutcome(
+            tokens=tokens,
+            device_cookie=new_cookie or None,
+            device_slot=new_slot or None,
+        )
 
     async def register_by_phone(
         self,
@@ -589,21 +547,22 @@ class MobileLoginService:
         *,
         phone: str | None,
         code: str | None,
-        device_cookie: str | None = None,
+        device_cookies: dict[str, str] | None = None,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
     ) -> StaffMobileCodeOutcome:
-        """Trade the staff SMS code (or the remembered-device cookie)
-        for a staff session — or, for an ADMIN, the pending TOTP leg.
+        """Trade the staff SMS code for a staff session — or, for an
+        ADMIN, the pending TOTP leg.
 
-        The cookie leg mirrors the student channel's: a valid cookie
-        bound to an ACTIVE staff account is a full credential (for an
-        ADMIN it also replaces the TOTP leg — the #87 craft shared with
-        the password re-login). The code leg is the student channel's
-        craft with a staff filter; TEACHER completes in one step, ADMIN
-        gets the opaque single-use pending token (30 minutes, Redis,
-        hashed at rest — the email-login F1 discipline). Every failure
-        is the uniform MOBILE_CODE_INVALID.
+        The code leg is the student channel's craft with a staff
+        filter; TEACHER completes in one step, ADMIN gets the opaque
+        single-use pending token (30 minutes, Redis, hashed at rest —
+        the email-login F1 discipline). Every failure is the uniform
+        MOBILE_CODE_INVALID. The empty-code cookie leg this service
+        once carried is RETIRED (2026-10-24): the unified facade owns
+        the cookie-as-credential leg, and this service's only caller
+        never sends an empty code. ``device_cookies`` rides the
+        signature for honoring-armed callers; this leg does not honor.
         """
         assert self._sessions is not None and self._guard is not None, (
             "verify legs require sessions and guard wiring"
@@ -612,31 +571,11 @@ class MobileLoginService:
         def _invalid() -> BusinessError:
             return BusinessError(ErrorCode.MOBILE_CODE_INVALID, _CODE_INVALID_MESSAGE)
 
-        empty_code = code is None or code.strip() == ""
-        if empty_code:
-            device_user_id = (
-                await validate_device(db, device_cookie, clock=self._clock)
-                if device_cookie is not None
-                else None
-            )
-            if device_user_id is None:
-                raise _invalid()
-            user = await db.get(User, device_user_id)
-            if (
-                user is None
-                or user.role == Role.STUDENT.value
-                or user.status != UserStatus.ACTIVE.value
-            ):
-                raise _invalid()
-            return await self._staff_login_succeeded(
-                db,
-                user,
-                remember_device=True,  # renewal on use, the rotation craft
-                channel="staff_mobile_code+device",
-                audit_context=audit_context,
-            )
-
-        assert code is not None
+        if code is None or code.strip() == "":
+            # The cookie-as-credential leg lives in the unified facade
+            # (the empty-body verify); an empty code here is the
+            # uniform invalid, no oracle.
+            raise _invalid()
         if phone is None:
             raise _invalid()
         try:
@@ -725,10 +664,12 @@ class MobileLoginService:
         code: str,
         remember_device: bool = False,
         audit_context: AuditContext | None = None,
-    ) -> tuple[SessionTokens, str | None]:
+    ) -> tuple[SessionTokens, str | None, str | None]:
         """The ADMIN second leg: opaque pending token + a current TOTP
         (or recovery — the authenticate_staff discipline) opens the
-        session. The pending credential is single-use (GETDEL)."""
+        session. The pending credential is single-use (GETDEL).
+        Returns ``(tokens, cookie value, cookie slot)`` — the cookie
+        pair is None unless the response should set one."""
         assert self._sessions is not None
         user_id_raw = await self._redis.getdel(
             _staff_pending_key(_hash_text(pending_token))
@@ -762,7 +703,7 @@ class MobileLoginService:
             audit_context=audit_context,
         )
         assert outcome.tokens is not None
-        return outcome.tokens, outcome.device_cookie
+        return outcome.tokens, outcome.device_cookie, outcome.device_slot
 
     async def _staff_login_succeeded(
         self,
@@ -777,10 +718,10 @@ class MobileLoginService:
         _, tokens = await self._sessions.issue_session(
             db, user=user, now=self._clock.now()
         )
-        new_cookie = (
-            await issue_device(db, user.id, clock=self._clock)
+        new_cookie, new_slot = (
+            await issue_device(db, user, clock=self._clock)
             if remember_device
-            else None
+            else ("", "")
         )
         await self._audit.append(
             db,
@@ -794,4 +735,8 @@ class MobileLoginService:
         )
         await db.commit()
         logger.info("mobile login succeeded user_id=%s channel=%s", user.id, channel)
-        return StaffMobileCodeOutcome(tokens=tokens, device_cookie=new_cookie)
+        return StaffMobileCodeOutcome(
+            tokens=tokens,
+            device_cookie=new_cookie or None,
+            device_slot=new_slot or None,
+        )

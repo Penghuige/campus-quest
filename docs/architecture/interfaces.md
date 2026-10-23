@@ -368,13 +368,6 @@ The unified endpoints (`/auth/challenge/{request,verify,totp}`,
 route FACADE over the existing challenge services — storage, cooldown,
 lockout, HMAC, GETDEL, and device-credential craft are untouched, and
 the legacy per-leg codes above stay until the retirement PR (PR-3).
-`GET /auth/challenge/remembered` answers `{identifier_masked}` (the
-masked phone when bound, the masked EMAIL otherwise; a row whose
-mailbox lives only in `username` — email_normalized NULL — falls
-through to it) for every role
-the empty-body verify leg serves; the status gate mirrors that leg
-(students ACTIVE/PENDING_APPROVAL, staff ACTIVE). The 2026-10-20
-owner fast-track widened it from STUDENT+`phone_masked`.
 Two deliberate breaks INSIDE the new family only:
 
 - **One code for the code-was-wrong family**: on the unified verify
@@ -402,6 +395,51 @@ ruling (c), 2026-10-20: the STUDENT verify arm, the TEACHER code arms
 — email and mobile — and the ADMIN totp arm; a cookie never exempts a
 factor on the code legs, an ADMIN still owes totp there) — the
 frontend sends it unconditionally and holds no audience knowledge.
+
+#### Remembered-device credential slots (the multi-slot batch, 2026-10-24)
+
+The remembered credential is ONE COOKIE NAME PER ACCOUNT
+(`cq_dev_<sha256(canonical identifier)[:10]>`, HttpOnly / Secure /
+30 days): remembering account B overwrites only B's slot in the
+browser jar — the retired single-name `cq_staff_device` let each
+"remember me" evict the previous account's credential (the
+owner-reported 切换账号仍要验证码 bug); its name is no longer read
+anywhere, and its few holders simply re-login once.
+
+- **Canonical identifier**: the slot names by the account's row —
+  `phone_e164` first, then `email_normalized`, then a `username` that
+  is a mailbox. Every mint of one account lands on the same name
+  (同账号覆盖), whatever identifier form the login typed.
+- **Probe (array)**: `GET /auth/challenge/remembered` answers
+  `200 {"remembered": [{"identifier_masked", "slot"}, ...]}` — every
+  live, servable slot in the presented jar, most recent first
+  (recency = `last_used_at` or `created_at`), at most five; no
+  servable slot at all is the empty `204`. `identifier_masked` is the
+  masked phone when bound, the masked email otherwise (a row whose
+  mailbox lives only in `username` falls through to it). The status
+  gate mirrors the empty-body verify leg: students
+  ACTIVE/PENDING_APPROVAL, staff ACTIVE. Enumeration never bumps
+  `last_used_at` — only a login spends recency.
+- **Empty-body verify with target**: `POST /auth/challenge/verify`
+  with both `identifier`/`code` omitted accepts an optional `target` —
+  the slot handle from the probe entry the popover pick carries.
+  No `target` (or blank) takes the MOST RECENT slot — the same
+  recency the probe's array is sorted by, so the banner's first face
+  is the click's account (reviewer ruling 2026-10-24). A `target`
+  naming no presented slot (absent, stale, someone else's) is the
+  single `CHALLENGE_CODE_INVALID` — no slot oracle. An ADMIN's slot
+  still owes the totp leg; only the chosen credential bumps
+  `last_used_at`.
+- **Frontend matching contract**: the client matches its local account
+  cards against the probe array BY MASKED IDENTIFIER and echoes the
+  matched entry's `slot` as `target`; a card whose masked form matches
+  no array entry goes the code flow — "card in localStorage but not in
+  the array" and "card matched" unify as mask ∈ array.
+- **Honoring (password/code legs)** reads ANY presented slot value
+  that resolves to the target account — ownership, not the cookie's
+  name, is the proof (a renamed identifier since mint still honors).
+  `revoke_all` (`DELETE /me/devices`) drops every slot of the account
+  across all browsers, unchanged.
 
 ### System / framework codes
 
