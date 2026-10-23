@@ -372,11 +372,14 @@ async def unified_remembered_probe(
     remembered read (2026-10-20 audience widening): every role the
     empty-body verify leg can serve answers 200 {identifier_masked} —
     the account's masked phone when one is bound, its masked email
-    otherwise (invited teachers often hold only an email). The status
-    gate mirrors the verify leg: students ACTIVE/PENDING_APPROVAL,
-    staff ACTIVE. Every other shape (no cookie, unknown/expired value,
-    a status outside the gate, no identifier on the row) answers the
-    same empty 204 — existence is never an answer."""
+    otherwise (invited teachers often hold only an email). Staff rows
+    whose mailbox lives ONLY in the username (email_normalized NULL —
+    the e2e world's shape and the pre-normalization invite shape) fall
+    through to the username's mailbox. The status gate mirrors the
+    verify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every
+    other shape (no cookie, unknown/expired value, a status outside the
+    gate, no identifier on the row) answers the same empty 204 —
+    existence is never an answer."""
     cookie = request.cookies.get(DEVICE_COOKIE_NAME)
     if cookie is not None:
         user_id = await validate_device(db, cookie, clock=clock)
@@ -390,6 +393,14 @@ async def unified_remembered_probe(
                 if user.email_normalized:
                     return JSONResponse(
                         {"identifier_masked": mask_email(user.email_normalized)}
+                    )
+                if user.username and "@" in user.username:
+                    # The third arm (the frontend's 200-vs-204 finding):
+                    # the mailbox rides the username when the row never
+                    # normalized one — the verify leg already logs these
+                    # accounts in, so the banner must speak for them.
+                    return JSONResponse(
+                        {"identifier_masked": mask_email(user.username)}
                     )
     return Response(status_code=204)
 

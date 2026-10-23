@@ -213,11 +213,14 @@ export interface paths {
          *     remembered read (2026-10-20 audience widening): every role the
          *     empty-body verify leg can serve answers 200 {identifier_masked} —
          *     the account's masked phone when one is bound, its masked email
-         *     otherwise (invited teachers often hold only an email). The status
-         *     gate mirrors the verify leg: students ACTIVE/PENDING_APPROVAL,
-         *     staff ACTIVE. Every other shape (no cookie, unknown/expired value,
-         *     a status outside the gate, no identifier on the row) answers the
-         *     same empty 204 — existence is never an answer.
+         *     otherwise (invited teachers often hold only an email). Staff rows
+         *     whose mailbox lives ONLY in the username (email_normalized NULL —
+         *     the e2e world's shape and the pre-normalization invite shape) fall
+         *     through to the username's mailbox. The status gate mirrors the
+         *     verify leg: students ACTIVE/PENDING_APPROVAL, staff ACTIVE. Every
+         *     other shape (no cookie, unknown/expired value, a status outside the
+         *     gate, no identifier on the row) answers the same empty 204 —
+         *     existence is never an answer.
          */
         get: operations["unified_remembered_probe_api_v1_auth_challenge_remembered_get"];
         put?: never;
