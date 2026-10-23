@@ -87,6 +87,16 @@ test.describe("student task claim", () => {
   });
 
   test("claim allocates server-side and reveals only the user's assignment", async ({ page }) => {
+    // The dashboard baseline: however many claim rows the seeded student
+    // already carries (the list must grow by exactly one below). The
+    // section must SETTLE first — rows or the honest empty state — or
+    // the count races the data load and reads 0.
+    await page.goto(`${BASE_URL}/`);
+    await expect(
+      page.locator(".claim-rows .claim-row").first().or(page.getByText("还没有进行中的任务")),
+    ).toBeVisible({ timeout: 15_000 });
+    const claimsBefore = await page.locator(".claim-rows .claim-row").count();
+
     await page.goto(TASK_URL!);
 
     await page.getByRole("button", { name: "领取任务" }).click();
@@ -104,6 +114,12 @@ test.describe("student task claim", () => {
     // display). The panel carries TWO 截止 texts (deadline line + the
     // grace note), so the pin targets the deadline line itself.
     await expect(panel.locator(".deadline-line")).toBeVisible();
+
+    // The dashboard's 我的任务 list carries EVERY claim — the hero's
+    // repeat included. A lone claim's list used to render the empty
+    // state (owner feedback 2026-10-23: "我领取的任务没显示").
+    await page.goto(`${BASE_URL}/`);
+    await expect(page.locator(".claim-rows .claim-row")).toHaveCount(claimsBefore + 1);
   });
 
   test("a depleted task's detail says so up front — the CTA is disabled, not pressable-then-rejected (owner defect 2026-10-10)", async ({ page }) => {

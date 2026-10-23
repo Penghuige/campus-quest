@@ -55,9 +55,17 @@ function freshPhone(): string {
   return `139${digits}`;
 }
 
-/** Any never-registered numeric handle for the failure-copy tests. */
+/** Any never-registered numeric handle for the failure-copy tests.
+ *
+ * TWELVE digits behind a 6: libphonenumber parses MOST ten-digit CN
+ * numerals as valid numbers (9/7/6-led samples collide 10-60% of the
+ * time), and the backend's identifier resolver classifies a valid CN
+ * number as PHONE before it ever considers the student-number arm — a
+ * colliding handle flips the copy under test to 该手机号未注册. The
+ * 6-led 12-digit shape samples clean (0/300); the student-number band
+ * accepts 6-20 digits. */
 function freshStudentNumber(): string {
-  return `9${String(Date.now()).slice(-9)}`;
+  return `6${String(Date.now()).slice(-11)}`;
 }
 
 // Auth extension II (2026-10-16): the whitelist gate is GONE — the

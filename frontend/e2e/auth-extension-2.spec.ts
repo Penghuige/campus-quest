@@ -30,9 +30,16 @@ test.skip(
   "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
-/** A time-unique student number (registration has no whitelist now). */
+/** A time-unique student number (registration has no whitelist now).
+ *
+ * 6-led TWELVE digits: ten-digit CN numerals are mostly valid phone
+ * numbers to libphonenumber (7-led samples collide 60%), and the
+ * unified login resolver classifies a valid number as PHONE — the
+ * password walk later in this file fills this number as the identifier,
+ * so a colliding handle answers 该手机号未注册. 6-led 12-digit samples
+ * clean (0/300); the student-number band accepts 6-20 digits. */
 function freshStudentNumber(): string {
-  return `7${String(Date.now()).slice(-9)}`;
+  return `6${String(Date.now()).slice(-11)}`;
 }
 
 /** A time-unique phone (registered users are teardown-invisible). */
