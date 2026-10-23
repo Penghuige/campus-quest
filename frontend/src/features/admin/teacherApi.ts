@@ -105,6 +105,10 @@ export interface TaskCreateBody {
   notify_24h: boolean;
   notify_4h: boolean;
   notification_channels: string[];
+  /** The one-click create's count (spec 2026-10-23 §3.2): when present
+   * the server mints this many units (通用 platform) in the same
+   * transaction; absent keeps the draft's import path. */
+  target_count?: number;
 }
 
 // --- shared pagination options --------------------------------------------------------

@@ -93,10 +93,19 @@ export function findingItemView(
   if (finding.column !== null && finding.column !== undefined) {
     locationParts.push(`列「${finding.column}」`);
   }
+  // The strict family's missing-column verdict carries the next step
+  // IN THE LINE (spec 2026-10-23 §2.3): name the column, point at the
+  // task's own template. Anything else renders the server message.
+  const message =
+    finding.code === "MISSING_REQUIRED_COLUMN" &&
+    typeof finding.column === "string" &&
+    finding.column.length > 0
+      ? `缺少列 ${finding.column}，可下载本任务模板`
+      : finding.message;
   return {
     key: `${finding.code}-${index}`,
     label: FINDING_LABELS[finding.code] ?? null,
-    message: finding.message,
+    message,
     location: locationParts.length > 0 ? locationParts.join(" · ") : null,
     sample: finding.value ?? null,
   };

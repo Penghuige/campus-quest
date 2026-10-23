@@ -23,7 +23,7 @@ import { formatFileSize } from "@/features/submissions/api";
 import { rarityView } from "@/features/tasks/display";
 
 import { getTeacherTask, type TaskTransitionDto, type TeacherTaskDto } from "./teacherApi";
-import { taskEditable, taskStatusView } from "./teacherView";
+import { publishBlockedReason, taskEditable, taskStatusView } from "./teacherView";
 import { TaskLifecycleActions } from "./TaskLifecycleActions";
 import { EditTaskDialog } from "./EditTaskDialog";
 import { AssignmentImport } from "./AssignmentImport";
@@ -44,6 +44,12 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
   const [reloadSeed, setReloadSeed] = useState(0);
   const [statsSeed, setStatsSeed] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
+  // The statistics panel owns the counts; this is the last landed total
+  // tagged with its task id (a stale task's total must never decide the
+  // publish precondition on another task's page).
+  const [unitTotals, setUnitTotals] = useState<{ taskId: string; total: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     // The effect only STARTS the fetch (the island rule): refetches after
@@ -87,6 +93,11 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
   /** A confirmed import bumps the statistics reload seed (patterns §3 boundary). */
   const onImported = useCallback(() => {
     setStatsSeed((seed) => seed + 1);
+  }, []);
+
+  /** The panel's landed read feeds the first-publish precondition. */
+  const onTotalUnits = useCallback((statsTaskId: string, total: number) => {
+    setUnitTotals({ taskId: statsTaskId, total });
   }, []);
 
   if (state.kind === "loading") {
@@ -151,6 +162,10 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
             taskId={task.id}
             status={task.status}
             onTransitioned={onTransitioned}
+            publishBlockedReason={publishBlockedReason(
+              task.status,
+              unitTotals?.taskId === task.id ? unitTotals.total : null,
+            )}
           />
         </div>
       </div>
@@ -196,7 +211,7 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
             <dd className="fact-value mono">
               {task.submission_schema !== null
                 ? `v${task.submission_schema_version ?? "—"} ${JSON.stringify(task.submission_schema)}`
-                : "未配置（发布前必填）"}
+                : "未配置（宽松校验）"}
             </dd>
           </div>
           {task.published_at !== null ? (
@@ -230,7 +245,11 @@ export function TeacherTaskDetailView({ taskId }: { taskId: string }) {
         />
       ) : null}
 
-      <TaskStatisticsPanel taskId={task.id} reloadSeed={statsSeed} />
+      <TaskStatisticsPanel
+        taskId={task.id}
+        reloadSeed={statsSeed}
+        onTotalUnits={onTotalUnits}
+      />
       <AssignmentImport taskId={task.id} onImported={onImported} />
       <CollaboratorsPanel taskId={task.id} />
       <CommunityModeration taskId={task.id} />

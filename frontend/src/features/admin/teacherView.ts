@@ -141,6 +141,26 @@ export function lifecycleActions(status: string): LifecycleActionView[] {
   }
 }
 
+/** The zero-unit publish gate's copy (spec 2026-10-23 §2.2) — shared by
+ * the pre-check hint and the server verdict's mapping. */
+export const PUBLISH_UNITS_REQUIRED_HINT =
+  "请先设置完成人数（任务单元）再发布";
+
+/**
+ * The FIRST-publish precondition as an affordance (task brief P1.3): a
+ * DRAFT whose unit total is KNOWN to be zero cannot publish. A null
+ * total (statistics still loading or failed) never blocks — the server
+ * stays the verdict — and PAUSED→PUBLISHED is exempt (spec §2.2).
+ */
+export function publishBlockedReason(
+  status: string,
+  totalUnits: number | null,
+): string | null {
+  return status === "DRAFT" && totalUnits === 0
+    ? PUBLISH_UNITS_REQUIRED_HINT
+    : null;
+}
+
 // --- create-task form (client convenience mirror; server authoritative) ---------------
 
 export const TASK_RARITY_OPTIONS: readonly {
@@ -163,6 +183,18 @@ export const DEADLINE_MODE_OPTIONS: readonly {
 
 export type DeadlineModeKey = "FIXED" | "RELATIVE";
 
+/** The backend's `SUPPORTED_NOTIFICATION_CHANNELS` set (spec §25.1). */
+export type NotificationChannelKey = "SMS" | "EMAIL" | "IN_APP";
+
+export const TASK_NOTIFICATION_CHANNEL_OPTIONS: readonly {
+  value: NotificationChannelKey;
+  label: string;
+}[] = [
+  { value: "SMS", label: "短信" },
+  { value: "EMAIL", label: "邮件" },
+  { value: "IN_APP", label: "站内通知" },
+];
+
 /** The publish-validation fields the dialog collects (binding constraint). */
 export interface TaskFormValues {
   title: string;
@@ -176,24 +208,45 @@ export interface TaskFormValues {
   rarity: string;
   fileTypes: TaskFileTypeKey[];
   maxFileSizeMb: string;
-  /** Raw JSON textarea; draft-legal to leave empty (publish requires it). */
+  /** Raw JSON textarea; OPTIONAL since the 2026-10-23 simplification
+   * (an empty field = lenient validation; "使用模板" fills a starting
+   * point). */
   submissionSchema: string;
   submissionSchemaVersion: string;
+  /** 需要多少人完成 — the one-click create's required count (1-200);
+   * the server mints this many units on a 通用 platform in one
+   * transaction. */
+  targetCount: string;
+  /** The notification policy rides the advanced fold (spec 2026-10-23
+   * §3.2); §3.1 makes the one-click default OFF. */
+  notify24h: boolean;
+  notify4h: boolean;
+  notificationChannels: NotificationChannelKey[];
 }
 
 export const EMPTY_TASK_FORM: TaskFormValues = {
   title: "",
   description: "",
-  baseRewardPoints: "",
-  deadlineMode: "FIXED",
+  // The 2026-10-23 simplification defaults (spec §3.1): the advanced
+  // panel carries working values, so the owner path asks only the
+  // four business questions.
+  baseRewardPoints: "10",
+  deadlineMode: "RELATIVE",
   fixedDeadlineLocal: "",
-  durationMinutes: "",
-  claimCutoffMinutes: "240",
+  durationMinutes: "10080", // seven days
+  claimCutoffMinutes: "60",
   rarity: "NORMAL",
   fileTypes: ["CSV"],
-  maxFileSizeMb: "50",
+  maxFileSizeMb: "10",
   submissionSchema: "",
   submissionSchemaVersion: "",
+  targetCount: "",
+  // §3.1's 通知关闭: the one-click default sends no reminders; the
+  // teacher opts in through the advanced fold (channels pick the
+  // delivery surfaces).
+  notify24h: false,
+  notify4h: false,
+  notificationChannels: [],
 };
 
 // --- default submission schemas (defect #22, QA 2026-10-03) -------------------
@@ -241,12 +294,14 @@ export function shouldAutoFillSchema(current: string): boolean {
 export type TaskFormField =
   | "title"
   | "description"
+  | "targetCount"
   | "baseRewardPoints"
   | "deadline"
   | "claimCutoffMinutes"
   | "fileTypes"
   | "maxFileSizeMb"
-  | "submissionSchema";
+  | "submissionSchema"
+  | "notificationChannels";
 
 export type TaskFormErrors = Partial<Record<TaskFormField, string>>;
 
@@ -267,6 +322,7 @@ function parseIntOrNaN(value: string): number {
 export function validateTaskForm(
   values: TaskFormValues,
   nowMs: number,
+  requireTargetCount = true,
 ): TaskFormErrors {
   const errors: TaskFormErrors = {};
 
@@ -324,7 +380,54 @@ export function validateTaskForm(
     }
   }
 
+  // A reminder with no delivery surface would silently no-op (the
+  // scheduler plans per channel): the client mirror catches the
+  // contradiction; the server remains the authority.
+  if (
+    (values.notify24h || values.notify4h) &&
+    values.notificationChannels.length === 0
+  ) {
+    errors.notificationChannels = "开启提醒时请至少选择一个通知通道";
+  }
+
+  // The one-click create's count (spec §3.1/§3.2): required, 1-200 —
+  // the band the server enforces as target_count. The EDIT surface
+  // omits it (units already exist; the PATCH never carries it).
+  if (requireTargetCount) {
+    if (values.targetCount.trim().length === 0) {
+      errors.targetCount = "请填写需要多少人完成";
+    } else {
+      const count = parseIntOrNaN(values.targetCount);
+      if (Number.isNaN(count) || count < 1 || count > 200) {
+        errors.targetCount = "完成人数须为 1-200 的整数";
+      }
+    }
+  }
+
   return errors;
+}
+
+/** The one-click form shows the deadline in DAYS while the wire keeps
+ * minutes: "" stays "", garbage stays "" (validation reports it), and
+ * off-day minute values surface as their decimal-day rendering. */
+export function daysToMinutesInput(days: string): string {
+  const trimmed = days.trim();
+  if (trimmed.length === 0 || !/^\d+(\.\d+)?$/.test(trimmed)) {
+    return "";
+  }
+  return String(Math.round(Number.parseFloat(trimmed) * 1440));
+}
+
+export function minutesToDaysInput(minutes: string): string {
+  const trimmed = minutes.trim();
+  if (trimmed.length === 0 || !/^\d+$/.test(trimmed)) {
+    return "";
+  }
+  const value = Number.parseInt(trimmed, 10);
+  if (value % 1440 === 0) {
+    return String(value / 1440);
+  }
+  return (value / 1440).toFixed(2);
 }
 
 /** Parse the schema textarea into a non-empty JSON object, or null. */
@@ -393,9 +496,10 @@ export function taskFormToBody(
       submission_schema: schema,
       submission_schema_version:
         versionText.length > 0 ? parseIntOrNaN(versionText) : null,
-      notify_24h: true,
-      notify_4h: true,
-      notification_channels: ["SMS", "EMAIL", "IN_APP"],
+      notify_24h: values.notify24h,
+      notify_4h: values.notify4h,
+      notification_channels: [...values.notificationChannels],
+      target_count: parseIntOrNaN(values.targetCount),
     },
   };
 }
@@ -406,6 +510,7 @@ export function taskFormToBody(
 export type TaskFormFieldKey =
   | "title"
   | "description"
+  | "targetCount"
   | "baseRewardPoints"
   | "deadlineMode"
   | "fixedDeadlineLocal"
@@ -415,7 +520,10 @@ export type TaskFormFieldKey =
   | "fileTypes"
   | "maxFileSizeMb"
   | "submissionSchema"
-  | "submissionSchemaVersion";
+  | "submissionSchemaVersion"
+  | "notify24h"
+  | "notify4h"
+  | "notificationChannels";
 
 /**
  * The frozen set in form terms: the backend's `_CONTRACT_FIELDS` plus
@@ -486,6 +594,13 @@ export function taskFormFromTask(task: TeacherTaskDto): TaskFormValues {
       task.submission_schema !== null
         ? JSON.stringify(task.submission_schema)
         : "",
+    targetCount: "",
+    notify24h: task.notify_24h,
+    notify4h: task.notify_4h,
+    notificationChannels: task.notification_channels.filter(
+      (channel): channel is NotificationChannelKey =>
+        channel === "SMS" || channel === "EMAIL" || channel === "IN_APP",
+    ),
     submissionSchemaVersion:
       task.submission_schema_version !== null
         ? String(task.submission_schema_version)
@@ -527,7 +642,7 @@ export function taskFormToUpdateBody(
   task: TeacherTaskDto,
   nowMs: number,
 ): TaskFormToUpdateResult {
-  const allErrors = validateTaskForm(values, nowMs);
+  const allErrors = validateTaskForm(values, nowMs, false);
   const draft = task.status === "DRAFT";
   const body: TaskUpdateBody = {};
 
@@ -536,6 +651,19 @@ export function taskFormToUpdateBody(
   }
   if (values.description.trim() !== task.description) {
     body.description = values.description.trim();
+  }
+
+  // Notification policy is a PRESENTATION field (spec §25.1: the
+  // teacher may switch a channel on any task) — it rides whenever it
+  // differs, outside the DRAFT-only contract block.
+  if (values.notify24h !== task.notify_24h) {
+    body.notify_24h = values.notify24h;
+  }
+  if (values.notify4h !== task.notify_4h) {
+    body.notify_4h = values.notify4h;
+  }
+  if (!sameSet(values.notificationChannels, task.notification_channels)) {
+    body.notification_channels = [...values.notificationChannels];
   }
 
   if (draft) {
@@ -630,6 +758,12 @@ export function taskFormToUpdateBody(
     "submissionSchema",
     body.submission_schema !== undefined || schemaChanged,
   );
+  pick(
+    "notificationChannels",
+    body.notify_24h !== undefined ||
+      body.notify_4h !== undefined ||
+      body.notification_channels !== undefined,
+  );
 
   return {
     ok: Object.keys(errors).length === 0,
@@ -694,6 +828,15 @@ export function describeTaskMutationError(
 ): AuthErrorView {
   if (!isApiError(error)) {
     return { summary: COPY_NETWORK_FAIL, fieldErrors: {}, requestId: null };
+  }
+  // The publish gate's stable code renders the actionable line (spec
+  // 2026-10-23 §2.2) — never the server wrapper's bracketed message.
+  if (error.code === "TASK_UNITS_REQUIRED") {
+    return {
+      summary: PUBLISH_UNITS_REQUIRED_HINT,
+      fieldErrors: {},
+      requestId: error.requestId,
+    };
   }
   return {
     summary: error.message || fallback,

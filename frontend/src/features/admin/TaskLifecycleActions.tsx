@@ -33,6 +33,10 @@ export interface TaskLifecycleActionsProps {
   onTransitioned: (transition: TaskTransitionDto) => void;
   /** Render size: rows stay compact, the detail page uses standard buttons. */
   size?: "compact" | "default";
+  /** The first-publish precondition's line (spec 2026-10-23 §2.2): when
+   * set, the publish button renders disabled with this hint. Only the
+   * detail page knows a DRAFT's unit total; row lists pass nothing. */
+  publishBlockedReason?: string | null;
 }
 import { Button, type ButtonVariant } from "@/components/ui/button";
 
@@ -48,6 +52,7 @@ export function TaskLifecycleActions({
   status,
   onTransitioned,
   size = "default",
+  publishBlockedReason = null,
 }: TaskLifecycleActionsProps) {
   const actions = lifecycleActions(status);
   const [pending, setPending] = useState<string | null>(null);
@@ -71,30 +76,42 @@ export function TaskLifecycleActions({
   }
 
   return (
-    <div className={size === "compact" ? "row-actions" : "dialog-actions"}>
-      {actions.map((action) => (
-        <Button
-          key={action.verb}
-          variant={BUTTON_VARIANT[action.buttonClass]}
-          disabled={pending !== null}
-          aria-busy={pending === action.verb}
-          onClick={() => {
-            if (action.confirmRequired) {
-              setError(null);
-              setConfirming(action);
-            } else {
-              void run(action);
-            }
-          }}
-        >
-          {pending === action.verb ? (
-            <span className="spinner" aria-hidden="true" />
-          ) : null}
-          <span>{action.label}</span>
-        </Button>
-      ))}
-      {error !== null ? (
-        <SectionError error={error} onRetry={undefined} />
+    <div>
+      <div className={size === "compact" ? "row-actions" : "dialog-actions"}>
+        {actions.map((action) => {
+          // The first-publish precondition renders as a disabled verb
+          // plus its reason (the server still re-decides on the wire).
+          const blocked =
+            action.verb === "publish" ? publishBlockedReason : null;
+          return (
+            <Button
+              key={action.verb}
+              variant={BUTTON_VARIANT[action.buttonClass]}
+              disabled={pending !== null || blocked !== null}
+              title={blocked ?? undefined}
+              aria-busy={pending === action.verb}
+              onClick={() => {
+                if (action.confirmRequired) {
+                  setError(null);
+                  setConfirming(action);
+                } else {
+                  void run(action);
+                }
+              }}
+            >
+              {pending === action.verb ? (
+                <span className="spinner" aria-hidden="true" />
+              ) : null}
+              <span>{action.label}</span>
+            </Button>
+          );
+        })}
+        {error !== null ? (
+          <SectionError error={error} onRetry={undefined} />
+        ) : null}
+      </div>
+      {publishBlockedReason !== null ? (
+        <p className="field-hint">{publishBlockedReason}</p>
       ) : null}
       {confirming !== null ? (
         <LifecycleConfirmDialog
