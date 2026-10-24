@@ -27,7 +27,7 @@ import { SectionError } from "@/components/ui/sectionStates";
 import { BottomNav } from "@/components/shell/BottomNav";
 import { SwitchAccountButton } from "@/components/shell/SwitchAccountButton";
 import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
-import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
+import { BellIcon, GiftIcon, HomeIcon, InboxIcon, ReviewIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
 import { useSession } from "@/features/auth/session";
 import { NicknameNudge } from "@/features/auth/NicknameNudge";
 import { ApprovalPendingBanner } from "@/features/auth/ApprovalPendingBanner";
@@ -39,10 +39,15 @@ import { NotificationBell } from "@/features/notifications/NotificationBell";
 /* Plan 11 Task 3 — the frozen navigation contract (route-true
  * amendment): desktop sidebar primary + secondary, narrow bottom nav.
  * 我的任务 stays anchored on the dashboard (its only list surface);
- * 社区 stays anchored on task detail — V1 has neither route. */
+ * 社区 stays anchored on task detail — V1 has neither route.
+ * Innovation batch 1 adds the 创新创新创业 entry to the rail and the
+ * medium top nav (PR #43's INNOVATION_NAV position, ReviewIcon); the
+ * narrow BottomNav keeps its fixed 5 slots by owner decision — the
+ * campus shell's own top nav covers the narrow band there. */
 const SIDEBAR_PRIMARY = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  { href: "/innovation", label: "创新创业", icon: <ReviewIcon /> },
   { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
   { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
 ] as const;
@@ -62,6 +67,7 @@ const SIDEBAR_GROUPS = [
 const MEDIUM_NAV = [
   { href: "/", label: "首页" },
   { href: "/tasks", label: "任务" },
+  { href: "/innovation", label: "创新创业" },
   { href: "/rankings", label: "排行榜" },
   { href: "/rewards", label: "奖励" },
   { href: "/notifications", label: "通知" },
