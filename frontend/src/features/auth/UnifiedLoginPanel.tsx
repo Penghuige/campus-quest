@@ -283,7 +283,9 @@ export function UnifiedLoginPanel() {
         setRememberDevice={setRememberDevice}
         onTotpRequired={setPendingToken}
         onUnregistered={setRegisterToken}
-        onAuthenticated={recordLogin}
+        onAuthenticated={(role, nickname, deviceSlot) => {
+          recordLogin(role, nickname, undefined, deviceSlot);
+        }}
       />
     </>
   );
