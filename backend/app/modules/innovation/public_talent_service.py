@@ -106,7 +106,10 @@ class PublicTalentService:
                 .where(
                     viewer.c.id == actor.user_id,
                     viewer.c.role == actor.role,
-                    viewer.c.status == "ACTIVE",
+                    # Reading surface mirrors require_active_actor: a
+                    # PENDING_APPROVAL account browses (V1.1 2026-10-16
+                    # §2); the acting guards stay strict.
+                    viewer.c.status.in_(("ACTIVE", "PENDING_APPROVAL")),
                 )
                 .exists(),
             )
@@ -117,7 +120,8 @@ class PublicTalentService:
             select(USERS.c.id).where(
                 USERS.c.id == actor.user_id,
                 USERS.c.role == actor.role,
-                USERS.c.status == "ACTIVE",
+                # Same reading-surface rule as the visibility query above.
+                USERS.c.status.in_(("ACTIVE", "PENDING_APPROVAL")),
             )
         )
         if current is None:
