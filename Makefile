@@ -289,7 +289,12 @@ frontend-build:
 	cd frontend && npm run build
 
 playwright-e2e:
-	cd frontend && CQ_E2E=1 npm run test:e2e
+	# CQ_E2E_LOGIN_RATELIMIT: the same battery-scale relief CI's e2e job
+	# runs with (ci.yml sets it; the comment there claims the local
+	# battery matches). Without it the dense login specs — unified-login's
+	# brute-force chains included — blow the login family's IP bucket for
+	# the browsers that run later in the battery.
+	cd frontend && CQ_E2E=1 CQ_E2E_LOGIN_RATELIMIT=1 npm run test:e2e
 	# unexpected-skip guard (PR #6 final review P1; P1-visibility v2):
 	# watches EVERY e2e spec by default — a spec absent from the report
 	# or any skip not covered by e2e/noskip-exemptions.mjs (gate+reason
