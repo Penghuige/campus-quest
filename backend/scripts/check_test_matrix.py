@@ -14,7 +14,10 @@ Checks, per matrix file:
    path) whose FILE part exists on disk — backend suites (``tests/``)
    resolve against the backend root, frontend suites
    (``frontend/e2e/`` or ``frontend/src/``) against the repository
-   root;
+   root — and, when a ``::name`` part is present, that the name is
+   really defined in the file: backend citations as ``(async) def
+   name(``, frontend citations (Playwright titles may contain spaces)
+   as a substring of the file text;
 3. gap rows reference a gap id (G-\\d+) that the file's gap section
    also lists;
 4. mismatch rows appear in the file's mismatch section.
@@ -47,9 +50,11 @@ _RETIRED = ("已退役", "retired")
 
 # A covered row's citation: a backend suite path (tests/...) or a
 # frontend suite path (frontend/e2e/... or frontend/src/...), each with
-# an optional ::test suffix. The two roots differ (backend root vs
-# repository root), so _cite_file resolves the prefix.
-_TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::[\w.]+)?`")
+# an optional ::name suffix. The two roots differ (backend root vs
+# repository root), so _cite_file resolves the prefix. The name may
+# contain spaces (frontend Playwright titles), so it captures up to the
+# closing backtick rather than a word-char run.
+_TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::([^`]+))?`")
 _GAP_ID = re.compile(r"G-\d+")
 
 
@@ -59,6 +64,17 @@ def _cite_file(cited: str) -> Path:
     if cited.startswith("frontend/"):
         return _REPO_ROOT / cited
     return _BACKEND_ROOT / cited
+
+
+def _cite_name_ok(cited_file: Path, name: str) -> bool:
+    """A cited test name must be defined in the cited file: backend
+    suites define tests as ``(async) def name(`` (a dotted citation
+    pins its final segment); frontend suites embed the cited title as
+    a substring of the spec text."""
+    text = cited_file.read_text(encoding="utf-8", errors="replace")
+    if cited_file.suffix == ".py":
+        return f"def {name.split('.')[-1]}(" in text
+    return name in text
 
 
 def _status_of(cells: list[str]) -> str | None:
@@ -109,10 +125,16 @@ def check_matrix(path: Path) -> list[str]:
                     f"{path.name}: row {row} is covered but cites no test location"
                 )
                 continue
-            for cited_file in citations:
-                if not _cite_file(cited_file).exists():
+            for cited_file, cited_name in citations:
+                file_path = _cite_file(cited_file)
+                if not file_path.exists():
                     violations.append(
                         f"{path.name}: row {row} cites missing file {cited_file}"
+                    )
+                elif cited_name and not _cite_name_ok(file_path, cited_name):
+                    violations.append(
+                        f"{path.name}: row {row} cites missing test "
+                        f"{cited_name.strip()} in {cited_file}"
                     )
         elif status == "gap":
             ids = _GAP_ID.findall(" ".join(cells))

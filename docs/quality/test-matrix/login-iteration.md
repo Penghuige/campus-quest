@@ -8,10 +8,10 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 21 | LI1-LI21 |
+| 已覆盖 | 17 | LI1-LI12, LI17-LI21 |
 | 缺口（轻，列出不补） | 0 | — |
 | 不匹配 | 0 | — |
-| 流程行 | 0 | — |
+| 流程行 | 4 | LI13-LI16（legacy 端点族 2026-10-20 PR-3 退役；语义由 unified-login.md U3/U5/U8/U10/U11/U20 承接） |
 
 ## 矩阵
 
@@ -29,10 +29,10 @@
 | LI10 | ① bind 挑战 | POST /me/phone/bind（staff 专属）：E.164 归一+uq 预检在前（已占→409 PHONE_ALREADY_BOUND 且零 SMS）+PHONE_BIND 挑战（60s 冷却/5 次/HMAC） | `tests/integration/identity/test_staff_phone_bind_api.py::test_teacher_binds_phone_with_audit` / `::test_taken_phone_is_a_conflict_before_any_sms` / `::test_resend_inside_cooldown_is_429` | 已覆盖 |
 | LI11 | ① bind 确认 | confirm{challenge_id,code}→phone_e164 落库（FOR UPDATE 锁+IntegrityError→409）+审计 PHONE_BOUND（after_snapshot 仅掩码，G11） | `tests/integration/identity/test_staff_phone_bind_api.py::test_teacher_binds_phone_with_audit`（审计行断言） | 已覆盖 |
 | LI12 | ① bind 权限 | 学生 403（注册手机结构性，改绑走原 change 流）；service 层 backstop 同拒 | `tests/integration/identity/test_staff_phone_bind_api.py::test_student_is_refused_the_bind_surface` | 已覆盖 |
-| LI13 | ① staff 码防枚举 | POST /auth/staff/mobile-code/request 恒 202 {}：仅 phone 绑 ACTIVE TEACHER/ADMIN 才真发码；绑学生/未知号静默（冷却仍武装） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_student_bound_phone_is_202_but_silent` | 已覆盖 |
-| LI14 | ① TEACHER 一步 | verify{phone,code}→200 TokenPairResponse（挑战 HMAC/5 次/锁定 guard 同学生工艺） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_teacher_completes_in_one_step` / `::test_wrong_code_is_the_uniform_invalid` | 已覆盖 |
-| LI15 | ① ADMIN pending | ADMIN verify→200 {status:"totp_required", pending_token}（不透明 Redis 单用 30 分钟，F1 工艺）；totp 腿 {pending_token, code} 完成→TokenPairResponse | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_gets_pending_totp_leg_and_completes` | 已覆盖 |
-| LI16 | ① ADMIN 免腿 | ADMIN 空体 verify+有效 cq_staff_device→直答 tokens（cookie 替代码+TOTP 双腿，与②密码重登共享 30 天凭据） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_with_remembered_device_skips_totp_leg` | 已覆盖 |
+| LI13 | ① staff 码防枚举 | POST /auth/staff/mobile-code/request 恒 202 {}：仅 phone 绑 ACTIVE TEACHER/ADMIN 才真发码；绑学生/未知号静默（冷却仍武装） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_student_bound_phone_is_202_but_silent` | 流程行（**已被取代**：legacy staff 码流端点族随 PR-3 退役，本行语义在统一挑战族的承接见 `unified-login.md` U3/U5/U8/U10/U11/U20；checker 2026-10-25 名称级校验捕获本行陈旧引用后改判） |
+| LI14 | ① TEACHER 一步 | verify{phone,code}→200 TokenPairResponse（挑战 HMAC/5 次/锁定 guard 同学生工艺） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_teacher_completes_in_one_step` / `::test_wrong_code_is_the_uniform_invalid` | 流程行（**已被取代**：legacy staff 码流端点族随 PR-3 退役，本行语义在统一挑战族的承接见 `unified-login.md` U3/U5/U8/U10/U11/U20；checker 2026-10-25 名称级校验捕获本行陈旧引用后改判） |
+| LI15 | ① ADMIN pending | ADMIN verify→200 {status:"totp_required", pending_token}（不透明 Redis 单用 30 分钟，F1 工艺）；totp 腿 {pending_token, code} 完成→TokenPairResponse | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_gets_pending_totp_leg_and_completes` | 流程行（**已被取代**：legacy staff 码流端点族随 PR-3 退役，本行语义在统一挑战族的承接见 `unified-login.md` U3/U5/U8/U10/U11/U20；checker 2026-10-25 名称级校验捕获本行陈旧引用后改判） |
+| LI16 | ① ADMIN 免腿 | ADMIN 空体 verify+有效 cq_staff_device→直答 tokens（cookie 替代码+TOTP 双腿，与②密码重登共享 30 天凭据） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_admin_with_remembered_device_skips_totp_leg` | 流程行（**已被取代**：legacy staff 码流端点族随 PR-3 退役，本行语义在统一挑战族的承接见 `unified-login.md` U3/U5/U8/U10/U11/U20；checker 2026-10-25 名称级校验捕获本行陈旧引用后改判） |
 | LI17 | ① 挑战持久性 | request_staff_code 的 202 前挑战行必须跨连接可见（commit boundary；e2e 抓到的 #101 缺陷回归钉——savepoint 集成形态不可见） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_request_leaves_the_challenge_durable_across_sessions` | 已覆盖 |
 | LI18 | ① 冷却释放 | 发送失败（502）释放 Redis 冷却键：重试不被 429 拦 60s（学生腿同纪律） | `tests/integration/identity/test_staff_mobile_code_login_api.py::test_failed_send_releases_the_cooldown` | 已覆盖 |
 | LI19 | 入口·发码即入口 | request 对一切有效形态手机号真发码（去掉无账号静默；畸形号仍静默=形态校验域） | `tests/integration/identity/test_mobile_code_entry_registration.py::test_unregistered_phone_receives_a_code_and_an_entry_token`（发码断言） | 已覆盖 |
