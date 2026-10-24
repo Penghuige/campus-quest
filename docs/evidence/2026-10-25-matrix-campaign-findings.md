@@ -64,4 +64,10 @@ claims-lifecycle C3：Claim 状态转移集中化 pin 由 `tests/unit/tasks/test
 
 ## 五、teardown 审计重枚举（Task 5）
 
-（代理执行中，完成后回填。）
+审计对象 14 → **32 个 spec**（新增 18 件全部分级：12 已覆盖 / 2 无写面 / 5 涉缺口）。新增缺口 3 项（均推定，列出不补）：
+
+- **G-C**：经真实 UI 注册的学生（时间戳学号 6/8 前缀）不在 drift 扫描集——nickname-nudge / auth-extension-2 / inline-register / recent-logins 四 spec 每轮约 6 个 users 行 + sessions/remembered_devices 子残料跨 run 累积（spec 注释自认 "teardown-invisible orphan"）。
+- **G-D**：platform-registry.spec 经 Admin UI 建的 platforms 字典行无清理域（create→rename→disable 留停用态）。
+- **G-E**：`login_email_challenges`/`login_mobile_challenges` 未消费行（验证即删但 run 唯一标识永不复用且无 purge 任务），约 3 行/轮。
+
+原有缺口：G-A 写面已撤除（现行 spec 集无经真实表面新建 RewardItem 的链路；结构性弱点不变，2026-10-08 实证留档）；G-B avatar 对象不变。引擎描述漂移已修正（clean_world 实为 **32 表**非 22；台账 user∪operator 双扇入；补记 Redis 榜 zrem 与 broker 队列还原；新表族 remembered_devices）。历史前科表未动；新增行待 campus reviewer 复核（文档头已注明）。
