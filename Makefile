@@ -294,7 +294,12 @@ playwright-e2e:
 	# battery matches). Without it the dense login specs — unified-login's
 	# brute-force chains included — blow the login family's IP bucket for
 	# the browsers that run later in the battery.
-	cd frontend && CQ_E2E=1 CQ_E2E_LOGIN_RATELIMIT=1 npm run test:e2e
+	# CQ_E2E_API_URL: several specs' fallback for their direct API calls
+	# is 127.0.0.1:8100 — a port nothing serves; the battery's backend is
+	# the webServer on 8000. CI has been paused since 2026-10-07, so these
+	# specs only ever ran green under whatever env each author exported
+	# locally; pin the battery to its own webServer explicitly.
+	cd frontend && CQ_E2E=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e
 	# unexpected-skip guard (PR #6 final review P1; P1-visibility v2):
 	# watches EVERY e2e spec by default — a spec absent from the report
 	# or any skip not covered by e2e/noskip-exemptions.mjs (gate+reason
