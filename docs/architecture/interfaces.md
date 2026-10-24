@@ -430,11 +430,24 @@ anywhere, and its few holders simply re-login once.
   single `CHALLENGE_CODE_INVALID` — no slot oracle. An ADMIN's slot
   still owes the totp leg; only the chosen credential bumps
   `last_used_at`.
-- **Frontend matching contract**: the client matches its local account
-  cards against the probe array BY MASKED IDENTIFIER and echoes the
-  matched entry's `slot` as `target`; a card whose masked form matches
-  no array entry goes the code flow — "card in localStorage but not in
-  the array" and "card matched" unify as mask ∈ array.
+- **Frontend matching contract** (slot compute, 2026-10-24 — the
+  masked-identifier matching it replaces collided: 20990001 and
+  2099000001 both mask to `20****01` and grabbed the wrong slot): the
+  client matches its local account cards to the probe array by
+  computing the slot handle itself — `sha256(canonical)[:10]` over
+  the card's identifier, replicated under these EXACT normalization
+  rules (the backend names the slot by the user row's canonical
+  value):
+  - phone → E.164: `+86`/`0086`/bare-11-digit forms all fold to the
+    `+86`-prefixed form;
+  - email → lowercase;
+  - student number / username → as-is;
+  - the canonical chain: `phone_e164` → `email_normalized` → a
+    `username` that is a mailbox (the first present wins).
+  A card whose computed slot matches a probe entry's `slot` is the
+  matched card (its `slot` rides the verify `target`); a card matching
+  no entry goes the code flow — "card in localStorage but not in the
+  array" and "card matched" unify as slot ∈ array.
 - **Honoring (password/code legs)** reads ANY presented slot value
   that resolves to the target account — ownership, not the cookie's
   name, is the proof (a renamed identifier since mint still honors).
