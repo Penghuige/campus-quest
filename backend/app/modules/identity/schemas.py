@@ -18,12 +18,13 @@ Three deliberately different shapes (backend-engineering §9):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
@@ -134,7 +135,13 @@ class UnifiedChallengeTotpRequest(BaseModel):
 class UnifiedAuthOutcome(BaseModel):
     """The three-state verify/login answer: ``status`` is the only
     judgment member (the frontend contract); the payloads ride their
-    named optional fields."""
+    named optional fields.
+
+    ``device_slot`` rides ONLY a response that minted a remembered
+    credential this request (``remember_device`` honored) — and it is
+    OMITTED, not null, when it does not: the card keeps its previous
+    slot (a re-login without the checkbox must not break an older
+    still-live slot's matching)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -143,6 +150,16 @@ class UnifiedAuthOutcome(BaseModel):
     tokens: TokenPairResponse | None = None
     pending_token: str | None = None
     register_token: str | None = None
+    device_slot: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_slot(
+        self, handler: Callable[[Any], dict[str, Any]]
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if data.get("device_slot") is None:
+            data.pop("device_slot", None)
+        return data
 
 
 class RefreshRequest(BaseModel):

@@ -430,30 +430,24 @@ anywhere, and its few holders simply re-login once.
   single `CHALLENGE_CODE_INVALID` — no slot oracle. An ADMIN's slot
   still owes the totp leg; only the chosen credential bumps
   `last_used_at`.
-- **Frontend matching contract** (slot compute, 2026-10-24 — the
-  masked-identifier matching it replaces collided: 20990001 and
-  2099000001 both mask to `20****01` and grabbed the wrong slot): the
-  client matches its local account cards to the probe array by
-  computing the slot handle itself — `sha256(canonical)[:10]` over
-  the card's identifier. The canonical chain and each form's
-  normalization, EXACTLY as the backend resolves the user row:
-  - `phone_e164` first: every STUDENT row carries a bound phone (all
-    four creation paths bind one), so a student account's slot is
-    ALWAYS its phone's handle — `sha256(phone_e164)[:10]`, never the
-    student number's. Phone cards normalize to E.164 before hashing:
-    `+86`/`0086`/bare-11-digit forms all fold to the `+86`-prefixed
-    form.
-  - `email_normalized` second: email cards lowercase before hashing.
-  - a `username` that IS a mailbox (`@` in it — the legacy
-    pre-normalization staff rows) third: those cards hash as-is.
-  - A bare username (a student number) NEVER names a slot — the
-    student's slot is the phone's handle above, and a card keyed by
-    the student number CANNOT derive it: such a card either stores
-    the account's phone form instead, or goes the code flow.
-  A card whose computed slot matches a probe entry's `slot` is the
-  matched card (its `slot` rides the verify `target`); a card matching
-  no entry goes the code flow — "card in localStorage but not in the
-  array" and "card matched" unify as slot ∈ array.
+- **Frontend matching contract** (slot from the login response —
+  the reviewer's second ruling, 2026-10-24; the masked-identifier
+  matching it replaces collided: 20990001 and 2099000001 both mask to
+  `20****01`, and hash-replicating the canonical rules cannot serve a
+  card keyed by a student number): every login response that MINTS a
+  remembered credential carries `device_slot` — the account's slot
+  handle. The frontend stores it on the card at `recordLogin`; card
+  matching is then `card.slot ∈ probe slots` — zero hash replication,
+  zero mask dependence (masks are display-only), zero collisions. The
+  field is OMITTED (not null) when the request minted nothing: the
+  card keeps its previous slot — a re-login without the checkbox
+  never breaks an older still-live slot. The mint surfaces: the
+  password legs' remember/honoring craft, the code legs'
+  `remember_device`, the totp completion; the student password leg
+  and the empty-body cookie leg mint nothing and answer no slot; the
+  mid-login `totp_required` states carry none either. Cards written
+  before this field existed have no slot — one-time degradation to
+  the code flow.
 - **Honoring (password/code legs)** reads ANY presented slot value
   that resolves to the target account — ownership, not the cookie's
   name, is the proof (a renamed identifier since mint still honors).
