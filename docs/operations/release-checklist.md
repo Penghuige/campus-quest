@@ -72,6 +72,14 @@ docker compose -f infra/docker-compose.yml up -d
 make release-gate
 ```
 
+Since innovation batch 1 the gate also bootstraps the ClamAV scanner
+(`release-evidence-scanner`, the pinned `infra/docker-compose.clamav.yml`
+under its own compose project `campusquest-evidence`, bound to
+127.0.0.1:3310): talent file completion fails closed without it, and the
+integration suite runs with `CQ_EVIDENCE_SCAN_SMOKE=1` to prove the real
+scan path. Production deployments must run the same pinned compose file
+(or an equivalent private clamd) before enabling talent uploads.
+
 The gate self-bootstraps its test database: the chain's FIRST step
 (`release-test-db`) runs an idempotent `alembic upgrade head` against
 `campusquest_test` (the TEST_STACK_ENV default), so a brand-new compose

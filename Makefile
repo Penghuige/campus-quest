@@ -193,7 +193,7 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
 # appear in this combined run, so every coverage-measuring leg uses it.
 COV_APPEND_FLAGS = --cov=app --cov-branch --cov-report= --cov-append
 BACKEND_UNIT_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit
-BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration
+BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 CQ_EVIDENCE_SCAN_SMOKE=1 uv run pytest tests/integration -m integration
 BACKEND_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers
 BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit tests/workers
 
@@ -297,11 +297,26 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: arch-lint coverage-clean release-test-db \
+# --- Innovation batch 1: the ClamAV scanner stack -----------------------------
+#
+# Separate project name (campusquest-evidence) so the scanner lives beside
+# the compose stack without inheriting its networks or credentials; the
+# talent file-completion path fails closed when this service is down, so
+# the release gate requires it up before the integration suite runs.
+release-evidence-scanner:
+	docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
+
+release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner \
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build playwright-e2e \
-              visual-regression pip-audit npm-audit coverage-ratchet
+              visual-regression talent-visual pip-audit npm-audit coverage-ratchet
+
+# The talent visual battery runs in its own pinned-font Linux stage with a
+# disposable real publication world (noskip-exempted from the standard
+# battery; see frontend/e2e/noskip-exemptions.mjs for the reason string).
+talent-visual:
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npx playwright test innovation-talents-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #
