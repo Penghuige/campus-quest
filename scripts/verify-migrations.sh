@@ -85,6 +85,9 @@ KEY_TABLES=(
   audit_logs
   system_settings
   reward_review_grants
+  ie_talent_profiles
+  ie_talent_revisions
+  ie_talent_files
 )
 
 # Unique indexes whose absence would silently reopen a §31 race.
@@ -99,6 +102,11 @@ KEY_UNIQUE_INDEXES=(
   uq_comment_reactions_comment_id_user_id_emoji
   uq_task_ratings_task_id_user_id
   uq_notification_deliveries_event_key_user_id_channel
+  # Innovation batch 1 (talent): one profile per owner, idempotent
+  # command receipts, one storage object per file record.
+  uq_ie_talent_owner
+  uq_ie_talent_request
+  uq_ie_talent_file_object
 )
 
 psql_admin() {
