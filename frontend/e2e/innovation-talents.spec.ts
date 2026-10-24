@@ -4,11 +4,16 @@ import { TALENT_OWN, editor, result, prepareTalent, fillTalent, saveTalent, publ
 
 test.skip(process.env.CQ_E2E!=='1','CQ_E2E=1 with an owned real database');
 
+// The second seeded student's user id rides CQ_E2E_AUTHOR_SECRETS' fifth
+// field (browser_world exports nickname,username,phone,email,user_id) —
+// the upstream branch leaned on an unset CQ_E2E_AUTHOR_STUDENT_ID.
+const AUTHOR_STUDENT_ID=(process.env.CQ_E2E_AUTHOR_SECRETS ?? '').split(',')[4];
+
 test('R4.1: public materials filter follows publication and withdrawal without certifying talent',async({page})=>{
   test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page,'模拟材料同学');await saveTalent(page);await publishTalent(page);
   const selected=await uploadTalent(page,'模拟材料标志.png');await selected.check();await saveTalent(page);
   const record=(await ownRecord(page))!;
-  const publicHeaders={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  const publicHeaders={Authorization:`Bearer ${mintToken(AUTHOR_STUDENT_ID!)}`};
   const privateList=await page.request.get(`${API_URL}/ie/talents?q=模拟材料同学&has_public_materials=true`,{headers:publicHeaders});
   expect(privateList.status()).toBe(200);expect((await privateList.json()).total).toBe(0);
   await page.goto(`${BASE_URL}/innovation/talents?q=模拟材料同学&has_public_materials=false`);
@@ -108,7 +113,7 @@ test('R4: selected_ready_file_and_contact_are_visible_only_after_confirmation',a
   test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page);await saveTalent(page);
   const selected=await uploadTalent(page);await expect(selected).not.toBeChecked();await selected.check();
   await editor(page).getByLabel('授权微信',{exact:true}).check();await editor(page).getByLabel('微信',{exact:true}).fill('demo_r4_talent');await saveTalent(page);
-  const record=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  const record=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(AUTHOR_STUDENT_ID!)}`};
   expect((await page.request.get(`${API_URL}/ie/talents/${record.id}`,{headers})).status()).toBe(404);
   await publishTalent(page);
   const context=await browser.newContext({ignoreHTTPSErrors:true});const viewer=await context.newPage();
@@ -133,7 +138,7 @@ test('R4: selected_ready_file_and_contact_are_visible_only_after_confirmation',a
 
 test('R4: close_denies_old_profile_contact_and_file_links',async({page})=>{
   test.setTimeout(240_000);await prepareTalent(page);await fillTalent(page);await saveTalent(page);await(await uploadTalent(page)).check();await editor(page).getByLabel('授权微信',{exact:true}).check();await editor(page).getByLabel('微信',{exact:true}).fill('demo_r4_close');await saveTalent(page);await publishTalent(page);
-  const old=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(process.env.CQ_E2E_AUTHOR_STUDENT_ID!)}`};
+  const old=(await ownRecord(page))!;const headers={Authorization:`Bearer ${mintToken(AUTHOR_STUDENT_ID!)}`};
   const viewer=await page.context().newPage();try{
     await viewer.goto(`${BASE_URL}/innovation/talents/${old.id}`);await expect(viewer.getByRole('article')).toBeVisible();
     await editor(page).getByRole('button',{name:'关闭校内展示',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'确认关闭',exact:true}).click();await expect(result(page)).toContainText('已关闭');
@@ -187,8 +192,13 @@ test('R4: active_staff_can_browse_but_not_edit_student_talent',async({page})=>{
   await staffLogin(page,process.env.CQ_E2E_STAFF!,process.env.CQ_E2E_STAFF_TOTP_SECRET!);
   await page.goto(`${BASE_URL}/innovation/talents`);await expect(page.getByRole('form',{name:'人才筛选'})).toBeVisible();
   await expect(page.getByRole('link',{name:'建立或管理我的人才档案',exact:true})).toHaveCount(0);
+  // Main's role-blind (student) group routes a staff session away from
+  // the profile pages to the staff workspace: the editor being absent
+  // (count 0 above) plus the redirect off /profile/talent-profile IS
+  // the not-editable guarantee here — the upstream's generic 学生|教师
+  // wording assumed the fork's pre-redirect shell.
   await page.goto(`${BASE_URL}/profile/talent-profile`);await expect(page.getByRole('region',{name:'本人人才档案编辑器'})).toHaveCount(0);
-  await expect(page.getByRole('main')).toContainText(/学生|教师/);
+  await expect(page).not.toHaveURL(/talent-profile/);
 });
 
 test('R4: scan_retry_and_replace_five_files',async({page})=>{
