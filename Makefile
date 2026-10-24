@@ -339,4 +339,9 @@ release-gate: arch-lint coverage-clean release-test-db \
 # when 3000/8000 are occupied — same rule as playwright-e2e).
 .PHONY: visual-regression
 visual-regression:
-	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npm run test:e2e:visual
+	# Same relief+API_URL pair as playwright-e2e — the gate's legs share
+	# one stack, so the battery's login volume must not rate-limit the
+	# visual stage out of its own logins.
+	# (Same fix as talent-batch1's Makefile — keep the two in sync until
+	# both merge; drop this note on resolution.)
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e:visual
