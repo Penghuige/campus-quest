@@ -569,7 +569,11 @@ async def test_direct_route_rbac_matrix(
                     "GET",
                     "/api/v1/admin/whitelist",
                     None,
-                    {"admin": 200, "teacher": 403, "student": 403},
+                    # The whitelist era ended (open enrollment, V1.1
+                    # auth-extension II): the admin surface is retired
+                    # and answers 404 for every role — pinned here the
+                    # same way test_approval_status_machine pins it.
+                    {"admin": 404, "teacher": 404, "student": 404},
                 ),
                 (
                     "POST",

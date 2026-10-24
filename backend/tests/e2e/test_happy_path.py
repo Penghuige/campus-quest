@@ -259,15 +259,31 @@ async def test_full_happy_path_chain(
                 },
             )
             assert registered.status_code == 201, registered.text
-            student_id = uuid.UUID(registered.json()["id"])
+            # RegisterResponse (V1.1 login iteration item 4): {user, tokens};
+            # the account lands PENDING_APPROVAL — the admin's approve
+            # unlocks the acting surfaces (approval gate: browsing stays
+            # open, claims answer 403 APPROVAL_PENDING until then).
+            student_id = uuid.UUID(registered.json()["user"]["id"])
+            approved = await client.post(
+                f"/api/v1/admin/users/{student_id}/approve",
+                headers=admin_headers,
+            )
+            assert approved.status_code == 200, approved.text
+            assert approved.json()["status"] == "ACTIVE"
 
             logged_in = await client.post(
                 "/api/v1/auth/login",
-                json={"username": student_number, "password": _PASSWORD},
+                # The unified identifier form (2026-10-19 spec §3.2;
+                # PR-3 retired the legacy {username} shape).
+                json={"identifier": student_number, "password": _PASSWORD},
             )
             assert logged_in.status_code == 200, logged_in.text
+            # Unified login answers the discriminated union: a student
+            # password login lands "authenticated" with tokens nested
+            # (unified-login §3.2; the flat top-level shape is retired).
+            assert logged_in.json()["status"] == "authenticated"
             student_headers = {
-                "Authorization": f"Bearer {logged_in.json()['access_token']}"
+                "Authorization": f"Bearer {logged_in.json()['tokens']['access_token']}"
             }
 
             # --- teacher publishes Task + Assignments (real mgmt API) -----
