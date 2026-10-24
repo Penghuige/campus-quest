@@ -27,6 +27,18 @@
  * 切换账号仍要验证码 bug) → switch back to A through the menu → A's
  * card carries 免登录 → the targeted slot verify lands the teacher
  * cockpit, zero code requests.
+ * Chain E (the mask collision, slot-matching contract 2026-10-24):
+ * the world's TWO teachers mask alike (`e***@school.edu` ×2) — each
+ * remembers, then the switch walks BOTH ways and each pick lands ITS
+ * OWN account (pinned by the topbar nickname). The retired mask
+ * matching routed by first-hit and landed the wrong one; the card's
+ * minted device_slot cannot collide.
+ * Chain F (the student-number gain): a student logs in BY NUMBER with
+ * remember — the minted slot lands on the number card (nothing
+ * derivable from the number itself) — and that card direct-enters.
+ * Chain G (mint-only retention): an account with a slot re-logs in
+ * WITHOUT the checkbox — the response omits device_slot, the card
+ * keeps its older slot, and the pick still direct-enters.
  */
 import { expect, test } from "@playwright/test";
 
@@ -36,9 +48,10 @@ const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const RUN = process.env.CQ_E2E_RUN;
 const STAFF = process.env.CQ_E2E_STAFF;
+const STAFF2 = process.env.CQ_E2E_STAFF2;
 
 test.skip(
-  !(E2E_ENABLED && RUN && STAFF),
+  !(E2E_ENABLED && RUN && STAFF && STAFF2),
   "set CQ_E2E=1 (and the CQ_E2E_* vars) to run this suite.",
 );
 
@@ -204,4 +217,176 @@ test("multi-slot: A remembers, B remembers, switching back to A needs no code (t
   await teacherCard.getByRole("button", { name: `切换到 ${teacherMask}` }).click();
   await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
   expect(requestCount, "switching back to a remembered account must not request a code").toBe(0);
+});
+
+test("mask collision: two same-mask remembered accounts each land THEIR account", async ({
+  page,
+}) => {
+  const [emailA, passwordA] = STAFF!.split(":");
+  const [emailB, passwordB] = STAFF2!.split(":");
+  // Both staff identifiers mask alike: first char + *** + the same
+  // domain — the collision the retired mask matching routed wrong.
+  const sharedMask = `${emailA[0]}***@${emailA.split("@")[1]}`;
+
+  async function rememberedStaffLogin(email: string, password: string) {
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("账号", { exact: true }).fill(email);
+    await page.getByLabel("密码").fill(password);
+    await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+  }
+
+  // Both accounts remember; the nicknames are the landing verdict.
+  await rememberedStaffLogin(emailA, passwordA);
+  const nickA = await page.locator(".app-user-name").innerText();
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+  await rememberedStaffLogin(emailB, passwordB);
+  const nickB = await page.locator(".app-user-name").innerText();
+  expect(nickA, "the two teachers must be distinguishable").not.toEqual(nickB);
+
+  // From B's session the menu offers A's card (the head B is
+  // excluded): same MASK as B's own row would show, distinguishable
+  // only by the nickname — and carrying the 免登录 chip (the card's
+  // own device_slot is in the probe; the mask plays no part).
+  await page.getByRole("button", { name: "切换账号" }).click();
+  const menu = page.locator(".switch-menu");
+  await expect(menu).toBeVisible();
+  const cardA = menu.locator(".login-recent-card", { hasText: nickA });
+  await expect(cardA).toBeVisible();
+  await expect(cardA.getByText("免登录")).toBeVisible();
+  await expect(cardA.getByText(sharedMask)).toBeVisible();
+
+  let requestCount = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/auth/challenge/request")) {
+      requestCount += 1;
+    }
+  });
+
+  // Pick A → A's OWN slot → A's cockpit under A's nickname.
+  await cardA.getByRole("button", { name: /切换到/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
+  await expect(page.locator(".app-user-name")).toHaveText(nickA);
+  expect(requestCount, "the collision pick must not request a code").toBe(0);
+
+  // And the same-shape hop back to B — both ways land their own.
+  await page.getByRole("button", { name: "切换账号" }).click();
+  const cardB = page.locator(".switch-menu .login-recent-card", { hasText: nickB });
+  await expect(cardB).toBeVisible();
+  await cardB.getByRole("button", { name: /切换到/ }).click();
+  await expect(page.locator(".app-user-name")).toHaveText(nickB, { timeout: 10_000 });
+  expect(requestCount, "the return pick must not request a code either").toBe(0);
+});
+
+test("a student-number card direct-enters on its minted slot (the gain)", async ({
+  page,
+}) => {
+  const [email, staffPassword] = STAFF!.split(":");
+  const account = parseSeededAccount(process.env.CQ_E2E_STUDENT, "CQ_E2E_STUDENT");
+  const studentMask = `${account.username.slice(0, 2)}****${account.username.slice(-2)}`;
+
+  // Teacher A remembers; the staff topbar owns a plain 退出登录.
+  await page.goto(`${BASE_URL}/login`);
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("账号", { exact: true }).fill(email);
+  await page.getByLabel("密码").fill(staffPassword);
+  await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+
+  // Student B logs in BY STUDENT NUMBER with remember — the minted
+  // slot lands on the student-number card (the gain: a card whose
+  // typed identifier could never compute its phone-keyed slot).
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("账号", { exact: true }).fill(account.username);
+  await page.getByLabel("密码").fill(account.password);
+  await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`));
+
+  let requestCount = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/auth/challenge/request")) {
+      requestCount += 1;
+    }
+  });
+
+  // B's menu offers A's card; picking it lands the teacher cockpit
+  // (zero code) — and puts the session where B's card is visible.
+  await page.getByRole("button", { name: "切换账号" }).click();
+  let menu = page.locator(".switch-menu");
+  await expect(menu).toBeVisible();
+  const teacherCard = menu.locator(".login-recent-card", { hasText: "@school.edu" });
+  await expect(teacherCard.getByText("免登录")).toBeVisible();
+  await teacherCard.getByRole("button", { name: /切换到/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
+
+  // Now the student-number card itself: chip on, direct entry into
+  // the student dashboard, zero code requests — the slot the login
+  // response minted, not anything derivable from the number.
+  await page.getByRole("button", { name: "切换账号" }).click();
+  menu = page.locator(".switch-menu");
+  await expect(menu).toBeVisible();
+  const studentCard = menu.locator(".login-recent-card", { hasText: studentMask });
+  await expect(studentCard).toBeVisible();
+  await expect(studentCard.getByText("免登录")).toBeVisible();
+  await studentCard.getByRole("button", { name: /切换到/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/$`), { timeout: 10_000 });
+  expect(requestCount, "neither pick may request a code").toBe(0);
+});
+
+test("an unminted re-login keeps the older slot — the card still direct-enters", async ({
+  page,
+}) => {
+  const [emailA, passwordA] = STAFF!.split(":");
+  const [emailB, passwordB] = STAFF2!.split(":");
+
+  async function staffLogin(email: string, password: string, remember: boolean) {
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("账号", { exact: true }).fill(email);
+    await page.getByLabel("密码").fill(password);
+    if (remember) {
+      await page.getByRole("checkbox", { name: /记住此设备 30 天/ }).check();
+    }
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+    await page.getByRole("button", { name: "退出登录" }).click();
+    await expect(page).toHaveURL(new RegExp(`${BASE_URL}/login`));
+  }
+
+  // A mints (remember), B mints (remember)…
+  await staffLogin(emailA, passwordA, true);
+  await staffLogin(emailB, passwordB, true);
+  // …then A re-logs in WITHOUT the checkbox: the response omits
+  // device_slot, and A's card must KEEP its older, still-live slot
+  // (the mint-only retention rule — revoking is revoke_all's job).
+  await staffLogin(emailA, passwordA, false);
+
+  // B takes the session (unminted login; the helper left /login open).
+  await page.getByRole("button", { name: "使用密码登录" }).click();
+  await page.getByLabel("账号", { exact: true }).fill(emailB);
+  await page.getByLabel("密码").fill(passwordB);
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`));
+
+  let requestCount = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/auth/challenge/request")) {
+      requestCount += 1;
+    }
+  });
+  await page.getByRole("button", { name: "切换账号" }).click();
+  const menu = page.locator(".switch-menu");
+  await expect(menu).toBeVisible();
+  const cardA = menu.locator(".login-recent-card").first();
+  await expect(cardA.getByText("免登录")).toBeVisible();
+  await cardA.getByRole("button", { name: /切换到/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${BASE_URL}/teacher/`), { timeout: 10_000 });
+  expect(requestCount, "the retained slot's pick must not request a code").toBe(0);
 });

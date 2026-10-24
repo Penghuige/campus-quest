@@ -28,6 +28,12 @@ export interface RecentLoginEntry {
   nickname: string;
   /** Epoch ms — the recency sort key. */
   lastUsedAt: number;
+  /** The account's remembered-slot handle (the slot-matching
+   * contract, 2026-10-24): written when a login MINTS a credential,
+   * RETAINED when a later login mints nothing (the older slot is
+   * still live until revoke_all). Absent on legacy cards — they
+   * degrade to the code flow. */
+  device_slot?: string;
 }
 
 /** The G11 mask: a CN mobile keeps its last four; an email its first
@@ -78,11 +84,16 @@ function isValidEntry(value: unknown): value is RecentLoginEntry {
     typeof entry.masked === "string" &&
     (entry.role === "STUDENT" || entry.role === "TEACHER" || entry.role === "ADMIN") &&
     typeof entry.nickname === "string" &&
-    typeof entry.lastUsedAt === "number"
+    typeof entry.lastUsedAt === "number" &&
+    // The slot rides only as a string when present (mint-only).
+    (entry.device_slot === undefined || typeof entry.device_slot === "string")
   );
 }
 
-/** Upsert by identifier (bump to the head), cap at five, newest-first. */
+/** Upsert by identifier (bump to the head), cap at five, newest-first.
+ * The mint-only retention rule: an entry arriving WITHOUT a slot keeps
+ * the previous row's — an unminted re-login (the checkbox unticked)
+ * never breaks the older, still-live credential. */
 export function recordRecentLogin(entry: RecentLoginEntry): void {
   const jar = storage();
   if (jar === null) {
@@ -90,12 +101,19 @@ export function recordRecentLogin(entry: RecentLoginEntry): void {
   }
   let rows: RecentLoginEntry[];
   try {
-    rows = listRecentLogins().filter((row) => row.identifier !== entry.identifier);
+    rows = listRecentLogins();
   } catch {
     return;
   }
-  rows.unshift(entry);
-  rows = rows.slice(0, MAX_ENTRIES);
+  const previous = rows.find((row) => row.identifier === entry.identifier);
+  const landed =
+    entry.device_slot === undefined && previous?.device_slot !== undefined
+      ? { ...entry, device_slot: previous.device_slot }
+      : entry;
+  rows = [landed, ...rows.filter((row) => row.identifier !== entry.identifier)].slice(
+    0,
+    MAX_ENTRIES,
+  );
   try {
     jar.setItem(STORAGE_KEY, JSON.stringify(rows));
   } catch {
