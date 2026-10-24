@@ -325,8 +325,11 @@ release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner 
 # The talent visual battery runs in its own pinned-font Linux stage with a
 # disposable real publication world (noskip-exempted from the standard
 # battery; see frontend/e2e/noskip-exemptions.mjs for the reason string).
+# The relief+API_URL pair matches playwright-e2e: the gate runs its legs
+# against ONE shared stack, so the login buckets the battery filled must
+# not bleed into the visual stage's logins (CI isolates jobs instead).
 talent-visual:
-	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npx playwright test innovation-talents-visual.spec.ts --project=chromium
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #
@@ -340,4 +343,7 @@ talent-visual:
 # when 3000/8000 are occupied — same rule as playwright-e2e).
 .PHONY: visual-regression
 visual-regression:
-	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 npm run test:e2e:visual
+	# Same relief+API_URL pair as playwright-e2e — the gate's legs share
+	# one stack, so the battery's login volume must not rate-limit the
+	# visual stage out of its own logins.
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e:visual
