@@ -11,7 +11,7 @@
 | 状态 | 数量 | 明细 |
 |---|---|---|
 | 已覆盖 | 30 | C1-C2、C4-C31（C11/C30 为行为级覆盖，行内注记） |
-| 缺口（轻，列出不补） | 1 | G-3（Claim 状态转移表无集中化 pin 测试） |
+| 缺口（轻，列出不补） | 0 | —（G-3 已于 2026-10-25 属性测试批补齐，见 C3） |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | C32（G13/G15 元规则——本矩阵即机制） |
 
@@ -21,7 +21,7 @@
 |---|---|---|---|---|
 | C1 | §7 唯一约束 + §31.3 | UNIQUE(task_id, platform, keyword) 为 DB 约束；并发导入由 UNIQUE 兜底 | `tests/integration/tasks/test_task_constraints.py::test_duplicate_assignment_platform_keyword_rejected` + `tests/integration/tasks/test_assignment_import.py::test_concurrent_confirm_exactly_one_wins`（UNIQUE 兜底）+ `tests/integration/tasks/test_task_constraints.py::test_same_keyword_other_platform_or_task_allowed`（比较规则边界） | 已覆盖 |
 | C2 | §7.1 六步流程 + 八类检测 | 预览→确认→单事务写入；逐行错误呈现；预览令牌单次；权限 | `tests/integration/tasks/test_assignment_import.py::test_preview_then_confirm_lands_rows` / `test_preview_flags_db_duplicates_and_confirms_only_valid` / `test_preview_token_single_use` / `test_confirm_unknown_token_not_found` / `test_import_permissions` / `test_concurrent_confirm_reversed_row_orders_no_deadlock` + `tests/integration/tasks/test_task_api.py::test_import_preview_reports_row_errors` | 已覆盖 |
-| C3 | §8.1 末句 | Claim 状态转换由服务层集中定义 | Task 侧有 transition-table parity（`tests/unit/tasks/test_task_lifecycle.py::test_transition_table_matches_spec_exactly`），**Claim 状态无对应集中化 pin 测试**（行为面由 C20-C24/C31 全流程测试间接承担） | **缺口 G-3（轻，列出不补）** |
+| C3 | §8.1 末句 | Claim 状态转换由服务层集中定义 | Task 侧 transition-table parity（`tests/unit/tasks/test_task_lifecycle.py::test_transition_table_matches_spec_exactly`）；Claim 侧集中化 pin + Hypothesis 性质套件（2026-10-25 补 G-3）：spec 抄录 oracle（§8.1/§11.1/§11.4/§8.5/§14/§26 八边）+ 终态无出边/全可达/确定性性质 + 生产位点 parity（转移仅存于五个归属 service、终态转移单一归属）`tests/unit/tasks/test_claim_lifecycle_property.py` | 已覆盖 |
 | C4 | §7 末段 | ABANDONED/EXPIRED 是 Claim 终态；Assignment 回 AVAILABLE；RETIRED/COMPLETED 不参与分配 | `tests/integration/tasks/test_abandon.py::test_abandoned_assignment_reallocated_but_never_back_to_abandoner`（回 AVAILABLE 且改判）+ `tests/integration/tasks/test_task_constraints.py::test_completed_assignment_not_returned_by_available_query` + `test_task_constraints.py::test_terminal_claims_free_both_partial_indexes` | 已覆盖 |
 | C5 | §8.2 MUST 七查 | 领取前七查（ACTIVE/PUBLISHED/全局上限/同 Task 冲突/AVAILABLE 存在/cutoff/额外限制） | `tests/unit/tasks/test_claim_eligibility.py`（单元全查，含 PAUSED 参数）+ `tests/integration/tasks/test_claim_concurrency.py::test_eligibility_failures_map_to_business_codes` | 已覆盖 |
 | C6 | §8.2 并行限制 | "需行动"上限 3；CLAIMED+REVISION_REQUIRED 计入；VALIDATING/UNDER_REVIEW 不占 | `tests/integration/tasks/test_claim_quota.py::test_student_at_quota_is_refused_a_fourth_actionable_claim` + `test_claim_quota.py::test_transition_to_under_review_frees_the_quota_slot`（审核中不占）+ `tests/integration/tasks/test_abandon.py::test_revision_required_claim_is_abandonable`（REVISION_REQUIRED 计入需行动的侧面） | 已覆盖 |
@@ -54,7 +54,7 @@
 
 ## 缺口明细（列出不补）
 
-- **G-3**（C3）：Claim 状态机无 transition-table parity 测试——Task 侧已有该模式（`test_task_lifecycle.py::test_transition_table_matches_spec_exactly` 把 spec 转移表逐对 pin 住），Claim 侧（CLAIMED→VALIDATING→UNDER_REVIEW→REVISION_REQUIRED→COMPLETED/ABANDONED/EXPIRED 七态）没有等价集中化断言；当前由全流程行为测试间接承担。按纪律列出，不动手补。
+- **G-3**（C3）：~~已列出不补~~ 2026-10-25 由属性测试批补齐（`tests/unit/tasks/test_claim_lifecycle_property.py`，见 C3 行）；留档原判：轻缺口，行为面此前由全流程测试间接承担。
 
 ## 不匹配明细
 
