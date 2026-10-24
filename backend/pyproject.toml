@@ -208,6 +208,16 @@ layers = [
     "abandon_service : claim_service : collaborator_service : query_service : service",
 ]
 
+[[tool.importlinter.contracts]]
+name = "innovation: routers above services"
+type = "layers"
+containers = ["app.modules.innovation"]
+layers = [
+    "aggregated : talent_router : talent_file_router : public_talent_router : dependencies",
+    "talent_service : talent_file_service : public_talent_service : talent_common",
+    "talent_models : talent_schemas : talent_file_schemas : contact_schemas : privacy",
+]
+
 # The files module has services but no router (cleanup jobs only), so it has
 # no layers contract; app/modules/files is covered by the package contracts.
 
