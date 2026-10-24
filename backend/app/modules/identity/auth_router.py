@@ -285,6 +285,7 @@ def _unified_outcome_response(
         tokens=pair,
         pending_token=getattr(outcome, "pending_token", None),
         register_token=getattr(outcome, "register_token", None),
+        device_slot=getattr(outcome, "device_slot", None),
     )
 
 

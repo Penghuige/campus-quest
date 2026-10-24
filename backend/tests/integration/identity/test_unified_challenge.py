@@ -2131,3 +2131,141 @@ async def test_probe_caps_the_array_at_five_entries(
     assert all(
         slot_suffix(student.phone_e164 or "") in listed for student, _ in logins[1:]
     )
+
+
+# --- device_slot rides every authenticated response (ruling, 2026-10-24) ------
+
+
+async def test_login_responses_carry_the_minted_device_slot(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The card-matching key comes from the SERVER (the reviewer's
+    second ruling): a login response that MINTS a remembered
+    credential carries ``device_slot`` — omitted, never null, when it
+    does not, so the card keeps its previous slot (a re-login without
+    the checkbox never breaks an older live slot). The frontend never
+    replicates the canonical rules or touches masks. The
+    student-number password arm can never mint — its answer omits the
+    field and the card keeps whatever slot an earlier remembered
+    login stored."""
+    teacher = await _seed_user(
+        db_session,
+        username=f"slotresp-teacher-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.TEACHER,
+    )
+    student = await _seed_user(
+        db_session,
+        username=f"2025{int(uuid4().hex, 16) % 10**7:07d}",
+        role=Role.STUDENT,
+        phone="+8613800171301",
+    )
+    await db_session.commit()
+
+    minted = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "identifier": teacher.email_normalized,
+            "password": _PASSWORD,
+            "remember_device": True,
+        },
+    )
+    assert minted.status_code == 200, minted.text
+    assert minted.json()["device_slot"] == slot_suffix(teacher.email_normalized or "")
+
+    # No checkbox → no mint → the field is ABSENT (not null): the card
+    # keeps its previous slot.
+    unminted = await client.post(
+        "/api/v1/auth/login",
+        json={"identifier": teacher.email_normalized, "password": _PASSWORD},
+    )
+    assert unminted.status_code == 200, unminted.text
+    assert "device_slot" not in unminted.json()
+
+    # The mobile-code verify arm with remember mints and answers the
+    # account's canonical (phone) handle.
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": student.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    code_login = await client.post(
+        "/api/v1/auth/challenge/verify",
+        json={
+            "identifier": student.phone_e164,
+            "code": code,
+            "remember_device": True,
+        },
+    )
+    assert code_login.status_code == 200, code_login.text
+    assert code_login.json()["status"] == "authenticated"
+    assert code_login.json()["device_slot"] == slot_suffix(student.phone_e164 or "")
+
+    # The student-number password arm NEVER mints (the student password
+    # leg has no remember craft): absent even with the checkbox — the
+    # card-keep semantics carry it.
+    student_login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "identifier": student.username,
+            "password": _PASSWORD,
+            "remember_device": True,
+        },
+    )
+    assert student_login.status_code == 200, student_login.text
+    assert "device_slot" not in student_login.json()
+
+
+async def test_totp_completion_carries_the_minted_slot_and_mid_states_do_not(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    api_clock: FrozenClock,
+    api_sms: FakeSmsSender,
+) -> None:
+    """The totp surface follows the same mint-only rule: the ADMIN
+    completion with remember answers the slot; the mid-login
+    totp_required states (verify pending and the cookie leg's totp
+    answer) never do — the card is written on completion, and the
+    cookie leg mints nothing."""
+    secret = pyotp.random_base32()
+    admin = await _seed_user(
+        db_session,
+        username=f"slotresp-admin-{uuid4().hex[:8]}@campus.example.edu",
+        role=Role.ADMIN,
+        phone="+8613800171302",
+        totp_secret=secret,
+    )
+    await db_session.commit()
+
+    await client.post(
+        "/api/v1/auth/challenge/request", json={"identifier": admin.phone_e164}
+    )
+    code = str(api_sms.messages[-1].variables["code"])
+    pending = (
+        await client.post(
+            "/api/v1/auth/challenge/verify",
+            json={"identifier": admin.phone_e164, "code": code},
+        )
+    ).json()
+    assert pending["status"] == "totp_required"
+    assert "device_slot" not in pending
+
+    finished = await client.post(
+        "/api/v1/auth/challenge/totp",
+        json={
+            "pending_token": pending["pending_token"],
+            "totp_code": _totp_code(secret, api_clock),
+            "remember_device": True,
+        },
+    )
+    assert finished.status_code == 200, finished.text
+    assert finished.json()["device_slot"] == slot_suffix(admin.phone_e164 or "")
+
+    # The cookie leg authenticates an ADMIN to totp_required (and a
+    # student to authenticated) without ever minting: no slot either way.
+    continued = await client.post(
+        "/api/v1/auth/challenge/verify", json={}, cookies=_slot_cookies(finished)
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["status"] == "totp_required"
+    assert "device_slot" not in continued.json()
