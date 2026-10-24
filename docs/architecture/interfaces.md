@@ -435,15 +435,21 @@ anywhere, and its few holders simply re-login once.
   2099000001 both mask to `20****01` and grabbed the wrong slot): the
   client matches its local account cards to the probe array by
   computing the slot handle itself — `sha256(canonical)[:10]` over
-  the card's identifier, replicated under these EXACT normalization
-  rules (the backend names the slot by the user row's canonical
-  value):
-  - phone → E.164: `+86`/`0086`/bare-11-digit forms all fold to the
-    `+86`-prefixed form;
-  - email → lowercase;
-  - student number / username → as-is;
-  - the canonical chain: `phone_e164` → `email_normalized` → a
-    `username` that is a mailbox (the first present wins).
+  the card's identifier. The canonical chain and each form's
+  normalization, EXACTLY as the backend resolves the user row:
+  - `phone_e164` first: every STUDENT row carries a bound phone (all
+    four creation paths bind one), so a student account's slot is
+    ALWAYS its phone's handle — `sha256(phone_e164)[:10]`, never the
+    student number's. Phone cards normalize to E.164 before hashing:
+    `+86`/`0086`/bare-11-digit forms all fold to the `+86`-prefixed
+    form.
+  - `email_normalized` second: email cards lowercase before hashing.
+  - a `username` that IS a mailbox (`@` in it — the legacy
+    pre-normalization staff rows) third: those cards hash as-is.
+  - A bare username (a student number) NEVER names a slot — the
+    student's slot is the phone's handle above, and a card keyed by
+    the student number CANNOT derive it: such a card either stores
+    the account's phone form instead, or goes the code flow.
   A card whose computed slot matches a probe entry's `slot` is the
   matched card (its `slot` rides the verify `target`); a card matching
   no entry goes the code flow — "card in localStorage but not in the
