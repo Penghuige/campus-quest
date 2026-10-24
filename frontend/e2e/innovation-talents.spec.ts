@@ -153,7 +153,9 @@ test('R4: close_denies_old_profile_contact_and_file_links',async({page})=>{
 test('R4: draft_recovery_does_not_cross_accounts',async({page})=>{
   await prepareTalent(page);await fillTalent(page);await editor(page).getByLabel('自我介绍',{exact:true}).fill('R4_ACCOUNT_PRIVATE_SENTINEL');
   await page.locator('a[href="/innovation"]:visible').first().click();await expect(page).toHaveURL(/\/innovation$/);await page.goBack();await expect(editor(page).getByLabel('自我介绍',{exact:true})).toHaveValue('R4_ACCOUNT_PRIVATE_SENTINEL');
-  await page.locator('a[href="/innovation"]:visible').first().click();await page.goto(`${BASE_URL}/logout`);await page.getByRole('button',{name:'确认退出登录',exact:true}).click();await expect(page).toHaveURL(/\/login/);
+  // Main has no /logout route (that page is the upstream R1 navigation
+  // deliverable); the profile's 个人信息 tab carries the real LogoutSection.
+  await page.goto(`${BASE_URL}/profile?tab=info`);await page.getByRole('button',{name:'退出登录',exact:true}).click();await expect(page).toHaveURL(/\/login/);
   await loginThroughUi(page,parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT,'CQ_E2E_AUTHOR_STUDENT'));await page.goto(`${BASE_URL}/profile/talent-profile`);await expect(editor(page)).toBeVisible();await expect(editor(page).getByLabel('自我介绍',{exact:true})).not.toHaveValue('R4_ACCOUNT_PRIVATE_SENTINEL');
 });
 
