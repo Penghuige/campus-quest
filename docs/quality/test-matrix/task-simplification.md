@@ -1,6 +1,7 @@
 # 任务简化批 规约-测试对账矩阵
 
 > 建立日期：2026-10-23 · 域：任务创建一键化（target_count/通用平台）+ 发布门禁修订 + 提交校验宽松化（spec 2026-10-23-simplification-design §2/§3）
+> 覆盖章节：docs/superpowers/specs/2026-10-23-simplification-design.md#§1 · §2 · §3 · §4
 > 方法论：`campusquest-test-process` skill；**预期列先于测试检索落笔**；缺口列出不补；不匹配上报不擅改。
 > 规约来源：`docs/superpowers/specs/2026-10-23-simplification-design.md`（PR #132）；interfaces.md「Task creation & publish gate」小节。
 > 域界：任务广场排序/领取配额等既有域在 tasks-square.md；本表只收本批新增/修订行为。

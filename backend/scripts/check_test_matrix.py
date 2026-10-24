@@ -20,7 +20,12 @@ Checks, per matrix file:
    as a substring of the file text;
 3. gap rows reference a gap id (G-\\d+) that the file's gap section
    also lists;
-4. mismatch rows appear in the file's mismatch section.
+4. mismatch rows appear in the file's mismatch section;
+5. the header carries a 覆盖章节 line pinning the spec sections the
+   matrix reconciles — format ``> 覆盖章节：§5 · §9 | path/to/spec.md#§3``
+   (groups separated by ``|``; a group without a path defaults to the
+   main design spec) — and every claimed section must exist as a
+   ``## N.`` heading in the referenced spec.
 
 Exit code: 0 = the matrix holds together; 1 = any violation (one line
 per violation on stdout). Deliberately tiny: no markdown dependency —
@@ -56,6 +61,14 @@ _RETIRED = ("已退役", "retired")
 # closing backtick rather than a word-char run.
 _TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::([^`]+))?`")
 _GAP_ID = re.compile(r"G-\d+")
+
+# The spec-drift linkage: every matrix declares which spec sections it
+# reconciles. A group is "§5 · §9" (main design spec) or
+# "docs/.../some-design.md#§3 · §4" (explicit spec file).
+_SECTION_LINE = re.compile(r"^>\s*覆盖章节：\s*(.+)$", re.MULTILINE)
+_SECTION_REF = re.compile(r"§(\d+)")
+
+_MAIN_SPEC_REL = "docs/superpowers/specs/2026-09-19-campusquest-design.md"
 
 
 def _cite_file(cited: str) -> Path:
@@ -99,6 +112,39 @@ def check_matrix(path: Path) -> list[str]:
 
     gap_section = text.split("缺口明细", 1)[-1] if "缺口明细" in text else ""
     mismatch_section = text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
+
+    section_match = _SECTION_LINE.search(text)
+    if section_match is None:
+        violations.append(
+            f"{path.name}: header declares no 覆盖章节 line (spec drift linkage)"
+        )
+    else:
+        for group in section_match.group(1).split("|"):
+            group = group.strip()
+            if "#" in group:
+                spec_rel, _, claimed = group.partition("#")
+                spec_rel = spec_rel.strip()
+            else:
+                spec_rel = _MAIN_SPEC_REL
+                claimed = group
+            sections = _SECTION_REF.findall(claimed)
+            if not sections:
+                continue
+            spec_path = _REPO_ROOT / spec_rel
+            if not spec_path.exists():
+                violations.append(
+                    f"{path.name}: 覆盖章节 references missing spec {spec_rel}"
+                )
+                continue
+            spec_text = spec_path.read_text(encoding="utf-8")
+            for number in sections:
+                if f"\n## {number}." not in spec_text and not spec_text.startswith(
+                    f"## {number}."
+                ):
+                    violations.append(
+                        f"{path.name}: 覆盖章节 claims {spec_rel.split('/')[-1]}"
+                        f" §{number}, which has no '## {number}.' heading"
+                    )
 
     row_id = 0
     for line in text.splitlines():

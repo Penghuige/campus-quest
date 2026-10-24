@@ -1,6 +1,7 @@
 # admin powers 规约-测试对账矩阵
 
 > 建立日期：2026-10-19（前端半 2026-10-18 先行，编号随 #114 后端权威版重排）· 域：V1.1 Wave 2a 管理员权力包+仪表盘+邀请生命周期（spec 2026-10-15-v1.1 §3/§4）
+> 覆盖章节：docs/superpowers/specs/2026-10-15-v1.1-experience-and-administration-design.md#§3 · §4
 > 方法论：`campusquest-test-process` skill；**预期列先于测试检索落笔**；缺口列出不补；不匹配上报不擅改。
 > 规约来源：v1.1-experience-and-administration-design §3.1-§3.5 / §4.1-§4.2；G12（每动作审计行）；G11（邮箱明文只存行）。契约冻结答复 2026-10-18（batch reason=稳定错误码；overview 全键集；whitelist 口径取消——§4.3 作废）。
 > 域界：邀请创建/接受五步在 identity-rbac I4（互引）；本表只收 §3/§4 的管理面新行为。

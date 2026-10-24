@@ -33,6 +33,7 @@ def _load_checker():
 _MATRIX_TEMPLATE = """# Example 规约-测试对账矩阵
 
 > 建立日期：2026-10-25 · 域：example（campaign task 1 test fixture）
+> 覆盖章节：§5
 
 ## 对账摘要
 
@@ -68,6 +69,12 @@ def checker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     e2e.mkdir(parents=True)
     (e2e / "example.spec.ts").write_text(
         'test("an admin login lands on the admin workspace", async () => {});\n',
+        encoding="utf-8",
+    )
+    specs = tmp_path / "docs" / "superpowers" / "specs"
+    specs.mkdir(parents=True)
+    (specs / "2026-09-19-campusquest-design.md").write_text(
+        "# Spec\n\n## 5. Example Domain\n\n## 9. Deadline\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(module, "_BACKEND_ROOT", backend_root)
@@ -132,3 +139,54 @@ def test_frontend_citation_with_absent_title_is_a_violation(checker, tmp_path):
     )
     assert len(violations) == 1
     assert "missing test" in violations[0]
+
+
+def test_matrix_without_coverage_section_is_flagged(checker, tmp_path):
+    path = tmp_path / "matrix.md"
+    text = _MATRIX_TEMPLATE.format(
+        citation="tests/integration/example/test_example.py::test_exists"
+    ).replace("> 覆盖章节：§5\n", "")
+    path.write_text(text, encoding="utf-8")
+    violations = checker.check_matrix(path)
+    assert any("覆盖章节" in v for v in violations)
+
+
+def test_claimed_section_must_exist_in_the_spec(checker, tmp_path):
+    path = tmp_path / "matrix.md"
+    text = _MATRIX_TEMPLATE.format(
+        citation="tests/integration/example/test_example.py::test_exists"
+    ).replace("> 覆盖章节：§5", "> 覆盖章节：§99")
+    path.write_text(text, encoding="utf-8")
+    violations = checker.check_matrix(path)
+    assert any("§99" in v for v in violations)
+
+
+def test_explicit_spec_path_groups_validate_against_that_spec(checker, tmp_path):
+    other = tmp_path / "docs" / "superpowers" / "specs" / "other-design.md"
+    other.write_text("# Other\n\n## 3. Other Domain\n", encoding="utf-8")
+    path = tmp_path / "matrix.md"
+    text = _MATRIX_TEMPLATE.format(
+        citation="tests/integration/example/test_example.py::test_exists"
+    ).replace(
+        "> 覆盖章节：§5",
+        "> 覆盖章节：§9 | docs/superpowers/specs/other-design.md#§3",
+    )
+    path.write_text(text, encoding="utf-8")
+    assert checker.check_matrix(path) == []
+    text_bad = text.replace("other-design.md#§3", "other-design.md#§7")
+    path.write_text(text_bad, encoding="utf-8")
+    violations = checker.check_matrix(path)
+    assert any("§7" in v for v in violations)
+
+
+def test_referenced_spec_file_must_exist(checker, tmp_path):
+    path = tmp_path / "matrix.md"
+    text = _MATRIX_TEMPLATE.format(
+        citation="tests/integration/example/test_example.py::test_exists"
+    ).replace(
+        "> 覆盖章节：§5",
+        "> 覆盖章节：docs/superpowers/specs/missing-design.md#§3",
+    )
+    path.write_text(text, encoding="utf-8")
+    violations = checker.check_matrix(path)
+    assert any("missing-design.md" in v for v in violations)

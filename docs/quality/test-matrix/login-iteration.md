@@ -1,6 +1,7 @@
 # 登录页迭代（owner 四项反馈） 规约-测试对账矩阵
 
 > 建立日期：2026-10-17 · 域：注册即登录/staff 记住设备重登/免码提示条探测/cookie-only 免码腿/员工绑定手机/员工手机码登录
+> 覆盖章节：§5 | docs/superpowers/specs/2026-10-15-v1.1-experience-and-administration-design.md#§2
 > 方法论：`campusquest-test-process` skill 规约对账节；**预期列先于测试检索落笔**。
 > 规约来源：owner 2026-10-17 登录页四项反馈 + 前端契约直连冻结记录（2026-10-17 跨会话），基线 spec §5/§5.6/§5.8、V1.1 §2.2 remembered-device 工艺（#87）。
 

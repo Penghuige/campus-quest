@@ -1,6 +1,7 @@
 # unified login 规约-测试对账矩阵
 
 > 建立日期：2026-10-19 · 域：统一登录挑战族（spec 2026-10-19-unified-login-design §3.1/§3.2/§3.4，PR-1 后端半）；2026-10-23 扩域：切换账号 popover 批（owner 反馈，前端专属）；2026-10-24 扩域：多账号凭据槽批（owner 反馈「切换账号仍要验证码」，后端半）
+> 覆盖章节：docs/superpowers/specs/2026-10-19-unified-login-design.md#§3 · §5
 > 方法论：`campusquest-test-process` skill；**预期列先于测试检索落笔**；缺口列出不补；不匹配上报不擅改。
 > 规约来源：unified-login-design §3（main 5e3636d 契约修订版 + 2026-10-24 §3.1 多槽修订）+ §5 安全边界；interfaces.md「Unified login challenge family」与「Remembered-device credential slots」小节；popover 批=owner 2026-10-23 交互定案（会话记录，五条）。
 > 域界：legacy 端点族（PR-3 退役）不在本表；邀请接受流不动；/auth/register 与 /auth/mobile-code/register 不动。
