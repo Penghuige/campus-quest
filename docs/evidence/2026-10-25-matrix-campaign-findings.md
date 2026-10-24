@@ -71,3 +71,11 @@ claims-lifecycle C3：Claim 状态转移集中化 pin 由 `tests/unit/tasks/test
 - **G-E**：`login_email_challenges`/`login_mobile_challenges` 未消费行（验证即删但 run 唯一标识永不复用且无 purge 任务），约 3 行/轮。
 
 原有缺口：G-A 写面已撤除（现行 spec 集无经真实表面新建 RewardItem 的链路；结构性弱点不变，2026-10-08 实证留档）；G-B avatar 对象不变。引擎描述漂移已修正（clean_world 实为 **32 表**非 22；台账 user∪operator 双扇入；补记 Redis 榜 zrem 与 broker 队列还原；新表族 remembered_devices）。历史前科表未动；新增行待 campus reviewer 复核（文档头已注明）。
+
+**G-C 实锤升级（同日双杀门禁两条腿，建议高优先排期清理修复）**：本战役的 fresh release-gate 中，G-C 残料（前一轮电池跑留下的 UI 注册学生按用户名排序挤占目录首页）先后击穿 `admin-powers.spec`（reset-token 链找不到目录行）与 `visual-regression` 的 `admin-users` 基线（表高 1422→1820px 内容差）。两次均以栈重置恢复，未改基线。
+
+## 六、门禁全程揪出并已在本分支修复的三处存量债
+
+1. **backend-e2e 两处过期契约**（开放注册批 8da07d5 落地于 CI 停摆期，e2e 未跟）：注册信封 `{user, tokens}` + PENDING_APPROVAL 需 admin approve 解锁；统一登录 identifier 表单与嵌套 tokens；whitelist 管理面 404 语义（436aa0d）。
+2. **Makefile 两条腿缺 CI 同款环境**（talent-batch1 已有同型修复未合）：`playwright-e2e` 与 `visual-regression` 缺 `CQ_E2E_LOGIN_RATELIMIT=1` + `CQ_E2E_API_URL`（87dfb14 + 后续 commit）。
+3. **共享测试库被 talent-batch1 分支迁移戳污染**（`0035_talent_file_upload_contract`），按 release-checklist 手册程序重置恢复。
