@@ -48,9 +48,9 @@
 - Modify: `AGENTS.md` — 在 "Generated code and external references" 节后加一行:板块边界与协作规则见 `docs/architecture/innovation-boundary.md`(板块改动必读)
 
 **Steps:**
-- [ ] 随迁文档自 `git show b3adf14:<path>` 原样落盘(不改写内容,保留作者证据链)
-- [ ] AGENTS.md 加引用行
-- [ ] 静态核对:矩阵文档的预期列与来源 spec 对得上(方法论:预期先于测试)
+- [x] 随迁文档自 `git show b3adf14:<path>` 原样落盘(不改写内容,保留作者证据链)
+- [x] AGENTS.md 加引用行
+- [x] 静态核对:矩阵文档的预期列与来源 spec 对得上(方法论:预期先于测试)
 
 ### Task 2: 后端共享层增量(integrations + core + fakes)
 
@@ -67,10 +67,10 @@
 - Test: 搬迁 PR 的 `backend/tests/unit/integrations/` 中 scanner/storage 相关用例(如有)+ 为新 Protocol 方法补 fake 契约测试
 
 **Steps:**
-- [ ] 先跑 `uv run pytest tests/unit/integrations -q` 记录基线绿
-- [ ] 逐文件叠加增量(共享文件只加行,不动既有行)
-- [ ] ruff format/check + mypy(新文件与改动文件)三绿
-- [ ] 单测:scanner fake 行为、storage fake 镜像契约(client_headers、pinned_content_length、write-once 412)
+- [x] 先跑 `uv run pytest tests/unit/integrations -q` 记录基线绿
+- [x] 逐文件叠加增量(共享文件只加行,不动既有行)
+- [x] ruff format/check + mypy(新文件与改动文件)三绿
+- [x] 单测:scanner fake 行为、storage fake 镜像契约(client_headers、pinned_content_length、write-once 412)
 
 ### Task 3: 迁移领号 + 模型 + db 聚合
 
@@ -83,10 +83,10 @@
 - Test: `backend/tests/integration/innovation/test_talent_migrations.py`(新写:干净库 upgrade→head、head→`0033` downgrade→re-upgrade、`alembic check` 无漂移)
 
 **Steps:**
-- [ ] 新迁移测试先写先跑 → RED(表不存在)
-- [ ] 落迁移与模型,db/base 聚合
-- [ ] 隔离库跑迁移链测试 GREEN(栈借用协议:通告 campus reviewer)
-- [ ] `uv run alembic check` 无 autogenerate 漂移
+- [x] 新迁移测试先写先跑 → RED(表不存在)
+- [x] 落迁移与模型,db/base 聚合
+- [x] 隔离库跑迁移链测试 GREEN(栈借用协议:通告 campus reviewer)
+- [x] `uv run alembic check` 无 autogenerate 漂移
 
 ### Task 4: talent 后端本体 + 符号内联
 
@@ -96,9 +96,9 @@
 - Create(自 b3adf14 原样,仅 import 路径改指上述两文件): `talent_schemas.py`、`talent_common.py`、`talent_service.py`、`talent_router.py`、`talent_file_schemas.py`、`talent_file_service.py`、`talent_file_router.py`、`public_talent_service.py`、`public_talent_router.py`、`privacy.py`(21 行 ASGI middleware,原样)
 
 **Steps:**
-- [ ] 落 dependencies.py + contact_schemas.py(两个内联源)
-- [ ] 10 个 talent 文件落盘,import 从 `innovation.router`/`innovation.public_achievement_router`/`innovation.recruitment_schemas` 改指 `innovation.dependencies`/`innovation.contact_schemas`
-- [ ] 聚合前的静态检查:ruff + mypy 对 `app/modules/innovation/` 全绿(Task 2 增量已清掉 Settings/ErrorCode/ObjectStorage 缺口)
+- [x] 落 dependencies.py + contact_schemas.py(两个内联源)
+- [x] 10 个 talent 文件落盘,import 从 `innovation.router`/`innovation.public_achievement_router`/`innovation.recruitment_schemas` 改指 `innovation.dependencies`/`innovation.contact_schemas`
+- [x] 聚合前的静态检查:ruff + mypy 对 `app/modules/innovation/` 全绿(Task 2 增量已清掉 Settings/ErrorCode/ObjectStorage 缺口)
 
 ### Task 5: 聚合路由 + main.py + docs 门禁测试 + 架构契约
 
@@ -110,10 +110,10 @@
 - Test: `make arch-lint` 通过(含新契约)
 
 **Steps:**
-- [ ] docs 门禁测试先写先跑(对当前 main 的 create_app)→ GREEN(锁定现状)
-- [ ] 聚合 router + main.py 挂载
-- [ ] `make arch-lint` GREEN;`make arch-map` 再生成,as-built 图出现 innovation 节点且边符合预期(→ identity/audit/integrations,无 → tasks/points)
-- [ ] 契约快照 regen 预检(正式 regen 在 Task 8)
+- [x] docs 门禁测试先写先跑(对当前 main 的 create_app)→ GREEN(锁定现状)
+- [x] 聚合 router + main.py 挂载
+- [x] `make arch-lint` GREEN;`make arch-map` 再生成,as-built 图出现 innovation 节点且边符合预期(→ identity/audit/integrations,无 → tasks/points)
+- [x] 契约快照 regen 预检(正式 regen 在 Task 8)
 
 ### Task 6: 守卫翻译 + PENDING_APPROVAL 语义测试
 
@@ -123,9 +123,9 @@
 - 产出:守卫映射表(端点→守卫→账户状态预期),进 PR 描述
 
 **Steps:**
-- [ ] 语义测试先写先跑 → RED(旧守卫放行 PENDING_APPROVAL)
-- [ ] 换守卫 → GREEN
-- [ ] 全量 talent 集成测试回归(确认无既有用例依赖旧语义;PR 自带用例中如有以 ACTIVE 学生为基准的,不受影响)
+- [x] 语义测试先写先跑 → RED(旧守卫放行 PENDING_APPROVAL)
+- [x] 换守卫 → GREEN
+- [x] 全量 talent 集成测试回归(确认无既有用例依赖旧语义;PR 自带用例中如有以 ACTIVE 学生为基准的,不受影响)
 
 ### Task 7: 后端测试搬迁
 
@@ -134,20 +134,20 @@
 - `backend/tests/unit/innovation/test_talent_schemas.py`、`test_talent_file_schemas.py`
 
 **Steps:**
-- [ ] 每个集成文件带 `pytestmark = pytest.mark.integration`(pytestmark 陷阱)
-- [ ] 核对上传意图 201 的跨连接持久性断言存在;缺失则补(独立 `AsyncSession` 复核 TalentFile 行;真提交行 cleanup 由测试负责)
-- [ ] 借栈通告后全量跑 `uv run pytest tests/integration/innovation tests/unit/innovation -q`(真实 PG)
-- [ ] composition smoke 需 MinIO + ClamAV:`docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait` 后跑(Task 10 同栈)
-- [ ] 契约对账:`check_test_matrix.py` 对 `innovation-talent.md` 通过
+- [x] 每个集成文件带 `pytestmark = pytest.mark.integration`(pytestmark 陷阱)
+- [x] 核对上传意图 201 的跨连接持久性断言存在;缺失则补(独立 `AsyncSession` 复核 TalentFile 行;真提交行 cleanup 由测试负责)
+- [x] 借栈通告后全量跑 `uv run pytest tests/integration/innovation tests/unit/innovation -q`(真实 PG)
+- [x] composition smoke 需 MinIO + ClamAV:`docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait` 后跑(Task 10 同栈)
+- [x] 契约对账:`check_test_matrix.py` 对 `innovation-talent.md` 通过
 
 ### Task 8: 契约 regen + 静态三绿
 
 **Steps:**
-- [ ] `git fetch origin main` 确认基线无新漂移
-- [ ] `uv run python scripts/dump_openapi.py` → snapshot diff 只含 `/ie/` 新端点组
-- [ ] `npm run api:types:snapshot` → schema.d.ts 同步
-- [ ] ruff format --check + ruff check + mypy(backend 全量)三绿;mypy 25 缺口中批 1 范围清零
-- [ ] `make pre-push` 全绿(契约新鲜度列)
+- [x] `git fetch origin main` 确认基线无新漂移
+- [x] `uv run python scripts/dump_openapi.py` → snapshot diff 只含 `/ie/` 新端点组
+- [x] `npm run api:types:snapshot` → schema.d.ts 同步
+- [x] ruff format --check + ruff check + mypy(backend 全量)三绿;mypy 25 缺口中批 1 范围清零
+- [x] `make pre-push` 全绿(契约新鲜度列)
 
 ### Task 9: 前端本体
 
@@ -163,11 +163,11 @@
 - Modify: `frontend/src/app/(student)/profile/page.tsx` — +"我的人才档案"入口
 
 **Steps:**
-- [ ] 基础符号先落(accessToken 订阅、contactFields、formUtils、ConfirmDialog)
-- [ ] 14 个 talent 组件落盘并改 import
-- [ ] 页面 + 壳 + 导航入口
-- [ ] `npm run typecheck && npm run lint && npm run check:css` 三绿;`npm run arch:lint` 确认新路径被 depcruise 覆盖(缺规则则补)
-- [ ] 组件单测(自 b3adf14 `src/__tests__/talent-*.test.ts` 五件随迁适配)
+- [x] 基础符号先落(accessToken 订阅、contactFields、formUtils、ConfirmDialog)
+- [x] 14 个 talent 组件落盘并改 import
+- [x] 页面 + 壳 + 导航入口
+- [x] `npm run typecheck && npm run lint && npm run check:css` 三绿;`npm run arch:lint` 确认新路径被 depcruise 覆盖(缺规则则补)
+- [x] 组件单测(自 b3adf14 `src/__tests__/talent-*.test.ts` 五件随迁适配)
 
 ### Task 10: e2e + 基线 + 豁免 + 全链门禁
 
@@ -182,12 +182,12 @@
 - Modify: `backend/coverage-ratchet.json` / `frontend/coverage-ratchet.json` — 搬入测试后按 `--update` 流程更新地板,理由:talent 套件增量
 
 **Steps:**
-- [ ] 借 3000 栈(通告 campus reviewer → 停常驻栈 → 用 → 还)
-- [ ] `CQ_E2E=1` 跑 `innovation-talents.spec.ts` 全绿(no-skip 断言生效)
-- [ ] `CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1` 跑 visual spec;13 张基线按首拍纪律入库;`frontend/scripts/assert-e2e-no-skips.mjs` 通过
-- [ ] `make pre-push` → `make verify`(compose stack)→ `make release-gate`(含 ClamAV 组合与 talent visual)
-- [ ] 棘轮更新提交独立说明;矩阵/豁免/B 表/接口文档随迁齐全
-- [ ] 最终 diff 自查:无 secrets、无调试残留、无 TODO 占位、无 PR 自带契约工件
+- [x] 借 3000 栈(通告 campus reviewer → 停常驻栈 → 用 → 还)
+- [x] `CQ_E2E=1` 跑 `innovation-talents.spec.ts` 全绿(no-skip 断言生效)
+- [x] `CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1` 跑 visual spec;13 张基线按首拍纪律入库;`frontend/scripts/assert-e2e-no-skips.mjs` 通过
+- [x] `make pre-push` → `make verify`(compose stack)→ `make release-gate`(含 ClamAV 组合与 talent visual)
+- [x] 棘轮更新提交独立说明;矩阵/豁免/B 表/接口文档随迁齐全
+- [x] 最终 diff 自查:无 secrets、无调试残留、无 TODO 占位、无 PR 自带契约工件
 
 ## 完成定义
 
@@ -195,3 +195,12 @@
 - Review Focus 7 项各有测试或 diff 证据;
 - 守卫映射表 + 漂移审计三项(边界文档 §8)填入 PR 描述;
 - 分支不 push;PR 与 reviewer 派发待 owner 指示。
+
+
+## 实施记录(2026-10-24)
+
+全部 Task 执行完毕(18 个实现+修复+审计提交,详见分支提交链)。与计划的三处偏差,均为如实的适配决策,已各自在提交说明中记录:
+
+1. Task 2 漏项补全(80188ec 后的 a38cbe2):core/errors.py 的意外 500 隐私头 3 行,由搬迁测试的 contact-reveal 依赖失败用例暴露;
+2. Task 10 基线为首拍:搬入的 13 张基线与 main 新壳差 50px 合法布局差,按首拍纪律重拍(commit 5cd3c6c 后续);
+3. 计划外存量修复三件(filelock CVE / zod GHSA / backend-e2e 双过期契约 / Makefile 限流 relief 形态对齐),全部以纯 main 复现实证为前提,独立提交。
