@@ -16,7 +16,7 @@ Tasks 1–3 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs
 | A09 | 幂等、版本冲突、PG并发最多一次改变；审计失败原子回滚，历史不可改 | `tests/integration/innovation/test_talent_races.py`；`tests/integration/innovation/test_talent_lifecycle.py::test_failed_audit_rolls_back_publication`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_history_is_immutable_in_postgres`；`tests/integration/innovation/test_talent_lifecycle.py::test_public_pointer_cannot_use_another_students_revision` | 已覆盖 |
 | A10 | 外部I/O无持锁，迟到扫描不复活移除文件；关闭/撤权拒绝已读入字节 | `tests/integration/innovation/test_talent_file_races.py`；`tests/integration/innovation/test_talent_public_file_races.py` | 已覆盖 |
 | A11 | 就地纠错/键盘/恢复，迟到回执不覆盖新输入，账号切换不泄露 | `frontend/src/__tests__/talent-form.test.ts`；`frontend/src/__tests__/talent-recovery.test.ts`；`frontend/src/__tests__/talent-presentation.test.ts`；`frontend/e2e/innovation-talents.spec.ts`；`frontend/e2e/innovation-talents-visual.spec.ts` | 已覆盖 |
-| A12 | 成果、招募、原任务不回归；模拟资料标记；学校认证仍未接 | `frontend/e2e/innovation-navigation.spec.ts`；`frontend/e2e/innovation-review.spec.ts`；`frontend/e2e/innovation-recruitment.spec.ts`；`docs/quality/innovation-talent-verification.md` | 已覆盖 |
+| A12 | 成果、招募、原任务不回归；模拟资料标记；学校认证仍未接 | `frontend/e2e/innovation-talents.spec.ts`（模拟资料与认证文案断言）；`frontend/e2e/visual-regression.spec.ts`（原任务界面回归，标准电池）；`docs/quality/innovation-talent-verification.md` | 已覆盖（批 1 视角：模拟资料、原任务回归、认证文案；成果/招募回归行归批 2/4 各自矩阵） |
 
 ## 对账说明与明确边界
 

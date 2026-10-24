@@ -11,6 +11,34 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4.1 visual: public materials remain neutral in directory and detail",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: owner, mobile preview and public talent",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: empty, unavailable, loading and error",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: long content and zero availability remain usable on mobile",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
     file: "auth-cross-tab-fence.spec.ts",
     title: "sibling explicit login fences this tab",
     gate: "CQ_E2E_FENCE=1",
