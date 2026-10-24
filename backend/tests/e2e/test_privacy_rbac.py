@@ -565,11 +565,15 @@ async def test_direct_route_rbac_matrix(
             # (Student + Teacher, Admin excluded by the hardening
             # ruling).
             matrix: list[tuple[str, str, Any, dict[str, int]]] = [
+                # The registration whitelist family retired with the
+                # approval workflow; its /admin/whitelist surface is gone
+                # (404 for every role now). The admin-guard row the
+                # matrix wants lives on in /admin/users below.
                 (
                     "GET",
                     "/api/v1/admin/whitelist",
                     None,
-                    {"admin": 200, "teacher": 403, "student": 403},
+                    {"admin": 404, "teacher": 404, "student": 404},
                 ),
                 (
                     "POST",
