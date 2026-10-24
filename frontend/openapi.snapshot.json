@@ -6346,6 +6346,861 @@
         }
       }
     },
+    "/api/v1/ie/me/talent-profile": {
+      "get": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Read",
+        "operationId": "read_api_v1_ie_me_talent_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentProfileReadResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Save",
+        "operationId": "save_api_v1_ie_me_talent_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentSaveCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-profile/publish": {
+      "post": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Publish",
+        "operationId": "publish_api_v1_ie_me_talent_profile_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentVersionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-profile/hide": {
+      "post": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Hide",
+        "operationId": "hide_api_v1_ie_me_talent_profile_hide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentVersionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-profile/revoke-contact": {
+      "post": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Revoke Contact",
+        "operationId": "revoke_contact_api_v1_ie_me_talent_profile_revoke_contact_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentRevokeContactCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/talent-tags": {
+      "get": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Tags",
+        "operationId": "tags_api_v1_ie_talent_tags_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentTagListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-tag-suggestions": {
+      "post": {
+        "tags": [
+          "innovation talents"
+        ],
+        "summary": "Suggest",
+        "operationId": "suggest_api_v1_ie_me_talent_tag_suggestions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentSuggestionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentSuggestionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-profile/files": {
+      "get": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "List Owned",
+        "operationId": "list_owned_api_v1_ie_me_talent_profile_files_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentFileListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_v1_ie_me_talent_profile_files_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentFileIntentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentFileIntentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ie/me/talent-profile/files/{file_id}/complete": {
+      "post": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "Complete",
+        "operationId": "complete_api_v1_ie_me_talent_profile_files__file_id__complete_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentFileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/talent-profile/files/{file_id}/remove": {
+      "post": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "Remove",
+        "operationId": "remove_api_v1_ie_me_talent_profile_files__file_id__remove_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentFileCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/talent-profile/files/{file_id}/revoke": {
+      "post": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "Revoke",
+        "operationId": "revoke_api_v1_ie_me_talent_profile_files__file_id__revoke_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentFileCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/talent-profile/files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "innovation talent files"
+        ],
+        "summary": "Content",
+        "operationId": "content_api_v1_ie_me_talent_profile_files__file_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/talents": {
+      "get": {
+        "tags": [
+          "innovation public talents"
+        ],
+        "summary": "List Visible",
+        "operationId": "list_visible_api_v1_ie_talents_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "tag_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 5,
+              "title": "Tag Ids"
+            }
+          },
+          {
+            "name": "cooperation_state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "LOOKING",
+                    "OPEN_TO_OPPORTUNITIES",
+                    "NOT_AVAILABLE"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cooperation State"
+            }
+          },
+          {
+            "name": "has_public_materials",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Public Materials"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicTalentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/talents/{profile_id}": {
+      "get": {
+        "tags": [
+          "innovation public talents"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_api_v1_ie_talents__profile_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicTalentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/talents/{profile_id}/contacts": {
+      "post": {
+        "tags": [
+          "innovation public talents"
+        ],
+        "summary": "Contacts",
+        "operationId": "contacts_api_v1_ie_talents__profile_id__contacts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TalentPublicReadCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TalentContactsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/talents/{profile_id}/files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "innovation public talents"
+        ],
+        "summary": "Content",
+        "operationId": "content_api_v1_ie_talents__profile_id__files__file_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          },
+          {
+            "name": "expected_public_version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Expected Public Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "summary": "Live",
@@ -7915,6 +8770,33 @@
         ],
         "title": "CommentReportResponse",
         "description": "One report-queue row (exactly ``CommentReportView``): the reported\ncomment in the Teacher-safe shape plus the REPORTER identity — the\nmoderation surface spec §23 admits (被举报用户不可看到举报者身份 is\nthe student-side wall; moderators act on reports and see who filed\nthem). Never composed into a student-facing response."
+      },
+      "ContactInput": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "WECHAT",
+              "QQ",
+              "EMAIL",
+              "PHONE"
+            ],
+            "title": "Channel"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 1,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channel",
+          "value"
+        ],
+        "title": "ContactInput"
       },
       "CurrentAcademicTermRequest": {
         "properties": {
@@ -9586,6 +10468,301 @@
         "title": "PointsAdjustmentResponse",
         "description": "The posted ADMIN_ADJUSTMENT entry: ranking-neutral by\nconstruction (affects_ranking=false; no ranking-affecting\nadjustment operation exists)."
       },
+      "PublicTalentContent": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "faculty": {
+            "type": "string",
+            "title": "Faculty"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "introduction": {
+            "type": "string",
+            "title": "Introduction"
+          },
+          "advantages": {
+            "type": "string",
+            "title": "Advantages"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TalentTagResponse"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "skill_notes": {
+            "type": "string",
+            "title": "Skill Notes"
+          },
+          "cooperation_direction": {
+            "type": "string",
+            "title": "Cooperation Direction"
+          },
+          "desired_roles": {
+            "type": "string",
+            "title": "Desired Roles"
+          },
+          "weekly_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Hours"
+          },
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "UNSPECIFIED",
+              "ONLINE",
+              "OFFLINE",
+              "EITHER"
+            ],
+            "title": "Work Mode"
+          },
+          "cooperation_state": {
+            "type": "string",
+            "enum": [
+              "LOOKING",
+              "OPEN_TO_OPPORTUNITIES",
+              "NOT_AVAILABLE"
+            ],
+            "title": "Cooperation State"
+          },
+          "experience": {
+            "type": "string",
+            "title": "Experience"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TalentLink"
+            },
+            "type": "array",
+            "title": "Links"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "faculty",
+          "grade",
+          "introduction",
+          "advantages",
+          "tags",
+          "skill_notes",
+          "cooperation_direction",
+          "desired_roles",
+          "weekly_hours",
+          "work_mode",
+          "cooperation_state",
+          "experience",
+          "links"
+        ],
+        "title": "PublicTalentContent"
+      },
+      "PublicTalentFile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ],
+            "title": "Content Type"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "content_type",
+          "size"
+        ],
+        "title": "PublicTalentFile"
+      },
+      "PublicTalentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicTalentSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PublicTalentListResponse"
+      },
+      "PublicTalentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "content": {
+            "$ref": "#/components/schemas/PublicTalentContent"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PublicTalentFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "contact_channels": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "WECHAT",
+                "QQ",
+                "EMAIL",
+                "PHONE"
+              ]
+            },
+            "type": "array",
+            "title": "Contact Channels"
+          },
+          "public_version": {
+            "type": "integer",
+            "title": "Public Version"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "files",
+          "contact_channels",
+          "public_version",
+          "published_at"
+        ],
+        "title": "PublicTalentResponse"
+      },
+      "PublicTalentSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "faculty": {
+            "type": "string",
+            "title": "Faculty"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "introduction": {
+            "type": "string",
+            "title": "Introduction"
+          },
+          "advantages": {
+            "type": "string",
+            "title": "Advantages"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TalentTagResponse"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "cooperation_state": {
+            "type": "string",
+            "enum": [
+              "LOOKING",
+              "OPEN_TO_OPPORTUNITIES",
+              "NOT_AVAILABLE"
+            ],
+            "title": "Cooperation State"
+          },
+          "has_public_materials": {
+            "type": "boolean",
+            "title": "Has Public Materials"
+          },
+          "public_version": {
+            "type": "integer",
+            "title": "Public Version"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "faculty",
+          "grade",
+          "introduction",
+          "advantages",
+          "tags",
+          "cooperation_state",
+          "has_public_materials",
+          "public_version",
+          "published_at"
+        ],
+        "title": "PublicTalentSummary"
+      },
       "RankingEntryResponse": {
         "properties": {
           "nickname": {
@@ -11242,6 +12419,697 @@
           "items"
         ],
         "title": "SystemSettingsListResponse"
+      },
+      "TalentActionResult": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed"
+          },
+          "applied_version": {
+            "type": "integer",
+            "title": "Applied Version"
+          },
+          "current": {
+            "$ref": "#/components/schemas/TalentProfileResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "replayed",
+          "applied_version",
+          "current"
+        ],
+        "title": "TalentActionResult"
+      },
+      "TalentContactsResponse": {
+        "properties": {
+          "public_version": {
+            "type": "integer",
+            "title": "Public Version"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactInput"
+            },
+            "type": "array",
+            "title": "Contacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_version",
+          "contacts"
+        ],
+        "title": "TalentContactsResponse"
+      },
+      "TalentFields": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Name",
+            "default": ""
+          },
+          "faculty": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Faculty",
+            "default": ""
+          },
+          "grade": {
+            "type": "string",
+            "maxLength": 30,
+            "title": "Grade",
+            "default": ""
+          },
+          "introduction": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Introduction",
+            "default": ""
+          },
+          "advantages": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Advantages",
+            "default": ""
+          },
+          "tag_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Tag Ids"
+          },
+          "skill_notes": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Skill Notes",
+            "default": ""
+          },
+          "cooperation_direction": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Cooperation Direction",
+            "default": ""
+          },
+          "desired_roles": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Desired Roles",
+            "default": ""
+          },
+          "weekly_hours": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 168.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Hours"
+          },
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "UNSPECIFIED",
+              "ONLINE",
+              "OFFLINE",
+              "EITHER"
+            ],
+            "title": "Work Mode",
+            "default": "UNSPECIFIED"
+          },
+          "cooperation_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "LOOKING",
+                  "OPEN_TO_OPPORTUNITIES",
+                  "NOT_AVAILABLE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooperation State"
+          },
+          "experience": {
+            "type": "string",
+            "maxLength": 3000,
+            "title": "Experience",
+            "default": ""
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TalentLink"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Links"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "File Ids"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactInput"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Contacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TalentFields"
+      },
+      "TalentFileCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "version"
+        ],
+        "title": "TalentFileCommand"
+      },
+      "TalentFileIntentCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ],
+            "title": "Content Type"
+          },
+          "size": {
+            "type": "integer",
+            "maximum": 10485760.0,
+            "minimum": 1.0,
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name",
+          "content_type",
+          "size"
+        ],
+        "title": "TalentFileIntentCreate"
+      },
+      "TalentFileIntentResponse": {
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/TalentFileResponse"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "client_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Client Headers"
+          },
+          "pinned_content_length": {
+            "type": "integer",
+            "title": "Pinned Content Length"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "upload_url",
+          "expires_at",
+          "client_headers",
+          "pinned_content_length"
+        ],
+        "title": "TalentFileIntentResponse"
+      },
+      "TalentFileListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TalentFileResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "TalentFileListResponse"
+      },
+      "TalentFileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ],
+            "title": "Content Type"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CHECKING",
+              "READY",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "removed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "content_type",
+          "size",
+          "state",
+          "failure_code",
+          "version",
+          "removed_at",
+          "revoked_at",
+          "created_at"
+        ],
+        "title": "TalentFileResponse"
+      },
+      "TalentLink": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "TalentLink"
+      },
+      "TalentProfileReadResponse": {
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TalentProfileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile"
+        ],
+        "title": "TalentProfileReadResponse"
+      },
+      "TalentProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/TalentFields"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "HIDDEN",
+              "VISIBLE"
+            ],
+            "title": "Visibility"
+          },
+          "moderation_state": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "TAKEN_DOWN"
+            ],
+            "title": "Moderation State"
+          },
+          "public_version": {
+            "type": "integer",
+            "title": "Public Version"
+          },
+          "public_contact_channels": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "WECHAT",
+                "QQ",
+                "EMAIL",
+                "PHONE"
+              ]
+            },
+            "type": "array",
+            "title": "Public Contact Channels"
+          },
+          "public_file_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Public File Ids"
+          },
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "title": "Has Unpublished Changes"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "fields",
+          "version",
+          "visibility",
+          "moderation_state",
+          "public_version",
+          "public_contact_channels",
+          "public_file_ids",
+          "has_unpublished_changes",
+          "updated_at"
+        ],
+        "title": "TalentProfileResponse"
+      },
+      "TalentPublicReadCommand": {
+        "properties": {
+          "expected_public_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Public Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_public_version"
+        ],
+        "title": "TalentPublicReadCommand"
+      },
+      "TalentRevokeContactCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "WECHAT",
+              "QQ",
+              "EMAIL",
+              "PHONE"
+            ],
+            "title": "Channel"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "version",
+          "channel"
+        ],
+        "title": "TalentRevokeContactCommand"
+      },
+      "TalentSaveCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Version"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/TalentFields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "version",
+          "fields"
+        ],
+        "title": "TalentSaveCommand"
+      },
+      "TalentSuggestionCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name"
+        ],
+        "title": "TalentSuggestionCommand"
+      },
+      "TalentSuggestionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "PENDING",
+            "title": "Status"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "replayed"
+        ],
+        "title": "TalentSuggestionResponse"
+      },
+      "TalentTagListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TalentTagResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "TalentTagListResponse"
+      },
+      "TalentTagResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TalentTagResponse"
+      },
+      "TalentVersionCommand": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "version"
+        ],
+        "title": "TalentVersionCommand"
       },
       "TaskCardResponse": {
         "properties": {
