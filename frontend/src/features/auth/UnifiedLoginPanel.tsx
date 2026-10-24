@@ -54,7 +54,6 @@ import { useCooldown } from "./useCooldown";
 import { validatePassword, validateStudentNumber } from "./validation";
 import {
   describeChallengeError,
-  matchRememberedSlot,
   validateChallengeCode,
   validateChallengeIdentifier,
   validatePasswordIdentifier,
@@ -150,8 +149,16 @@ export function UnifiedLoginPanel() {
   }, []);
   const land = useLanding();
 
-  /** Record a completed login (the jar upserts, caps, and never throws). */
-  function recordLogin(role: string, nickname = "", explicitIdentifier?: string) {
+  /** Record a completed login (the jar upserts, caps, and never throws).
+   * `deviceSlot` rides the mint-only rule: present when THIS login
+   * minted a remembered credential, absent otherwise (the jar's
+   * retention keeps the older slot — see recordRecentLogin). */
+  function recordLogin(
+    role: string,
+    nickname = "",
+    explicitIdentifier?: string,
+    deviceSlot?: string,
+  ) {
     const trimmed = (explicitIdentifier ?? identifier).trim();
     if (trimmed.length === 0) {
       return;
@@ -162,6 +169,7 @@ export function UnifiedLoginPanel() {
       role: role === "ADMIN" || role === "TEACHER" ? role : "STUDENT",
       nickname,
       lastUsedAt: Date.now(),
+      ...(deviceSlot !== undefined ? { device_slot: deviceSlot } : {}),
     });
     refreshRecent();
   }
@@ -194,19 +202,26 @@ export function UnifiedLoginPanel() {
       probeSettledRef.current = true;
       setProbeSlots(slots);
     }
-    // The multi-slot matching contract (interfaces.md): mask ∈ array →
-    // the targeted verify echoes the matched SLOT; a miss (including
-    // the credential having left the jar) falls to the code leg.
-    const slot = matchRememberedSlot(entry.masked, slots);
-    if (slot !== null) {
+    // The slot-key matching (the slot-matching contract, 2026-10-24):
+    // the card's OWN device_slot — minted onto it at login, retained
+    // across unminted re-logins — decides. Membership in the probe
+    // array means this browser still holds the account's credential:
+    // the targeted verify echoes the slot and lands without a code.
+    // No slot (a legacy card, or the credential left the jar) falls to
+    // the code leg. The MASK is display-only — it collides across
+    // accounts (the owner-reported wrong-slot landings).
+    if (
+      entry.device_slot !== undefined &&
+      slots.some((row) => row.slot === entry.device_slot)
+    ) {
       try {
-        const outcome = await fastLoginCookieOnly(slot);
+        const outcome = await fastLoginCookieOnly(entry.device_slot);
         if (outcome.kind === "totp_required") {
           setPendingToken(outcome.pendingToken);
           return;
         }
         if (outcome.kind === "authenticated") {
-          recordLogin(outcome.role, "", entry.identifier);
+          recordLogin(outcome.role, "", entry.identifier, outcome.deviceSlot);
           await land();
           return;
         }
@@ -268,7 +283,9 @@ export function UnifiedLoginPanel() {
         setRememberDevice={setRememberDevice}
         onTotpRequired={setPendingToken}
         onUnregistered={setRegisterToken}
-        onAuthenticated={recordLogin}
+        onAuthenticated={(role, nickname, deviceSlot) => {
+          recordLogin(role, nickname, undefined, deviceSlot);
+        }}
       />
     </>
   );
@@ -345,7 +362,11 @@ function IdentifierForm({
   setRememberDevice: (value: boolean) => void;
   onTotpRequired: (pendingToken: string) => void;
   onUnregistered: (registerToken: string) => void;
-  onAuthenticated: (role: string, nickname?: string) => void;
+  onAuthenticated: (
+    role: string,
+    nickname?: string,
+    deviceSlot?: string,
+  ) => void;
 }) {
   const land = useLanding();
   const cooldown = useCooldown();
@@ -466,7 +487,11 @@ function IdentifierForm({
         onUnregistered(outcome.registerToken);
         return;
       }
-      onAuthenticated(outcome.kind === "authenticated" ? outcome.role : "");
+      onAuthenticated(
+        outcome.kind === "authenticated" ? outcome.role : "",
+        "",
+        outcome.kind === "authenticated" ? outcome.deviceSlot : undefined,
+      );
       await land();
     } catch (cause) {
       setSummary(toChallengeSummary(cause));
@@ -503,7 +528,11 @@ function IdentifierForm({
         onTotpRequired(outcome.pendingToken);
         return;
       }
-      onAuthenticated(outcome.kind === "authenticated" ? outcome.role : "");
+      onAuthenticated(
+        outcome.kind === "authenticated" ? outcome.role : "",
+        "",
+        outcome.kind === "authenticated" ? outcome.deviceSlot : undefined,
+      );
       await land();
     } catch (cause) {
       if (!isApiError(cause)) {
@@ -703,7 +732,12 @@ function TotpLeg({
   pendingToken: string;
   rememberDevice: boolean;
   setRememberDevice: (value: boolean) => void;
-  recordLogin: (role: string, nickname?: string) => void;
+  recordLogin: (
+    role: string,
+    nickname?: string,
+    explicitIdentifier?: string,
+    deviceSlot?: string,
+  ) => void;
   onBack: () => void;
 }) {
   const land = useLanding();
@@ -729,7 +763,12 @@ function TotpLeg({
       // this is the only leg remember_device may ever exempt.
       const outcome = await unifiedChallengeTotp(pendingToken, totpCode.trim(), rememberDevice);
       if (outcome.kind === "authenticated") {
-        recordLogin(outcome.role);
+        recordLogin(
+          outcome.role,
+          "",
+          undefined,
+          outcome.deviceSlot,
+        );
       }
       await land();
     } catch (cause) {
@@ -795,7 +834,12 @@ function InlineRegister({
   onReset,
 }: {
   token: string;
-  recordLogin: (role: string, nickname?: string) => void;
+  recordLogin: (
+    role: string,
+    nickname?: string,
+    explicitIdentifier?: string,
+    deviceSlot?: string,
+  ) => void;
   onReset: () => void;
 }) {
   const router = useRouter();

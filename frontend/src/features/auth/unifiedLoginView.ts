@@ -16,7 +16,6 @@
  */
 import { isApiError } from "@/lib/errors";
 
-import type { RememberedSlot } from "./api";
 import { NETWORK_ERROR_TEXT } from "./errors";
 import { validateStudentNumber } from "./validation";
 
@@ -105,21 +104,9 @@ export function describeChallengeError(
   }
   return { message: error.message || fallback, requestId: error.requestId };
 }
-
-// --- the remembered-slot matching (multi-slot batch, 2026-10-24) -----------------------
-
-/**
- * The client matching contract (interfaces.md): a local account card
- * matches the probe array BY MASKED IDENTIFIER and the caller echoes
- * the matched entry's `slot` as the targeted verify's `target`. A
- * card matching nothing — including its credential having left the
- * jar — answers null and goes the code flow: "card in localStorage
- * but not in the array" and "unmatched" are ONE condition.
- */
-export function matchRememberedSlot(
-  masked: string,
-  slots: readonly RememberedSlot[],
-): string | null {
-  const hit = slots.find((row) => row.identifier_masked === masked);
-  return hit === undefined ? null : hit.slot;
-}
+// The card↔slot matching seam (the slot-matching contract,
+// 2026-10-24) lives on the CARD: recordLogin stores the login
+// response's mint-only `device_slot` and the branch compares
+// `entry.device_slot` against the probe array's slots — the mask is
+// display-only (it collided across accounts; matchRememberedSlot and
+// its mask key are retired).

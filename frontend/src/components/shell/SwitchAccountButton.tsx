@@ -31,16 +31,18 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useLogoutAction } from "@/features/auth/LogoutSection";
 import { RecentLoginCardButton } from "@/features/auth/RecentLoginCard";
-import { fetchRememberedHint, type RememberedSlot } from "@/features/auth/api";
+import { fetchRememberedHint } from "@/features/auth/api";
 import { listRecentLogins, type RecentLoginEntry } from "@/features/auth/recentLogins";
 import { setSwitchPick, switchMenuEntries } from "@/features/auth/switchAccount";
-import { matchRememberedSlot } from "@/features/auth/unifiedLoginView";
 
-/** The open menu's model: the offerable rows plus the remembered-slot
- * probe answer that feeds the 免登录 badges. */
+/** The open menu's model: the offerable rows plus the precomputed
+ * 免登录 set — the rows whose OWN device_slot (minted at login,
+ * retained across unminted re-logins) is still in the probe array.
+ * The mask plays no part: it collides across accounts (the
+ * owner-reported wrong-slot bug); the slot handle cannot. */
 interface SwitchMenuState {
   rows: RecentLoginEntry[];
-  slots: RememberedSlot[];
+  fastIds: ReadonlySet<string>;
 }
 
 export function SwitchAccountButton() {
@@ -96,12 +98,22 @@ export function SwitchAccountButton() {
       void handle();
       return;
     }
-    // The 免登录 badges ride the remembered-slot probe (the multi-slot
-    // batch): opened WITH the answer so the badges never pop in late.
-    // The probe is fail-safe — any failure answers [] and the badges
-    // simply stay hidden (the pick still works through the code flow).
-    const slots = await fetchRememberedHint();
-    setMenu({ rows, slots });
+    // The 免登录 badges ride the remembered-slot probe, matched by the
+    // card's OWN device_slot (the slot-matching contract, 2026-10-24)
+    // — the mask plays no part (it collides across accounts, the
+    // owner-reported wrong-slot bug). Opened WITH the answer so the
+    // badges never pop in late; a probe failure answers [] and the
+    // badges simply stay hidden (the pick still works through the code
+    // flow).
+    const handles = new Set((await fetchRememberedHint()).map((row) => row.slot));
+    const fastIds = new Set(
+      rows
+        .filter(
+          (row) => row.device_slot !== undefined && handles.has(row.device_slot),
+        )
+        .map((row) => row.identifier),
+    );
+    setMenu({ rows, fastIds });
   }
 
   async function onPick(entry: RecentLoginEntry) {
@@ -143,7 +155,7 @@ export function SwitchAccountButton() {
                       void onPick(picked);
                     }}
                   />
-                  {matchRememberedSlot(entry.masked, menu.slots) !== null ? (
+                  {menu.fastIds.has(entry.identifier) ? (
                     <span className="switch-menu-fast">免登录</span>
                   ) : null}
                 </div>
