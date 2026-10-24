@@ -23,6 +23,8 @@
 - **测试纪律**(campusquest-test-process):新集成测试文件带 `pytestmark`;talent 上传意图 201/200 幂等带跨连接持久性断言(独立 `AsyncSession` 复核行落库);并发/版本竞态跑真实 PG(G15);composition smoke 覆盖真实 MinIO + ClamAV(G1/G2/G18);本地跑任何测试前按栈借用协议通告 campus reviewer 会话。
 - **G19 工件同 PR**:矩阵文档 `docs/quality/test-matrix/innovation-talent.md` 随迁并按"预期先于测试检索"方法论核对;13 张 talent 基线首拍(pinned-font);noskip 豁免 4 条;e2e-selector-contract.md B 表;覆盖率棘轮走 `--update` 带理由;`interfaces.md` 登记新错误码;`docs/operations/release-checklist.md` 加 ClamAV。
 - **G3**:搬入代码不得有占位符;`InnovationShell` 的"项目库/成果/招募 即将开放"是产品诚实占位(可见文案),不是代码占位,允许。
+- **前端规范锚点**(frontend-design-system/patterns 摘要,实施时遵守):dialog 一律走 `components/ui/dialog`(Radix 组合,禁原生 `<dialog>`);新组件先过 patterns §16 复用检查;`check:css` 禁方括号任意值(token-first 三通道);每页必备 loading/empty/error/permission-denied 状态;e2e 世界无活数据的状态进 `/dev/gallery` 用真实组件+确定性 fixture;业务错误按 `error.code` 映射禁解析文案;门禁命令裸跑+显式成功标记(证据纪律)。
+- **窄屏底栏 5 槽(待 owner 裁决,Task 9 前问)**:学生窄屏 BottomNav 是固定 5 槽,新增"创新创业"入口若要进底栏须挤掉现有项;默认方案:窄屏不进底栏,从宽屏 sidebar + 首页入口进(与 PR 原始处理一致,实施时核对 PR 的 BottomNav 策略)。
 - 提交信息 plain conventional,无 AI trailer;不 push(推送/PR 另行授权)。
 
 ## Review Focus
