@@ -62,6 +62,11 @@ claims-lifecycle C3：Claim 状态转移集中化 pin 由 `tests/unit/tasks/test
 
 解读（初判，非结论）：**领取资格/配额/cutoff 的边界已被单测钉死；钱包算术、流水符号、到期守卫在单层无断言**——与架构一致（账本走真 PG 集成，到期走 worker/e2e）。9 个幸存者在借栈窗口内做集成级交叉验证（`tests/integration/points`、`tests/integration/tasks`、`tests/workers`）后分类：caught-by-integration（防线只是分层不同）或 genuine assertion gap（补钉任务另立）。
 
+**交叉验证终判（基线 376 passed；每体单独注入后全量复跑）**：
+- **7/9 被集成层击杀**（M4、M5 到期守卫；M6 零额守卫收紧；M8/M9 钱包符号；M11 流水符号；M12 earned 触发）——防线分层成立，无行动项。
+- **M7（`amount > 0` → `>= 0`）= 等价变异体**：上游 :234 已拒 `amount == 0`，该点两种写法语义相同（M6 被秒杀即证明 :234 先行）。非缺口。
+- **M10（任务奖励 `<= 0` → `< 0`）= 唯一真·轻缺口**：零分 ASSIGNMENT_REWARD 边界在单测与集成两层都无人断言（正数不变量只在负数侧被钉）。列出不补，一行测试可闭合。
+
 ## 五、teardown 审计重枚举（Task 5）
 
 审计对象 14 → **32 个 spec**（新增 18 件全部分级：12 已覆盖 / 2 无写面 / 5 涉缺口）。新增缺口 3 项（均推定，列出不补）：
