@@ -57,12 +57,7 @@ def checker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     backend_root = tmp_path / "backend"
     (backend_root / "tests" / "integration" / "example").mkdir(parents=True)
     (backend_root / "tests" / "integration" / "example" / "test_example.py").write_text(
-        "def test_exists():\n"
-        "    pass\n"
-        "\n"
-        "\n"
-        "async def test_async_exists():\n"
-        "    pass\n",
+        "def test_exists():\n    pass\n\n\nasync def test_async_exists():\n    pass\n",
         encoding="utf-8",
     )
     e2e = tmp_path / "frontend" / "e2e"
