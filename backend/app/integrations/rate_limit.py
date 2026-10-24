@@ -219,6 +219,11 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         # token material; the role/target validation lives in the staff
         # service.
         RateLimitRule(bucket="staff:invitations", limit=20, window_seconds=3600),
+        # Talent contact reveal (innovation batch 1): per authenticated
+        # viewer. Each grant reads another student's chosen contact value,
+        # so this is the privacy anti-abuse bound; the authorization and
+        # audit live in the talent service, not here.
+        RateLimitRule(bucket="ie:talent-contacts", limit=30, window_seconds=60),
     )
 }
 

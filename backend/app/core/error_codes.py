@@ -95,6 +95,11 @@ class ErrorCode(StrEnum):
     # unified arms — the branch reason stays in server logs.
     CHALLENGE_CODE_INVALID = "CHALLENGE_CODE_INVALID"
 
+    # Innovation module (batch 1, talent): the contact-reveal limiter's
+    # fail-closed envelope — Redis unavailable means no contact values
+    # are handed out, 503 rather than an open door.
+    TALENT_CONTACTS_UNAVAILABLE = "TALENT_CONTACTS_UNAVAILABLE"
+
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.
     INTERNAL_ERROR = "INTERNAL_ERROR"

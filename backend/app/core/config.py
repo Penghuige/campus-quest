@@ -6,6 +6,7 @@ at startup so a misconfigured deployment fails fast with a readable error.
 """
 
 from functools import lru_cache
+from ipaddress import ip_address
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -108,6 +109,11 @@ class Settings(BaseSettings):
     s3_connect_timeout_seconds: int = 10
     s3_read_timeout_seconds: int = 30
     s3_delete_total_attempts: int = 2
+    # Clamd TCP has no authentication. Keep it on a private literal IP;
+    # talent file completion fails closed when this service is down.
+    clamd_host: str = "127.0.0.1"
+    clamd_port: int = Field(default=3310, ge=1, le=65535)
+    clamd_timeout_seconds: int = Field(default=30, ge=1, le=30)
     business_timezone: str
     # Public path prefix the API is reverse-proxied under (e.g. "/campus"
     # when the app is mounted at https://host/campus). "" — the default —
@@ -655,6 +661,14 @@ class Settings(BaseSettings):
                 f"s3 timeouts must be within [1, 300] seconds, got {value}"
             )
         return value
+
+    @field_validator("clamd_host")
+    @classmethod
+    def _validate_clamd_host(cls, value: str) -> str:
+        address = ip_address(value)
+        if not (address.is_private or address.is_loopback) or address.is_unspecified:
+            raise ValueError("Clamd requires a private literal IP address")
+        return str(address)
 
     @field_validator("s3_delete_total_attempts")
     @classmethod
