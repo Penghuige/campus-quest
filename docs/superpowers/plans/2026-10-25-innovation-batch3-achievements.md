@@ -40,3 +40,13 @@
 ## 完成定义
 
 - 全部 Task 完成;release-gate EXIT=0(fresh);守卫映射表 + 漂移审计三项进 PR 描述;分支不 push(待 owner 授权)。
+
+## 实施记录与偏差(2026-10-25)
+
+1. **workflow_guards 的层归属**:importlinter 首轮 BROKEN——它被 services 使用但被我放进 router 层。移入共享底层(models/schemas)后 14 契约 KEPT。
+2. **公开成果的查看者状态放宽**:public_achievement_service 的 `_active` 仍要求 ACTIVE(写于审批制前),批 3 放宽为 ACTIVE 或 PENDING_APPROVAL(与 talent 公开面一致);PUBLIC 面 200、动作面 403 各有测试钉。
+3. **clean_world 补批 3 序列**:review e2e 首次失败是 FK 违约(achievement drafts 引用 project drafts);按 PR 原顺序补齐 7 组删除(conflicts→cases→workflows→revision_evidence→revisions→evidence→drafts)后才绿。
+4. **review spec 的招募段裁剪**:PR 的 R3×R2 交叉验证依赖招募端点(批 4),按范围裁掉并留注释;剩余成果链路(编辑/下架/更新复审)完整保留。
+5. **e2e 电池的环境形态**:clean_world 修复前的失败运行会留下世界残留(公开成果泄漏进列表),运行前需 reset-test-db——与门禁的腿间重置一致。
+6. **greenlet 新签名**:批 3 async 服务族在 full-suite 组合跑泄漏一个 beyond-EOF 端点(211)到 operations_service.py;按 owner 批准的 waiver 政策登记 exact-set 指纹(带 provenance),任何漂移会重新红。
+7. **覆盖率基线时长**:批 3 测试量使 590s 超时,改 1800s;诊断性 `--cov` 运行必须用独立 COVERAGE_FILE(批 2 教训,已记入项目记忆)。
