@@ -11,6 +11,13 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-review-visual.spec.ts",
+    title: "achievement review visual: owner proof workspace, operator queue and campus empty list",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Real three-surface pixel and axe scenario runs in its own pinned-font Linux visual stage.",
+  },
+  {
     file: "innovation-navigation-visual.spec.ts",
     title: "R2 navigation visual: campus landing and the empty project workspace",
     gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
