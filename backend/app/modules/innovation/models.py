@@ -21,6 +21,57 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+class AchievementDraft(Base):
+    """Private child content; no approval/publication state is implied."""
+
+    __tablename__ = "ie_achievement_drafts"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "creation_request_id",
+            name="uq_ie_achievement_drafts_project_request",
+        ),
+        CheckConstraint(
+            "char_length(title) BETWEEN 1 AND 120 AND btrim(title) <> ''",
+            name="title_length",
+        ),
+        CheckConstraint("char_length(description) <= 4000", name="description_length"),
+        CheckConstraint(
+            "char_length(work_url) <= 2000 AND (work_url = '' OR work_url ~* '^https?://[^/]+')",
+            name="work_url_format",
+        ),
+        CheckConstraint("char_length(award_text) <= 1000", name="award_text_length"),
+        CheckConstraint("version > 0", name="version_positive"),
+        CheckConstraint(
+            "char_length(creation_payload_fingerprint) = 64", name="fingerprint_length"
+        ),
+        Index(
+            "ix_ie_achievement_drafts_project_updated",
+            "project_id",
+            text("updated_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("ie_project_drafts.id"))
+    creation_request_id: Mapped[UUID] = mapped_column()
+    creation_payload_fingerprint: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    work_url: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    award_text: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+
 class OperationsGrant(Base):
     """Retained after revocation so stale versions cannot revoke a regrant."""
 

@@ -92,6 +92,11 @@ KEY_TABLES=(
   ie_owner_profiles
   ie_owner_qualifications
   ie_operations_grants
+  ie_achievement_drafts
+  ie_achievement_evidence
+  ie_achievement_revisions
+  ie_achievement_review_cases
+  ie_achievement_workflows
 )
 
 # Unique indexes whose absence would silently reopen a §31 race.
