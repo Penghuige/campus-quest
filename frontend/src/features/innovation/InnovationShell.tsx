@@ -12,9 +12,9 @@
  *
  * The rail is the shared WorkspaceSidebar (the same primitive Student/
  * Teacher/Admin shells ride) carrying the innovation navigation: 人才库
- * and 项目库 are live (batch 2), while 校内成果 and 正在招募 stay HONEST
- * placeholders — inert muted rows that say "(即将开放)", never
- * aria-disabled links (they become real items as batches 3–4 land, in
+ * and 项目库 are live (batch 2), 校内成果 is live (batch 3), while 正在招募
+ * stays an HONEST placeholder — an inert muted row that says "(即将开放)",
+ * never an aria-disabled link (it becomes a real item as batch 4 lands, in
  * place, without moving).
  *
  * This file is the ONLY client boundary of the group (patterns §2);
@@ -32,14 +32,14 @@ import { useSession } from "@/features/auth/session";
 import { landingPathForRole } from "@/features/auth/workspace";
 import { getAuthEpoch } from "@/lib/accessToken";
 
-/* The innovation navigation contract: two live destinations (batch 2
- * opens 项目库 as a real route) plus the two not-yet-opened sections.
- * hrefs name where each section WILL live so later batches only flip
- * `disabled` off. */
+/* The innovation navigation contract: three live destinations (batch 2
+ * opens 项目库; batch 3 opens 校内成果) plus the not-yet-opened 正在招募.
+ * The remaining href names where the section WILL live so batch 4 only
+ * flips `disabled` off. */
 const INNOVATION_NAV: readonly SideNavItem[] = [
   { href: "/innovation/talents", label: "人才库", icon: <SlotsIcon width="20" height="20" strokeWidth="1.8" /> },
   { href: "/innovation/projects", label: "项目库", icon: <TasksIcon /> },
-  { href: "/innovation/achievements", label: "校内成果(即将开放)", icon: <TrophyIcon />, disabled: true },
+  { href: "/innovation/achievements", label: "校内成果", icon: <TrophyIcon /> },
   { href: "/innovation/recruitments", label: "正在招募(即将开放)", icon: <ReviewIcon />, disabled: true },
 ];
 
