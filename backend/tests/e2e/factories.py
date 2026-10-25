@@ -743,13 +743,67 @@ async def clean_world(
         # drafts, the owner profile, its qualification snapshot, and the
         # operations grants. No history triggers on these tables — plain
         # FK-ordered deletes suffice.
+        # Batch 3: the achievement family (drafts, evidence, revisions,
+        # review cases/workflows, operator conflicts) hangs off the
+        # project drafts by FK and must go first, in dependency order.
+        from app.modules.innovation.evidence_models import AchievementEvidence
         from app.modules.innovation.models import (
+            AchievementDraft,
             OperationsGrant,
             OwnerProfile,
             OwnerQualification,
             ProjectDraft,
         )
+        from app.modules.innovation.review_models import (
+            AchievementReviewCase,
+            AchievementRevision,
+            AchievementWorkflow,
+            ReviewConflict,
+            RevisionEvidence,
+        )
 
+        projects = select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+        achievements = select(AchievementDraft.id).where(
+            AchievementDraft.project_id.in_(projects)
+        )
+        await db.execute(
+            delete(ReviewConflict).where(
+                ReviewConflict.project_id.in_(projects)
+                | ReviewConflict.user_id.in_(users)
+            )
+        )
+        await db.execute(
+            delete(AchievementReviewCase).where(
+                AchievementReviewCase.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementWorkflow).where(
+                AchievementWorkflow.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(RevisionEvidence).where(
+                RevisionEvidence.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementRevision).where(
+                AchievementRevision.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementEvidence).where(
+                AchievementEvidence.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementDraft).where(
+                AchievementDraft.project_id.in_(
+                    select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+                )
+            )
+        )
         await db.execute(
             delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
         )
