@@ -327,12 +327,17 @@ playwright-e2e:
 release-evidence-scanner:
 	docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
 
+# Every browser leg opens from the pristine precondition: the battery
+# seeds its own world, and its teardown cannot be trusted to leave the
+# shared database pixel-exact for the NEXT stage (admin directory
+# baselines are whole-table sensitive) — CI sidesteps this with isolated
+# jobs; the local chain resets between stages instead.
 release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner \
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build reset-test-db \
-              playwright-e2e visual-regression talent-visual pip-audit \
-              npm-audit coverage-ratchet
+              playwright-e2e reset-test-db visual-regression reset-test-db \
+              talent-visual pip-audit npm-audit coverage-ratchet
 
 # The talent visual battery runs in its own pinned-font Linux stage with a
 # disposable real publication world (noskip-exempted from the standard
