@@ -263,7 +263,7 @@ coverage-clean:
 # committed floors (the CI gate; CI accumulates via --cov-append in
 # the same shape), then the frontend native-coverage ratchet, which
 # self-runs its unit suite and needs no wired input.
-coverage-baseline:
+coverage-baseline: coverage-clean
 	$(BACKEND_UNIT_WORKER_CMD) $(COV_APPEND_FLAGS) -q
 	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -q
 	cd backend && uv run python scripts/coverage_ratchet.py --update

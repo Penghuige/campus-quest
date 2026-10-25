@@ -2,7 +2,7 @@
   "app/__init__.py": 100.0,
   "app/core": 95.9,
   "app/db": 92.5,
-  "app/integrations": 92.5,
+  "app/integrations": 91.7,
   "app/main.py": 100.0,
   "app/modules/__init__.py": 100.0,
   "app/modules/audit": 97.3,
