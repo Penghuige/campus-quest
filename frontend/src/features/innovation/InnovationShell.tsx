@@ -12,9 +12,10 @@
  *
  * The rail is the shared WorkspaceSidebar (the same primitive Student/
  * Teacher/Admin shells ride) carrying the innovation navigation: 人才库
- * is live, the other three sections are HONEST placeholders — inert
- * muted rows that say "(即将开放)", never aria-disabled links (they
- * become real items as batches 2–4 land, in place, without moving).
+ * and 项目库 are live (batch 2), while 校内成果 and 正在招募 stay HONEST
+ * placeholders — inert muted rows that say "(即将开放)", never
+ * aria-disabled links (they become real items as batches 3–4 land, in
+ * place, without moving).
  *
  * This file is the ONLY client boundary of the group (patterns §2);
  * pages inside stay Server Components that mount their own data
@@ -31,12 +32,13 @@ import { useSession } from "@/features/auth/session";
 import { landingPathForRole } from "@/features/auth/workspace";
 import { getAuthEpoch } from "@/lib/accessToken";
 
-/* The innovation navigation contract (batch 1): one live destination
- * plus the three not-yet-opened sections. hrefs name where each
- * section WILL live so later batches only flip `disabled` off. */
+/* The innovation navigation contract: two live destinations (batch 2
+ * opens 项目库 as a real route) plus the two not-yet-opened sections.
+ * hrefs name where each section WILL live so later batches only flip
+ * `disabled` off. */
 const INNOVATION_NAV: readonly SideNavItem[] = [
   { href: "/innovation/talents", label: "人才库", icon: <SlotsIcon width="20" height="20" strokeWidth="1.8" /> },
-  { href: "/innovation/projects", label: "项目库(即将开放)", icon: <TasksIcon />, disabled: true },
+  { href: "/innovation/projects", label: "项目库", icon: <TasksIcon /> },
   { href: "/innovation/achievements", label: "校内成果(即将开放)", icon: <TrophyIcon />, disabled: true },
   { href: "/innovation/recruitments", label: "正在招募(即将开放)", icon: <ReviewIcon />, disabled: true },
 ];
@@ -107,11 +109,11 @@ export function InnovationShell({ children }: { children: ReactNode }) {
             <p className="alert" role="alert">
               请先
               <Link href="/login">登录校内账号</Link>
-              后浏览人才库。
+              后浏览双创内容。
             </p>
           ) : state.me.status !== "ACTIVE" ? (
             <p className="alert alert-warning" role="alert">
-              当前账号状态不允许浏览校内人才库。
+              当前账号状态不允许浏览校内双创内容。
             </p>
           ) : (
             <div key={`${state.me.id}:${getAuthEpoch()}`}>{children}</div>

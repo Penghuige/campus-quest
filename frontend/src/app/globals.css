@@ -629,7 +629,7 @@ body {
 }
 
 .ie-draft-row > .btn { flex-shrink: 0; }
-.ie-draft-form { min-width: 0; }
+.ie-draft-form, .ie-draft-remote { min-width: 0; }
 .ie-draft-textarea { resize: vertical; }
 
 .ie-draft-actions {
@@ -637,6 +637,18 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+
+.ie-draft-remote dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ie-draft-remote dd {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .input {

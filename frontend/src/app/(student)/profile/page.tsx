@@ -40,10 +40,16 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
         <h1 className="page-title">我的档案</h1>
         <p className="page-subtitle">成长数据、获得的荣誉与个人信息</p>
       </div>
-      {/* Innovation batch 1: the owner-side talent profile entry. The
-          nav keeps the PR #43 label (本人双创管理) so later batches add
-          我的项目/负责人资料 links beside it without moving this one. */}
+      {/* Innovation owner-side entries: batch 2 opens 我的项目 and the
+          owner profile/qualification request; batch 1's talent-profile
+          entry keeps its existing slot and label. */}
       <nav className="ie-draft-actions" aria-label="本人双创管理">
+        <Link className="section-link" href="/profile/project-drafts">
+          我的项目
+        </Link>
+        <Link className="section-link" href="/profile/owner-profile">
+          负责人资料与资格
+        </Link>
         <Link className="section-link" href="/profile/talent-profile">
           我的人才档案
         </Link>
