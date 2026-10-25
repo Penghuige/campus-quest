@@ -17,8 +17,10 @@ from app.modules.innovation import (
     operations_router,
     owner_router,
     public_achievement_router,
+    public_recruitment_router,
     public_talent_router,
     qualification_router,
+    recruitment_router,
     review_operations_router,
     review_router,
     talent_file_router,
@@ -43,3 +45,5 @@ router.include_router(evidence_router.router)
 router.include_router(review_router.router)
 router.include_router(review_operations_router.router)
 router.include_router(public_achievement_router.router)
+router.include_router(recruitment_router.router)
+router.include_router(public_recruitment_router.router)

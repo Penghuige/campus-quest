@@ -305,6 +305,7 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `PROJECT_DRAFT_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
 | `PROJECT_DRAFT_REQUEST_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
 | `OWNER_PROFILE_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `RECRUITMENT_CONTACTS_UNAVAILABLE` | 创新板块批 4(招募)· 同上小节 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 

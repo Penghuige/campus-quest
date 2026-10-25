@@ -108,6 +108,10 @@ class ErrorCode(StrEnum):
     PROJECT_DRAFT_REQUEST_CONFLICT = "PROJECT_DRAFT_REQUEST_CONFLICT"
     OWNER_PROFILE_VERSION_CONFLICT = "OWNER_PROFILE_VERSION_CONFLICT"
 
+    # Innovation module (batch 4, recruitment): the contact-reveal
+    # limiter's fail-closed envelope, same shape as the talent one.
+    RECRUITMENT_CONTACTS_UNAVAILABLE = "RECRUITMENT_CONTACTS_UNAVAILABLE"
+
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.
     INTERNAL_ERROR = "INTERNAL_ERROR"
