@@ -178,10 +178,9 @@ function ProjectDraftEditor({ initialDraft, onBack }: { initialDraft?: ProjectDr
       {record ? <Link href={`/profile/project-drafts/${record.id}/achievements`} onClick={(event) => {
         if (busy || (dirty && !window.confirm("项目有未保存的修改，确定进入成果草稿吗？"))) event.preventDefault();
       }}>管理成果草稿</Link> : null}
-      {/* Batch 2 lands the project library only; the recruitment
-          workspace arrives with batch 4. An inert line keeps the
-          affordance honest instead of linking to a missing route. */}
-      {record ? <span className="field-hint">招募管理（后续批次开放）</span> : null}
+      {record ? <Link href={`/profile/project-drafts/${record.id}/recruitments`} onClick={(event) => {
+        if (busy || (dirty && !window.confirm("项目有未保存的修改，确定进入招募管理吗？"))) event.preventDefault();
+      }}>招募管理</Link> : null}
       <form className="panel form ie-draft-form" method="post" onSubmit={onSubmit} noValidate ref={formRef}>
         <p className="field-hint">保存后仍然仅自己可见。</p>
         {DRAFT_FIELDS.map((field) => {

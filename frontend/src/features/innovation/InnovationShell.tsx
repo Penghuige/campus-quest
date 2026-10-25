@@ -12,10 +12,8 @@
  *
  * The rail is the shared WorkspaceSidebar (the same primitive Student/
  * Teacher/Admin shells ride) carrying the innovation navigation: 人才库
- * and 项目库 are live (batch 2), 校内成果 is live (batch 3), while 正在招募
- * stays an HONEST placeholder — an inert muted row that says "(即将开放)",
- * never an aria-disabled link (it becomes a real item as batch 4 lands, in
- * place, without moving).
+ * and 项目库 are live (batch 2), 校内成果 is live (batch 3), and 正在招募
+ * is live now that batch 4 lands — all four destinations are real links.
  *
  * This file is the ONLY client boundary of the group (patterns §2);
  * pages inside stay Server Components that mount their own data
@@ -32,15 +30,13 @@ import { useSession } from "@/features/auth/session";
 import { landingPathForRole } from "@/features/auth/workspace";
 import { getAuthEpoch } from "@/lib/accessToken";
 
-/* The innovation navigation contract: three live destinations (batch 2
- * opens 项目库; batch 3 opens 校内成果) plus the not-yet-opened 正在招募.
- * The remaining href names where the section WILL live so batch 4 only
- * flips `disabled` off. */
+/* The innovation navigation contract: four live destinations (batch 2
+ * opened 项目库, batch 3 校内成果, batch 4 正在招募). */
 const INNOVATION_NAV: readonly SideNavItem[] = [
   { href: "/innovation/talents", label: "人才库", icon: <SlotsIcon width="20" height="20" strokeWidth="1.8" /> },
   { href: "/innovation/projects", label: "项目库", icon: <TasksIcon /> },
   { href: "/innovation/achievements", label: "校内成果", icon: <TrophyIcon /> },
-  { href: "/innovation/recruitments", label: "正在招募(即将开放)", icon: <ReviewIcon />, disabled: true },
+  { href: "/innovation/recruitments", label: "正在招募", icon: <ReviewIcon /> },
 ];
 
 const SIDEBAR_GROUPS = [
@@ -48,8 +44,8 @@ const SIDEBAR_GROUPS = [
 ] as const;
 
 /** The medium/narrow top nav — the same items as the rail, so no band
- *  shows a different picture of the section (links live, placeholders
- *  stay inert muted text). */
+ *  shows a different picture of the section (the disabled branch stays
+ *  for any future not-yet-opened destination). */
 function InnovationTopNav({ pathname }: { pathname: string }) {
   return (
     <nav className="app-nav" aria-label="创新创业导航">
