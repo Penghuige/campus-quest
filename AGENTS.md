@@ -46,7 +46,7 @@ When deciding whether to copy a pattern from another codebase, read:
 - Reproduce a bug with a failing regression test before fixing it.
 - Run focused tests while developing, then the relevant module gate before completion.
 - Run `make pre-push` before pushing (fast local gate — lint/types/architecture/contract freshness/frontend ratchet, ~30s–2min, no docker stack; the pre-push hook runs it automatically, `git push --no-verify` skips a single push).
-- Bring the local service stack up with `make stack`: it starts the dependency stack, writes a fresh report for HEAD (including the commit's GitHub Actions record), and serves it at http://127.0.0.1:8200/ (`make stack-down` stops only the viewer).
+- Bring the local service stack up with `make stack`: it starts the dependency stack and writes a fresh report for HEAD (including the commit's GitHub Actions record). Every `make test-report` also ensures the report viewer is serving at http://127.0.0.1:8200/ (reused if already up; `make stack-down` stops only the viewer).
 - Use a fresh verification run before claiming the task is complete.
 - Request code review for completed implementation tasks before merging them into a wider workstream.
 - Do not silently change product semantics to make implementation easier. Amend the spec or plan first if a real ambiguity is discovered.
