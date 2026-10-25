@@ -11,6 +11,62 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-recruitment-visual.spec.ts",
+    title: "R3 visual: owner form, consent preview and public project/recruitment",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "R3 pixels and axe run in a separate pinned-font Linux visual world with real publication and explicit contact grants.",
+  },
+  {
+    file: "innovation-recruitment-visual.spec.ts",
+    title: "R3 visual: filtered empty and unavailable recruitment",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "R3 pixels and axe run in a separate pinned-font Linux visual world with real publication and explicit contact grants.",
+  },
+  {
+    file: "innovation-review-visual.spec.ts",
+    title: "achievement review visual: owner proof workspace, operator queue and campus empty list",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Real three-surface pixel and axe scenario runs in its own pinned-font Linux visual stage.",
+  },
+  {
+    file: "innovation-navigation-visual.spec.ts",
+    title: "R2 navigation visual: campus landing and the empty project workspace",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Batch-2 pixel and axe coverage runs in the separate pinned-font Linux visual stage (make talent-visual's sibling stage).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4.1 visual: public materials remain neutral in directory and detail",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: owner, mobile preview and public talent",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: empty, unavailable, loading and error",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
+    file: "innovation-talents-visual.spec.ts",
+    title: "R4 visual: long content and zero availability remain usable on mobile",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Talent pixel and axe checks run in their own Linux pinned-font stage with a disposable real publication world (make talent-visual).",
+  },
+  {
     file: "auth-cross-tab-fence.spec.ts",
     title: "sibling explicit login fences this tab",
     gate: "CQ_E2E_FENCE=1",

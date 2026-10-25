@@ -168,6 +168,7 @@ def test_worker_cli_style_load_registers_health_job(
         "workers.expire_claims_scan,workers.health_job,"
         "workers.project_ranking_update,workers.rebuild_all_rankings,"
         "workers.recover_stuck_sending,workers.requeue_stale_validating,"
+        "workers.schedule_recruitments,"
         "workers.send_notification_delivery,workers.validate_submission"
     )
 
@@ -186,6 +187,7 @@ def test_beat_schedule_covers_every_planned_scan(
     app = create_celery_app(settings)
     schedule = app.conf.beat_schedule
     expected = {
+        "workers.schedule_recruitments": settings.recruitment_scan_interval_seconds,
         "workers.cleanup_expired_files": settings.file_cleanup_scan_interval_seconds,
         "workers.dispatch_due_notifications": (
             settings.notification_dispatch_scan_interval_seconds
@@ -223,6 +225,7 @@ def test_scan_tasks_autoretry_transient_db_failures(
     from app.workers.jobs.expire_claims import expire_claims_scan
     from app.workers.jobs.recover_stuck_sending import recover_stuck_sending
     from app.workers.jobs.requeue_stale_validating import requeue_stale_validating
+    from app.workers.jobs.schedule_recruitments import schedule_recruitments
 
     for task in (
         cleanup_files_scan,
@@ -230,6 +233,7 @@ def test_scan_tasks_autoretry_transient_db_failures(
         expire_claims_scan,
         recover_stuck_sending,
         requeue_stale_validating,
+        schedule_recruitments,
     ):
         assert set(task.autoretry_for) == {OperationalError, DBAPIError}, (
             f"{task.name} must autoretry transient DB failures"

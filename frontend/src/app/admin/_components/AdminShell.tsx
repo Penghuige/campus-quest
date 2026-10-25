@@ -49,6 +49,9 @@ const NAV_ITEMS = [
   { href: "/admin/invitations", label: "员工邀请", icon: <InboxIcon /> },
   { href: "/admin/platforms", label: "平台管理", icon: <TasksIcon /> },
   { href: "/admin/approvals", label: "注册审批", icon: <ReviewIcon /> },
+  // Innovation batch 2: the two owner-side administration pages.
+  { href: "/admin/innovation-operations", label: "双创运营授权", icon: <UserIcon /> },
+  { href: "/admin/owner-qualifications", label: "负责人资格", icon: <UserIcon /> },
   { href: "/admin/rewards", label: "奖励目录", icon: <GiftIcon /> },
   { href: "/admin/redemptions", label: "兑换审核", icon: <ReviewIcon /> },
   { href: "/admin/audit", label: "审计日志", icon: <InboxIcon /> },

@@ -87,6 +87,10 @@ Agents MUST:
 
 The backend is authoritative for reward tiers, points, permissions, deadlines, and workflow states. Frontend countdowns and optimistic updates are presentation conveniences only.
 
+## Innovation module boundary
+
+The innovation module (`modules/innovation/`, `features/innovation/`) lives under the boundary and collaboration covenant in `docs/architecture/innovation-boundary.md` — read it before touching innovation code or any shared file it registers into.
+
 ## Backend quality rule
 
 The backend is a modular monolith. Keep domain ownership explicit:

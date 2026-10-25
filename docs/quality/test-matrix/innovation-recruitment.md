@@ -1,0 +1,41 @@
+# Innovation recruitment spec-test matrix
+
+Expectations recorded from approved R3 spec before locating implementation tests.
+
+| # | Spec | Expected behavior | Test | Status |
+| --- | --- | --- | --- | --- |
+| R1 | §3 | Incomplete drafts save; publication requires bounded fields, explicit booleans, future aware deadline and valid selected contacts | `tests/unit/innovation/test_recruitment_schemas.py` + `tests/integration/innovation/test_recruitment_lifecycle.py::test_database_enforces_private_content_bounds` | covered |
+| R2 | §3 | Publish requires active student, approved qualification AND owning project | `tests/integration/innovation/test_recruitment_lifecycle.py::test_publish_requires_qualification_and_owned_project` | covered |
+| R3 | §4 | Draft save does not alter immutable public content | `tests/integration/innovation/test_recruitment_lifecycle.py::test_saved_changes_do_not_change_published_revision` + `tests/integration/innovation/test_recruitment_lifecycle.py::test_database_rejects_public_history_mutation` | covered |
+| R4 | §5/7 | Old replay returns receipt and current state without changing new cycle | `tests/integration/innovation/test_recruitment_lifecycle.py::test_close_reopen_and_replay_cannot_change_new_cycle` + `tests/integration/innovation/test_recruitment_lifecycle.py::test_create_and_update_unknown_result_retry` | covered |
+| R5 | §6 | Last revoke requires close; revoked draft needs fresh selection/publication | `tests/integration/innovation/test_recruitment_lifecycle.py::test_revoke_last_contact_requires_explicit_close` + `tests/integration/innovation/test_recruitment_lifecycle.py::test_revoked_contact_requires_fresh_authorization` | covered |
+| R6 | §7 | Audit failure rolls back publication and contact grants | `tests/integration/innovation/test_recruitment_lifecycle.py::test_audit_failure_rolls_back_publication` | covered |
+| R7 | §7 | Independent PG create/version races have one winner; suspension forbids publish | `tests/integration/innovation/test_recruitment_races.py` | covered |
+| R8 | §5/8 | Public surfaces exclude expired, closed, down and invalid owner | `tests/integration/innovation/test_public_recruitments.py` | covered |
+| R9 | §8 | Summary prefers approved snapshot; no private draft leakage | `tests/integration/innovation/test_public_projects.py` | covered |
+| R10 | §6 | Deliberate contact read, 30/60 cap, Redis/audit failure safe; revocation/suspension serialize both orders | `tests/integration/innovation/test_recruitment_contacts.py` + `tests/integration/innovation/test_recruitment_contact_races.py` | covered |
+| R11 | §5/7 | 30-day reminders stay OPEN, catch up once, edits preserve schedule, old-cycle fenced; duplicate scans and expiry/extension races serialize | `tests/unit/innovation/test_recruitment_schedule.py` + `tests/integration/innovation/test_recruitment_reminders.py` + `tests/integration/innovation/test_recruitment_scheduler_races.py` | covered |
+| R12 | §7 | Real Celery/Beat/IN_APP wiring; stale suppression at the visibility commit, original events preserved | `tests/workers/test_recruitment_jobs.py` + `tests/integration/innovation/test_recruitment_composition_smoke.py` + `tests/integration/innovation/test_recruitment_delivery_atomicity.py` + `tests/workers/test_due_notification_dispatch.py` | covered |
+| R13 | §8 | Save/publish UI separation; unknown request retained across client navigation; auth clears private data synchronously | `frontend/src/__tests__/innovation-recruitment-api.test.ts` + `frontend/src/__tests__/innovation-recruitment-pending.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` + `frontend/e2e/innovation-review.spec.ts` | covered |
+| R14 | §8/9 | Mobile, keyboard, focus, axe, pinned-font pixels | `frontend/e2e/innovation-recruitment.spec.ts` + `frontend/e2e/innovation-recruitment-visual.spec.ts` | covered |
+| R15 | §6/7; G15 | Contact values and private draft body do not appear in database-failure logs, including PostgreSQL row details; correlation and safe diagnostics remain | `tests/integration/innovation/test_recruitment_error_privacy.py` + `tests/unit/core/test_errors.py` + `tests/unit/db/test_session.py` | covered |
+| UX1 | 2026-10-12 revision | New role reuses project basics without implicit contact consent or idea classification; legacy nonempty saved stage remains unchanged; unfinished idea drafts can explicitly choose and save a phase | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| UX2 | 2026-10-12 revision | One stage choice generates coherent idea fields; other stages retain explicit text across option comparisons; cached alternatives never enter API or dirty checks | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| UX3 | 2026-10-12 revision | Missing publication fields take priority over dirty state; unsaved preview feedback is visible next to the action | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| UX4 | 2026-10-12 revision | Confirmation action names explain publication/closure/revoke consequences; recruitment list omits redundant active-only filter while project list retains it | `frontend/e2e/innovation-recruitment.spec.ts` + `frontend/e2e/innovation-recruitment-visual.spec.ts` | covered |
+
+| UX5 | 2026-10-12 review fix | No selected channel focuses the first authorization checkbox; invalid selected values focus their own editable control with aria-invalid and associated error | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+
+| UX6 | Existing §8 first-class error recovery | Failed qualification read shows a recoverable error and the visible Retry restores a usable owner list; one bounded UI retry never bypasses permission assertions or persistent failure | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+
+| F01 | 2026-10-12 acceptance fix | Same-tab route recovery retains unsaved fields without an API write; explicit discard and all auth epoch transitions clear private values; unknown commands retain precedence | `frontend/src/__tests__/innovation-recruitment-recovery.test.ts` + `frontend/src/__tests__/innovation-recruitment-pending.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F02 | 2026-10-12 acceptance fix | Missing or forbidden owner workspace uses a neutral 404 explanation and return action; network/5xx keeps Retry | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F03 | 2026-10-12 acceptance fix | Idea-only fields hide in other stages and preview, preserve input across comparisons, and reappear with focus if stored input exceeds the unchanged server bounds | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F04 | 2026-10-12 acceptance fix | Channel-specific format hints/errors match the existing validator; QQ numeric keyboard, email/tel semantics; invalid fields receive their own error rather than a repeated generic group error | `frontend/src/__tests__/innovation-recruitment-form.test.ts` + `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F05 | 2026-10-12 acceptance fix | New/existing editor headings receive focus; return restores create/edit action; contact success announces result availability without reading contact values aloud | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F06 | 2026-10-12 acceptance fix | False beginner flag explicitly says 不接受零基础 on public surfaces | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+| F07 | 2026-10-12 acceptance fix | Closed roles never display the next 30-day confirmation reminder | `frontend/e2e/innovation-recruitment.spec.ts` | covered |
+
+## 缺口明细
+
+- No remaining spec coverage gaps. Covered means an executable assertion exists; actual gate results are recorded separately for the current source.
