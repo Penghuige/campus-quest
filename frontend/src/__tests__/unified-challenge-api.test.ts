@@ -28,7 +28,6 @@ import {
   unifiedChallengeTotp,
   verifyUnifiedChallenge,
 } from "../features/auth/api";
-import { matchRememberedSlot } from "../features/auth/unifiedLoginView";
 import { clearAccessToken, getAccessToken } from "../lib/accessToken";
 
 type RecordedRequest = {
@@ -284,26 +283,47 @@ describe("the remembered-slot layer-0 pair (the multi-slot batch, 2026-10-24)", 
     assert.deepEqual(outcome, { kind: "totp_required", pendingToken: "p-at" });
     assert.equal(getAccessToken(), null);
   });
-});
 
-describe("matchRememberedSlot (the client matching contract — mask ∈ array, echo the slot)", () => {
-  test("a mask present in the probe array answers THAT entry's slot", async () => {
-    const slots = await Promise.resolve([
-      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
-      { identifier_masked: "+86****5555", slot: "f6g7h8i9j0" },
-    ]);
-    assert.equal(matchRememberedSlot("+86****5555", slots), "f6g7h8i9j0");
-    assert.equal(matchRememberedSlot("t***@school.edu", slots), "a1b2c3d4e5");
+  test("an authenticated envelope that MINTED a slot surfaces deviceSlot (mint-only, omitted never null)", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        status: "authenticated",
+        role: "TEACHER",
+        device_slot: "a1b2c3d4e5",
+        tokens: { access_token: "t-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      200,
+    );
+    const outcome = await verifyUnifiedChallenge("teacher@school.edu", "123456", true);
+    assert.deepEqual(outcome, {
+      kind: "authenticated",
+      role: "TEACHER",
+      deviceSlot: "a1b2c3d4e5",
+    });
   });
 
-  test("a mask matching nothing answers null — the code flow's turn (credential gone unifies with unmatched)", async () => {
-    const slots = await Promise.resolve([
-      { identifier_masked: "t***@school.edu", slot: "a1b2c3d4e5" },
-    ]);
-    assert.equal(matchRememberedSlot("+86****9999", slots), null);
-    assert.equal(matchRememberedSlot("+86****9999", []), null);
+  test("an authenticated envelope that minted nothing carries NO deviceSlot", async () => {
+    clearAccessToken();
+    stubFetch(
+      JSON.stringify({
+        status: "authenticated",
+        role: "STUDENT",
+        tokens: { access_token: "s-at", csrf_token: "ct", token_type: "bearer" },
+      }),
+      200,
+    );
+    const outcome = await verifyUnifiedChallenge("13900001234", "123456", false);
+    assert.deepEqual(outcome, { kind: "authenticated", role: "STUDENT" });
   });
 });
+
+// The matching seam moved (the slot-matching contract, 2026-10-24):
+// the retired mask matching (matchRememberedSlot — two same-mask
+// accounts picked the wrong slot, the owner-reported bug) is now the
+// card's OWN device_slot membership in the probe array — the ledger
+// side of that key is pinned in recent-logins.test.ts, the flow side
+// in switch-account.spec (chains C/D/E).
 
 describe("loginWithPassword (the /auth/login identifier extension)", () => {
   test("posts {identifier, password} — the student number is a legal password identifier", async () => {

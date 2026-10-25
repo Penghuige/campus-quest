@@ -287,7 +287,7 @@ export function adoptFullLogin(tokens: LoginTokens): void {
 
 /** The verify outcome every unified-login surface branches on. */
 export type ChallengeOutcome =
-  | { kind: "authenticated"; role: string }
+  | { kind: "authenticated"; role: string; deviceSlot?: string }
   | { kind: "totp_required"; pendingToken: string }
   | { kind: "unregistered"; registerToken: string };
 
@@ -311,7 +311,16 @@ function classifyChallengeEnvelope(body: unknown): ChallengeOutcome {
       typeof record.role === "string" &&
       typeof (record.tokens as { access_token?: unknown } | undefined)?.access_token === "string"
     ) {
-      return { kind: "authenticated", role: record.role };
+      // The mint-only slot ride (interfaces.md, the slot-matching
+      // contract): present ONLY when this very request minted a
+      // remembered credential — omitted (never null) otherwise, so an
+      // unminted login never clobbers the card's older, still-live
+      // slot.
+      const deviceSlot =
+        typeof record.device_slot === "string" ? record.device_slot : undefined;
+      return deviceSlot === undefined
+        ? { kind: "authenticated", role: record.role }
+        : { kind: "authenticated", role: record.role, deviceSlot };
     }
   }
   throw new Error("challenge verify: unrecognized response body");

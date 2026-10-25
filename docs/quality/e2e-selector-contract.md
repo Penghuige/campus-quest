@@ -79,8 +79,10 @@ G11 mask, never the full address; the card FACE is the shared
 `RecentLoginCardButton`, rendered by BOTH the login page's cards and
 the shells' 切换账号 menu — the 2026-10-23 popover batch) ·
 使用其他账号 (the switch menu's bottom verb — the direct-hop escape
-hatch) · 免登录 (the multi-slot batch's chip: a menu card whose mask
-matches the remembered-slot probe — this pick lands without a code) ·
+hatch) · 免登录 (the multi-slot batch's chip: a menu card whose OWN
+minted device_slot is still in the probe array — this pick lands
+without a code; the mask plays no part, it collides across accounts —
+the 2026-10-24 slot-matching contract) ·
 （等 N 个） (the banner's multi-account note, component-level — not
 e2e-asserted; the banner's zero-cookie face is what the baselines hold) · (the
 code form's copy is audience-neutral; the password expansion's notes the

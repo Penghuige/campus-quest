@@ -149,3 +149,37 @@ describe("dirty-data defense (a corrupted jar never throws)", () => {
     assert.deepEqual(listRecentLogins(), []);
   });
 });
+
+describe("the card's device_slot (the slot-matching contract, 2026-10-24)", () => {
+  test("a minted login writes its slot onto the card", () => {
+    recordRecentLogin({ ...base, device_slot: "a1b2c3d4e5" });
+    assert.equal(listRecentLogins()[0].device_slot, "a1b2c3d4e5");
+  });
+
+  test("ABSENT never overwrites — a re-login without the checkbox keeps the older, still-live slot", () => {
+    recordRecentLogin({ ...base, device_slot: "a1b2c3d4e5" });
+    // The mint-only rule: an unminted login's response OMITS the field;
+    // the card keeps the old slot (revoking it is revoke_all's job).
+    recordRecentLogin({ ...base, lastUsedAt: 2000 });
+    const after = listRecentLogins()[0];
+    assert.equal(after.device_slot, "a1b2c3d4e5");
+    assert.equal(after.lastUsedAt, 2000); // the upsert still bumps recency
+  });
+
+  test("a re-mint REPLACES the slot (the account's handle moved)", () => {
+    recordRecentLogin({ ...base, device_slot: "a1b2c3d4e5" });
+    recordRecentLogin({ ...base, device_slot: "f6g7h8i9j0" });
+    assert.equal(listRecentLogins()[0].device_slot, "f6g7h8i9j0");
+  });
+
+  test("legacy rows without the field stay valid (one-time code-flow degradation, not a drop)", () => {
+    (globalThis as { localStorage?: Storage }).localStorage = stubStorage({
+      "cq.recent-logins": JSON.stringify([
+        { identifier: "teacher@school.edu", masked: "t***@school.edu", role: "TEACHER", nickname: "", lastUsedAt: 1 },
+      ]),
+    });
+    const list = listRecentLogins();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].device_slot, undefined);
+  });
+});

@@ -9,7 +9,7 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 22 | U1-U22 |
+| 已覆盖 | 23 | U1-U23 |
 | 缺口 | 0 | — |
 | 不匹配 | 0 | — |
 
@@ -38,7 +38,8 @@
 | U19 | 多槽批旧名退役+模块面 | 旧单名 `cq_staff_device` 不再读（**有效值**旧名呈递→探针 204+空体 400 CHALLENGE_CODE_INVALID；持有者重登一次可接受）；模块件：slot_suffix 稳定 10 位句柄/canonical 链三臂+None/slots_from 只收 cq_dev_*/issue 返回 (value,slot) 只存哈希/resolve_remembered 排序-不 bump-改名账号双槽去重-过期剔除/validate bump 语义保留 | `::test_the_retired_staff_cookie_name_is_no_longer_read` + `tests/integration/identity/test_device_credentials.py`（15 件） | 已覆盖 |
 | U20 | 多槽批 honoring 槽化 | 密码腿 honoring=任意在座槽值**归属**到目标账号（槽名不参与判定——改名后仍 honoring；命中槽 bump、他人槽不 bump）；本账号槽在座→ADMIN 密码直落；仅他人槽在座→totp 照欠；mobile 服务两条空 code 旧 cookie 腿退役（facade 唯一调用方从不传空 code） | `tests/integration/identity/test_unified_challenge.py::test_staff_password_honoring_reads_only_its_own_slot`（跨 U10 腿保留于既有件） | 已覆盖 |
 | U21 | 多槽批前端·探针数组消费（U17 下游） | `fetchRememberedHint` → `RememberedSlot[]`（{identifier_masked, slot}，序保持）；204/传输失败/脏行（缺 mask 或 slot）/非数组体**一律降级空数组不抛**；横幅显示 remembered[0]（掩码），多账号时追加「（等 N 个）」；横幅点击腿仍空体（U18 无 target=最近槽=remembered[0]，语义自洽） | `frontend/src/__tests__/unified-challenge-api.test.ts`（数组序/脏行过滤/204 与传输空/空体与 target 体四钉）；横幅「等 N 个」渲染由 `frontend/src/features/auth/FastLoginHint.tsx` 承载（**行为级注记**，无独立 e2e 断言——基线面匿名无 cookie 不见横幅） | 已覆盖（行为级注记） |
-| U22 | 多槽批前端·匹配契约+target 回传（U18 下游） | 卡片/菜单/switch-pick 自动流的匹配=**entry.masked ∈ 探针数组任一项 identifier_masked → 空体 verify 带 {target: 命中项 slot}**→直进（ADMIN 转 totp 腿）；不匹配（含本地有卡但凭据已失）与不命中统一走码流；popover 菜单 matched 卡显示「免登录」chip（探针随菜单打开取，失败静默隐藏 chip 不碍拾取） | 匹配纯函数：`frontend/src/__tests__/unified-challenge-api.test.ts`（命中回槽/未命中 null 两钉，`matchRememberedSlot`）；target 体线缆：同文件（`fastLoginCookieOnly("f6g7h8i9j0")` 体钉）；e2e：`frontend/e2e/switch-account.spec.ts` 链 B/C/D（零发码 target 直进）+链 C/D 免登录 chip 断言；owner 场景=链 D（A 记住→B 记住→切回 A 零码） | 已覆盖 |
+| U22 | 多槽批前端·匹配契约+target 回传（U18 下游；**2026-10-24 快轨修订：匹配键从掩码改为卡上 slot**——掩码跨账号碰撞拿错槽，见 U23） | 卡片/菜单/switch-pick 自动流的匹配=**card.device_slot ∈ 探针数组 slot 集 → 空体 verify 带 {target: card.device_slot}**→直进（ADMIN 转 totp 腿）；卡上 slot 由登录响应 mint-only 透传（recordLogin，缺席不覆写=保留旧槽）；无 slot（legacy 卡/凭据已失）与不命中统一走码流；popover 菜单 matched 卡显示「免登录」chip（探针随菜单打开取，失败静默隐藏 chip 不碍拾取）；掩码退役纯显示 | 线缆：`frontend/src/__tests__/unified-challenge-api.test.ts`（deviceSlot 透传/缺席两钉+target 体钉）；ledger 保留：`frontend/src/__tests__/recent-logins.test.ts`（写入/缺席保留/重铸替换/legacy 行四钉）；e2e：`frontend/e2e/switch-account.spec.ts` 链 B/C/D/E/F/G（零发码 target 直进+chip 断言）；owner 场景=链 D | 已覆盖 |
+| U23 | 掩码碰撞根修（owner 报多切后要重新登录；slot-matching 契约 2026-10-24） | **根因**：同掩码两账号（20990001/2099000001 同显 20****01；两个 e***@school.edu 员工）掩码匹配 find 首中拿错槽→登错账号/verify 拒绝回登录页。**根修**：匹配键弃掩码改卡上 device_slot（sha256 槽句柄零碰撞；v1 canonical 本地复刻方案被否——学生槽由 phone 推导，学号卡算不出）；**学号卡增益直进**（登录响应铸槽落卡，号码本身不可推导也无关）；**mint-only 保留**（未勾记住的再登录不覆写旧槽——吊销归 revoke_all） | 单测：`frontend/src/__tests__/recent-logins.test.ts`（碰撞免疫=键为 slot 非掩码的结构性结果；保留四钉）；e2e：`frontend/e2e/switch-account.spec.ts` **链 E**（双同掩码教师轮流切换各落正确账号，昵称钉）+**链 F**（学号卡铸槽直进）+**链 G**（缺席保留仍直进） | 已覆盖 |
 
 ## 缺口明细
 
