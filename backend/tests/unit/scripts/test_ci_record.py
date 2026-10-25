@@ -143,3 +143,31 @@ def test_write_and_load_roundtrip(ci, tmp_path: Path) -> None:
     loaded = ci.load_record(out)
     assert loaded.conclusion == "success"
     assert loaded.run_url == record.run_url
+
+
+def test_main_writes_record_with_injected_fetch(
+    ci, tmp_path: Path, monkeypatch
+) -> None:
+    fixed = ci.normalize(
+        "4059fbd7b915011db80bb2b29f4671e03538e0ad",
+        json.dumps(_RUNS),
+        json.dumps(_VIEW),
+        fetched_at="2026-10-26T01:00:00+08:00",
+    )
+    monkeypatch.setattr(ci, "fetch", lambda repo_root, commit, **kwargs: fixed)
+    out = tmp_path / "nested" / "ci.json"
+    code = ci.main(
+        [
+            "--commit",
+            "4059fbd7b915011db80bb2b29f4671e03538e0ad",
+            "--output",
+            str(out),
+            "--repo-root",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    assert out.exists()
+    loaded = ci.load_record(out)
+    assert loaded.conclusion == "success"
+    assert loaded.run_id == 40199928552
