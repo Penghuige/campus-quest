@@ -203,7 +203,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
-        pre-push-full test-report
+        pre-push-full test-report stack stack-down
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -348,11 +348,57 @@ test-report:
 	if [ ! -d frontend/node_modules ]; then \
 		notes="frontend/node_modules 不存在：未自动执行 npm ci，前端单测层显示未运行"; \
 	fi; \
+	commit="$$(git rev-parse HEAD)"; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		notes="$$notes 工作区有未提交改动；CI 记录仅对应 commit $$(printf %.7s "$$commit")"; \
+	fi; \
+	echo "==> CI: fetching GitHub Actions record for $$(printf %.7s "$$commit")"; \
+	(cd backend && uv run python scripts/ci_record.py \
+		--commit "$$commit" \
+		--output "$(CURDIR)/$(REPORT_ARTIFACTS_DIR)/ci.json") || \
+		echo "!!! CI record unavailable; the report will show its absence"; \
 	cd backend && uv run python scripts/test_report.py \
 		--artifacts-dir ../$(REPORT_ARTIFACTS_DIR) \
 		--output ../$(REPORT_HTML) \
 		--command "make test-report" \
+		--commit "$$commit" \
+		--ci-file "../$(REPORT_ARTIFACTS_DIR)/ci.json" \
+		--history-dir "../$(REPORT_DIR)/history" \
 		--note "$$notes"
+
+# --- Start the service stack WITH the report viewer (2026-10-26) -----------
+#
+# `make stack` is the canonical local startup: dependency stack + a fresh
+# report for HEAD (including its GitHub Actions record) + a static viewer on
+# 127.0.0.1:8200. It deliberately does NOT touch docker-compose.yml — no
+# extra container, no bind-mount ownership trap, no port published by the
+# shared stack. `make stack-down` stops only the viewer; the dependency
+# stack keeps running (stop it with docker compose directly if needed).
+REPORT_PORT ?= 8200
+REPORT_PID = $(REPORT_DIR)/server.pid
+
+stack:
+	docker compose -f infra/docker-compose.yml up -d
+	$(MAKE) test-report
+	@mkdir -p $(REPORT_DIR)
+	@if curl -sf "http://127.0.0.1:$(REPORT_PORT)/" >/dev/null 2>&1; then \
+		echo "==> report viewer already serving on :$(REPORT_PORT)"; \
+	else \
+		python3 -m http.server $(REPORT_PORT) --bind 127.0.0.1 --directory $(REPORT_DIR) >/dev/null 2>&1 & \
+		echo $$! > $(REPORT_PID); \
+		sleep 1; \
+		echo "==> report viewer started on :$(REPORT_PORT)"; \
+	fi
+	@echo "report: http://127.0.0.1:$(REPORT_PORT)/"
+
+stack-down:
+	@if [ -f $(REPORT_PID) ]; then \
+		kill "$$(cat $(REPORT_PID))" 2>/dev/null || true; \
+		rm -f $(REPORT_PID); \
+		echo "report viewer stopped"; \
+	else \
+		echo "no report viewer pid file"; \
+	fi
 
 playwright-e2e:
 	# Prerequisite dedup means a reset listed twice in the chain runs once —

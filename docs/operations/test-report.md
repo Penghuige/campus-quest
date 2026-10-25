@@ -6,10 +6,22 @@
 make test-report
 # 产物：
 #   reports/test-report.html      ← 浏览器直接打开，离线可用
-#   reports/artifacts/*.xml|json  ← 聚合输入
+#   reports/index.html            ← 查看器首页（最新报告 + 历史入口）
+#   reports/history/<短sha>/      ← 每个 commit 一份归档（HTML + meta.json）
+#   reports/artifacts/*.xml|json  ← 聚合输入（含 ci.json）
 ```
 
 `reports/` 已加入 `.gitignore`，不会进入提交。
+
+## 0. 随服务启动 + 独立端口查看
+
+```bash
+make stack        # docker compose up -d + 最新 commit 报告 + 查看器
+# 打开 http://127.0.0.1:8200/  （只绑本机）
+make stack-down   # 只停查看器；依赖栈继续运行
+```
+
+`make stack` 是本地起服务的规范入口：它不会修改 `infra/docker-compose.yml`（不新增容器、不占共享栈端口、没有 bind-mount 属主陷阱）。查看器是标准库 `python3 -m http.server`，端口可用 `REPORT_PORT=8300 make stack` 覆盖。若 8200 已有查看器在响应，`make stack` 会复用它而不是重复启动。
 
 ## 1. `make test-report` 的行为
 
@@ -18,7 +30,9 @@ make test-report
 - 缺前端 unit XML 且 `frontend/node_modules` 存在 → 用 Node 22 内置 `node:test` + junit reporter 生成。
 - `frontend/node_modules` 不存在 → **不执行 `npm ci`**；前端单测层显示“未运行”，报告顶部注明原因。
 - 后端集成、后端全栈 e2e、Playwright、像素回归需要 PostgreSQL/Redis/MinIO/浏览器：**不自动跑，也不借栈**。缺结果时该层显示“未运行”。
-- 退出码：报告写出返回 0（即使有红块——报告本来就是用来看红的）；结果文件解析失败或 HTML 写入失败返回非 0。
+- **CI 记录**：生成前用 `gh` 拉取当前 commit 的 GitHub Actions 记录（`backend/scripts/ci_record.py`），页面顶部显示三个必需 job 的绿/红/等待状态与运行链接。无记录（本地未推送）、`gh` 缺失或断网都会降级为中性提示，不阻断生成。
+- **按 commit 归档**：每次生成把页面与 `meta.json` 写入 `reports/history/<短sha>/`，并重建 `reports/history/index.html`；默认保留最近 20 个 commit（`--keep-history` 可调）。工作区有未提交改动时，报告顶部注明“CI 记录仅对应 commit”。
+- 退出码：报告写出返回 0（即使有红块——报告本来就是用来看红的）；结果文件解析失败、HTML 写入或归档失败返回非 0。
 - 刷新：`rm -rf reports/artifacts && make test-report`。
 
 ## 2. 七层与结果文件
