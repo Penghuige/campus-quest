@@ -564,9 +564,10 @@ test("R3: 503 retains payload; logout discards private editor input", async ({ p
   expect(bodies[1]).toBe(bodies[0]);
   await page.unroute(`**/api/v1/ie/me/project-drafts/${project}/recruitments`);
   await editor.getByLabel("项目介绍", { exact: true }).fill("PRIVATE_ACCOUNT_SENTINEL");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.goto(`${BASE_URL}/logout`);
-  await page.getByRole("button", { name: "确认退出登录", exact: true }).click();
+  // Main has no /logout route (that page is the upstream R1 navigation
+  // deliverable); the profile's 个人信息 tab carries the real LogoutSection.
+  await page.goto(`${BASE_URL}/profile?tab=info`);
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await expect(page).toHaveURL(/\/login/);
   await loginThroughUi(page, parseSeededAccount(process.env.CQ_E2E_AUTHOR_STUDENT, "CQ_E2E_AUTHOR_STUDENT"));
   await page.goto(`${BASE_URL}/profile/project-drafts/${project}/recruitments`);
@@ -626,8 +627,10 @@ test("R3: a late contact response cannot repopulate after cross-tab logout", asy
   await received;
   const other = await page.context().newPage();
   try {
-    await other.goto(`${BASE_URL}/logout`);
-    await other.getByRole("button", { name: "确认退出登录", exact: true }).click();
+    // Main's logout entry (the /logout page is the upstream R1 deliverable);
+    // the action keeps the full contract incl. the cross-tab context fence.
+    await other.goto(`${BASE_URL}/profile?tab=info`);
+    await other.getByRole("button", { name: "退出登录", exact: true }).click();
     await expect(other).toHaveURL(/\/login/);
     await expect(page.getByRole("link", { name: "登录校内账号", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "授权联系方式" })).toHaveCount(0);

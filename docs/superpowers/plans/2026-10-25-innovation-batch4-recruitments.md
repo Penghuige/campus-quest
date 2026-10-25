@@ -50,3 +50,5 @@
 5. **前端适配**:contactFields/formUtils/ConfirmDialog 复用;业务冲突按 `code === "CONFLICT"`;通知 inbox 补招募提醒事件映射(PR 测试依赖)。
 6. **R3×R2 交叉验证恢复**:批 3 裁剪的 review spec 段随招募端点回归。
 7. **视觉**:招募 8 张基线首拍(pinned-font)+ 四家族 visual 全部进 make innovation-visual。
+8. **共享会话 fixture 补齐(PR 机制移植)**:上游 fixtures 有 `openLoginForm`——登录页启动会触发单次 refresh 旋转,共享学生上下文里必须等旋转完成并把新 cookie 落盘,再清 `studentSessionContext` 标记;否则身份切换测试(165)会把 AUTHOR 的 cookie 写进共享状态文件,后续测试被迫表单登录。main 的 unified-login 版 `loginThroughUi` 无此机制,照 PR 原样移植(适配 main 的登录页形态),并把 `persistSession` 自动 fixture 收敛到同一 helper。
+9. **登出语义适配(550/608)**:PR 的 `/logout` 页(含「确认退出登录」)属于上游 R1 导航交付物,main 的统一登录改造没有该路由;登出落点是 `/profile?tab=info` 的「退出登录」按钮(LogoutSection,含服务端撤销+epoch+跨标签页栅栏)。两条测试改走 main 落点,断言语义不变(私有草稿不跨账号、迟到联系响应不能复活)。

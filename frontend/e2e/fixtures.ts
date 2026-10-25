@@ -105,7 +105,7 @@ export async function loginThroughUi(
   page: Page,
   account: SeededAccount,
 ): Promise<void> {
-  await page.goto(`${BASE_URL}/login`);
+  await openLoginForm(page, `${BASE_URL}/login`);
   // The unified page (spec 2026-10-19 §4): the password form is the
   // weak link's expansion — the identifier field is THREE-state there
   // (手机号、邮箱或学号), and the seeded student rides its 学号.
@@ -197,6 +197,66 @@ export async function ensureStudentLogin(page: Page): Promise<void> {
  */
 let studentSessionContext: BrowserContext | null = null;
 
+/** Persist only the context explicitly verified as the shared student. */
+export async function persistSharedStudentSession(page: Page): Promise<void> {
+  if (
+    process.env.CQ_E2E_RUN !== undefined &&
+    studentSessionContext === page.context() &&
+    page.context().pages().length > 0
+  ) {
+    await page.context().storageState({ path: sessionStatePath() });
+  }
+}
+
+/**
+ * Open a login page WITHOUT losing the shared student's session.
+ *
+ * Opening /login boots the app's session manager, which fires the
+ * single-use /auth/refresh rotation against whatever refresh cookie the
+ * context holds. In the shared student's context that rotation would
+ * silently invalidate the cookie the state file still carries, so the
+ * NEXT test's resume would fail and burn a form login (the rate-limited
+ * resource this whole chain exists to protect). Watch the bootstrap to
+ * completion, re-persist the rotated cookie when it still answers as
+ * THE shared student, then clear the marker — the identity is about to
+ * be replaced, and a later persist must never write the new account's
+ * cookies into the student's state file (the switch test pins this).
+ *
+ * A context that is not the shared student's (staff logins, fresh
+ * contexts, tests that never logged the student in) skips the wait
+ * entirely and behaves exactly like a plain goto.
+ */
+async function openLoginForm(page: Page, url: string): Promise<void> {
+  const shared = studentSessionContext === page.context();
+  const hasRefresh =
+    shared &&
+    (await page.context().cookies()).some(
+      (cookie) => cookie.name === "refresh_token",
+    );
+  const bootstrap = hasRefresh
+    ? page.waitForResponse(
+        (response) =>
+          (new URL(response.url()).pathname.endsWith("/api/v1/me") &&
+            response.status() === 200) ||
+          (new URL(response.url()).pathname.endsWith("/auth/refresh") &&
+            [401, 403].includes(response.status())),
+      )
+    : null;
+  await page.goto(url);
+  if (bootstrap !== null) {
+    const response = await bootstrap;
+    if (response.status() === 200) {
+      const me = (await response.json()) as { username?: unknown };
+      const account = parseSeededAccount(
+        process.env.CQ_E2E_STUDENT,
+        "CQ_E2E_STUDENT",
+      );
+      if (me.username === account.username) await persistSharedStudentSession(page);
+    }
+  }
+  if (shared) studentSessionContext = null;
+}
+
 /** The cookie slice of Playwright's storageState (addCookies' input). */
 type StorageCookie = {
   name: string;
@@ -230,8 +290,10 @@ export async function staffLogin(
   totpSecret: string,
 ): Promise<void> {
   const [email, password] = credentials.split(":");
-  studentSessionContext = null;
-  await page.goto(STAFF_LOGIN_URL);
+  // openLoginForm clears the shared-student marker itself — after
+  // saving the login-page boot's last rotation, so a staff login on a
+  // student-seeded context cannot strand a stale cookie in the file.
+  await openLoginForm(page, STAFF_LOGIN_URL);
   // The unified page's password expansion (spec §4 layer 1a): the
   // three-state identifier carries the staff email. An ADMIN's
   // password answers totp_required — the second leg completes on the
@@ -348,16 +410,7 @@ export const test = base.extend<CqFixtures>({
   persistSession: [
     async ({ page }, run) => {
       await run();
-      const statePath = sessionStatePath();
-      if (
-        process.env.CQ_E2E_RUN !== undefined &&
-        studentSessionContext === page.context() &&
-        page.context().pages().length > 0
-      ) {
-        await page.context()
-          .storageState({ path: statePath })
-          .catch(() => {});
-      }
+      await persistSharedStudentSession(page).catch(() => {});
     },
     { auto: true },
   ],
