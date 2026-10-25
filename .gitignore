@@ -29,6 +29,9 @@ test-results/
 playwright-report/
 blob-report/
 
+# Generated test dashboard (make test-report): artifacts + HTML are local
+reports/
+
 # Environment / secrets (one block: rules were duplicated verbatim at
 # the file tail; the template lives at backend/.env.example)
 .env
