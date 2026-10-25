@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -104,6 +105,28 @@ class LayerReport:
     missing: bool = False
 
 
+@dataclass(frozen=True)
+class CiJobSummary:
+    """One GitHub Actions job as the header renders it."""
+
+    name: str
+    state: (
+        str  # success / failure / cancelled / skipped / timed_out / pending / neutral
+    )
+
+
+@dataclass(frozen=True)
+class CiSummary:
+    """The commit's CI verdict, loaded from the ci_record JSON."""
+
+    commit: str
+    status: str
+    conclusion: str | None
+    run_url: str | None
+    jobs: tuple[CiJobSummary, ...]
+    error: str | None = None
+
+
 @dataclass
 class Report:
     """Everything the renderer needs for one run."""
@@ -114,6 +137,8 @@ class Report:
     layers: list[LayerReport]
     notes: list[str]
     artifacts_dir: Path
+    commit: str = ""
+    ci: CiSummary | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +543,8 @@ def build_report(
     command: str,
     generated_at: str,
     notes: Sequence[str] = (),
+    commit: str = "",
+    ci: CiSummary | None = None,
 ) -> Report:
     layers = [
         _junit_layer(
@@ -554,6 +581,8 @@ def build_report(
         layers=layers,
         notes=list(notes),
         artifacts_dir=artifacts_dir,
+        commit=commit,
+        ci=ci,
     )
 
 
@@ -739,16 +768,19 @@ def _header(report: Report, totals: dict[Status, int]) -> str:
     failed = totals["failed"]
     skipped = totals["skipped"]
     not_run = totals["not_run"]
+    commit = report.commit[:7] if report.commit else "unknown"
     return (
         "<header>\n"
         "<h1>测试总览</h1>\n"
         '<p class="subtitle">离线静态报告 · 每个方块是一个测试；'
         "点击方块查看详情，悬停显示测试名。</p>\n"
         '<div class="run-meta">'
+        f"<span>提交 <code>{_esc(commit)}</code></span>"
         f"<span>分支 <code>{_esc(report.branch)}</code></span>"
         f"<span>生成命令 <code>{_esc(report.command)}</code></span>"
         f"<span>生成时间 {_esc(report.generated_at)}</span>"
         "</div>\n"
+        f"{_ci_strip(report.ci)}\n"
         '<p class="totals">总计 '
         f'<b class="ok">{passed} 绿</b> / '
         f'<b class="bad">{failed} 红</b> / '
@@ -762,6 +794,50 @@ def _header(report: Report, totals: dict[Status, int]) -> str:
         "未运行（没有结果文件）</li>"
         "</ul>\n"
         "</header>"
+    )
+
+
+_CI_LABELS = {
+    "Backend (Python 3.12)": "后端",
+    "Frontend (Node 22)": "前端",
+    "Pixel visual regression (Playwright)": "像素",
+}
+
+
+def _ci_strip(ci: CiSummary | None) -> str:
+    """The commit's CI verdict as one strip of chips (or a neutral note)."""
+    if ci is None:
+        return (
+            '<div class="ci ci-none">CI 未记录（本地生成，未关联 GitHub Actions）</div>'
+        )
+    if ci.status == "none":
+        return '<div class="ci ci-none">该 commit 无 CI 记录</div>'
+    if ci.status == "unavailable":
+        reason = f"：{_esc(ci.error)}" if ci.error else ""
+        return f'<div class="ci ci-unavailable">CI 不可用{reason}</div>'
+    chips = []
+    for job in ci.jobs:
+        label = _CI_LABELS.get(job.name, job.name)
+        chips.append(
+            f'<span class="ci-chip ci-{_esc(job.state)}" title="{_esc(job.name)}">'
+            f"{_esc(label)}</span>"
+        )
+    link = ""
+    if ci.run_url:
+        label = (
+            "查看运行"
+            if ci.status != "completed"
+            else f"CI {_esc(ci.conclusion or ci.status)}"
+        )
+        link = (
+            f'<a class="ci-link" href="{_esc(ci.run_url)}" target="_blank" '
+            f'rel="noreferrer">{label}</a>'
+        )
+    return (
+        '<div class="ci"><span class="ci-title">CI</span>'
+        + "".join(chips)
+        + link
+        + "</div>"
     )
 
 
@@ -878,6 +954,17 @@ h3 { margin: 14px 0 6px; font-size: 14px; }
 .subtitle, .artifact, footer, .empty { color: var(--muted); }
 .subtitle { margin: 0 0 12px; font-size: 13px; }
 .run-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; }
+.ci { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      margin-top: 8px; font-size: 13px; }
+.ci-title { color: var(--muted); }
+.ci-chip { padding: 1px 9px; border-radius: 999px; color: #fff; font-size: 12px; }
+.ci-success { background: var(--green); }
+.ci-failure, .ci-timed_out { background: var(--red); }
+.ci-pending { background: #d97706; }
+.ci-neutral, .ci-skipped, .ci-cancelled { background: #71717a; }
+.ci-none, .ci-unavailable { color: var(--muted); }
+.ci-link { color: var(--focus); text-decoration: none; }
+.ci-link:hover { text-decoration: underline; }
 code, .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
     "Liberation Mono", monospace;
@@ -1020,6 +1107,190 @@ def detect_branch(repo_root: Path) -> str:
     return branch or "unknown"
 
 
+def detect_commit(repo_root: Path) -> str:
+    """HEAD sha, or "" when git is unavailable (tests, tarballs)."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _job_state(status: str, conclusion: str | None) -> str:
+    if conclusion in {"success", "failure", "cancelled", "skipped", "timed_out"}:
+        return conclusion
+    if status in {"queued", "in_progress", "waiting", "requested"}:
+        return "pending"
+    return "neutral"
+
+
+def load_ci(path: Path) -> CiSummary:
+    """Read the ci_record JSON; unknown shapes degrade to a neutral record."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    jobs = tuple(
+        CiJobSummary(
+            name=str(job.get("name", "")),
+            state=_job_state(str(job.get("status", "")), job.get("conclusion")),
+        )
+        for job in payload.get("jobs", [])
+        if isinstance(job, dict)
+    )
+    return CiSummary(
+        commit=str(payload.get("commit", "")),
+        status=str(payload.get("status", "unknown")),
+        conclusion=payload.get("conclusion"),
+        run_url=payload.get("run_url"),
+        jobs=jobs,
+        error=payload.get("error"),
+    )
+
+
+def _history_entries(history_dir: Path) -> list[tuple[str, Path, dict[str, Any]]]:
+    entries: list[tuple[str, Path, dict[str, Any]]] = []
+    if not history_dir.exists():
+        return entries
+    for directory in history_dir.iterdir():
+        if not directory.is_dir():
+            continue
+        meta_path = directory / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        entries.append((str(meta.get("generated_at", "")), directory, meta))
+    entries.sort(key=lambda item: item[0], reverse=True)
+    return entries
+
+
+def _prune_history(history_dir: Path, keep: int) -> None:
+    for _stamp, directory, _meta in _history_entries(history_dir)[keep:]:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _write_history_index(history_dir: Path) -> None:
+    rows: list[str] = []
+    for stamp, directory, meta in _history_entries(history_dir):
+        short = _esc(str(meta.get("short_commit") or directory.name))
+        branch = _esc(str(meta.get("branch", "")))
+        totals_raw = meta.get("totals")
+        totals = totals_raw if isinstance(totals_raw, dict) else {}
+        ci_raw = meta.get("ci")
+        ci = ci_raw if isinstance(ci_raw, dict) else {}
+        ci_label = _esc(str(ci.get("conclusion") or ci.get("status") or "无记录"))
+        rows.append(
+            "<li>"
+            f'<a href="{directory.name}/test-report.html"><code>{short}</code></a>'
+            f"<span>{branch}</span>"
+            f"<span>{_esc(stamp)}</span>"
+            f'<span class="ok">{int(totals.get("passed", 0))} 绿</span>'
+            f'<span class="bad">{int(totals.get("failed", 0))} 红</span>'
+            f"<span>CI {ci_label}</span>"
+            "</li>"
+        )
+    document = (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>测试历史</title><style>"
+        "body{font:14px/1.6 system-ui,sans-serif;background:#f4f5f7;color:#18181b;"
+        "margin:0;padding:24px}main{max-width:960px;margin:0 auto;background:#fff;"
+        "border:1px solid #e4e4e7;border-radius:10px;padding:20px}"
+        "h1{font-size:20px;margin:0 0 12px}ul{list-style:none;padding:0;margin:0}"
+        "li{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;"
+        "padding:8px 0;border-bottom:1px solid #f0f0f1}"
+        "a{color:#2563eb;text-decoration:none}.ok{color:#15803d}.bad{color:#b91c1c}"
+        "code{background:#f4f4f5;border-radius:4px;padding:1px 5px}"
+        "</style></head><body><main><h1>测试历史</h1>"
+        '<p><a href="../test-report.html">最新报告</a> · '
+        '<a href="../index.html">首页</a></p>'
+        "<ul>"
+        + ("".join(rows) or "<li>还没有历史记录</li>")
+        + "</ul></main></body></html>\n"
+    )
+    history_dir.mkdir(parents=True, exist_ok=True)
+    (history_dir / "index.html").write_text(document, encoding="utf-8")
+
+
+def _write_landing(
+    reports_dir: Path, report: Report, totals: dict[Status, int]
+) -> None:
+    short = _esc(report.commit[:7] if report.commit else "unknown")
+    ci = report.ci
+    if ci is None:
+        ci_label = "未记录"
+    elif ci.status == "none":
+        ci_label = "无记录"
+    elif ci.status == "unavailable":
+        ci_label = "不可用"
+    else:
+        ci_label = _esc(ci.conclusion or ci.status)
+    document = (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>CampusQuest 测试总览</title><style>"
+        "body{font:14px/1.7 system-ui,sans-serif;background:#f4f5f7;color:#18181b;"
+        "margin:0;padding:32px}main{max-width:720px;margin:0 auto;background:#fff;"
+        "border:1px solid #e4e4e7;border-radius:10px;padding:24px}"
+        "h1{font-size:22px;margin:0 0 8px}p{color:#52525b}"
+        "a{color:#2563eb;font-size:15px}"
+        "code{background:#f4f4f5;border-radius:4px;padding:1px 5px}"
+        ".ok{color:#15803d}.bad{color:#b91c1c}"
+        "</style></head><body><main><h1>测试总览</h1>"
+        f"<p>最新提交 <code>{short}</code> · 分支 <code>{_esc(report.branch)}</code>"
+        f" · CI {ci_label} · {_esc(report.generated_at)}</p>"
+        f'<p><b class="ok">{totals["passed"]} 绿</b> / '
+        f'<b class="bad">{totals["failed"]} 红</b> / '
+        f"{totals['skipped']} 灰 / {totals['not_run']} 未运行</p>"
+        '<p><a href="test-report.html">打开最新报告</a> · '
+        '<a href="history/index.html">历史记录</a></p>'
+        "</main></body></html>\n"
+    )
+    (reports_dir / "index.html").write_text(document, encoding="utf-8")
+
+
+def _archive_history(
+    *,
+    output: Path,
+    report: Report,
+    totals: dict[Status, int],
+    history_dir: Path,
+    keep: int,
+) -> None:
+    short = report.commit[:7] if report.commit else "unknown"
+    destination = history_dir / short
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(output, destination / "test-report.html")
+    meta = {
+        "commit": report.commit,
+        "short_commit": short,
+        "branch": report.branch,
+        "generated_at": report.generated_at,
+        "command": report.command,
+        "totals": dict(totals),
+        "ci": None
+        if report.ci is None
+        else {
+            "status": report.ci.status,
+            "conclusion": report.ci.conclusion,
+            "run_url": report.ci.run_url,
+        },
+    }
+    (destination / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    _prune_history(history_dir, keep)
+    _write_history_index(history_dir)
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build the offline CampusQuest test dashboard."
@@ -1043,6 +1314,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="repository root used for defaults and branch detection",
     )
     parser.add_argument("--branch", default=None, help="branch label override")
+    parser.add_argument(
+        "--commit", default=None, help="commit sha shown in the header and history"
+    )
+    parser.add_argument(
+        "--ci-file", type=Path, default=None, help="ci_record JSON for this commit"
+    )
+    parser.add_argument(
+        "--history-dir",
+        type=Path,
+        default=None,
+        help="per-commit archive directory (default: reports/history)",
+    )
+    parser.add_argument(
+        "--keep-history",
+        type=int,
+        default=20,
+        help="how many per-commit archives to keep (default: 20)",
+    )
     parser.add_argument(
         "--command",
         default="make test-report",
@@ -1069,9 +1358,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     output: Path = args.output or repo_root / "reports" / "test-report.html"
     branch: str = args.branch or detect_branch(repo_root)
     generated_at: str = args.generated_at or default_generated_at()
+    commit: str = args.commit if args.commit is not None else detect_commit(repo_root)
     notes = [
         note.strip() for note in args.note if isinstance(note, str) and note.strip()
     ]
+    ci: CiSummary | None = None
+    if args.ci_file is not None:
+        try:
+            ci = load_ci(args.ci_file)
+        except (OSError, ValueError) as exc:
+            notes.append(f"CI 记录读取失败：{exc}")
     command: str = args.command
 
     try:
@@ -1081,6 +1377,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             command=command,
             generated_at=generated_at,
             notes=notes,
+            commit=commit,
+            ci=ci,
         )
         document = render_html(report)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -1090,6 +1388,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     totals = total_counts(report)
+    history_dir: Path = args.history_dir or repo_root / "reports" / "history"
+    try:
+        _archive_history(
+            output=output,
+            report=report,
+            totals=totals,
+            history_dir=history_dir,
+            keep=max(1, args.keep_history),
+        )
+        _write_landing(output.parent, report, totals)
+    except OSError as exc:
+        print(f"test-report: history archive failed: {exc}", file=sys.stderr)
+        return 1
     print(f"wrote {output}")
     print(
         f"  {totals['passed']} passed, {totals['failed']} failed, "
