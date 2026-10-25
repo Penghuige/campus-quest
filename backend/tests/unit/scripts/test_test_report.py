@@ -576,6 +576,20 @@ def test_html_contains_seven_layers_legend_and_totals(
     assert "1 个 · 全绿" in document
 
 
+def test_detail_status_does_not_reuse_square_status_classes(
+    report_module: Any,
+) -> None:
+    """The square status classes paint backgrounds; the detail <dd> must
+    use its own scoped classes instead of inheriting them."""
+    report = _report_with(report_module, {})
+
+    document = report_module.render_html(report)
+
+    assert '"status-" + entry.status' not in document
+    assert '"detail-status-" + entry.status' in document
+    assert ".detail-status-passed" in document
+
+
 def test_html_is_offline_and_mobile_safe(report_module: Any) -> None:
     report = _report_with(report_module, {})
 

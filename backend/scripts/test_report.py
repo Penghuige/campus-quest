@@ -922,6 +922,9 @@ code, .mono {
   gap: 6px 14px; margin: 12px 0 0; }
 .detail dt { color: var(--muted); }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
+.detail-status-passed { color: var(--green-text); }
+.detail-status-failed { color: var(--red-text); }
+.detail-status-skipped, .detail-status-not_run { color: var(--muted); }
 .detail pre {
   margin: 0; padding: 10px 12px; background: #18181b; color: #f4f4f5;
   border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere;
@@ -967,7 +970,7 @@ _SCRIPT = """
     fields.layer.textContent = entry.layer;
     fields.locator.textContent = entry.locator || "—";
     fields.status.textContent = labels[entry.status] || entry.status;
-    fields.status.className = "status-" + entry.status;
+    fields.status.className = "detail-status-" + entry.status;
     fields.duration.textContent = entry.duration;
     fields.message.textContent = entry.message || "";
     failure.hidden = !entry.message;
