@@ -252,3 +252,92 @@ def test_invalid_scanner_configuration_rejected(settings):
 
     with pytest.raises(ValidationError):
         configured_settings(**settings)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"host": "8.8.8.8"},
+        {"host": "0.0.0.0"},
+        {"host": "127.0.0.1", "port": 0},
+        {"host": "127.0.0.1", "port": 65536},
+        {"host": "127.0.0.1", "timeout": 0},
+        {"host": "127.0.0.1", "timeout": 31},
+    ],
+    ids=[
+        "public-ip",
+        "unspecified",
+        "port-low",
+        "port-high",
+        "timeout-zero",
+        "timeout-high",
+    ],
+)
+def test_constructor_itself_refuses_invalid_endpoint_policy(kwargs):
+    """The Settings validator is not the only line of defence: a scanner
+    constructed directly (composition root, tests) must refuse the same
+    policy violations (batch-1 coverage gap closure)."""
+    from app.integrations.evidence_scanner_clamd import ClamdEvidenceScanner
+
+    with pytest.raises(ValueError):
+        ClamdEvidenceScanner(**kwargs)
+
+
+def test_remaining_budget_exhaustion_is_unavailable():
+    import time
+
+    from app.integrations.evidence_scanner import EvidenceCheckUnavailableError
+    from app.integrations.evidence_scanner_clamd import ClamdEvidenceScanner
+
+    with socket.socket() as sock, pytest.raises(EvidenceCheckUnavailableError):
+        ClamdEvidenceScanner._remaining(sock, time.monotonic() - 1)
+
+
+def test_check_reports_capability_without_scanning(monkeypatch):
+    """`check()` is the capability probe the composition smoke and
+    operators call: it must answer True on a clean capability read and
+    False on any capability/connection failure, never raise."""
+    from app.integrations.evidence_scanner import EvidenceCheckUnavailableError
+    from app.integrations.evidence_scanner_clamd import ClamdEvidenceScanner
+
+    scanner = ClamdEvidenceScanner(host="127.0.0.1", port=3310)
+    monkeypatch.setattr(
+        ClamdEvidenceScanner, "_capabilities", lambda self, deadline: None
+    )
+    assert scanner.check() is True
+
+    def unavailable(self, deadline):
+        raise EvidenceCheckUnavailableError("unavailable")
+
+    monkeypatch.setattr(ClamdEvidenceScanner, "_capabilities", unavailable)
+    assert scanner.check() is False
+
+    def refused(self, deadline):
+        raise ConnectionRefusedError("refused")
+
+    monkeypatch.setattr(ClamdEvidenceScanner, "_capabilities", refused)
+    assert scanner.check() is False
+
+
+def test_check_returns_false_when_the_daemon_is_unreachable():
+    from app.integrations.evidence_scanner_clamd import ClamdEvidenceScanner
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    assert (
+        ClamdEvidenceScanner(host="127.0.0.1", port=port, timeout=0.1).check() is False
+    )
+
+
+@pytest.mark.parametrize(
+    "content", [b"", b"x" * (10 * 1024 * 1024 + 1)], ids=["empty", "over-limit"]
+)
+def test_validate_evidence_type_rejects_bad_size_directly(content):
+    from app.integrations.evidence_scanner import (
+        InvalidEvidenceError,
+        validate_evidence_type,
+    )
+
+    with pytest.raises(InvalidEvidenceError):
+        validate_evidence_type(content, "image/png")
