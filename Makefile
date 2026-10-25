@@ -352,7 +352,7 @@ release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner 
 # login buckets the battery filled must not bleed into this stage.
 innovation-visual:
 	@$(MAKE) --no-print-directory reset-test-db
-	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts innovation-navigation-visual.spec.ts innovation-review-visual.spec.ts --project=chromium
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts innovation-navigation-visual.spec.ts innovation-review-visual.spec.ts innovation-recruitment-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #
