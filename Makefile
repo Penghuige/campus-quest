@@ -206,12 +206,23 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
-# nothing else creates one on fresh compose volumes (the init script
-# only CREATEs the empty database). `alembic upgrade head` is a no-op
-# when the schema is already at head, so the target is idempotent and
-# costs one version query on warm stacks.
-release-test-db:
+# reset-test-db: the pristine-database precondition, CI's own procedure
+# (release-checklist "Resetting the test stack"): browser-e2e debris —
+# from killed runs AND from a full local battery chained ahead of the
+# visual stages — leaves orphaned users that break directory-style
+# first-page assertions and pixel baselines. CI starts every job with a
+# pristine database; this gives the local gate the same precondition.
+reset-test-db:
+	docker compose -f infra/docker-compose.yml exec -T postgres psql -U campusquest -d campusquest \
+	  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='campusquest_test' AND pid <> pg_backend_pid()" \
+	  -c "DROP DATABASE IF EXISTS campusquest_test" \
+	  -c "CREATE DATABASE campusquest_test OWNER test"
+	docker compose -f infra/docker-compose.yml exec -T redis redis-cli -n 0 FLUSHDB
 	cd backend && $(TEST_STACK_ENV) uv run alembic upgrade head
+
+# The gate's opening precondition step (fresh schema for the backend
+# legs); the browser legs reset again ahead of themselves below.
+release-test-db: reset-test-db
 
 backend-unit:
 	$(BACKEND_UNIT_CMD) -v
@@ -319,8 +330,9 @@ release-evidence-scanner:
 release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner \
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
-              frontend-css-guard frontend-unit frontend-build playwright-e2e \
-              visual-regression talent-visual pip-audit npm-audit coverage-ratchet
+              frontend-css-guard frontend-unit frontend-build reset-test-db \
+              playwright-e2e visual-regression talent-visual pip-audit \
+              npm-audit coverage-ratchet
 
 # The talent visual battery runs in its own pinned-font Linux stage with a
 # disposable real publication world (noskip-exempted from the standard
