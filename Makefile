@@ -201,6 +201,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         backend-unit-worker-cov backend-integration-cov \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
+        reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
         pre-push-full
 
@@ -339,18 +340,19 @@ release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner 
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
               frontend-css-guard frontend-unit frontend-build \
-              playwright-e2e visual-regression talent-visual pip-audit \
+              playwright-e2e visual-regression innovation-visual pip-audit \
               npm-audit coverage-ratchet
 
-# The talent visual battery runs in its own pinned-font Linux stage with a
-# disposable real publication world (noskip-exempted from the standard
-# battery; see frontend/e2e/noskip-exemptions.mjs for the reason string).
-# The relief+API_URL pair matches playwright-e2e: the gate runs its legs
-# against ONE shared stack, so the login buckets the battery filled must
-# not bleed into the visual stage's logins (CI isolates jobs instead).
-talent-visual:
+# The innovation visual battery runs in its own pinned-font Linux stage
+# with a disposable real publication world (noskip-exempted from the
+# standard battery; see frontend/e2e/noskip-exemptions.mjs for the reason
+# strings). Covers the talent family (batch 1) and the campus landing +
+# project workspace (batch 2). The relief+API_URL pair matches
+# playwright-e2e: the gate runs its legs against ONE shared stack, so the
+# login buckets the battery filled must not bleed into this stage.
+innovation-visual:
 	@$(MAKE) --no-print-directory reset-test-db
-	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts --project=chromium
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts innovation-navigation-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #

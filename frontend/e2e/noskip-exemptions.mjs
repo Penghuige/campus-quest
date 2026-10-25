@@ -11,6 +11,13 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-navigation-visual.spec.ts",
+    title: "R2 navigation visual: campus landing and the empty project workspace",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "Batch-2 pixel and axe coverage runs in the separate pinned-font Linux visual stage (make talent-visual's sibling stage).",
+  },
+  {
     file: "innovation-talents-visual.spec.ts",
     title: "R4.1 visual: public materials remain neutral in directory and detail",
     gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
