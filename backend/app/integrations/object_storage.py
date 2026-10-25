@@ -119,6 +119,17 @@ class ObjectStorage(Protocol):
         """Private write-once talent file; adapter-generated independent key."""
         ...
 
+    def create_evidence_upload_url(
+        self,
+        *,
+        achievement_id: UUID,
+        content_type: str,
+        content_length: int,
+        expires_in: timedelta,
+    ) -> UploadUrl:
+        """Write-once size/type pinned PUT at an adapter-generated evidence key."""
+        ...
+
     def read_bounded_object(self, *, object_key: str, max_bytes: int) -> StoredObject:
         """Read at most max_bytes+1, close the stream and reject excess bytes."""
         ...

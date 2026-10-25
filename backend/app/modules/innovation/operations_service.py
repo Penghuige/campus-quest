@@ -7,7 +7,7 @@ must additionally enforce project scope and reviewer conflict exclusions.
 
 from uuid import UUID
 
-from sqlalchemy import DateTime, String, Uuid, column, select, table
+from sqlalchemy import DateTime, Uuid, column, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
@@ -17,6 +17,7 @@ from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
+from app.modules.innovation.accounts import USERS as _USERS
 from app.modules.innovation.models import OperationsGrant
 from app.modules.innovation.operations_schemas import (
     InnovationCapabilitiesResponse,
@@ -25,9 +26,6 @@ from app.modules.innovation.operations_schemas import (
 )
 from app.modules.innovation.owner_service import _require_student
 
-_USERS = table(
-    "users", column("id", Uuid), column("role", String), column("status", String)
-)
 _TOTP = table(
     "totp_credentials",
     column("user_id", Uuid),

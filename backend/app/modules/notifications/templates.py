@@ -210,6 +210,11 @@ EVENT_VARIABLES: dict[NotificationEventType, frozenset[str]] = {
         {"item_name", "rejection_reason", "points_refunded"}
     ),
     NotificationEventType.ACCOUNT_SECURITY: frozenset({"event_summary", "event_time"}),
+    # Innovation achievements (batch 3).
+    NotificationEventType.IE_ACHIEVEMENT_APPROVED: frozenset({"achievement_title"}),
+    NotificationEventType.IE_ACHIEVEMENT_RETURNED: frozenset(
+        {"achievement_title", "review_reason"}
+    ),
 }
 
 
@@ -445,6 +450,22 @@ DEFAULT_TEMPLATES: dict[
         body="{event_time}，{event_summary}。如非本人操作，请尽快修改密码。",
     ),
 }
+
+# Innovation achievement verdicts (batch 3): the same text on every
+# channel, so the seed loops the channel enum.
+for _channel in NotificationChannel:
+    DEFAULT_TEMPLATES[(NotificationEventType.IE_ACHIEVEMENT_APPROVED, _channel)] = (
+        TemplateText(
+            title="成果核实通过",
+            body="您的成果《{achievement_title}》已核实通过，公开版本已更新；已下架成果仍保持下架。",
+        )
+    )
+    DEFAULT_TEMPLATES[(NotificationEventType.IE_ACHIEVEMENT_RETURNED, _channel)] = (
+        TemplateText(
+            title="成果核实退回",
+            body="您的成果《{achievement_title}》已退回。原因：{review_reason}。请修改后重新提交。",
+        )
+    )
 
 
 def _substitute_placeholders(
