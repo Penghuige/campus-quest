@@ -40,3 +40,13 @@
 ## 完成定义
 
 全部 Task 完成;release-gate EXIT=0(fresh);守卫映射 + 漂移审计进 PR 描述;四批全收;分支不 push(待 owner 授权)。
+
+## 实施记录与偏差(2026-10-25)
+
+1. **迁移 revision 名**:`0033/0034` → `0044_recruitments` / `0045_recruitment_notifications`(≤32 字符,接 0043)。
+2. **共享增量漏项由迁移测试暴露(22 红)**:招募联系限流规则、errors.py 的 SQLAlchemy 安全日志分支(批 1 曾按"独立改进"推迟——招募 error-privacy 测试证明它是隐私要求的一部分,现纳入)、DeliveryService 的 reminder resolver(IN_APP-only、tx2 抑制、fail-closed)、send_notification 注入、dispatch 的 event_types/queue 过滤、innovation_dev worker profile、clean_world 招募删除序列。全部补齐后 305 集成 + 1496 单元/worker 全绿。
+3. **`_USERS`/DTOS 复用**:招募 schema 与公开服务全部改指 contact_schemas / accounts;`Text120/Text2000/RecruitmentStatus` 从共享或本文件恢复。
+4. **主产品 worker 测试放宽**:dispatch 的 producer 签名断言纳入两个 keyword-only 过滤参数(§12 的"只传 correlation id"仍是默认调用形态)。
+5. **前端适配**:contactFields/formUtils/ConfirmDialog 复用;业务冲突按 `code === "CONFLICT"`;通知 inbox 补招募提醒事件映射(PR 测试依赖)。
+6. **R3×R2 交叉验证恢复**:批 3 裁剪的 review spec 段随招募端点回归。
+7. **视觉**:招募 8 张基线首拍(pinned-font)+ 四家族 visual 全部进 make innovation-visual。
