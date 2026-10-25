@@ -3202,6 +3202,315 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Owned */
+        get: operations["list_owned_api_v1_ie_me_project_drafts__project_id__achievements_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_ie_me_project_drafts__project_id__achievements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owned */
+        get: operations["get_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update */
+        patch: operations["update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Owned */
+        get: operations["list_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete */
+        post: operations["complete_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove */
+        delete: operations["remove_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/evidence/{evidence_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Content */
+        get: operations["content_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow */
+        get: operations["workflow_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__workflow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw */
+        post: operations["withdraw_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/me/project-drafts/{project_id}/achievements/{achievement_id}/submit-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Update */
+        post: operations["submit_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queue */
+        get: operations["queue_api_v1_ie_ops_achievement_reviews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim */
+        post: operations["claim_api_v1_ie_ops_achievement_reviews__case_id__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/conflict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Conflict */
+        post: operations["conflict_api_v1_ie_ops_achievement_reviews__case_id__conflict_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_ie_ops_achievement_reviews__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decision */
+        post: operations["decision_api_v1_ie_ops_achievement_reviews__case_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/ops/achievement-reviews/{case_id}/evidence/{evidence_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Content */
+        get: operations["content_api_v1_ie_ops_achievement_reviews__case_id__evidence__evidence_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Visible */
+        get: operations["list_visible_api_v1_ie_achievements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ie/achievements/{achievement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_ie_achievements__achievement_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -3268,6 +3577,112 @@ export interface components {
             username: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
+        };
+        /** AchievementDraftCreate */
+        AchievementDraftCreate: {
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Work Url
+             * @default
+             */
+            work_url: string;
+            /**
+             * Award Text
+             * @default
+             */
+            award_text: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** AchievementDraftListResponse */
+        AchievementDraftListResponse: {
+            /** Items */
+            items: components["schemas"]["AchievementDraftResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** AchievementDraftResponse */
+        AchievementDraftResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Work Url */
+            work_url: string;
+            /** Award Text */
+            award_text: string;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AchievementDraftUpdate */
+        AchievementDraftUpdate: {
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Work Url */
+            work_url: string;
+            /** Award Text */
+            award_text: string;
+            /** Version */
+            version: number;
+        };
+        /** AchievementWorkflowResponse */
+        AchievementWorkflowResponse: {
+            /**
+             * Achievement Id
+             * Format: uuid
+             */
+            achievement_id: string;
+            /**
+             * First Review State
+             * @enum {string}
+             */
+            first_review_state: "DRAFT" | "SUBMITTED" | "RETURNED" | "APPROVED";
+            /**
+             * Moderation State
+             * @enum {string}
+             */
+            moderation_state: "NORMAL" | "TAKEN_DOWN";
+            /** Version */
+            version: number;
+            review_case: components["schemas"]["ReviewCaseSummary"] | null;
+            /** Public Revision Id */
+            public_revision_id: string | null;
+            /** First Approved At */
+            first_approved_at: string | null;
+            /** Latest Update At */
+            latest_update_at: string | null;
+            /** Has Unpublished Changes */
+            has_unpublished_changes: boolean;
         };
         /**
          * AdminBatchRequest
@@ -3997,6 +4412,71 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** EvidenceIntentCreate */
+        EvidenceIntentCreate: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "application/pdf" | "image/png" | "image/jpeg";
+            /** Size */
+            size: number;
+        };
+        /** EvidenceIntentResponse */
+        EvidenceIntentResponse: {
+            evidence: components["schemas"]["EvidenceResponse"];
+            /** Upload Url */
+            upload_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Client Headers */
+            client_headers: {
+                [key: string]: string;
+            };
+            /** Pinned Content Length */
+            pinned_content_length: number;
+        };
+        /** EvidenceListResponse */
+        EvidenceListResponse: {
+            /** Items */
+            items: components["schemas"]["EvidenceResponse"][];
+        };
+        /** EvidenceResponse */
+        EvidenceResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Content Type */
+            content_type: string;
+            /** Size */
+            size: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "PENDING" | "CHECKING" | "READY" | "REJECTED";
+            /** Sha256 */
+            sha256: string | null;
+            /** Failure Code */
+            failure_code: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * FileType
          * @description The closed upload file-type universe (spec §10/§12 + §10.1).
@@ -4396,7 +4876,7 @@ export interface components {
          *     SUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md).
          * @enum {string}
          */
-        NotificationEventType: "ASSIGNMENT_DEADLINE_24H" | "ASSIGNMENT_DEADLINE_4H" | "REVISION_REQUIRED" | "SUBMISSION_APPROVED" | "SUBMISSION_VALIDATION_FAILED" | "REWARD_REDEMPTION_APPROVED" | "REWARD_REDEMPTION_REJECTED" | "ACCOUNT_SECURITY";
+        NotificationEventType: "ASSIGNMENT_DEADLINE_24H" | "ASSIGNMENT_DEADLINE_4H" | "REVISION_REQUIRED" | "SUBMISSION_APPROVED" | "SUBMISSION_VALIDATION_FAILED" | "REWARD_REDEMPTION_APPROVED" | "REWARD_REDEMPTION_REJECTED" | "ACCOUNT_SECURITY" | "IE_ACHIEVEMENT_APPROVED" | "IE_ACHIEVEMENT_RETURNED";
         /**
          * NotificationFailureResponse
          * @description One FAILED delivery for the staff failure query (spec §25.4).
@@ -4906,6 +5386,65 @@ export interface components {
             team_status: string;
             /** Version */
             version: number;
+        };
+        /** PublicAchievementContent */
+        PublicAchievementContent: {
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Work Url */
+            work_url: string;
+            /** Award Text */
+            award_text: string;
+        };
+        /** PublicAchievementListResponse */
+        PublicAchievementListResponse: {
+            /** Items */
+            items: components["schemas"]["PublicAchievementResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** PublicAchievementResponse */
+        PublicAchievementResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            project: components["schemas"]["PublicProjectContent"];
+            achievement: components["schemas"]["PublicAchievementContent"];
+            /**
+             * First Approved At
+             * Format: date-time
+             */
+            first_approved_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Latest Reviewed At */
+            latest_reviewed_at: string | null;
+            /** Updated After First Review */
+            updated_after_first_review: boolean;
+        };
+        /** PublicProjectContent */
+        PublicProjectContent: {
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Direction */
+            direction: string;
+            /** Stage */
+            stage: string;
+            /** Team Status */
+            team_status: string;
         };
         /** PublicTalentContent */
         PublicTalentContent: {
@@ -5489,6 +6028,114 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ReviewCaseSummary */
+        ReviewCaseSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "SUBMIT" | "UPDATE";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "SUBMITTED" | "WITHDRAWN" | "APPROVED" | "RETURNED";
+            /** Version */
+            version: number;
+            /** Reason */
+            reason: string | null;
+        };
+        /** ReviewDecisionCommand */
+        ReviewDecisionCommand: {
+            /** Version */
+            version: number;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "APPROVED" | "RETURNED";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** ReviewPrivateDetail */
+        ReviewPrivateDetail: {
+            case: components["schemas"]["ReviewCaseSummary"];
+            /** Project Content */
+            project_content: {
+                [key: string]: string;
+            };
+            /** Achievement Content */
+            achievement_content: {
+                [key: string]: string;
+            };
+            /** Owner Profile */
+            owner_profile: {
+                [key: string]: string;
+            };
+            /** Evidence */
+            evidence: string[];
+        };
+        /** ReviewQueueItem */
+        ReviewQueueItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "SUBMIT" | "UPDATE";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "SUBMITTED" | "WITHDRAWN" | "APPROVED" | "RETURNED";
+            /** Version */
+            version: number;
+            /** Reason */
+            reason: string | null;
+            /** Project Title */
+            project_title: string;
+            /** Achievement Title */
+            achievement_title: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Claimed By Me */
+            claimed_by_me: boolean;
+        };
         /**
          * ReviewQueueItemResponse
          * @description One review-queue row (spec §41/§28): the VALIDATED submission
@@ -5545,6 +6192,11 @@ export interface components {
             validation: components["schemas"]["ValidationReportPayload"] | null;
             /** Download Url */
             download_url: string;
+        };
+        /** ReviewVersionCommand */
+        ReviewVersionCommand: {
+            /** Version */
+            version: number;
         };
         /**
          * RevisionRequiredRequest
@@ -5731,6 +6383,22 @@ export interface components {
          * @enum {string}
          */
         Role: "STUDENT" | "TEACHER" | "ADMIN";
+        /** SavedRevisionCommand */
+        SavedRevisionCommand: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Workflow Version */
+            workflow_version: number;
+            /** Project Version */
+            project_version: number;
+            /** Achievement Version */
+            achievement_version: number;
+            /** Evidence Ids */
+            evidence_ids: string[];
+        };
         /**
          * StaffInvitationAcceptRequest
          * @description Trade the single-use invitation token for a staff account (§5.8).
@@ -6856,6 +7524,29 @@ export interface components {
             spendable_points: number;
             /** Point Debt */
             point_debt: number;
+        };
+        /** WithdrawCommand */
+        WithdrawCommand: {
+            /** Workflow Version */
+            workflow_version: number;
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /** Case Version */
+            case_version: number;
+        };
+        /** ReviewQueueResponse */
+        app__modules__innovation__review_schemas__ReviewQueueResponse: {
+            /** Items */
+            items: components["schemas"]["ReviewQueueItem"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** ReviewQueueResponse */
         app__modules__points__router__ReviewQueueResponse: {
@@ -12037,6 +12728,705 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InnovationCapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    list_owned_api_v1_ie_me_project_drafts__project_id__achievements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_v1_ie_me_project_drafts__project_id__achievements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AchievementDraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AchievementDraftUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_owned_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceIntentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceIntentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    content_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__evidence__evidence_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__workflow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementWorkflowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedRevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementWorkflowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementWorkflowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_update_api_v1_ie_me_project_drafts__project_id__achievements__achievement_id__submit_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedRevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementWorkflowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    queue_api_v1_ie_ops_achievement_reviews_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__modules__innovation__review_schemas__ReviewQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_api_v1_ie_ops_achievement_reviews__case_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewVersionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewCaseSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    conflict_api_v1_ie_ops_achievement_reviews__case_id__conflict_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewVersionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_ie_ops_achievement_reviews__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewPrivateDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decision_api_v1_ie_ops_achievement_reviews__case_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewDecisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewCaseSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    content_api_v1_ie_ops_achievement_reviews__case_id__evidence__evidence_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_visible_api_v1_ie_achievements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicAchievementListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_ie_achievements__achievement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                achievement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicAchievementResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
