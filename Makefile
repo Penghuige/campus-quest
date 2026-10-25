@@ -203,7 +203,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
-        pre-push-full test-report report-viewer stack stack-down
+        pre-push-full test-report stack stack-down
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -365,52 +365,17 @@ test-report:
 		--ci-file "../$(REPORT_ARTIFACTS_DIR)/ci.json" \
 		--history-dir "../$(REPORT_DIR)/history" \
 		--note "$$notes"
-	@$(MAKE) --no-print-directory report-viewer
 
-# --- The report viewer (2026-10-26) ----------------------------------------
-#
-# Started automatically at the end of every `make test-report` (and therefore
-# by `make stack`): a stdlib static server on 127.0.0.1:8200 serving
-# reports/. If one is already answering it is reused, not duplicated. The
-# viewer binds loopback only; reports never leave the machine.
-REPORT_PORT ?= 8200
-REPORT_PID = $(REPORT_DIR)/server.pid
-
-report-viewer:
-	@mkdir -p $(REPORT_DIR)
-	@if curl -sf "http://127.0.0.1:$(REPORT_PORT)/" >/dev/null 2>&1; then \
-		echo "==> report viewer already serving on :$(REPORT_PORT)"; \
-	else \
-		python3 -m http.server $(REPORT_PORT) --bind 127.0.0.1 --directory $(REPORT_DIR) >/dev/null 2>&1 & \
-		echo $$! > $(REPORT_PID); \
-		sleep 1; \
-		if curl -sf "http://127.0.0.1:$(REPORT_PORT)/" >/dev/null 2>&1; then \
-			echo "==> report viewer started on :$(REPORT_PORT)"; \
-		else \
-			echo "!!! report viewer failed to start (is :$(REPORT_PORT) taken?)"; \
-			rm -f $(REPORT_PID); \
-		fi; \
-	fi
-	@echo "report: http://127.0.0.1:$(REPORT_PORT)/"
-
-# `make stack` is the canonical local startup: dependency stack + a fresh
-# report for HEAD (including its GitHub Actions record) + the viewer (started
-# by test-report itself). It deliberately does NOT touch docker-compose.yml —
-# no extra container, no bind-mount ownership trap, no port published by the
-# shared stack. `make stack-down` stops only the viewer; the dependency stack
-# keeps running (stop it with docker compose directly if needed).
+# `make stack` / `make stack-down` are the local stack lifecycle. The report
+# viewer is a compose service (report-viewer), so it starts and stops WITH
+# the stack — no separate start, reuse check, or pid file. `make test-report`
+# only generates the page; the running viewer serves the directory.
 stack:
 	docker compose -f infra/docker-compose.yml up -d
 	$(MAKE) test-report
 
 stack-down:
-	@if [ -f $(REPORT_PID) ]; then \
-		kill "$$(cat $(REPORT_PID))" 2>/dev/null || true; \
-		rm -f $(REPORT_PID); \
-		echo "report viewer stopped"; \
-	else \
-		echo "no report viewer pid file"; \
-	fi
+	docker compose -f infra/docker-compose.yml down
 
 playwright-e2e:
 	# Prerequisite dedup means a reset listed twice in the chain runs once —
