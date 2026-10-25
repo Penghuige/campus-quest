@@ -12,10 +12,15 @@ NOT in ``__init__`` — see that module's docstring for the cycle.
 from fastapi import APIRouter
 
 from app.modules.innovation import (
+    achievement_router,
+    evidence_router,
     operations_router,
     owner_router,
+    public_achievement_router,
     public_talent_router,
     qualification_router,
+    review_operations_router,
+    review_router,
     talent_file_router,
     talent_router,
 )
@@ -33,3 +38,8 @@ router.include_router(qualification_router.self_router)
 router.include_router(qualification_router.admin_router)
 router.include_router(operations_router.admin_router)
 router.include_router(operations_router.student_router)
+router.include_router(achievement_router.router)
+router.include_router(evidence_router.router)
+router.include_router(review_router.router)
+router.include_router(review_operations_router.router)
+router.include_router(public_achievement_router.router)

@@ -213,9 +213,9 @@ name = "innovation: routers above services"
 type = "layers"
 containers = ["app.modules.innovation"]
 layers = [
-    "aggregated : talent_router : talent_file_router : public_talent_router : dependencies : router : owner_router : qualification_router : operations_router",
-    "talent_service : talent_file_service : public_talent_service : talent_common : service : owner_service : qualification_service : operations_service",
-    "models : talent_models : schemas : talent_schemas : talent_file_schemas : owner_schemas : qualification_schemas : operations_schemas : contact_schemas : accounts : privacy",
+    "aggregated : talent_router : talent_file_router : public_talent_router : dependencies : router : owner_router : qualification_router : operations_router : achievement_router : evidence_router : review_router : review_operations_router : public_achievement_router",
+    "talent_service : talent_file_service : public_talent_service : talent_common : service : owner_service : qualification_service : operations_service : achievement_service : evidence_service : review_service : review_operations_service : public_achievement_service",
+    "models : talent_models : schemas : talent_schemas : talent_file_schemas : owner_schemas : qualification_schemas : operations_schemas : achievement_schemas : evidence_schemas : review_schemas : contact_schemas : accounts : privacy : evidence_models : review_models : workflow_guards",
 ]
 
 # The files module has services but no router (cleanup jobs only), so it has
