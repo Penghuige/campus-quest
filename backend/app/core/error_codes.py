@@ -100,6 +100,14 @@ class ErrorCode(StrEnum):
     # are handed out, 503 rather than an open door.
     TALENT_CONTACTS_UNAVAILABLE = "TALENT_CONTACTS_UNAVAILABLE"
 
+    # Innovation module (batch 2, project library): the draft and owner-
+    # profile command conflicts — a stale version loses to the other
+    # window (VERSION), and a reused request_id with a different payload
+    # is refused (REQUEST). Both registered in interfaces.md first.
+    PROJECT_DRAFT_VERSION_CONFLICT = "PROJECT_DRAFT_VERSION_CONFLICT"
+    PROJECT_DRAFT_REQUEST_CONFLICT = "PROJECT_DRAFT_REQUEST_CONFLICT"
+    OWNER_PROFILE_VERSION_CONFLICT = "OWNER_PROFILE_VERSION_CONFLICT"
+
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.
     INTERNAL_ERROR = "INTERNAL_ERROR"

@@ -73,6 +73,9 @@ export const BUSINESS_ERROR_CODES = [
   // frontend maps it to a retryable service error, never a bypass.
   // Registered in interfaces.md by the same batch.
   "TALENT_CONTACTS_UNAVAILABLE",
+  "PROJECT_DRAFT_VERSION_CONFLICT",
+  "PROJECT_DRAFT_REQUEST_CONFLICT",
+  "OWNER_PROFILE_VERSION_CONFLICT",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];

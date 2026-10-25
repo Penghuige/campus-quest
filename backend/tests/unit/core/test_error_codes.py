@@ -78,6 +78,11 @@ FROZEN_BUSINESS_CODES = (
     # Innovation batch 1 (talent): registered in interfaces.md before
     # this enum grew — the contact-reveal limiter's fail-closed envelope.
     "TALENT_CONTACTS_UNAVAILABLE",
+    # Innovation batch 2 (project library): draft/owner-profile command
+    # conflicts, registered in interfaces.md first.
+    "PROJECT_DRAFT_VERSION_CONFLICT",
+    "PROJECT_DRAFT_REQUEST_CONFLICT",
+    "OWNER_PROFILE_VERSION_CONFLICT",
 )
 
 FROZEN_SYSTEM_CODES = (

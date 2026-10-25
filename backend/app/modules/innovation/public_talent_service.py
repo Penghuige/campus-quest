@@ -20,7 +20,8 @@ from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
-from app.modules.innovation.talent_common import USERS, conflict, mutation, not_found
+from app.modules.innovation.accounts import USERS
+from app.modules.innovation.talent_common import conflict, mutation, not_found
 from app.modules.innovation.talent_models import (
     TalentFile,
     TalentProfile,

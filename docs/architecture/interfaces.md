@@ -302,6 +302,9 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `APPROVAL_PENDING` | V1.1 2026-10-16 §2 |
 | `CHALLENGE_CODE_INVALID` | 统一登录 2026-10-19 §3.4 |
 | `TALENT_CONTACTS_UNAVAILABLE` | 创新板块批 1(人才库)· interfaces.md "Innovation module" 小节 |
+| `PROJECT_DRAFT_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `PROJECT_DRAFT_REQUEST_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `OWNER_PROFILE_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
@@ -441,6 +444,21 @@ anywhere, and its few holders simply re-login once.
   name, is the proof (a renamed identifier since mint still honors).
   `revoke_all` (`DELETE /me/devices`) drops every slot of the account
   across all browsers, unchanged.
+
+### Innovation module (batch 2, project library)
+
+The owner-side preparation surfaces — `/ie/me/project-drafts*`,
+`/ie/me/owner-profile`, `/ie/me/owner-qualification`,
+`/ie/me/operations-grants`, and the admin activation surfaces
+`/admin/ie/owner-qualifications` and `/admin/ie/operations-grants` —
+share the batch-1 conventions: approved-student guards on every
+owner surface (PENDING_APPROVAL browses the campus shell, never acts),
+admin surfaces compose `require_admin_actor` with the store-backed
+management-network guard, and every command carries `request_id` +
+expected `version` (idempotent receipts; stale versions answer the
+three `*_CONFLICT` codes above). The draft service locks the actor's
+user row through the raw `users` table (`innovation/accounts.py`), not
+the identity ORM — the directory port contract stays KEPT.
 
 ### Innovation module (batch 1, talent)
 

@@ -7,17 +7,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import String, Uuid, column, select, table
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
-
-USERS = table(
-    "users", column("id", Uuid), column("role", String), column("status", String)
-)
+from app.modules.innovation.accounts import USERS
 
 
 def fingerprint(value: dict[str, Any]) -> str:
