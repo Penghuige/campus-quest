@@ -82,3 +82,5 @@
 **守卫映射(端点面 → 守卫 → 预期):** 本人管理面(草稿/档案/成果/证据/招募/资格申请,共 66 端点中的 Student 面)`require_approved_student_actor`:ACTIVE 放行、PENDING_APPROVAL 403 `APPROVAL_PENDING`、staff 403;浏览/公开面(`Viewer`/公开路由)`require_active_actor`:PENDING_APPROVAL 可浏览,公开面只渲染白名单 DTO、联系值仅授权读取;admin 面 `require_admin_actor` + `require_management_network_from_store`;全部 /api/v1/ie/* 响应经隐私中间件 `private, no-store`。
 
 **owner 裁决(2026-10-25):** 窄屏 BottomNav 维持 5 槽,不给创新板块让位(沿用默认策略);交付走双审(campus reviewer)+ owner 终审。
+
+**CI 环境补齐(2026-10-25):** PR #142 首轮 CI 中 Backend 红于 coverage ratchet(`app/integrations` 90.1<91.7、`app/modules/innovation` 97.7<97.9)——CI 后端作业未起 ClamAV 且未设 `CQ_EVIDENCE_SCAN_SMOKE=1`,三个真实扫描/组合 smoke 静默 skip,而本地 release-gate 起了同一 compose 栈。按「与本地同形」修复:CI 作业增加 Start evidence scanner(ClamAV)步(同一 `infra/docker-compose.clamav.yml`,`--wait-timeout 420`,失败时打印容器日志)+ 作业级 `CQ_EVIDENCE_SCAN_SMOKE=1`;地板不调低,不用 skip-gate 放宽门禁。
