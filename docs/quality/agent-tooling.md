@@ -270,3 +270,7 @@ Keep the bar for further custom skills: conditional/non-obvious workflows with r
 - `make pre-push` is the fast local gate before every push (~2 min, no docker stack): coverage-floor direction (floors only move up), backend lint/format/typecheck, architecture lint (import-linter + dependency-cruiser), spec-test matrix coherence, the G3 placeholder guard, OpenAPI snapshot and frontend TS-type freshness, frontend typecheck/lint/CSS guard, and the frontend coverage ratchet — CI's highest-frequency failure points.
 - `.githooks/pre-push` runs it automatically; `git push --no-verify` is the escape hatch for a single push. hooksPath is per-clone local git config — after a fresh clone, run `git config core.hooksPath .githooks` once to wire the hook.
 - Backend coverage ratchet, integration, e2e, and pixel/axe are not in it — they need the compose stack and belong to `make release-gate` / CI. Reach for `make release-gate` when the change moves backend coverage, e2e flows, or pixel baselines, and always as the product-level acceptance run on merged main.
+
+## 15. Test report dashboard
+
+`make test-report` builds the offline seven-layer dashboard (`reports/test-report.html`) from `reports/artifacts/`. It auto-runs only the backend unit+worker suite and (when `frontend/node_modules` exists) the frontend unit suite; integration/e2e/Playwright/pixel layers are never started or borrowed. Usage, artifact commands, the four block states, and the exploration manifest format are documented in `docs/operations/test-report.md`.

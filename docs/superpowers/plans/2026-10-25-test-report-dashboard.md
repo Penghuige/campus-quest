@@ -24,27 +24,27 @@
 
 ## Tasks
 
-- [ ] **Task 1 — 失败测试先行** `backend/tests/unit/scripts/test_test_report.py`
+- [x] **Task 1 — 失败测试先行** `backend/tests/unit/scripts/test_test_report.py`
   - JUnit（pytest 风格 + Node 风格）状态/耗时/定位解析；
   - Playwright 嵌套 suite、project 后缀、flaky、全局 errors、visual 文件分流；
   - manifest 四种状态与非法状态 fail-closed；
   - 缺文件 → 七层占位、计数；
   - HTML 转义（测试名/失败信息含 `<script>`、`<img onerror>`）、七层标题与计数区、无外部资源；
   - CLI 成功/失败退出码；示例 manifest 可被解析。
-- [ ] **Task 2 — 生成器** `backend/scripts/test_report.py`
+- [x] **Task 2 — 生成器** `backend/scripts/test_report.py`
   - adapters + 固定七层 + 离线 HTML（内联 CSS/JS，数据经 `textContent` 写入详情面板）；
   - 所有数据文本进入属性前 `html.escape`；嵌入 JSON 把 `<`/`>`/`&` 转成 `\uXXXX`；
   - 1440px 与窄屏都不横向溢出（grid 可收缩、`overflow-wrap`、方块换行）；
   - 退出码：报告写出 0；解析/写入失败非 0。
-- [ ] **Task 3 — Make 入口** `Makefile`
+- [x] **Task 3 — Make 入口** `Makefile`
   - `test-report`：建目录 → 缺后端 unit+worker XML 时补跑 → 缺前端 unit XML 且有 `node_modules` 时补跑（无则跳过并传 note）→ 调生成器；
   - 不自动跑集成/e2e/Playwright/像素；
   - 测试红但 XML 已写出时继续生成报告（报告会显示红块）；XML 未产出则 make 失败。
-- [ ] **Task 4 — 文档**
+- [x] **Task 4 — 文档**
   - `docs/operations/test-report.md`：命令、产物、四态、artifact 表、manifest 格式、刷新方式、退出码、限制；
   - `docs/operations/test-report-exploration.example.json` 示例；
   - `docs/quality/agent-tooling.md` §14 加一行指针。
-- [ ] **Task 5 — 验证与提交**
+- [x] **Task 5 — 验证与提交**
   - 生成器单测全绿；ruff check / format --check / mypy 显式文件全绿；
   - fixture 生成 HTML 断言七层与方块；真跑 `make test-report` 并 grep 七层与计数区；
   - 小步英文 commit，无 AI trailer；不 push。
