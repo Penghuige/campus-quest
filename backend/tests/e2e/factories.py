@@ -739,6 +739,28 @@ async def clean_world(
             delete(TalentProfile).where(TalentProfile.owner_user_id.in_(users))
         )
 
+        # Project-library worlds (batch 2) own their preparation rows:
+        # drafts, the owner profile, its qualification snapshot, and the
+        # operations grants. No history triggers on these tables — plain
+        # FK-ordered deletes suffice.
+        from app.modules.innovation.models import (
+            OperationsGrant,
+            OwnerProfile,
+            OwnerQualification,
+            ProjectDraft,
+        )
+
+        await db.execute(
+            delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
+        )
+        await db.execute(
+            delete(OwnerQualification).where(OwnerQualification.user_id.in_(users))
+        )
+        await db.execute(delete(OwnerProfile).where(OwnerProfile.user_id.in_(users)))
+        await db.execute(
+            delete(OperationsGrant).where(OperationsGrant.user_id.in_(users))
+        )
+
         # Identity: honors grants, staff artifacts, sessions, 2FA, then
         # the users themselves.
         await db.execute(delete(UserHonor).where(UserHonor.user_id.in_(users)))
