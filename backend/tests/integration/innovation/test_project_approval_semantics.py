@@ -49,8 +49,6 @@ async def test_pending_student_cannot_touch_owner_surfaces(
 
 async def test_admin_surfaces_reject_pending_students(client, db_session, clock):
     _, headers = await _pending(db_session, clock)
-    listing = await client.get(
-        "/api/v1/admin/ie/owner-qualifications", headers=headers
-    )
+    listing = await client.get("/api/v1/admin/ie/owner-qualifications", headers=headers)
     assert listing.status_code in (403, 404), listing.text
     assert listing.json()["error"]["code"] in {APPROVAL_PENDING, "PERMISSION_DENIED"}
