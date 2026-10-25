@@ -75,3 +75,11 @@ PR 集成/单测:`test_project_drafts.py`、`test_owner_profiles.py`、`test_own
 ## 完成定义
 
 - 全部 Task 勾选;release-gate EXIT=0(fresh);守卫映射表 + 漂移审计三项进 PR 描述;分支不 push(待 owner 授权)。
+
+## 实施记录与偏差(2026-10-25)
+
+1. **迁移 revision id 缩短**:`alembic_version.version_num` 是 varchar(32),`0038_innovation_operations_grants`(33)超宽,实测报 StringDataRightTruncationError。四个文件与 revision 统一改为短名:`0036_project_drafts` / `0037_owner_profiles` / `0038_operations_grants` / `0039_owner_qualification`。
+2. **AchievementDraft 模型推迟到批 3**:PR 的 models.py 含 `ie_achievement_drafts`(表由批 3 的 0028 迁移建)。若保留模型而无迁移,`alembic check` 报漂移;故本批剥离该类(51 行),批 3 原样恢复并随其迁移落表。
+3. **运营入口推迟到批 3**:R1 的「双创运营」导航项指向 `/innovation/reviews`(批 3 工作台),目标页不存在时不显示入口(StudentShell 的 capabilities 门控与 OPERATIONS_NAV 随批 3 落地),避免死链。
+4. **项目库公共页为最小落地页**:`/innovation/projects` 的完整列表依赖批 3/4(成果/招募数据),本批为诚实交接页。
+5. **`/ie/me/capabilities` 为 approved 面**:PENDING_APPROVAL 学生 403(与本人管理面一致),测试已钉。
