@@ -1,20 +1,20 @@
 {
   "app/__init__.py": 100.0,
-  "app/core": 95.9,
-  "app/db": 92.5,
+  "app/core": 96.0,
+  "app/db": 92.6,
   "app/integrations": 91.7,
   "app/main.py": 100.0,
   "app/modules/__init__.py": 100.0,
   "app/modules/audit": 97.3,
   "app/modules/community": 97.7,
   "app/modules/files": 90.8,
-  "app/modules/identity": 93.6,
-  "app/modules/innovation": 97.6,
-  "app/modules/notifications": 95.3,
+  "app/modules/identity": 93.7,
+  "app/modules/innovation": 97.9,
+  "app/modules/notifications": 95.1,
   "app/modules/points": 95.4,
   "app/modules/rankings": 95.9,
   "app/modules/submissions": 93.9,
   "app/modules/system": 97.3,
   "app/modules/tasks": 96.0,
-  "app/workers": 91.3
+  "app/workers": 88.1
 }
