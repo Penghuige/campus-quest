@@ -300,6 +300,9 @@ frontend-build:
 	cd frontend && npm run build
 
 playwright-e2e:
+	# Prerequisite dedup means a reset listed twice in the chain runs once —
+	# recurse so EVERY browser leg opens from the pristine database.
+	@$(MAKE) --no-print-directory reset-test-db
 	# CQ_E2E_LOGIN_RATELIMIT: the same battery-scale relief CI's e2e job
 	# runs with (ci.yml sets it; the comment there claims the local
 	# battery matches). Without it the dense login specs — unified-login's
@@ -335,9 +338,9 @@ release-evidence-scanner:
 release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner \
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
-              frontend-css-guard frontend-unit frontend-build reset-test-db \
-              playwright-e2e reset-test-db visual-regression reset-test-db \
-              talent-visual pip-audit npm-audit coverage-ratchet
+              frontend-css-guard frontend-unit frontend-build \
+              playwright-e2e visual-regression talent-visual pip-audit \
+              npm-audit coverage-ratchet
 
 # The talent visual battery runs in its own pinned-font Linux stage with a
 # disposable real publication world (noskip-exempted from the standard
@@ -346,6 +349,7 @@ release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner 
 # against ONE shared stack, so the login buckets the battery filled must
 # not bleed into the visual stage's logins (CI isolates jobs instead).
 talent-visual:
+	@$(MAKE) --no-print-directory reset-test-db
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
@@ -360,6 +364,7 @@ talent-visual:
 # when 3000/8000 are occupied — same rule as playwright-e2e).
 .PHONY: visual-regression
 visual-regression:
+	@$(MAKE) --no-print-directory reset-test-db
 	# Same relief+API_URL pair as playwright-e2e — the gate's legs share
 	# one stack, so the battery's login volume must not rate-limit the
 	# visual stage out of its own logins.
