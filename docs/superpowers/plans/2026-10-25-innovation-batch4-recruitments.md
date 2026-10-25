@@ -80,3 +80,5 @@
 3. **门禁**:`make pre-push` EXIT=0(含 arch-lint:后端 importlinter `innovation: routers above services`、前端 depcruise 按 features 目录自动覆盖)+ 契约新鲜度 + 本表 release-gate。
 
 **守卫映射(端点面 → 守卫 → 预期):** 本人管理面(草稿/档案/成果/证据/招募/资格申请,共 66 端点中的 Student 面)`require_approved_student_actor`:ACTIVE 放行、PENDING_APPROVAL 403 `APPROVAL_PENDING`、staff 403;浏览/公开面(`Viewer`/公开路由)`require_active_actor`:PENDING_APPROVAL 可浏览,公开面只渲染白名单 DTO、联系值仅授权读取;admin 面 `require_admin_actor` + `require_management_network_from_store`;全部 /api/v1/ie/* 响应经隐私中间件 `private, no-store`。
+
+**owner 裁决(2026-10-25):** 窄屏 BottomNav 维持 5 槽,不给创新板块让位(沿用默认策略);交付走双审(campus reviewer)+ owner 终审。
