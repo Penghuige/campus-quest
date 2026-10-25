@@ -83,3 +83,6 @@ PR 集成/单测:`test_project_drafts.py`、`test_owner_profiles.py`、`test_own
 3. **运营入口推迟到批 3**:R1 的「双创运营」导航项指向 `/innovation/reviews`(批 3 工作台),目标页不存在时不显示入口(StudentShell 的 capabilities 门控与 OPERATIONS_NAV 随批 3 落地),避免死链。
 4. **项目库公共页为最小落地页**:`/innovation/projects` 的完整列表依赖批 3/4(成果/招募数据),本批为诚实交接页。
 5. **`/ie/me/capabilities` 为 approved 面**:PENDING_APPROVAL 学生 403(与本人管理面一致),测试已钉。
+6. **admin-platforms 基线重拍(1f2c3d8)**:批 2 门禁暴露——旧基线(ddcb800)含三处差异:批 2 新增的两项 admin 侧栏入口(本批产品变更)、#137/#139 的「切换账号」按钮(基线滞后于 main,CI 停摆期未重拍)、以及四行随机的 `e2e-pf-*` 世界残留(脏世界拍进基线,干净库不可复现)。新基线在门禁的纯净库上重拍并复验;走查记录在提交说明。属"产品级视觉变更 + 基线污染修复",非为本批转绿而降级。
+7. **e2e 电池的环境形态**:admin 管理面按设计体系 §8 是桌面工作台,main 的 admin 壳无窄屏回退——两个 spec 的窄屏断言改为桌面宽度断言,窄屏回退留给专门的 admin 响应式轮。
+8. **运营导航入口推迟到批 3**:`InnovationCapabilities`/`genuineOps` 门控随批 3 工作台落地;operations e2e 以 `/ie/me/capabilities` 事实断言替代 UI 入口断言。
