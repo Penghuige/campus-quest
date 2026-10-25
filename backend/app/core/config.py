@@ -318,6 +318,10 @@ class Settings(BaseSettings):
     notification_dispatch_scan_interval_seconds: int = 60
     notification_sending_stuck_scan_interval_seconds: int = 60
     claim_expiry_scan_interval_seconds: int = 60
+    # Innovation recruitments (batch 4): the due-scan cadence and its
+    # per-beat batch bound (the scheduler's own LIMIT constant mirrors it).
+    recruitment_scan_interval_seconds: int = 60
+    recruitment_scan_batch_limit: int = 100
     file_cleanup_scan_interval_seconds: int = 900
     # Cleanup deletion-claim lease (PR #2 hardening pass 5a, P0-2): how
     # long a claimed deletion right stays exclusive. Sized above the
@@ -455,7 +459,9 @@ class Settings(BaseSettings):
             raise ValueError(f"comment_max_length must be >= 1, got {value}")
         return value
 
-    @field_validator("notification_dispatch_batch_limit")
+    @field_validator(
+        "notification_dispatch_batch_limit", "recruitment_scan_batch_limit"
+    )
     @classmethod
     def _validate_notification_dispatch_batch_limit(cls, value: int) -> int:
         # A ceiling below 1 disables the scan (every beat discovers
@@ -499,6 +505,7 @@ class Settings(BaseSettings):
         "notification_dispatch_scan_interval_seconds",
         "notification_sending_stuck_scan_interval_seconds",
         "claim_expiry_scan_interval_seconds",
+        "recruitment_scan_interval_seconds",
         "file_cleanup_scan_interval_seconds",
         "stale_validating_scan_interval_seconds",
     )

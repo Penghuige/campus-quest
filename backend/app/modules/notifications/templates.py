@@ -215,6 +215,9 @@ EVENT_VARIABLES: dict[NotificationEventType, frozenset[str]] = {
     NotificationEventType.IE_ACHIEVEMENT_RETURNED: frozenset(
         {"achievement_title", "review_reason"}
     ),
+    NotificationEventType.IE_RECRUITMENT_CONFIRMATION_DUE: frozenset(
+        {"role_name", "manage_path"}
+    ),
 }
 
 
@@ -465,6 +468,15 @@ for _channel in NotificationChannel:
             title="成果核实退回",
             body="您的成果《{achievement_title}》已退回。原因：{review_reason}。请修改后重新提交。",
         )
+    )
+    DEFAULT_TEMPLATES[
+        (NotificationEventType.IE_RECRUITMENT_CONFIRMATION_DUE, _channel)
+    ] = TemplateText(
+        title="请确认招募是否继续",
+        body=(
+            "岗位《{role_name}》已到确认时间。若仍在招募，"
+            "请前往 {manage_path} 确认继续；未回复会保持开放。"
+        ),
     )
 
 

@@ -97,6 +97,10 @@ KEY_TABLES=(
   ie_achievement_revisions
   ie_achievement_review_cases
   ie_achievement_workflows
+  ie_recruitment_drafts
+  ie_recruitment_revisions
+  ie_recruitment_contacts
+  ie_recruitment_receipts
 )
 
 # Unique indexes whose absence would silently reopen a §31 race.

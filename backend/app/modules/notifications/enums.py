@@ -63,3 +63,5 @@ class NotificationEventType(StrEnum):
     # owner through the standard inbox/delivery pipeline.
     IE_ACHIEVEMENT_APPROVED = "IE_ACHIEVEMENT_APPROVED"
     IE_ACHIEVEMENT_RETURNED = "IE_ACHIEVEMENT_RETURNED"
+    # Innovation recruitments (batch 4): the due-confirmation nudge.
+    IE_RECRUITMENT_CONFIRMATION_DUE = "IE_RECRUITMENT_CONFIRMATION_DUE"
