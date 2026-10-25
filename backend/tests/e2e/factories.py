@@ -804,6 +804,42 @@ async def clean_world(
                 )
             )
         )
+        # Batch 4: recruitment rows hang off project drafts. Break the
+        # draft -> public-revision pointer first (the published-consistency
+        # check requires DRAFT once it is NULL), then children in FK order.
+        from app.modules.innovation.recruitment_models import (
+            RecruitmentActionReceipt,
+            RecruitmentContactAuthorization,
+            RecruitmentDraft,
+            RecruitmentRevision,
+        )
+
+        recruitments = select(RecruitmentDraft.id).where(
+            RecruitmentDraft.project_id.in_(projects)
+        )
+        await db.execute(
+            update(RecruitmentDraft)
+            .where(RecruitmentDraft.project_id.in_(projects))
+            .values(status="DRAFT", public_revision_id=None)
+        )
+        await db.execute(
+            delete(RecruitmentContactAuthorization).where(
+                RecruitmentContactAuthorization.recruitment_id.in_(recruitments)
+            )
+        )
+        # The two history triggers here are BEFORE UPDATE only; disable
+        # USER triggers around the deletes to match the talent-block
+        # discipline.
+        for model in (RecruitmentRevision, RecruitmentActionReceipt):
+            table = model.__tablename__
+            await db.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            await db.execute(
+                delete(model).where(model.recruitment_id.in_(recruitments))
+            )
+            await db.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        await db.execute(
+            delete(RecruitmentDraft).where(RecruitmentDraft.id.in_(recruitments))
+        )
         await db.execute(
             delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
         )

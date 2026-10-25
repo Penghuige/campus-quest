@@ -224,6 +224,7 @@ RATE_LIMIT_RULES: dict[str, RateLimitRule] = {
         # so this is the privacy anti-abuse bound; the authorization and
         # audit live in the talent service, not here.
         RateLimitRule(bucket="ie:talent-contacts", limit=30, window_seconds=60),
+        RateLimitRule(bucket="ie:recruitment-contacts", limit=30, window_seconds=60),
     )
 }
 

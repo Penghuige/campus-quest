@@ -110,7 +110,12 @@ class DueDelivery(NamedTuple):
 
 
 async def collect_due_deliveries(
-    session: Any, now: datetime, *, limit: int, stale_after: timedelta
+    session: Any,
+    now: datetime,
+    *,
+    limit: int,
+    stale_after: timedelta,
+    event_types: tuple[str, ...] | None = None,
 ) -> list[DueDelivery]:
     """Due and stuck-SENDING delivery ids — the scan's whole read.
 
@@ -124,12 +129,23 @@ async def collect_due_deliveries(
     from sqlalchemy import and_, or_, select
 
     from app.modules.notifications.enums import DeliveryStatus
-    from app.modules.notifications.models import NotificationDelivery
+    from app.modules.notifications.models import Notification, NotificationDelivery
 
     rows = (
         await session.execute(
             select(NotificationDelivery.id, NotificationDelivery.status)
             .where(
+                *(
+                    []
+                    if event_types is None
+                    else [
+                        NotificationDelivery.notification_id.in_(
+                            select(Notification.id).where(
+                                Notification.event_type.in_(event_types)
+                            )
+                        )
+                    ]
+                ),
                 or_(
                     and_(
                         NotificationDelivery.status.in_(
@@ -144,7 +160,7 @@ async def collect_due_deliveries(
                         NotificationDelivery.status == DeliveryStatus.SENDING.value,
                         NotificationDelivery.updated_at <= now - stale_after,
                     ),
-                )
+                ),
             )
             .order_by(NotificationDelivery.scheduled_at, NotificationDelivery.id)
             .limit(limit)
@@ -171,7 +187,13 @@ async def collect_due_deliveries(
     retry_jitter=True,
     max_retries=_MAX_RETRIES,
 )
-def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
+def dispatch_due_notifications(
+    self: Any,
+    request_id: str,
+    *,
+    event_types: tuple[str, ...] | None = None,
+    queue: str | None = None,
+) -> dict[str, Any]:
     """Discovery only: enqueue one ``workers.send_notification_delivery``
     per due or stuck-SENDING delivery id.
 
@@ -213,7 +235,12 @@ def dispatch_due_notifications(self: Any, request_id: str) -> dict[str, Any]:
 
     discovered = asyncio.run(run_with_session(_discover))
     for item in discovered:
-        send_notification_delivery.delay(str(item.delivery_id), request_id)
+        if queue is None:
+            send_notification_delivery.delay(str(item.delivery_id), request_id)
+        else:
+            send_notification_delivery.apply_async(
+                args=(str(item.delivery_id), request_id), queue=queue
+            )
     reasons = [item.reason for item in discovered]
     payload: dict[str, Any] = {
         "request_id": request_id,

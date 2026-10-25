@@ -12,6 +12,7 @@ logged server-side only) — docs/quality/backend-engineering.md §10, §15.
 """
 
 import logging
+import re
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -152,11 +153,35 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # BusinessError is also imported by lazy worker entrypoints. Database
+        # dependencies must only load when an unexpected error is handled.
+        from sqlalchemy.exc import SQLAlchemyError
+
         request_id = getattr(request.state, "request_id", None)
-        # Traceback goes to server logs only; the response stays generic.
-        logger.exception(
-            "Unhandled exception request_id=%s path=%s", request_id, request.url.path
-        )
+        if isinstance(exc, SQLAlchemyError):
+            # Parameter hiding does not redact a PostgreSQL failing-row DETAIL.
+            # Never render the SQL exception, its cause, or traceback exception
+            # text: retain bounded diagnostic metadata without private values.
+            sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+            safe_state = (
+                sqlstate
+                if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate)
+                else "unknown"
+            )
+            logger.error(
+                "Database failure request_id=%s path=%s error_type=%s sqlstate=%s",
+                request_id,
+                request.url.path,
+                type(exc).__name__,
+                safe_state,
+            )
+        else:
+            # Traceback goes to server logs only; the response stays generic.
+            logger.exception(
+                "Unhandled exception request_id=%s path=%s",
+                request_id,
+                request.url.path,
+            )
         response = _envelope_response(
             500, ErrorCode.INTERNAL_ERROR, INTERNAL_ERROR_MESSAGE, None, request_id
         )
