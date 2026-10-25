@@ -203,7 +203,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
-        pre-push-full test-report stack stack-down
+        pre-push-full test-report report-smoke stack stack-down
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -367,15 +367,23 @@ test-report:
 		--note "$$notes"
 
 # `make stack` / `make stack-down` are the local stack lifecycle. The report
-# viewer is a compose service (report-viewer), so it starts and stops WITH
-# the stack — no separate start, reuse check, or pid file. `make test-report`
-# only generates the page; the running viewer serves the directory.
+# viewer is a compose service behind the "report" profile (campus reviewer
+# ruling 2026-10-26): `make stack` enables the profile, so the viewer starts
+# and stops WITH the stack; bare `docker compose up -d` (the gate
+# prerequisite, other sessions, production) does not start it — that is
+# documented behavior, not an accident. `make test-report` only generates
+# the page; the running viewer serves the directory.
 stack:
-	docker compose -f infra/docker-compose.yml up -d
+	docker compose -f infra/docker-compose.yml --profile report up -d
 	$(MAKE) test-report
 
 stack-down:
 	docker compose -f infra/docker-compose.yml down
+
+# Lifecycle proof for the report profile form (scripts/report-viewer-smoke.sh):
+# touches only the report-viewer service — no stack borrow needed.
+report-smoke:
+	bash scripts/report-viewer-smoke.sh
 
 playwright-e2e:
 	# Prerequisite dedup means a reset listed twice in the chain runs once —

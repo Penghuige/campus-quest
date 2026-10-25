@@ -16,17 +16,21 @@ make test-report
 ## 0. 随服务启动 + 独立端口查看
 
 ```bash
-make stack        # docker compose up -d（含 report-viewer 服务）+ 最新 commit 报告
+make stack        # docker compose --profile report up -d（含 report-viewer）+ 最新 commit 报告
 # 打开 http://127.0.0.1:8200/  （只绑本机）
 make stack-down   # docker compose down：依赖栈与查看器一起停
 ```
 
-查看器是 compose 服务 `report-viewer`（`infra/docker-compose.yml`）：**它的生命周期就是栈的生命周期**——`docker compose up -d` 起来，`docker compose down` 停止，没有单独的启停脚本、PID 文件或复用探测。裸跑 `docker compose up -d` 也会启动它；`make test-report` **只生成页面**，不会启动任何进程。
+查看器是 compose 服务 `report-viewer`，**挂在 "report" profile 下**（campus reviewer 裁定 2026-10-26，与 minio-e2e 的 profile 先例一致）：
 
+- **`make stack` / `make stack-down` 是它的生命周期**：起栈带 `--profile report`（查看器随栈起），`down` 连同 profile 服务一起停——owner 的使用路径上"与栈同生命周期、无检测逻辑"完整成立。
+- **裸 `docker compose up -d` 不起查看器**（release-gate 前置、其他会话、生产 207 复用本文件）——这是**文档化的设计行为**，不是意外；需要查看器就走 `make stack`。
+- `make test-report` **只生成页面**，不启动任何进程。
 - 镜像 `python:3.12-slim`（首次使用需拉取）；容器只读挂载仓库根的 `reports/`。
 - `reports/` 目录以空目录形式提交（`reports/.gitkeep`），避免 Docker 把缺失的挂载源以 root 创建、导致宿主机写入失败。
 - 端口只映射到 `127.0.0.1:8200`，不对外暴露。
 - 相对挂载路径以 `infra/` 为基准；从哪个工作区起 compose，就服务哪个工作区的 `reports/`。
+- 生命周期自证：`make report-smoke`（只启停 report-viewer 服务本身，不碰 3000/8000/测试库，无需借栈）。
 
 ## 1. `make test-report` 的行为
 
