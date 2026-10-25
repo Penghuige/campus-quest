@@ -9110,6 +9110,1027 @@
         }
       }
     },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_v1_ie_me_project_drafts__project_id__recruitments_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentDraftCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "List Owned",
+        "operationId": "list_owned_api_v1_ie_me_project_drafts__project_id__recruitments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentDraftListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}": {
+      "get": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Get Owned",
+        "operationId": "get_owned_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentDraftUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}/publish": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Publish",
+        "operationId": "publish_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__publish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}/close": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Close",
+        "operationId": "close_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__close_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}/reopen": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Reopen",
+        "operationId": "reopen_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__reopen_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}/confirm-active": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Confirm Active",
+        "operationId": "confirm_active_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__confirm_active_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecruitmentVersionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/me/project-drafts/{project_id}/recruitments/{recruitment_id}/revoke-contact": {
+      "post": {
+        "tags": [
+          "innovation recruitment"
+        ],
+        "summary": "Revoke Contact",
+        "operationId": "revoke_contact_api_v1_ie_me_project_drafts__project_id__recruitments__recruitment_id__revoke_contact_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeRecruitmentContactCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/recruitments": {
+      "get": {
+        "tags": [
+          "innovation public recruitment"
+        ],
+        "summary": "List Recruitments",
+        "operationId": "list_recruitments_api_v1_ie_recruitments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "default": "",
+              "title": "Direction"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Stage"
+            }
+          },
+          {
+            "name": "recruiting_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Recruiting Only"
+            }
+          },
+          {
+            "name": "beginner_friendly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Beginner Friendly"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRecruitmentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/recruitments/{recruitment_id}": {
+      "get": {
+        "tags": [
+          "innovation public recruitment"
+        ],
+        "summary": "Get Recruitment",
+        "operationId": "get_recruitment_api_v1_ie_recruitments__recruitment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRecruitmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/recruitments/{recruitment_id}/contacts": {
+      "get": {
+        "tags": [
+          "innovation public recruitment"
+        ],
+        "summary": "Get Contacts",
+        "operationId": "get_contacts_api_v1_ie_recruitments__recruitment_id__contacts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recruitment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recruitment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecruitmentContactsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/projects": {
+      "get": {
+        "tags": [
+          "innovation public recruitment"
+        ],
+        "summary": "List Projects",
+        "operationId": "list_projects_api_v1_ie_projects_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "default": "",
+              "title": "Direction"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Stage"
+            }
+          },
+          {
+            "name": "recruiting_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Recruiting Only"
+            }
+          },
+          {
+            "name": "beginner_friendly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Beginner Friendly"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProjectListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ie/projects/{project_id}": {
+      "get": {
+        "tags": [
+          "innovation public recruitment"
+        ],
+        "summary": "Get Project",
+        "operationId": "get_project_api_v1_ie_projects__project_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "achievement_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Achievement Limit"
+            }
+          },
+          {
+            "name": "achievement_offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Achievement Offset"
+            }
+          },
+          {
+            "name": "recruitment_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Recruitment Limit"
+            }
+          },
+          {
+            "name": "recruitment_offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Recruitment Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProjectDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "summary": "Live",
@@ -12128,7 +13149,8 @@
           "REWARD_REDEMPTION_REJECTED",
           "ACCOUNT_SECURITY",
           "IE_ACHIEVEMENT_APPROVED",
-          "IE_ACHIEVEMENT_RETURNED"
+          "IE_ACHIEVEMENT_RETURNED",
+          "IE_RECRUITMENT_CONFIRMATION_DUE"
         ],
         "title": "NotificationEventType",
         "description": "Canonical domain event names (spec §25 list plus the\nSUBMISSION_VALIDATION_FAILED addition; frozen by interfaces.md)."
@@ -13292,6 +14314,279 @@
         ],
         "title": "PublicProjectContent"
       },
+      "PublicProjectDetailResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/PublicProjectSummary"
+          },
+          "achievements": {
+            "$ref": "#/components/schemas/PublicAchievementListResponse"
+          },
+          "recruitments": {
+            "$ref": "#/components/schemas/PublicRecruitmentListResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "achievements",
+          "recruitments"
+        ],
+        "title": "PublicProjectDetailResponse"
+      },
+      "PublicProjectListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicProjectSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PublicProjectListResponse"
+      },
+      "PublicProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "ACHIEVEMENT",
+              "RECRUITMENT"
+            ],
+            "title": "Source Kind"
+          },
+          "achievement_count": {
+            "type": "integer",
+            "title": "Achievement Count"
+          },
+          "recruitment_count": {
+            "type": "integer",
+            "title": "Recruitment Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "direction",
+          "stage",
+          "source_kind",
+          "achievement_count",
+          "recruitment_count"
+        ],
+        "title": "PublicProjectSummary"
+      },
+      "PublicRecruitmentContent": {
+        "properties": {
+          "project_title": {
+            "type": "string",
+            "title": "Project Title"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "introduction": {
+            "type": "string",
+            "title": "Introduction"
+          },
+          "idea_stage": {
+            "type": "boolean",
+            "title": "Idea Stage"
+          },
+          "goal": {
+            "type": "string",
+            "title": "Goal"
+          },
+          "initial_plan": {
+            "type": "string",
+            "title": "Initial Plan"
+          },
+          "role_name": {
+            "type": "string",
+            "title": "Role Name"
+          },
+          "headcount": {
+            "type": "integer",
+            "title": "Headcount"
+          },
+          "duties": {
+            "type": "string",
+            "title": "Duties"
+          },
+          "requirements": {
+            "type": "string",
+            "title": "Requirements"
+          },
+          "time_commitment": {
+            "type": "string",
+            "title": "Time Commitment"
+          },
+          "beginner_friendly": {
+            "type": "boolean",
+            "title": "Beginner Friendly"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_title",
+          "direction",
+          "stage",
+          "introduction",
+          "idea_stage",
+          "goal",
+          "initial_plan",
+          "role_name",
+          "headcount",
+          "duties",
+          "requirements",
+          "time_commitment",
+          "beginner_friendly",
+          "deadline_at"
+        ],
+        "title": "PublicRecruitmentContent",
+        "description": "No contact values or private persistence fields are representable."
+      },
+      "PublicRecruitmentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicRecruitmentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PublicRecruitmentListResponse"
+      },
+      "PublicRecruitmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "revision_number": {
+            "type": "integer",
+            "title": "Revision Number"
+          },
+          "content": {
+            "$ref": "#/components/schemas/PublicRecruitmentContent"
+          },
+          "contact_channels": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "WECHAT",
+                "QQ",
+                "EMAIL",
+                "PHONE"
+              ]
+            },
+            "type": "array",
+            "title": "Contact Channels"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "revision_number",
+          "content",
+          "contact_channels",
+          "published_at"
+        ],
+        "title": "PublicRecruitmentResponse"
+      },
       "PublicTalentContent": {
         "properties": {
           "name": {
@@ -13979,6 +15274,411 @@
         ],
         "title": "ReactionResponse",
         "description": "The toggle verdict plus the comment's per-emoji reaction counts —\nthe echoing read the reaction service's docstring delegates to this\nsurface."
+      },
+      "RecruitmentActionResult": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed"
+          },
+          "applied_version": {
+            "type": "integer",
+            "title": "Applied Version"
+          },
+          "current": {
+            "$ref": "#/components/schemas/RecruitmentDraftResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "replayed",
+          "applied_version",
+          "current"
+        ],
+        "title": "RecruitmentActionResult"
+      },
+      "RecruitmentContactsResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "revision_number": {
+            "type": "integer",
+            "title": "Revision Number"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactInput"
+            },
+            "type": "array",
+            "title": "Contacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revision_number",
+          "contacts"
+        ],
+        "title": "RecruitmentContactsResponse"
+      },
+      "RecruitmentDraftCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/RecruitmentFields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "fields"
+        ],
+        "title": "RecruitmentDraftCreate"
+      },
+      "RecruitmentDraftListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecruitmentDraftResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "RecruitmentDraftListResponse"
+      },
+      "RecruitmentDraftResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/RecruitmentFields"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "OPEN",
+              "CLOSED",
+              "EXPIRED"
+            ],
+            "title": "Status"
+          },
+          "moderation_state": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "TAKEN_DOWN"
+            ],
+            "title": "Moderation State"
+          },
+          "public_contact_channels": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "WECHAT",
+                "QQ",
+                "EMAIL",
+                "PHONE"
+              ]
+            },
+            "type": "array",
+            "title": "Public Contact Channels"
+          },
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "title": "Has Unpublished Changes"
+          },
+          "cycle_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Id"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "last_confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Confirmed At"
+          },
+          "next_remind_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Remind At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "fields",
+          "version",
+          "status",
+          "moderation_state",
+          "public_contact_channels",
+          "has_unpublished_changes",
+          "cycle_id",
+          "deadline_at",
+          "last_confirmed_at",
+          "next_remind_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RecruitmentDraftResponse"
+      },
+      "RecruitmentDraftUpdate": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/RecruitmentFields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "request_id",
+          "fields"
+        ],
+        "title": "RecruitmentDraftUpdate"
+      },
+      "RecruitmentFields": {
+        "properties": {
+          "project_title": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Project Title",
+            "default": ""
+          },
+          "direction": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Direction",
+            "default": ""
+          },
+          "stage": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Stage",
+            "default": ""
+          },
+          "introduction": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Introduction",
+            "default": ""
+          },
+          "idea_stage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idea Stage"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Goal",
+            "default": ""
+          },
+          "initial_plan": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Initial Plan",
+            "default": ""
+          },
+          "role_name": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Role Name",
+            "default": ""
+          },
+          "headcount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 999.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headcount"
+          },
+          "duties": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Duties",
+            "default": ""
+          },
+          "requirements": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Requirements",
+            "default": ""
+          },
+          "time_commitment": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Time Commitment",
+            "default": ""
+          },
+          "beginner_friendly": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beginner Friendly"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactInput"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Contacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RecruitmentFields"
+      },
+      "RecruitmentVersionCommand": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "request_id"
+        ],
+        "title": "RecruitmentVersionCommand"
       },
       "RedemptionFulfillRequest": {
         "properties": {
@@ -14954,6 +16654,43 @@
         ],
         "title": "RevisionRequiredResponse",
         "description": "The claim state after 退回/判无效: REVISION_REQUIRED with the §11.4\nrevision deadline. ``reward_lock_status`` distinguishes the two —\npreserved PROVISIONAL versus cancelled INVALIDATED."
+      },
+      "RevokeRecruitmentContactCommand": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "WECHAT",
+              "QQ",
+              "EMAIL",
+              "PHONE"
+            ],
+            "title": "Channel"
+          },
+          "close_if_last": {
+            "type": "boolean",
+            "title": "Close If Last",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "request_id",
+          "channel"
+        ],
+        "title": "RevokeRecruitmentContactCommand"
       },
       "RewardItemCreateRequest": {
         "properties": {
