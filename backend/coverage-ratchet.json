@@ -10,11 +10,11 @@
   "app/modules/files": 90.8,
   "app/modules/identity": 93.7,
   "app/modules/innovation": 97.9,
-  "app/modules/notifications": 95.1,
+  "app/modules/notifications": 95.5,
   "app/modules/points": 95.4,
   "app/modules/rankings": 95.9,
   "app/modules/submissions": 93.9,
   "app/modules/system": 97.3,
   "app/modules/tasks": 96.0,
-  "app/workers": 88.1
+  "app/workers": 91.7
 }

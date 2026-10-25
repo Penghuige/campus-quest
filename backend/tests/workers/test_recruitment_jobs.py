@@ -1,7 +1,8 @@
-"""Production registration of the recruitment scan job."""
+"""Production registration and isolated local Beat profile."""
 
 from app.core.config import get_settings
 from app.workers.celery_app import JOB_MODULES, create_celery_app
+from app.workers.innovation_dev import create_innovation_dev_app
 
 
 def test_production_registers_scan_without_losing_original_jobs():
@@ -12,3 +13,32 @@ def test_production_registers_scan_without_losing_original_jobs():
     assert entry["task"] == "workers.schedule_recruitments"
     assert entry["schedule"] == 60
     assert "workers.expire_claims_scan" in app.conf.beat_schedule
+
+
+def test_local_profile_only_consumes_recruitment_work():
+    app = create_innovation_dev_app(get_settings())
+    assert app.conf.task_default_queue == "innovation-dev"
+    assert set(app.conf.beat_schedule) == {
+        "workers.schedule_recruitments",
+        "workers.dispatch_due_notifications",
+    }
+    dispatch = app.conf.beat_schedule["workers.dispatch_due_notifications"]
+    assert dispatch["kwargs"]["event_types"] == ("IE_RECRUITMENT_CONFIRMATION_DUE",)
+    assert dispatch["kwargs"]["queue"] == "innovation-dev"
+    assert app.conf.task_acks_late and app.conf.task_reject_on_worker_lost
+
+
+def test_local_celery_entrypoint_is_cached_and_rejects_unknown_attributes():
+    import pytest
+
+    from app.workers import innovation_dev
+
+    innovation_dev.get_innovation_dev_app.cache_clear()
+    try:
+        app = innovation_dev.__getattr__("celery_app")
+        assert app is innovation_dev.__getattr__("celery_app")
+        assert app.conf.task_default_queue == "innovation-dev"
+        with pytest.raises(AttributeError, match="unknown_entrypoint"):
+            innovation_dev.__getattr__("unknown_entrypoint")
+    finally:
+        innovation_dev.get_innovation_dev_app.cache_clear()
