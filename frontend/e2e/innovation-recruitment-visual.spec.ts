@@ -19,6 +19,7 @@ test("R3 visual: owner form, consent preview and public project/recruitment", as
   const studentId = process.env.CQ_E2E_STUDENT_ID!;
   const headers = { Authorization: `Bearer ${mintToken(studentId)}` };
   const adminHeaders = { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_ADMIN_ID!)}` };
+  // Playlist order seeds this student first; review-visual re-reads these rows.
   const profile = await page.request.put(`${API_URL}/ie/me/owner-profile`, { headers, data: { name: "模拟招募负责人", student_no: "00889900", major: "模拟专业", grade: "2026级", version: 0 } }); expect(profile.status()).toBe(200);
   const application = await page.request.post(`${API_URL}/ie/me/owner-qualification`, { headers, data: { version: 0, profile_version: (await profile.json()).version } }); expect(application.status()).toBe(200);
   expect((await page.request.post(`${API_URL}/admin/ie/owner-qualifications/${studentId}/approve`, { headers: adminHeaders, data: { version: (await application.json()).version } })).status()).toBe(200);

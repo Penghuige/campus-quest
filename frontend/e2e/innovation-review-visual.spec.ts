@@ -12,15 +12,30 @@ test("achievement review visual: owner proof workspace, operator queue and campu
   const adminHeaders = { Authorization: `Bearer ${mintToken(process.env.CQ_E2E_ADMIN_ID!)}` };
   // Setup through real APIs. Only screen stability is tested here; the separate
   // functional spec owns UI approval, upload, withdrawal and decision behavior.
-  const profile = await page.request.put(`${API_URL}/ie/me/owner-profile`, { headers: studentHeaders, data: { name: "视觉示例负责人", student_no: "00889900", major: "示例专业", grade: "2026级", version: 0 } });
+  // The visual battery shares ONE seeded world and runs its files in playlist
+  // order — recruitment-visual seeds this same student first, so each seed
+  // reads the CURRENT version before writing (a second version-0 put is a
+  // 409, not a re-seed).
+  const currentProfile = await page.request.get(`${API_URL}/ie/me/owner-profile`, { headers: studentHeaders });
+  const profileVersion = currentProfile.ok() ? (await currentProfile.json() as { profile: { version: number } | null }).profile?.version ?? 0 : 0;
+  const profile = await page.request.put(`${API_URL}/ie/me/owner-profile`, { headers: studentHeaders, data: { name: "视觉示例负责人", student_no: "00889900", major: "示例专业", grade: "2026级", version: profileVersion } });
   expect(profile.status()).toBe(200);
   const savedProfile = await profile.json() as { version: number };
-  const applied = await page.request.post(`${API_URL}/ie/me/owner-qualification`, { headers: studentHeaders, data: { version: 0, profile_version: savedProfile.version } });
-  expect(applied.status()).toBe(200);
-  const application = await applied.json() as { version: number };
-  const approved = await page.request.post(`${API_URL}/admin/ie/owner-qualifications/${studentId}/approve`, { headers: adminHeaders, data: { version: application.version } });
-  expect(approved.status()).toBe(200);
-  const grant = await page.request.put(`${API_URL}/admin/ie/operations-grants/${studentId}`, { headers: adminHeaders, data: { version: 0, enabled: true, reason: "独立视觉世界运营身份" } });
+  const currentQualification = await page.request.get(`${API_URL}/ie/me/owner-qualification`, { headers: studentHeaders });
+  const qualification = currentQualification.ok() ? await currentQualification.json() as { status: string; version: number } : { status: "NOT_APPLIED", version: 0 };
+  if (qualification.status !== "APPROVED") {
+    let applicationVersion = qualification.version;
+    if (qualification.status === "NOT_APPLIED") {
+      const applied = await page.request.post(`${API_URL}/ie/me/owner-qualification`, { headers: studentHeaders, data: { version: 0, profile_version: savedProfile.version } });
+      expect(applied.status()).toBe(200);
+      applicationVersion = (await applied.json() as { version: number }).version;
+    }
+    const approved = await page.request.post(`${API_URL}/admin/ie/owner-qualifications/${studentId}/approve`, { headers: adminHeaders, data: { version: applicationVersion } });
+    expect(approved.status()).toBe(200);
+  }
+  const currentGrant = await page.request.get(`${API_URL}/admin/ie/operations-grants/${studentId}`, { headers: adminHeaders });
+  const grantVersion = currentGrant.ok() ? (await currentGrant.json() as { version: number }).version : 0;
+  const grant = await page.request.put(`${API_URL}/admin/ie/operations-grants/${studentId}`, { headers: adminHeaders, data: { version: grantVersion, enabled: true, reason: "独立视觉世界运营身份" } });
   expect(grant.status()).toBe(200);
   await ensureStudentLogin(page);
   await page.goto(`${BASE_URL}/profile/project-drafts`);

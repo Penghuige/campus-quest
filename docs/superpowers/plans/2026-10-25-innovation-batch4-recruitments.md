@@ -52,3 +52,4 @@
 7. **视觉**:招募 8 张基线首拍(pinned-font)+ 四家族 visual 全部进 make innovation-visual。
 8. **共享会话 fixture 补齐(PR 机制移植)**:上游 fixtures 有 `openLoginForm`——登录页启动会触发单次 refresh 旋转,共享学生上下文里必须等旋转完成并把新 cookie 落盘,再清 `studentSessionContext` 标记;否则身份切换测试(165)会把 AUTHOR 的 cookie 写进共享状态文件,后续测试被迫表单登录。main 的 unified-login 版 `loginThroughUi` 无此机制,照 PR 原样移植(适配 main 的登录页形态),并把 `persistSession` 自动 fixture 收敛到同一 helper。
 9. **登出语义适配(550/608)**:PR 的 `/logout` 页(含「确认退出登录」)属于上游 R1 导航交付物,main 的统一登录改造没有该路由;登出落点是 `/profile?tab=info` 的「退出登录」按钮(LogoutSection,含服务端撤销+epoch+跨标签页栅栏)。两条测试改走 main 落点,断言语义不变(私有草稿不跨账号、迟到联系响应不能复活)。
+10. **视觉电池共享世界的种子幂等**:招募视觉(批 4 新增)与复审视觉在同一电池里用同一学生、均以 version 0 直写 owner-profile/资格;playlist 按字母序先跑招募,复审再写 version 0 → 409(批 4 前的电池在 e2e 腿即失败,该顺序从未跑过)。复审 spec 的种子改为先读当前 version 再写(profile 读 `{profile:…}` 嵌套、资格/授权读顶层),并注释共享世界契约;招募 spec 注释其先手身份。修复后 `make innovation-visual` 8/8 绿。
