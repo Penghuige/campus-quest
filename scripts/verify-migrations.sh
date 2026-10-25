@@ -88,6 +88,10 @@ KEY_TABLES=(
   ie_talent_profiles
   ie_talent_revisions
   ie_talent_files
+  ie_project_drafts
+  ie_owner_profiles
+  ie_owner_qualifications
+  ie_operations_grants
 )
 
 # Unique indexes whose absence would silently reopen a §31 race.
@@ -107,6 +111,9 @@ KEY_UNIQUE_INDEXES=(
   uq_ie_talent_owner
   uq_ie_talent_request
   uq_ie_talent_file_object
+  # Innovation batch 2 (project library): one draft/profile per owner
+  # per creation request — the immutable creation fingerprint.
+  uq_ie_project_drafts_owner_request
 )
 
 psql_admin() {
