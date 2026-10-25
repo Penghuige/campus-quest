@@ -11,6 +11,20 @@
  */
 export const NOSKIP_EXEMPTIONS = [
   {
+    file: "innovation-recruitment-visual.spec.ts",
+    title: "R3 visual: owner form, consent preview and public project/recruitment",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "R3 pixels and axe run in a separate pinned-font Linux visual world with real publication and explicit contact grants.",
+  },
+  {
+    file: "innovation-recruitment-visual.spec.ts",
+    title: "R3 visual: filtered empty and unavailable recruitment",
+    gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",
+    reason:
+      "R3 pixels and axe run in a separate pinned-font Linux visual world with real publication and explicit contact grants.",
+  },
+  {
     file: "innovation-review-visual.spec.ts",
     title: "achievement review visual: owner proof workspace, operator queue and campus empty list",
     gate: "CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1",

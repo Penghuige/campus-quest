@@ -283,11 +283,21 @@ test("achievement review: private proof and every update reviewed across three a
     expect(await owner.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await owner.screenshot({ path: testInfo.outputPath("achievement-review-owner-mobile.png"), fullPage: true });
     await viewer.screenshot({ path: testInfo.outputPath("achievement-public-desktop.png"), fullPage: true });
+    // R3 closing an independently published role must preserve R2's approved
+    // achievement and project visibility. Setup uses real APIs; close uses UI.
     const proofUrl = owner.url(); const publicAchievementUrl = viewer.url();
     const ownerHeaders = { Authorization: `Bearer ${mintToken(ownerId)}` };
-    // The R3×R2 cross-check (closing an independent recruitment role must
-    // not disturb the approved achievement or project visibility) returns
-    // with batch 4: the recruitment family is not part of this merge.
+    const recruitPath = `${API_URL}/ie/me/project-drafts/${projectId}/recruitments`;
+    const recruited = await owner.request.post(recruitPath, { headers: ownerHeaders, data: { request_id: crypto.randomUUID(), fields: { project_title: "模拟招募介绍", direction: "模拟方向", stage: "实践", introduction: "模拟资料：继续访谈", idea_stage: false, role_name: "模拟实践伙伴", headcount: 1, duties: "访谈", requirements: "愿意学习", time_commitment: "每周一小时", beginner_friendly: true, contacts: [{ channel: "WECHAT", value: "demo_partner" }] } } });
+    expect(recruited.status(), await recruited.text()).toBe(201); const role = await recruited.json();
+    expect((await owner.request.post(`${recruitPath}/${role.id}/publish`, { headers: ownerHeaders, data: { version: role.version, request_id: crypto.randomUUID() } })).status()).toBe(200);
+    await owner.goto(`${BASE_URL}/profile/project-drafts/${projectId}/recruitments`);
+    await owner.getByRole("button", { name: "编辑招募：模拟实践伙伴", exact: true }).click();
+    await owner.getByRole("button", { name: "关闭招募", exact: true }).click(); await confirm(owner, "关闭招募", "确认关闭");
+    await expect(owner.getByRole("status", { name: "招募操作结果" })).toContainText("已关闭");
+    await viewer.goto(`${BASE_URL}/innovation/projects/${projectId}`);
+    await expect(viewer.getByRole("region", { name: "项目已核实成果" }).getByRole("link")).toHaveAttribute("href", `/innovation/achievements/${achievement.id}`);
+    await expect(viewer.getByRole("region", { name: "项目正在招募" })).toContainText("暂无有效招募");
     await viewer.goto(publicAchievementUrl); await expect(publicDetail).toContainText("第二版公开进展。");
     await owner.goto(proofUrl);
     await owner.getByRole("button", { name: "编辑成果：校园回收核实原型", exact: true }).click();
