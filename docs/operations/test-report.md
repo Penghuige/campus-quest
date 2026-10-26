@@ -84,6 +84,17 @@ cp frontend/test-results/report.json reports/artifacts/playwright.json
 
 注意最后一次 Playwright 运行会覆盖该文件；要一份同时含电池和像素的报告，就在一次运行里同时打开 `CQ_E2E=1 CQ_VISUAL=1`。
 
+## 2.5 探索轮（手动形态，2026-10-26 reviewer 裁定）
+
+```bash
+make explore-round   # 需完整栈；借栈协议适用（通告 campus reviewer → 等放行 → 跑 → 还）
+```
+
+- 探针套件 `frontend/e2e/exploratory-probe.spec.ts`，专用旗标 `CQ_E2E_EXPLORE=1`（**不在标准电池内**，no-skip 豁免已登记）。
+- 结果写 `reports/artifacts/exploration.json` → 面板第 7 层；发现记录追加到当轮 findings 文档。
+- **节奏**：大合并后按需跑一轮（裁定：常驻凌晨轮暂缓；**升级条件=连续 3 次手动轮都有真发现**，届时再议常驻窗）。
+- 判据纪律：登录态看页面外壳（`退出登录` 按钮/URL），**不要**用裸 `page.request /me`（内存 token 不随请求，登录态也会 401——首轮踩过的假信号）。
+
 ## 3. 四种方块状态
 
 | 方块 | 含义 |

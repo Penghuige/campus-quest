@@ -215,7 +215,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
-        pre-push-full test-report report-smoke stack stack-down
+        pre-push-full test-report report-smoke explore-round stack stack-down
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -396,6 +396,17 @@ stack-down:
 # touches only the report-viewer service — no stack borrow needed.
 report-smoke:
 	bash scripts/report-viewer-smoke.sh
+
+# One exploration round: adversarial probes against the real stack, results
+# into reports/artifacts/exploration.json (dashboard layer 7). BORROW
+# PROTOCOL applies (campusquest-test-process): announce 3000/8000 + the
+# test database to the campus reviewer, wait for the release, run, return.
+# Cadence ruling 2026-10-26: on demand after major merges (manual form).
+explore-round:
+	cd frontend && CQ_E2E=1 CQ_E2E_EXPLORE=1 CQ_E2E_LOGIN_RATELIMIT=1 \
+		CQ_E2E_API_URL=http://localhost:8000/api/v1 \
+		npx playwright test e2e/exploratory-probe.spec.ts --project=chromium
+	$(MAKE) test-report
 
 playwright-e2e:
 	# Prerequisite dedup means a reset listed twice in the chain runs once —

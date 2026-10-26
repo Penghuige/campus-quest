@@ -156,4 +156,14 @@ export const NOSKIP_EXEMPTIONS = [
     gate: "CQ_E2E_ADMIN_DETAIL_PATH",
     reason: "World-export deep link (the seeded admin's own detail page).",
   },
+  {
+    // Exploration rounds are deliberately outside the standard battery:
+    // on-demand rounds after major merges (campus reviewer ruling
+    // 2026-10-26 — manual form; three consecutive rounds with real
+    // findings reopen the standing-cadence question).
+    file: "exploratory-probe.spec.ts",
+    title: "exploratory probe sweep",
+    gate: "CQ_E2E_EXPLORE=1",
+    reason: "Exploration rounds run on demand (make explore-round), not in the standard battery.",
+  },
 ];
