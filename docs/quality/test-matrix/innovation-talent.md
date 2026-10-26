@@ -1,4 +1,5 @@
 # 人才库规约测试矩阵
+> 覆盖章节：docs/superpowers/specs/2026-10-12-innovation-talent-design.md#§1 · §2 · §3 · §4 · §5 · §6 · §7 · §8
 
 预期先从 R4 spec §1–8 推导，2026-10-12 落笔。A01 对应 R4-A01，其余同序。
 Tasks 1–3 的真实 PG/HTTP 与存储扫描验证见工作区 `.local-dev/logs/r4-task1-*`、`r4-task2-*`、`r4-task3-*`；最终13个人才浏览器场景、手机长内容及新旧视觉均通过；全量门禁与当前产品输入对应见 `docs/quality/innovation-talent-verification.md`，不是历史结果替代。

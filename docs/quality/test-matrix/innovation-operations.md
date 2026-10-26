@@ -1,4 +1,5 @@
 # 双创运营授权测试矩阵
+> 覆盖章节：docs/architecture/innovation-boundary.md（运营授权规则来自创新线 PR 决策，未单列 spec）
 
 | # | 规则引用 | 预期 | 测试位置 | 状态 |
 |---|---|---|---|---|

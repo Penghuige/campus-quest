@@ -1,6 +1,7 @@
 # points/Ledger 规约-测试对账矩阵
 
 > 建立日期：2026-10-07 · 域：points / Ledger / rankings 投影（owner 批准的规约-测试对账矩阵首域）
+> 覆盖章节：§14 · §15 · §17 · §31 · §32
 > 方法论（owner 纪律）：**预期列先于测试检索从 spec 原文推导落笔**，然后逐条定位测试；找不到测试=缺口（列出不补）；测试行为与预期不符=不匹配（上报不擅改——可能是 bug 也可能是 spec 缺口，由 review 裁定）。
 > 规约来源：`docs/superpowers/specs/2026-09-19-campusquest-design.md` §14 / §15(+15.1) / §17(+17.1-17.3) / §31(+31.1) / §32；`docs/quality/quality-gates.md` §16（G7/G8/G13/G15）。
 > 接线：`scripts/check_test_matrix.py` 校验每行非流程状态必须有测试链接（CI 接线留 P2，当前手动跑）。

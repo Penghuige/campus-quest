@@ -101,10 +101,22 @@ ratchet-direction:
 	python3 scripts/check_ratchet_direction.py
 
 # Spec-test matrix coherence (G19, owner-approved 2026-10-07): every
-# covered row cites an existing test file, gap/mismatch rows are
-# registered. Existed only as a script before 2026-10-19 — now wired.
+# covered row cites an existing test file (name-level since 2026-10-25),
+# gap/mismatch rows are registered, and every matrix's 覆盖章节 line
+# points at real spec headings. Advisory reminder follows the check:
+# when the diff touches a spec file, the matrices claiming its sections
+# need a re-derivation pass (non-blocking — the checker itself stays
+# the gate).
 test-matrix:
 	cd backend && uv run python scripts/check_test_matrix.py
+	@spec='docs/superpowers/specs'; \
+	if git diff --name-only origin/main...HEAD 2>/dev/null | grep -q "^$$spec/"; then \
+	  echo "ADVISORY: spec file(s) changed this branch:"; \
+	  git diff --name-only origin/main...HEAD | grep "^$$spec/" | sed 's/^/  - /'; \
+	  echo "  Matrices claiming these sections (their 覆盖章节 lines) need a"; \
+	  echo "  re-derivation pass before merge:"; \
+	  grep -l "覆盖章节" docs/quality/test-matrix/*.md | xargs grep -H "覆盖章节" | sed 's/^/  · /'; \
+	fi
 
 # G3 placeholder guard: no `raise NotImplementedError` ships in
 # backend/app (zero today — this keeps it that way). Prose TODO/FIXME

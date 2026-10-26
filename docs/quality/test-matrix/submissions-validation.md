@@ -1,6 +1,7 @@
 # submissions 校验 规约-测试对账矩阵
 
 > 建立日期：2026-10-07 · 域：上传流 / 校验器（CSV/XLSX/SQLite）/ Submission 状态机 / 奖励锁交互 / 校验报告（P2 批次四域之一）
+> 覆盖章节：§9 · §10 · §11 · §12 · §31 · §38
 > 方法论：`campusquest-test-process` skill；模板 points-ledger / claims-lifecycle。**预期列先于测试检索落笔**；缺口列出不补；不匹配上报不擅改。
 > 规约来源：spec §9.3（奖励分段）+ §10 + §11(+11.1-11.5) + §12(+12.1-12.4)；§31.11、§38.3/38.4 交叉。
 
@@ -27,7 +28,7 @@
 | S9 | §11.1 两段状态机 | UPLOADED→VALIDATING→VALIDATED/FAILED；VALIDATED→UNDER_REVIEW→APPROVED/REVISION_REQUIRED | `tests/integration/submissions/test_submission_constraints.py::test_validation_review_and_lock_history_rows_persist` + `test_submission_constraints.py::test_submission_closed_value_sets_reject_unknown`（闭集）+ `tests/integration/submissions/test_validation_worker.py`（机器段流转）+ `tests/integration/submissions/test_review_flow.py`（人工段流转） | 已覆盖 |
 | S10 | §11.1 末 | APPROVED 后 Claim→COMPLETED | `tests/integration/points/test_submission_reward.py::test_approve_maps_port_call_to_ledger_source_triple_and_projects_wallet`（同事务状态对）+ e2e `tests/e2e/test_happy_path.py` | 已覆盖 |
 | S11 | §11.2 时点排他 | tier 按 submitted_at（非 worker/审核时点）；首次机器通过锁 PROVISIONAL | `tests/integration/submissions/test_reward_lock.py::test_first_valid_at_plus_two_hours_locks_eighty_percent`（submitted_at 锚定）+ `tests/workers/test_submission_validation_job.py`（worker 时点对照面） | 已覆盖 |
-| S12 | §11.2 末 | INVALIDATED 历史不可覆盖 | `tests/integration/submissions/test_submission_constraints.py::test_history_rows_are_append_only_by_convention` + `test_submission_constraints.py::test_history_action_and_lock_status_closed_sets_reject_unknown` + `tests/integration/submissions/test_review_flow.py::test_invalidated_lock_permits_new_provisional_at_new_fraction`（历史保留语义） | 已覆盖 |
+| S12 | §11.2 末 | INVALIDATED 历史不可覆盖 | `tests/integration/submissions/test_submission_constraints.py::test_history_rows_are_append_only_by_convention` + `test_submission_constraints.py::test_history_action_and_lock_status_closed_sets_reject_unknown` + `tests/integration/submissions/test_reward_lock.py::test_invalidated_lock_permits_new_provisional_at_new_fraction`（历史保留语义） | 已覆盖 |
 | S13 | §11.4 | revision_deadline=max(grace, reviewed_at+24h)；再退回重算；档位保持 | `tests/integration/submissions/test_review_flow.py::test_late_review_sets_revision_deadline_and_preserves_reward` + `test_review_flow.py::test_review_before_deadline_keeps_grace_as_revision_deadline` + `tests/integration/submissions/test_reward_lock.py::test_later_valid_revision_does_not_lower_existing_lock` | 已覆盖 |
 | S14 | §11.4 末 | 未重交→EXPIRED+Assignment 释放+不发奖励+历史保留 | `tests/workers/test_expire_claims.py::test_eager_scan_expires_due_claims_end_to_end` + `tests/integration/tasks/test_task_constraints.py::test_terminal_claims_free_both_partial_indexes`（释放）+ `tests/integration/submissions/test_submission_constraints.py::test_validation_review_and_lock_history_rows_persist`（历史保留） | 已覆盖 |
 | S15 | §11.5 | 窗口内有效提交的 Claim 不因审核跨 grace 被超时释放 | `tests/integration/tasks/test_submit_expire_race.py` + `tests/integration/submissions/test_reward_lock.py::test_race_validation_pass_vs_expiry_candidate_at_grace_boundary` + `tests/workers/test_expire_claims.py::test_eager_expiry_protects_claim_with_validated_current_submission` + e2e `tests/e2e/test_concurrency_gate.py::test_in_window_submission_beats_concurrent_expiry` | 已覆盖（四证） |

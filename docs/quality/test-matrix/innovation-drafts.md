@@ -1,4 +1,5 @@
 # 创新创业私有项目草稿规约与测试
+> 覆盖章节：docs/superpowers/plans/2026-10-08-innovation-project-drafts.md（未随 #142 入库：来源指针，待创新线落库后钉章节）
 
 依据 `docs/superpowers/plans/2026-10-08-innovation-project-drafts.md`。以下预期从计划推导，先于测试实现写下；本表不宣称公开发布或负责人资格已经实现。
 

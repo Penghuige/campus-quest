@@ -1,4 +1,5 @@
 # Innovation recruitment spec-test matrix
+> 覆盖章节：docs/architecture/innovation-boundary.md（R3 spec 未随 #142 入库：来源指针，待创新线落库后钉章节）
 
 Expectations recorded from approved R3 spec before locating implementation tests.
 

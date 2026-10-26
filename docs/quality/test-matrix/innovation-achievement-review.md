@@ -1,4 +1,5 @@
 # 成果核实规约对账
+> 覆盖章节：docs/architecture/innovation-boundary.md（2026-10-10 update-review 设计未入库：域边界文档作指针）
 
 ## R2 更新复审（当前规则）
 
@@ -36,10 +37,11 @@
 | R13 | 异常恢复/G12 | 上传失败保留原文件请求，可显式放弃本地重试并重新选择；移除服务器记录不将页面永久锁死 | `tests/../../frontend/e2e/innovation-review.spec.ts` | 已覆盖（真实签名PUT403→移除意向→明确放弃→重新上传，RED缺入口→GREEN闭环1通过59.4秒） |
 | R14 | OP-01/领取恢复 | 原领取人撤权、停用或角色变化后，有效运营可接手；有效领取不可被抢占，等锁后资格恢复应拒绝接手，审计失败不改变分配 | `tests/integration/innovation/test_review_assignment_recovery.py::test_ineligible_assignee_is_visible_and_reclaimable_without_owner_resubmit` + `tests/integration/innovation/test_review_assignment_recovery.py::test_reclaim_rechecks_restored_authority_after_waiting_for_old_user_lock` + `tests/integration/innovation/test_review_assignment_recovery.py::test_assignment_recovery_audit_failure_rolls_back_all_claim_changes` | 已覆盖（3项失效RED→GREEN及真实PG锁等待；修复后完整1307单元/worker+1227集成通过） |
 | R15 | OP-01/项目回避 | 项目回避释放本人该项目全部待审领取，保留其他项目与已完成历史；多条释放与审计原子提交 | `tests/integration/innovation/test_review_assignment_recovery.py::test_project_conflict_releases_all_pending_claims_but_not_other_projects` + `tests/integration/innovation/test_review_assignment_recovery.py::test_assignment_recovery_audit_failure_rolls_back_all_claim_changes` | 已覆盖（两份待审与已通过历史、另一项目、第二运营；批量回避RED→GREEN） |
-| R16 | 测试隔离/G19 | 仅清理world A时拒绝跨world授权引用，任何修改前拒绝，两world用户、授权和项目保留；明确包含两world才清理 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_rejects_cross_world_grant_before_any_mutation` | 已覆盖（真实独立PG连接，缺少拒绝RED→GREEN） |
+| R16 | 测试隔离/G19 | 仅清理world A时拒绝跨world授权引用，任何修改前拒绝，两world用户、授权和项目保留；明确包含两world才清理 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_rejects_cross_world_grant_before_any_mutation` | 缺口 G-7：引用名 test_world_cleanup_rejects_cross_world_grant_before_any_mutation 无对应 def（从未落笔）；行为由 test_world_cleanup_removes_owned_drafts_and_preserves_other_world 间接承担，拒绝路径无直接断言 |
 
 ## 缺口明细
 
+- G-7：checker 名称级校验（test-coverage-campaign 合并 #142 时首抓）——跨 world 授权拒绝清理的测试从未存在，原引用为悬空名；按纪律列出不补。
 - G-6：新增覆盖缺口，跨新轮的旧提交原文和旧批准决定缺少直接重放断言。独立评审未发现源码状态破坏，定为 Minor，按单次修复规则延期；本轮没有用其他重放测试冒充这两项覆盖。
 
 - G-5：已关闭。本轮 r2-final-full-browser.log 的三账号更新复审流程通过；历史 R1/首次核实结果未用来替代本轮。最终完整门禁见 innovation-update-review-verification.md。

@@ -1,4 +1,5 @@
 # 负责人资格开通规约对账
+> 覆盖章节：docs/superpowers/plans/2026-10-09-innovation-owner-qualification.md（未随 #142 入库：来源指针，待创新线落库后钉章节）
 
 预期依据用户方案A及 `docs/superpowers/plans/2026-10-09-innovation-owner-qualification.md`，先于测试实现落笔。
 
@@ -12,7 +13,7 @@ Q11为后续Actor核验补测的对账行，依据既有G10/G11/G12鉴权契约�
 | Q4 | G12/G15 | 独立PG连接并发申请/批准仅一次；审计失败不泄漏、不提交，快照PII不进审计 | `tests/integration/innovation/test_owner_qualification.py::test_independent_pg_connections_transition_once` + `tests/integration/innovation/test_owner_qualification.py::test_failed_audit_prevents_apply_reveal_and_approval` + `tests/integration/innovation/test_owner_qualification.py::test_real_http_application_and_admin_activation` | 已覆盖（独立连接申请/批准竞争、审计失败回滚及安全审计） |
 | Q5 | G2/G19 | 实际浏览器申请、开通、刷新；手机键盘、冲突重读、换账号清除；契约/选择器/视觉工件随实现 | `tests/../../frontend/e2e/innovation-owner-qualification.spec.ts` + `tests/../../frontend/e2e/innovation-owner-profile.spec.ts` + `tests/../../frontend/e2e/accessibility.spec.ts` + `tests/../../frontend/e2e/visual-regression.spec.ts` | 已覆盖（本功能G-1/G-2/G-3已闭合；全站视觉与发布限制仍见G-5） |
 | Q6 | 输入与数据库不变量 | 申请仅接收资格版本和已保存资料版本，拒绝夹带资料或权限字段；PG强制版本、状态与批准字段组合 | `tests/integration/innovation/test_owner_qualification.py::test_extra_fields_and_management_network` + `tests/integration/innovation/test_owner_qualification.py::test_qualification_database_constraints` | 已覆盖（HTTP额外字段拒绝及数据库约束） |
-| Q7 | G19：世界清理 | 仅清理指定世界资格记录，保留另一世界；批准人外键关联在世界范围外时拒绝扩大清理范围 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_removes_owned_drafts_and_preserves_other_world` + `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_handles_approved_qualification_scope` | 已覆盖（本轮后端模块回归包含清理测试） |
+| Q7 | G19：世界清理 | 仅清理指定世界资格记录，保留另一世界；批准人外键关联在世界范围外时拒绝扩大清理范围 | `tests/integration/innovation/test_world_cleanup.py::test_world_cleanup_removes_owned_drafts_and_preserves_other_world`（部分承担：草稿域清理） | 缺口 G-6：资格范围清理/拒绝扩大的直接测试从未存在（引用名 test_world_cleanup_handles_approved_qualification_scope 无对应 def）；checker 名称级校验首抓，列出不补 |
 | Q8 | 前端申请与请求隔离 | 未保存资料或脏输入不可申请；PENDING仅允许新已保存版本更新，APPROVED不可覆盖；409/未知结果需重读；跨账号迟到响应丢弃 | `tests/../../frontend/src/__tests__/innovation-owner-qualification.test.ts` | 已覆盖（8项资格纯函数/API测试；UI功能及本功能无障碍另见已闭合G-1/G-2） |
 | Q9 | G19：契约工件 | OpenAPI快照、生成类型、资格页面选择器契约随API和页面实现同步 | `frontend/openapi.snapshot.json` + `frontend/src/lib/api/schema.d.ts` + `docs/quality/e2e-selector-contract.md` | 流程行（生成契约与选择器已同步；执行门禁不由工件存在性替代） |
 | Q10 | 完整验收边界 | 相关模块通过不能替代完整后端、覆盖率棘轮、发布电池或独立审查 | — | 缺口：G-5（全量、覆盖率与工作树复核证据已取得；完整发布、全站视觉及最终HEAD CI/合并审查仍未闭合） |
@@ -37,6 +38,8 @@ Q11为后续Actor核验补测的对账行，依据既有G10/G11/G12鉴权契约�
 - 上述数字属于已经完成的这轮执行记录。后续修复或新增测试后必须更新为最终树的新鲜结果；本功能浏览器、axe及相关视觉证据不从历史结果借用，完整发布电池、全站视觉限制、最终HEAD CI和合并审查仍见G-5。
 
 ## 缺口明细
+
+- G-6：见 Q7 行——引用名为悬空名（test_world_cleanup_handles_approved_qualification_scope 无对应 def），按纪律列出不补。
 
 - G-1（已闭合）：本轮真实浏览器资格申请→ADMIN显式查看快照→确认开通→学生重读/刷新、PENDING更新快照与管理员旧页409、网络已提交但丢回包后重读、跨标签换账号清除，以及刷新后空队列分页导航均通过；运营授权、负责人资料与私有项目/成果草稿功能回归亦通过。两个完整日志`qualification-browser-module.log`和`qualification-browser-drafts.log`分别取得7项和6项功能通过，合计13项全部执行。
 - G-2（本功能已闭合）：390px移动端真实流程已执行键盘Enter、取消/Escape焦点恢复、开通后重读焦点和无页面横向溢出；最终`qualification-axe-content-ready.log`取得16项axe全部通过原双向棘轮。历史module批次的15 passed、1 student-tasks failed仍作为中间态失败保留，不替换最新证据，也不增减豁免。
