@@ -54,14 +54,23 @@ async function loginAs(page: import("@playwright/test").Page): Promise<void> {
   await ensureStudentLogin(page);
 }
 
-test.describe("anonymous visitor (the guard's 401 path)", () => {
-  test("/notifications shows the login CTA, not a broken page", async ({
+test.describe("anonymous visitor (the no-evidence direct path)", () => {
+  test("/notifications hands the visitor to the login page server-side", async ({
     page,
   }) => {
+    // The (student) layout's no-evidence redirect (the shell batch,
+    // main 327fd5a): a cookie-less document request answers 307 to
+    // /login itself — the login card is the visitor's first paint.
+    const answer = await page.request.get(`${BASE_URL}/notifications`, {
+      maxRedirects: 0,
+    });
+    expect(answer.status()).toBe(307);
+    expect(answer.headers()["location"]).toContain("/login");
+
     await page.goto(`${BASE_URL}/notifications`);
+    await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: "登录 CampusQuest" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "去登录" })).toBeVisible();
-    // No inbox affordances leak to the anonymous shell.
+    // No inbox affordances reach the anonymous visitor.
     await expect(page.getByLabel("通知收件箱")).toHaveCount(0);
   });
 });
