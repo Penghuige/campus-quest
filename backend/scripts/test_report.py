@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -127,6 +128,59 @@ class CiSummary:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class MatrixRef:
+    """One spec-test matrix row that cites a suite location."""
+
+    matrix: str
+    row_id: str
+    expectation: str
+
+
+# The citation grammar check_test_matrix.py enforces, reused for linking.
+_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::([^`]+))?`")
+_ROW_ID = re.compile(r"^[A-Z]+-?\d+$|^[EG]\d+$")
+_RULE_REF = re.compile(r"^§[\d.\s/§，,+（）()·]+$")
+
+
+def parse_matrices(matrix_dir: Path) -> dict[tuple[str, str | None], list[MatrixRef]]:
+    """Index every matrix row's citations: (file, case|None) -> refs.
+
+    The generator's suite paths are backend/frontend-root-relative while
+    matrix citations may carry a "frontend/" prefix — normalized here.
+    A missing directory yields {} (the link layer degrades silently).
+    """
+    refs: dict[tuple[str, str | None], list[MatrixRef]] = {}
+    if not matrix_dir.is_dir():
+        return refs
+    for path in sorted(matrix_dir.glob("*.md")):
+        matrix = path.stem
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not (stripped.startswith("|") and stripped.endswith("|")):
+                continue
+            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            if len(cells) < 4 or not _ROW_ID.match(cells[0]):
+                continue
+            row_id = cells[0]
+            # The expectation cell: the longest prose cell that is neither
+            # the rule reference, a citation, nor the status column (the
+            # 28 matrices vary in column layout; prose wins by length).
+            candidates = [
+                cell
+                for cell in cells[1:-1]
+                if cell and not _CITE.search(cell) and not _RULE_REF.match(cell)
+            ]
+            expectation = max(candidates, key=len) if candidates else cells[1]
+            row_text = " ".join(cells)
+            for cited, name in _CITE.findall(row_text):
+                key_file = cited[9:] if cited.startswith("frontend/") else cited
+                refs.setdefault((key_file, name.strip() or None), []).append(
+                    MatrixRef(matrix=matrix, row_id=row_id, expectation=expectation)
+                )
+    return refs
+
+
 @dataclass
 class Report:
     """Everything the renderer needs for one run."""
@@ -139,6 +193,9 @@ class Report:
     artifacts_dir: Path
     commit: str = ""
     ci: CiSummary | None = None
+    matrix_refs: dict[tuple[str, str | None], list[MatrixRef]] = field(
+        default_factory=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +602,7 @@ def build_report(
     notes: Sequence[str] = (),
     commit: str = "",
     ci: CiSummary | None = None,
+    matrix_refs: dict[tuple[str, str | None], list[MatrixRef]] | None = None,
 ) -> Report:
     layers = [
         _junit_layer(
@@ -583,6 +641,7 @@ def build_report(
         artifacts_dir=artifacts_dir,
         commit=commit,
         ci=ci,
+        matrix_refs=matrix_refs or {},
     )
 
 
@@ -720,7 +779,7 @@ def render_html(report: Report) -> str:
         buttons = []
         for case in display_cases(layer):
             entry_index = len(entries)
-            entries.append(_entry(layer, case))
+            entries.append(_entry(layer, case, report.matrix_refs))
             buttons.append(_square(entry_index, case))
         sections.append(_layer_section(index, layer, buttons))
 
@@ -752,8 +811,12 @@ def render_html(report: Report) -> str:
     )
 
 
-def _entry(layer: LayerReport, case: TestCase) -> dict[str, str]:
-    return {
+def _entry(
+    layer: LayerReport,
+    case: TestCase,
+    refs: dict[tuple[str, str | None], list[MatrixRef]],
+) -> dict[str, str]:
+    entry = {
         "name": case.name,
         "layer": layer.title,
         "locator": case.locator,
@@ -761,6 +824,12 @@ def _entry(layer: LayerReport, case: TestCase) -> dict[str, str]:
         "duration": _human_duration(case.duration_ms),
         "message": case.message,
     }
+    match = refs.get((case.file, case.case)) or refs.get((case.file, None))
+    if match:
+        ref = match[0]
+        entry["matrix"] = f"{ref.matrix} · {ref.row_id}"
+        entry["expectation"] = ref.expectation
+    return entry
 
 
 def _header(report: Report, totals: dict[Status, int]) -> str:
@@ -910,6 +979,9 @@ _DETAIL = (
     '<dt>状态</dt><dd id="detail-status"></dd>'
     '<dt>耗时</dt><dd id="detail-duration"></dd>'
     "</dl>\n"
+    '<div id="detail-matrix" class="matrix-block" hidden>'
+    '<h3>规约预期 <span id="detail-matrix-row" class="mono"></span></h3>'
+    '<p id="detail-matrix-text"></p></div>\n'
     '<div id="detail-failure"><h3>失败信息</h3>'
     '<pre id="detail-message"></pre></div>\n'
     "</aside>"
@@ -1009,6 +1081,11 @@ code, .mono {
   gap: 6px 14px; margin: 12px 0 0; }
 .detail dt { color: var(--muted); }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
+.matrix-block { margin-top: 12px; padding: 10px 12px; background: #fafaf9;
+      border: 1px solid var(--border); border-radius: 8px; }
+.matrix-block h3 { margin: 0 0 4px; }
+.matrix-block .mono { color: var(--muted); font-weight: 400; }
+.matrix-block p { margin: 0; color: var(--text); }
 .detail-status-passed { color: var(--green-text); }
 .detail-status-failed { color: var(--red-text); }
 .detail-status-skipped, .detail-status-not_run { color: var(--muted); }
@@ -1043,6 +1120,9 @@ _SCRIPT = """
     status: document.getElementById("detail-status"),
     duration: document.getElementById("detail-duration"),
     message: document.getElementById("detail-message"),
+    matrixBlock: document.getElementById("detail-matrix"),
+    matrixRow: document.getElementById("detail-matrix-row"),
+    matrixText: document.getElementById("detail-matrix-text"),
   };
   const labels = {
     passed: "通过",
@@ -1060,6 +1140,13 @@ _SCRIPT = """
     fields.status.className = "detail-status-" + entry.status;
     fields.duration.textContent = entry.duration;
     fields.message.textContent = entry.message || "";
+    if (entry.matrix) {
+      fields.matrixRow.textContent = entry.matrix;
+      fields.matrixText.textContent = entry.expectation || "";
+      fields.matrixBlock.hidden = false;
+    } else {
+      fields.matrixBlock.hidden = true;
+    }
     failure.hidden = !entry.message;
     panel.hidden = false;
     panel.focus();
@@ -1327,6 +1414,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="per-commit archive directory (default: reports/history)",
     )
     parser.add_argument(
+        "--matrix-dir",
+        type=Path,
+        default=None,
+        help="spec-test matrix directory for detail-card expectations "
+        "(default: <repo-root>/docs/quality/test-matrix)",
+    )
+    parser.add_argument(
         "--keep-history",
         type=int,
         default=20,
@@ -1362,6 +1456,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     notes = [
         note.strip() for note in args.note if isinstance(note, str) and note.strip()
     ]
+    matrix_dir: Path = args.matrix_dir or repo_root / "docs" / "quality" / "test-matrix"
+    matrix_refs = parse_matrices(matrix_dir)
     ci: CiSummary | None = None
     if args.ci_file is not None:
         try:
@@ -1379,6 +1475,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             notes=notes,
             commit=commit,
             ci=ci,
+            matrix_refs=matrix_refs,
         )
         document = render_html(report)
         output.parent.mkdir(parents=True, exist_ok=True)
