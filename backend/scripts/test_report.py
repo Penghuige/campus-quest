@@ -27,6 +27,7 @@ output cannot be written.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -37,12 +38,22 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
 Status = Literal["passed", "failed", "skipped", "not_run"]
 LocatorStyle = Literal["pytest", "node"]
+ProvenanceState = Literal["fresh", "dirty", "stale", "unknown"]
+
+_SIDECAR_SUFFIX = ".provenance.json"
+
+PROVENANCE_LABELS: dict[ProvenanceState, str] = {
+    "fresh": "fresh",
+    "dirty": "dirty",
+    "stale": "stale",
+    "unknown": "来源未知",
+}
 
 _STATUSES: tuple[Status, ...] = ("passed", "failed", "skipped", "not_run")
 
@@ -104,6 +115,7 @@ class LayerReport:
     artifact: str
     cases: list[TestCase] = field(default_factory=list)
     missing: bool = False
+    provenance: ArtifactProvenance | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +153,110 @@ class MatrixRef:
 _CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::([^`]+))?`")
 _ROW_ID = re.compile(r"^[A-Z]+-?\d+$|^[EG]\d+$")
 _RULE_REF = re.compile(r"^§[\d.\s/§，,+（）()·]+$")
+
+
+# ---------------------------------------------------------------------------
+# Artifact provenance — fail-closed freshness
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ArtifactProvenance:
+    """Where one result file came from, classified against the report's
+    HEAD commit.
+
+    ``fresh``    same commit, clean workspace, artifact byte-identical
+                 to the stamped hash;
+    ``dirty``    same commit but the workspace was dirty at stamp time
+                 — never called commit-fresh;
+    ``stale``    a different commit produced it;
+    ``unknown``  missing/corrupt metadata, an unknown comparison base,
+                 or the artifact changed after stamping — never fresh.
+    """
+
+    state: ProvenanceState
+    source_sha: str
+    dirty: bool
+    command: str
+    generated_at_utc: str
+
+
+def sidecar_path(artifact: Path) -> Path:
+    return artifact.with_name(artifact.name + _SIDECAR_SUFFIX)
+
+
+def stamp_artifact(
+    artifact: Path,
+    *,
+    source_sha: str,
+    dirty: bool,
+    command: str,
+    generated_at_utc: str,
+) -> dict[str, Any]:
+    """Write ``<artifact>.provenance.json`` next to the result file."""
+    payload: dict[str, Any] = {
+        "schema": 1,
+        "source_sha": source_sha,
+        "dirty": dirty,
+        "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        "command": command,
+        "generated_at_utc": generated_at_utc,
+    }
+    sidecar_path(artifact).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return payload
+
+
+def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
+    """Classify one artifact's provenance against ``head``.
+
+    None means the artifact itself is absent (nothing to attribute).
+    An existing artifact always classifies — missing or corrupt
+    metadata degrades to ``unknown``, never to fresh.
+    """
+    if not artifact.is_file():
+        return None
+    try:
+        payload_any = json.loads(sidecar_path(artifact).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload_any = None
+    if not isinstance(payload_any, dict):
+        return ArtifactProvenance("unknown", "", False, "", "")
+    payload = cast(dict[str, Any], payload_any)
+    source_sha = payload.get("source_sha")
+    command = payload.get("command")
+    recorded_hash = payload.get("artifact_sha256")
+    dirty = payload.get("dirty")
+    if not (
+        isinstance(source_sha, str)
+        and isinstance(command, str)
+        and isinstance(recorded_hash, str)
+        and isinstance(dirty, bool)
+    ):
+        return ArtifactProvenance("unknown", "", False, "", "")
+    try:
+        intact = recorded_hash == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    except OSError:
+        intact = False
+    state: ProvenanceState
+    if not intact:
+        state = "unknown"  # edited (or unreadable) after stamping
+    elif not head:
+        state = "unknown"  # no comparison base — fail closed
+    elif source_sha != head:
+        state = "stale"
+    elif dirty:
+        state = "dirty"
+    else:
+        state = "fresh"
+    return ArtifactProvenance(
+        state=state,
+        source_sha=source_sha,
+        dirty=dirty,
+        command=command,
+        generated_at_utc=str(payload.get("generated_at_utc", "")),
+    )
 
 
 def parse_matrices(matrix_dir: Path) -> dict[tuple[str, str | None], list[MatrixRef]]:
@@ -610,28 +726,32 @@ def build_report(
             _BACKEND_UNIT,
             artifacts_dir,
             locator_style="pytest",
+            head=commit,
         ),
         _junit_layer(
             "backend-integration",
             _BACKEND_INTEGRATION,
             artifacts_dir,
             locator_style="pytest",
+            head=commit,
         ),
         _junit_layer(
             "backend-e2e",
             _BACKEND_E2E,
             artifacts_dir,
             locator_style="pytest",
+            head=commit,
         ),
         _junit_layer(
             "frontend-unit",
             _FRONTEND_UNIT,
             artifacts_dir,
             locator_style="node",
+            head=commit,
         ),
     ]
-    layers.extend(_playwright_layers(artifacts_dir))
-    layers.append(_exploration_layer(artifacts_dir))
+    layers.extend(_playwright_layers(artifacts_dir, head=commit))
+    layers.append(_exploration_layer(artifacts_dir, head=commit))
     return Report(
         branch=branch,
         command=command,
@@ -646,7 +766,12 @@ def build_report(
 
 
 def _junit_layer(
-    key: str, artifact: str, artifacts_dir: Path, *, locator_style: LocatorStyle
+    key: str,
+    artifact: str,
+    artifacts_dir: Path,
+    *,
+    locator_style: LocatorStyle,
+    head: str = "",
 ) -> LayerReport:
     path = artifacts_dir / artifact
     if not path.is_file():
@@ -661,10 +786,11 @@ def _junit_layer(
         title=_LAYER_TITLES[key],
         artifact=artifact,
         cases=parse_junit(path, locator_style=locator_style),
+        provenance=load_provenance(path, head=head),
     )
 
 
-def _playwright_layers(artifacts_dir: Path) -> list[LayerReport]:
+def _playwright_layers(artifacts_dir: Path, *, head: str = "") -> list[LayerReport]:
     path = artifacts_dir / _PLAYWRIGHT
     if not path.is_file():
         return [
@@ -685,23 +811,26 @@ def _playwright_layers(artifacts_dir: Path) -> list[LayerReport]:
     all_cases = parse_playwright(path)
     battery = [case for case in all_cases if not is_visual_spec(case.file)]
     pixel = [case for case in all_cases if is_visual_spec(case.file)]
+    provenance = load_provenance(path, head=head)
     return [
         LayerReport(
             key="playwright",
             title=_LAYER_TITLES["playwright"],
             artifact=f"{_PLAYWRIGHT}（非 visual 用例）",
             cases=battery,
+            provenance=provenance,
         ),
         LayerReport(
             key="pixel",
             title=_LAYER_TITLES["pixel"],
             artifact=f"{_PLAYWRIGHT}（visual 用例）",
             cases=pixel,
+            provenance=provenance,
         ),
     ]
 
 
-def _exploration_layer(artifacts_dir: Path) -> LayerReport:
+def _exploration_layer(artifacts_dir: Path, *, head: str = "") -> LayerReport:
     path = artifacts_dir / _EXPLORATION
     if not path.is_file():
         return LayerReport(
@@ -715,6 +844,7 @@ def _exploration_layer(artifacts_dir: Path) -> LayerReport:
         title=_LAYER_TITLES["exploration"],
         artifact=_EXPLORATION,
         cases=parse_exploration(path),
+        provenance=load_provenance(path, head=head),
     )
 
 
@@ -739,6 +869,17 @@ def total_counts(report: Report) -> dict[Status, int]:
         for case in display_cases(layer):
             totals[case.status] += 1
     return totals
+
+
+def provenance_summary(report: Report) -> dict[ProvenanceState, int]:
+    """Per-state counts over the layers that HAVE an artifact — mixed
+    runs stay visible as their own composition, never one verdict."""
+    counts: dict[ProvenanceState, int] = {}
+    for layer in report.layers:
+        if layer.provenance is None:
+            continue
+        counts[layer.provenance.state] = counts.get(layer.provenance.state, 0) + 1
+    return counts
 
 
 def layer_summary(layer: LayerReport) -> str:
@@ -838,6 +979,18 @@ def _header(report: Report, totals: dict[Status, int]) -> str:
     skipped = totals["skipped"]
     not_run = totals["not_run"]
     commit = report.commit[:7] if report.commit else "unknown"
+    prov = provenance_summary(report)
+    if prov:
+        prov_chips = " · ".join(
+            f"{count} {PROVENANCE_LABELS[state]}"
+            for state, count in sorted(prov.items())
+        )
+        prov_html = (
+            '<div class="prov-strip">结果文件来源（对照本报告 commit）：'
+            f"{_esc(prov_chips)}</div>"
+        )
+    else:
+        prov_html = ""
     return (
         "<header>\n"
         "<h1>测试总览</h1>\n"
@@ -849,6 +1002,7 @@ def _header(report: Report, totals: dict[Status, int]) -> str:
         f"<span>生成命令 <code>{_esc(report.command)}</code></span>"
         f"<span>生成时间 {_esc(report.generated_at)}</span>"
         "</div>\n"
+        f"{prov_html}\n"
         f"{_ci_strip(report.ci)}\n"
         '<p class="totals">总计 '
         f'<b class="ok">{passed} 绿</b> / '
@@ -923,12 +1077,24 @@ def _layer_section(index: int, layer: LayerReport, buttons: list[str]) -> str:
     else:
         squares = '<p class="empty">结果文件存在，但没有用例</p>'
     label = "期望结果文件" if layer.missing else "来源"
+    prov_chip = ""
+    if layer.provenance is not None:
+        provenance = layer.provenance
+        tip = (
+            f"source {provenance.source_sha[:7] or '—'} · "
+            f"{provenance.command} · {provenance.generated_at_utc or '—'}"
+        )
+        prov_chip = (
+            f'<span class="prov prov-{provenance.state}" '
+            f'title="{_esc(tip)}">{_esc(PROVENANCE_LABELS[provenance.state])}</span>'
+        )
     return (
         f'<section class="layer" aria-labelledby="layer-{index}-title">'
         '<div class="layer-head">'
         f'<span class="layer-index">{index}</span>'
         f'<h2 id="layer-{index}-title">{_esc(layer.title)}</h2>'
         f'<span class="layer-summary">{_esc(layer_summary(layer))}</span>'
+        f"{prov_chip}"
         "</div>"
         f"{squares}"
         f'<p class="artifact">{label}：<code>{_esc(layer.artifact)}</code></p>'
@@ -1043,6 +1209,12 @@ code, .mono {
   overflow-wrap: anywhere;
 }
 .run-meta code { background: #f4f4f5; border-radius: 4px; padding: 1px 5px; }
+.prov-strip { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.prov { margin-left: 4px; padding: 0 8px; border-radius: 999px; font-size: 12px;
+        border: 1px solid var(--border); color: var(--muted); }
+.prov-fresh { border-color: var(--green); color: var(--green-text); }
+.prov-dirty { border-color: #d97706; color: #b45309; }
+.prov-stale { border-color: var(--red); color: var(--red-text); }
 .totals { margin: 12px 0 8px; font-size: 15px; }
 .totals .ok { color: var(--green-text); }
 .totals .bad { color: var(--red-text); }
@@ -1209,6 +1381,28 @@ def detect_commit(repo_root: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def detect_dirty(repo_root: Path) -> bool:
+    """Whether the workspace has uncommitted changes — fail-closed:
+    when git cannot answer, the tree cannot be proven clean."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return True
+    if result.returncode != 0:
+        return True
+    return bool(result.stdout.strip())
+
+
+def utc_now_iso() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _job_state(status: str, conclusion: str | None) -> str:
     if conclusion in {"success", "failure", "cancelled", "skipped", "timed_out"}:
         return conclusion
@@ -1363,6 +1557,16 @@ def _archive_history(
         "generated_at": report.generated_at,
         "command": report.command,
         "totals": dict(totals),
+        "artifact_provenance": {
+            layer.key: {
+                "state": layer.provenance.state,
+                "source_sha7": layer.provenance.source_sha[:7],
+                "command": layer.provenance.command,
+                "generated_at_utc": layer.provenance.generated_at_utc,
+            }
+            for layer in report.layers
+            if layer.provenance is not None
+        },
         "ci": None
         if report.ci is None
         else {
@@ -1429,7 +1633,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--command",
         default="make test-report",
-        help="command shown in the report header",
+        help="command shown in the report header (and recorded in a "
+        "stamped artifact's provenance)",
+    )
+    parser.add_argument(
+        "--stamp-artifact",
+        type=Path,
+        default=None,
+        help="write <artifact>.provenance.json next to PATH recording its "
+        "source commit, workspace state, command, and content hash, then "
+        "exit (no report is generated)",
     )
     parser.add_argument(
         "--generated-at",
@@ -1448,6 +1661,30 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     repo_root: Path = args.repo_root or Path(__file__).resolve().parents[2]
+
+    if args.stamp_artifact is not None:
+        artifact: Path = args.stamp_artifact
+        if not artifact.is_file():
+            print(
+                f"test-report: cannot stamp missing artifact {artifact}",
+                file=sys.stderr,
+            )
+            return 1
+        payload = stamp_artifact(
+            artifact,
+            source_sha=detect_commit(repo_root),
+            dirty=detect_dirty(repo_root),
+            command=args.command,
+            generated_at_utc=utc_now_iso(),
+        )
+        print(f"stamped {sidecar_path(artifact)}")
+        print(
+            f"  source {payload['source_sha'][:7] or 'unknown'} · "
+            f"{'dirty' if payload['dirty'] else 'clean'} · "
+            f"sha256 {str(payload['artifact_sha256'])[:12]}…"
+        )
+        return 0
+
     artifacts_dir: Path = args.artifacts_dir or repo_root / "reports" / "artifacts"
     output: Path = args.output or repo_root / "reports" / "test-report.html"
     branch: str = args.branch or detect_branch(repo_root)
