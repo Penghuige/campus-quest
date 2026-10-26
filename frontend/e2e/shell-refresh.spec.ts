@@ -169,29 +169,24 @@ test.describe("refresh shell geometry (backlog: 刷新外壳跳变)", () => {
     }
   });
 
-  test("a cookie-less visitor never sees the workspace chrome (no new jump direction)", async ({ page }) => {
-    // Fresh context: no session cookies at all. The server HTML must
-    // keep the minimal shell — no rail for the anonymous resolve to
-    // take away again.
-    const ssr = await (await page.request.get(`${BASE_URL}/tasks`)).text();
-    expect(ssr).toContain('data-shell="loading"');
-    expect(ssr).not.toContain("app-sidebar-rail");
+  test("a cookie-less visitor is handed to the login page server-side (zero intermediate frames)", async ({ page }) => {
+    // Fresh context: no session cookies at all. The (student) layout's
+    // no-evidence direct path (owner feedback 2026-10-26): the server
+    // redirects to /login itself — the document answer is a 307, not
+    // a minimal-shell HTML the client would immediately 401 away from
+    // (the one-frame workspace skeleton a first-time user saw).
+    const answer = await page.request.get(`${BASE_URL}/tasks`, {
+      maxRedirects: 0,
+    });
+    expect(answer.status()).toBe(307);
+    expect(answer.headers()["location"]).toContain("/login");
 
-    const gate = await holdFirstMe(page);
+    // The browser walk: /tasks lands on the LOGIN page — the login
+    // card is the first and only paint, no app shell at ANY moment.
     await page.goto(`${BASE_URL}/tasks`);
-    await gate.waitHeld();
-
-    const shell = page.locator(SHELL);
-    await expect(shell).toHaveAttribute("data-shell", "loading");
-    // The minimal topbar shell: brand visible, NO rail, NO bottom nav.
-    await expect(page.locator(".app-sidebar")).toHaveCount(0);
-    await expect(page.locator(".app-bottomnav")).toHaveCount(0);
-    await expect(page.locator(".app-topbar .app-brand")).toBeVisible();
-
-    // 401 lands: minimal → auth card, the transition that has always
-    // existed — never sidebar → card.
-    gate.release();
-    await expect(shell).toHaveAttribute("data-shell", "anonymous");
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator(".app-shell")).toHaveCount(0);
+    await expect(page.locator(".app-topbar")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "登录 CampusQuest" })).toBeVisible();
   });
 

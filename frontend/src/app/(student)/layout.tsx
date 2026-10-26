@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { StudentShell } from "./_components/StudentShell";
 import { CSRF_COOKIE_NAME } from "@/lib/csrf";
 import {
   shellHintFromCookieValue,
+  shellRedirectsToLogin,
   SHELL_HINT_COOKIE_NAME,
 } from "@/features/auth/shellChrome";
 
@@ -37,11 +39,17 @@ export default async function StudentLayout({ children }: { children: ReactNode 
   const shellHint = shellHintFromCookieValue(
     cookieStore.get(SHELL_HINT_COOKIE_NAME)?.value,
   );
+  const sessionCookiePresent = cookieStore.has(CSRF_COOKIE_NAME);
+  // The no-evidence direct path (owner feedback 2026-10-26): a
+  // visitor with NEITHER session evidence NOR a role hint is a
+  // first-time user — hand them to the login page on the SERVER, so
+  // the login card is their first paint and the one-frame workspace
+  // skeleton the client would immediately 401 away never renders.
+  if (shellRedirectsToLogin(sessionCookiePresent, shellHint)) {
+    redirect("/login");
+  }
   return (
-    <StudentShell
-      sessionCookiePresent={cookieStore.has(CSRF_COOKIE_NAME)}
-      shellHint={shellHint}
-    >
+    <StudentShell sessionCookiePresent={sessionCookiePresent} shellHint={shellHint}>
       {children}
     </StudentShell>
   );

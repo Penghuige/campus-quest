@@ -30,6 +30,7 @@ import test from "node:test";
 import {
   shellChromeFor,
   shellHintFromCookieValue,
+  shellRedirectsToLogin,
   SHELL_HINT_COOKIE_NAME,
 } from "../features/auth/shellChrome";
 
@@ -90,4 +91,21 @@ test("the hint cookie contract: coarse two-value domain, HttpOnly-class shape", 
   assert.equal(shellHintFromCookieValue("ADMIN"), undefined);
   assert.equal(shellHintFromCookieValue(""), undefined);
   assert.equal(shellHintFromCookieValue(undefined), undefined);
+});
+
+// The no-evidence direct path (owner feedback 2026-10-26): a visitor
+// with NEITHER session evidence NOR a role hint is a first-time user —
+// the (student) layout hands them to /login SERVER-side, so the first
+// paint is the login card itself and the unfamiliar one-frame
+// workspace skeleton never renders. A staff hint keeps the minimal
+// shell (its terminal geometry here); session evidence keeps the
+// optimistic workspace frame; a student hint without csrf (a dropped
+// cookie) keeps the legacy minimal→card path — the redirect is
+// strictly the no-evidence branch.
+test("shellRedirectsToLogin: strictly the no-evidence branch", () => {
+  assert.equal(shellRedirectsToLogin(false, undefined), true);
+  assert.equal(shellRedirectsToLogin(false, "staff"), false);
+  assert.equal(shellRedirectsToLogin(false, "student"), false);
+  assert.equal(shellRedirectsToLogin(true, undefined), false);
+  assert.equal(shellRedirectsToLogin(true, "staff"), false);
 });

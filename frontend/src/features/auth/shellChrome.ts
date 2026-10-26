@@ -91,3 +91,22 @@ export function shellChromeFor(
       return shellHint === "staff" ? "minimal" : "workspace";
   }
 }
+
+/**
+ * The no-evidence direct path (owner feedback 2026-10-26): a visitor
+ * with NEITHER session evidence NOR a role hint is a first-time user
+ * on their first paint — the (student) layout redirects them to
+ * /login SERVER-side, so the login card is the first frame and the
+ * unfamiliar one-frame workspace skeleton (the minimal shell this
+ * module once rendered for them) never paints. STRICTLY that branch:
+ * a STAFF hint keeps the minimal shell (its terminal geometry here),
+ * session evidence keeps the optimistic workspace frame, and a
+ * student hint without csrf (a dropped cookie) keeps the legacy
+ * minimal→card path.
+ */
+export function shellRedirectsToLogin(
+  sessionCookiePresent: boolean,
+  shellHint: ShellHint | undefined,
+): boolean {
+  return !sessionCookiePresent && shellHint === undefined;
+}
