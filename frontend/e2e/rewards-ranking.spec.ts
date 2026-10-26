@@ -29,7 +29,7 @@
  * The INSUFFICIENT_POINTS chain needs NO environment export: it spawns
  * its own dedicated student (the isolation fixtures — an ACTIVE
  * student with no wallet events, spendable deterministically 0) and
- * removes them afterwards (CQH-FE-ISOLATION-01).
+ * removes them afterwards.
  *
  * Privacy pins under test (spec §17/§40): the ranking surfaces render
  * EXACTLY nickname / display_honor / score / rank — never a student
@@ -156,10 +156,9 @@ test.describe("student rewards redemption", () => {
 });
 
 test.describe("insufficient spendable (a dedicated wallet)", () => {
-  // The dedicated student's whole lifecycle is the chain's own
-  // (CQH-FE-ISOLATION-01): spawned before the walk, removed after it —
-  // whatever the outcome — so no row outlives the test (the
-  // registered-user residue trap).
+  // The dedicated student's whole lifecycle is the chain's own:
+  // spawned before the walk, removed after it — whatever the outcome
+  // — so no row outlives the test (the registered-user residue trap).
   const dedicatedRef: {
     student?: { id: string; username: string; password: string };
   } = {};
@@ -179,7 +178,7 @@ test.describe("insufficient spendable (a dedicated wallet)", () => {
     // (CQ_E2E_POOR_STUDENT) this chain used to borrow never existed in
     // the standard world, so it env-skipped; nothing environmental is
     // needed now.
-    const dedicated = spawnDedicatedStudent(`iso${Date.now()}`);
+    const dedicated = spawnDedicatedStudent();
     dedicatedRef.student = dedicated;
     await loginAs(page, `${dedicated.username}:${dedicated.password}`);
     await page.goto(`${BASE_URL}/rewards`);

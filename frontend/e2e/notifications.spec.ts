@@ -167,13 +167,13 @@ test.describe("owner mark-read (the §28 owner-only surface)", () => {
   test("marking a row read flips it in place and drops it from the unread tab", async ({
     page,
   }) => {
-    // The chain OWNS its unread row (CQH-FE-ISOLATION-01): the world
-    // seeds zero notifications, and the row this test used to borrow
-    // was a battery side effect an earlier consumer could drain — an
-    // order dependency that surfaced as a runtime skip. The marker
-    // title is run-unique, so the walk finds ITS row however many
-    // other rows or consumers exist; the row is removed afterwards
-    // (no battery or visual residue).
+    // The chain OWNS its unread row: the world seeds zero
+    // notifications, and the row this test used to borrow was a
+    // battery side effect an earlier consumer could drain — an order
+    // dependency that surfaced as a runtime skip. The marker title is
+    // run-unique, so the walk finds ITS row however many other rows or
+    // consumers exist; the row is removed afterwards (no battery or
+    // visual residue).
     const marker = `隔离未读 ${Date.now()}`;
     const notificationId = createUnreadNotification(
       process.env.CQ_E2E_STUDENT_ID!,

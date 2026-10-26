@@ -228,7 +228,7 @@ async def create_unread_notification(
     *,
     user_id: UUID,
     title: str,
-    body: str = "隔离夹具自建通知（CQH-FE-ISOLATION-01）",
+    body: str = "测试自建的隔离未读通知",
 ) -> UUID:
     """One UNREAD inbox row for ``user_id``, committed.
 

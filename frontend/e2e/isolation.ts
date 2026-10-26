@@ -1,9 +1,8 @@
 /**
- * The directed-isolation helpers (CQH-FE-ISOLATION-01, CQH-BATCH1):
- * test-owned rows through the SAME factories the world seeding uses —
- * each caller establishes exactly the state its chain needs and
- * removes it afterwards; nothing here touches another test's rows or
- * any global shape.
+ * The directed-isolation helpers: test-owned rows through the SAME
+ * factories the world seeding uses — each caller establishes exactly
+ * the state its chain needs and removes it afterwards; nothing here
+ * touches another test's rows or any global shape.
  *
  * Mechanically this is `runWorldAction`'s sibling: a focused
  * `uv run python -c` against the pinned test-stack env (backendEnv),
@@ -12,6 +11,7 @@
  * tables, exactly the world-action boundary.
  */
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 import { BACKEND_DIR, backendEnv } from "./global-setup";
 
@@ -74,12 +74,17 @@ export function deleteNotification(notificationId: string): void {
 
 /** One dedicated ACTIVE student with a bound phone and NO wallet
  * events — spendable is deterministically 0, below every reward. The
- * chain owns the whole lifecycle; `deleteUserCascade` removes it. */
-export function spawnDedicatedStudent(
-  marker: string,
-): { id: string; username: string; password: string } {
+ * run marker is a fresh uuid's hex (seed_student folds run[:11]/run[:8]
+ * as HEX — anything else raises before the row exists); the chain owns
+ * the whole lifecycle, `deleteUserCascade` removes it. */
+export function spawnDedicatedStudent(): {
+  id: string;
+  username: string;
+  password: string;
+} {
+  const marker = randomUUID().replaceAll("-", "");
   const raw = runFixture(
-    `    fixture = await seed_student(factory, run=${JSON.stringify(marker)})
+    `    fixture = await seed_student(factory, run="${marker}")
     print(json.dumps({"id": str(fixture.user_id), "username": fixture.username, "password": fixture.password}))`,
   );
   return JSON.parse(raw) as { id: string; username: string; password: string };
