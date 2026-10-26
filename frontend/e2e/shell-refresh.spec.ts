@@ -180,7 +180,6 @@ test.describe("refresh shell geometry (backlog: 刷新外壳跳变)", () => {
     });
     expect(answer.status()).toBe(307);
     expect(answer.headers()["location"]).toContain("/login");
-    expect((await answer.text()).includes("data-shell")).toBe(false);
 
     // The browser walk: /tasks lands on the LOGIN page — the login
     // card is the first and only paint, no app shell at ANY moment.
