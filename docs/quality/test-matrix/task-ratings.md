@@ -11,8 +11,8 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 4 | TR1-TR4 |
-| 缺口（轻，列出不补） | 1 | G-5（TR5：TaskRating 字段面无冻结断言） |
+| 已覆盖 | 5 | TR1-TR5 |
+| 缺口（轻，列出不补） | 0 | —（G-5 已补，见缺口明细） |
 | 不匹配 | 0 | — |
 | 流程行 | 1 | TR6（让渡声明 + G13 元规则） |
 
@@ -24,12 +24,12 @@
 | TR2 | §20 末句（前台展示面） | 前台只渲染聚合与数量：文本"评分 X.X · N 条评价"一位小数；零评或社区模块缺席显示"暂无评分"；星级选择可操作且有确定结果（完成者回执 / 非完成者类型化文案）；upsert 客户端请求体恰 {rating: 1-5 整数} | `frontend/src/__tests__/tasks-display.test.ts::aggregate rating text with one-decimal average` + `frontend/src/__tests__/tasks-display.test.ts::no ratings yet (community module absent) reads 暂无评分` + `frontend/e2e/community.spec.ts::the aggregate renders and a star tap produces a definite outcome` + `frontend/e2e/community.spec.ts::a non-completer sees the typed RATING_NOT_ELIGIBLE copy`（skip 门控负例，豁免登记在 e2e noskip-exemptions）+ `frontend/src/__tests__/community-api.test.ts::body is the 1-5 integer; the echo carries the rater's own value` | 已覆盖 |
 | TR3 | §20 值域/资格的守卫顺序面（M1/M2 的服务层补充） | 值域在服务层 typed 先拒：0/6/4.5/bool → 400 VALIDATION_ERROR 且零触库，且先于一切资格门（不泄露 user/task 存在性）；闭区间端点 1/5 可评；评分是学生面（TEACHER/ADMIN 403 零写入）；停权账号 403 ACCOUNT_NOT_ACTIVE；未知任务 404；非完成者的前台文案映射为固定句"完成任务后才能评价该任务" | `tests/integration/community/test_ratings.py::test_invalid_rating_rejected_before_any_database_touch`（0/6/4.5/bool 四参数）+ `tests/integration/community/test_ratings.py::test_invalid_rating_checked_before_the_gates` + `tests/integration/community/test_ratings.py::test_boundary_ratings_accepted`（1/5 端点）+ `tests/integration/community/test_ratings.py::test_rating_is_a_student_surface`（TEACHER/ADMIN 参数化）+ `tests/integration/community/test_ratings.py::test_rating_requires_an_active_account` + `tests/integration/community/test_ratings.py::test_rating_rejects_unknown_task` + `frontend/src/__tests__/community-view.test.ts::RATING_NOT_ELIGIBLE maps to the completer-gate copy` | 已覆盖 |
 | TR4 | §20 聚合读面（M3 的端口契约补充） | 聚合读取的边界契约：零评为 None（非 0 分均值——前台"暂无评分"的端口前提）；聚合严格按 task 隔离，邻居任务的评分不泄露进来 | `tests/integration/community/test_ratings.py::test_summary_is_none_with_zero_ratings`（service 与 adapter 双断言 None）+ `tests/integration/community/test_ratings.py::test_summary_is_scoped_to_one_task`（有评任务 avg==5.0/count==1，邻接任务 None） | 已覆盖 |
-| TR5 | §20 字段清单 | TaskRating 携 task_id/user_id/rating/created_at/updated_at 五字段；改评时 updated_at 前移 | upsert 单行、聚合形状、隐私面均有行为测试（M1/M3、TR1-TR4）；**字段集与 updated_at 前移无任何显式断言**——字段由模型与迁移承载，前端 stub 的回显材料（community-api.test.ts 的 created_at/updated_at）非后端断言 | **缺口 G-5（轻，列出不补）** |
+| TR5 | §20 字段清单 | TaskRating 携 task_id/user_id/rating/created_at/updated_at 五字段；改评时 updated_at 前移 | 字段集冻结：`tests/unit/community/test_task_rating_model.py::test_task_rating_columns_are_exactly_the_spec_fields`（闭集恰为五字段+代理主键 id，identity 冻结模式）+ `tests/unit/community/test_task_rating_model.py::test_task_rating_column_types_are_frozen`（rating Integer、双钟列 timezone-aware DateTime）；改评时间半边：`tests/integration/community/test_ratings.py::test_re_rate_moves_updated_at_forward_and_keeps_created_at`（改评后 updated_at 严格前移、created_at 不变、仍恰一行；双真提交事务——savepoint 内 PG `now()` 事务稳定，同一外层事务中前移不可观察）；行为面另有 M1/M3、TR1-TR4 承接 | 已覆盖（G-5 已补，见缺口明细） |
 | TR6 | 让渡声明 + G13（quality-gates §16） | §20 核心三行为（DB 约束、完成资格、可改聚合）由 `community.md` M1-M3 承担，本矩阵不重复建行；上述语义变更必须先改 spec | ——（流程行：M1-M3 各行即其机制） | 流程行 |
 
 ## 缺口明细（列出不补）
 
-- **G-5**（TR5）：§20 字段清单无 model_fields 式显式冻结测试，updated_at 在改评时的前移亦无断言——可观察行为（upsert 单行、CHECK 值域、聚合形状、隐私面）均已覆盖，仅字段面本身由模型与迁移 by-construction 承载。如需防漂移可对照 identity 域 `test_user_public_excludes_private_fields` 的冻结模式补一条（`set(model_fields)` + 改评前后 updated_at 比较）。按对账纪律仅列出，不动手补。
+- **G-5**（TR5）：**已补（2026-10-26 缺口闭合批）**——字段集半边由 `tests/unit/community/test_task_rating_model.py` 两件单测冻结（闭集恰为 §20 五字段+代理主键 `id`；rating Integer、created_at/updated_at timezone-aware DateTime），前移半边由 `tests/integration/community/test_ratings.py::test_re_rate_moves_updated_at_forward_and_keeps_created_at` 断言（同任务同用户改评 → updated_at 严格前移、created_at 不变、仍恰一行）。实现注记：前移断言必须走独立会话双真提交——savepoint harness 单外层事务内 PG `now()` 事务稳定，INSERT/UPDATE 同刻，前移不可观察；测试自带 committed DELETE 清理（race 件纪律）。
 
 ## 不匹配明细
 
