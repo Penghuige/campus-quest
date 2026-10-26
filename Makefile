@@ -203,7 +203,7 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
         reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
-        pre-push-full
+        pre-push-full test-report report-smoke stack stack-down
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
@@ -299,6 +299,91 @@ frontend-unit:
 
 frontend-build:
 	cd frontend && npm run build
+
+# --- Test report dashboard (owner-approved 2026-10-25) ----------------------
+#
+# Builds the offline seven-layer dashboard from reports/artifacts/. Only
+# the two cheap suites are produced on demand; layers that need
+# PostgreSQL/Redis/MinIO/browsers are NEVER started or borrowed here —
+# they stay "未运行" until someone produces their result file (see
+# docs/operations/test-report.md). Reusing an existing artifact is
+# intentional: delete reports/artifacts/ to refresh.
+REPORT_DIR = reports
+REPORT_ARTIFACTS_DIR = $(REPORT_DIR)/artifacts
+REPORT_BACKEND_UNIT_XML = $(REPORT_ARTIFACTS_DIR)/backend-unit.xml
+REPORT_FRONTEND_UNIT_XML = $(REPORT_ARTIFACTS_DIR)/frontend-unit.xml
+REPORT_HTML = $(REPORT_DIR)/test-report.html
+
+.PHONY: test-report
+test-report:
+	@mkdir -p $(REPORT_ARTIFACTS_DIR)
+	@if [ -f $(REPORT_BACKEND_UNIT_XML) ]; then \
+		echo "==> backend unit+worker: reusing $(REPORT_BACKEND_UNIT_XML)"; \
+	else \
+		echo "==> backend unit+worker: running pytest with JUnit XML"; \
+		$(BACKEND_UNIT_WORKER_CMD) -q --junitxml=$(CURDIR)/$(REPORT_BACKEND_UNIT_XML) || \
+			echo "!!! backend unit+worker reported failures; the dashboard will show them"; \
+		if [ ! -f "$(CURDIR)/$(REPORT_BACKEND_UNIT_XML)" ]; then \
+			echo "!!! backend unit+worker produced no JUnit XML"; \
+			exit 1; \
+		fi; \
+	fi
+	@if [ ! -d frontend/node_modules ]; then \
+		echo "==> frontend unit: skipped (frontend/node_modules missing; not running npm ci)"; \
+	elif [ -f $(REPORT_FRONTEND_UNIT_XML) ]; then \
+		echo "==> frontend unit: reusing $(REPORT_FRONTEND_UNIT_XML)"; \
+	else \
+		echo "==> frontend unit: running node:test with the junit reporter"; \
+		(cd frontend && node --import tsx --test \
+			--test-reporter=junit \
+			--test-reporter-destination=$(CURDIR)/$(REPORT_FRONTEND_UNIT_XML) \
+			src/__tests__/*.test.ts) || \
+			echo "!!! frontend unit reported failures; the dashboard will show them"; \
+		if [ ! -f "$(CURDIR)/$(REPORT_FRONTEND_UNIT_XML)" ]; then \
+			echo "!!! frontend unit produced no JUnit XML"; \
+			exit 1; \
+		fi; \
+	fi
+	@notes=""; \
+	if [ ! -d frontend/node_modules ]; then \
+		notes="frontend/node_modules 不存在：未自动执行 npm ci，前端单测层显示未运行"; \
+	fi; \
+	commit="$$(git rev-parse HEAD)"; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		notes="$$notes 工作区有未提交改动；CI 记录仅对应 commit $$(printf %.7s "$$commit")"; \
+	fi; \
+	echo "==> CI: fetching GitHub Actions record for $$(printf %.7s "$$commit")"; \
+	(cd backend && uv run python scripts/ci_record.py \
+		--commit "$$commit" \
+		--output "$(CURDIR)/$(REPORT_ARTIFACTS_DIR)/ci.json") || \
+		echo "!!! CI record unavailable; the report will show its absence"; \
+	cd backend && uv run python scripts/test_report.py \
+		--artifacts-dir ../$(REPORT_ARTIFACTS_DIR) \
+		--output ../$(REPORT_HTML) \
+		--command "make test-report" \
+		--commit "$$commit" \
+		--ci-file "../$(REPORT_ARTIFACTS_DIR)/ci.json" \
+		--history-dir "../$(REPORT_DIR)/history" \
+		--note "$$notes"
+
+# `make stack` / `make stack-down` are the local stack lifecycle. The report
+# viewer is a compose service behind the "report" profile (campus reviewer
+# ruling 2026-10-26): `make stack` enables the profile, so the viewer starts
+# and stops WITH the stack; bare `docker compose up -d` (the gate
+# prerequisite, other sessions, production) does not start it — that is
+# documented behavior, not an accident. `make test-report` only generates
+# the page; the running viewer serves the directory.
+stack:
+	docker compose -f infra/docker-compose.yml --profile report up -d
+	$(MAKE) test-report
+
+stack-down:
+	docker compose -f infra/docker-compose.yml down
+
+# Lifecycle proof for the report profile form (scripts/report-viewer-smoke.sh):
+# touches only the report-viewer service — no stack borrow needed.
+report-smoke:
+	bash scripts/report-viewer-smoke.sh
 
 playwright-e2e:
 	# Prerequisite dedup means a reset listed twice in the chain runs once —

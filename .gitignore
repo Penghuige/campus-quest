@@ -29,6 +29,12 @@ test-results/
 playwright-report/
 blob-report/
 
+# Generated test dashboard (make test-report): artifacts + HTML are local.
+# The directory itself stays committed (empty) so the compose bind mount has
+# a user-owned source; Docker would otherwise create a missing source as root.
+reports/*
+!reports/.gitkeep
+
 # Environment / secrets (one block: rules were duplicated verbatim at
 # the file tail; the template lives at backend/.env.example)
 .env

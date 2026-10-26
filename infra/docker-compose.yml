@@ -54,6 +54,39 @@ services:
       timeout: 3s
       retries: 12
 
+  # --- test report viewer (2026-10-26; rides the "report" profile) --------
+  #
+  # Serves the generated dashboard (repo-root reports/) on 127.0.0.1:8200.
+  # Lifecycle via `make stack` (= docker compose --profile report up -d) and
+  # `make stack-down` (= down, which stops profile services too) — no
+  # separate start/stop bookkeeping. The profile (campus reviewer ruling
+  # 2026-10-26, mirroring the minio-e2e precedent) keeps bare
+  # `docker compose up -d` — the release-gate prerequisite, other sessions,
+  # and PRODUCTION (207 reuses this file) — from starting the viewer:
+  # bypassing `make stack` does not bring it up, by design.
+  # The reports directory is committed as an empty directory (.gitkeep):
+  # a missing bind-mount source would be auto-created by Docker as root,
+  # which later blocks the host-side `make test-report` from writing.
+  # Read-only mount: the container never writes.
+  report-viewer:
+    image: python:3.12-slim
+    profiles: ["report"]
+    command:
+      - python
+      - -m
+      - http.server
+      - "8200"
+      - --bind
+      - 0.0.0.0
+      - --directory
+      - /srv/reports
+    ports:
+      # Loopback only: reports contain test names and failure text.
+      - "127.0.0.1:8200:8200"
+    volumes:
+      # Relative host paths resolve against this file's directory (infra/).
+      - ../reports:/srv/reports:ro
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data", "--console-address", ":9001"]
