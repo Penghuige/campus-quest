@@ -84,3 +84,26 @@ claims-lifecycle C3：Claim 状态转移集中化 pin 由 `tests/unit/tasks/test
 1. **backend-e2e 两处过期契约**（开放注册批 8da07d5 落地于 CI 停摆期，e2e 未跟）：注册信封 `{user, tokens}` + PENDING_APPROVAL 需 admin approve 解锁；统一登录 identifier 表单与嵌套 tokens；whitelist 管理面 404 语义（436aa0d）。
 2. **Makefile 两条腿缺 CI 同款环境**（talent-batch1 已有同型修复未合）：`playwright-e2e` 与 `visual-regression` 缺 `CQ_E2E_LOGIN_RATELIMIT=1` + `CQ_E2E_API_URL`（87dfb14 + 后续 commit）。
 3. **共享测试库被 talent-batch1 分支迁移戳污染**（`0035_talent_file_upload_contract`），按 release-checklist 手册程序重置恢复。
+
+## 七、十二缺口闭合批（2026-10-26，owner 授权"未完成项现在做"）
+
+分支 `test-gap-closures`（基 main bbbb941），三代理并行，**12/12 全部处置**：
+
+| 缺口 | 处置 | 落点 |
+|---|---|---|
+| points-ledger G-1 | **勘误闭合**：冻结测试 2026-10-10 已在 main（766cd7a），战役盘点定位遗漏；矩阵翻转+勘误注记 | points-ledger.md E16 |
+| points-ledger G-2 | 新钉：五表八数量列 Integer/BigInteger 闭集 + 六模型无浮点扫掠 | test_points_column_types.py |
+| submissions G-4 | 现状在（schema 255 上限 + sanitize，函数级测试已有）→ 补恰值/超限/空四边界 | test_upload_policy.py 追加 |
+| task-ratings G-5 | 新钉：字段闭集（五字段+代理键）+ 类型冻结；改评 updated_at 前移（独立会话双真提交形态） | test_task_rating_model.py + test_ratings.py |
+| rewards G-1 | 新钉：建议字段全链往返（create→列→学生目录缺席/staff 列表在场） | test_points_api.py |
+| rewards G-3 | 新钉：FULFILLED 永久消耗（stock=1 全链后第二人 409 + CONSUMED/available 断言） | test_redemption_concurrency.py |
+| audit-log G-3 | 新钉：email 登录全审计行（SUCCEEDED×channel / TOTP_REQUIRED / remembered_device 变体），4 写行点全覆盖 | test_login_audit_rows.py |
+| audit-log G-4 | 新钉：学生/员工 mobile 登录审计行（G11 隐私 sweep 内嵌全部 4 件） | 同上 |
+| file-retention G-1 | 新钉：retention CHECK 闭集四参插库拒 | test_task_constraints.py |
+| file-retention G-2 | 新钉：默认 DAYS_180（expunge 重读形态，迁移丢默认可抓） | 同上 |
+| file-retention G-3 | 新钉：清理删对象后审计行逐字段存续（真 PG 分相+finally 清理） | test_cleanup_audit_survival.py |
+| M10（变异战役） | 新钉：任务奖励 0/-1 拒于首条数据库语句前（哨兵会话证明） | test_task_reward_amount_guard.py |
+
+- 措辞映射注记（非矛盾）：spec「mobile +device 快照」的设备变体仅存在于 email ADMIN 记住设备腿；mobile 学生腿快照恒 `{channel: mobile_code}`——已记 audit-log.md 备注，待 owner 备览。
+- 验证：checker 28 份 OK；单测 1450 全绿（标准 TEST_STACK_ENV 形态）；三连绿；分支零生产代码改动。
+- 集成腿（8 件）借栈窗口实跑，结果回填于下。
