@@ -860,7 +860,7 @@ async def test_review_surfaces_reject_student_roles(
         assert response.json()["error"]["code"] == "PERMISSION_DENIED"
 
 
-# --- the advisory catalogue fields (RW1 / gap G-1) -------------------------------------
+# --- the advisory catalogue fields (RW1 / gap G-1) ------------------------------------
 
 
 async def test_reward_item_advisory_fields_round_trip(
@@ -923,8 +923,6 @@ async def test_reward_item_advisory_fields_round_trip(
         headers=world["admin_headers"],
     )
     assert listed.status_code == 200
-    admin_row = next(
-        item for item in listed.json()["items"] if item["name"] == name
-    )
+    admin_row = next(item for item in listed.json()["items"] if item["name"] == name)
     assert admin_row["description"] == description
     assert admin_row["fulfillment_instructions"] == instructions
