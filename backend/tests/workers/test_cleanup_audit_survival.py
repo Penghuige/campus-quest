@@ -80,7 +80,7 @@ def _factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def _seed_world(
-    maker: async_sessionmaker[AsyncSession], run: str
+    maker: async_sessionmaker[AsyncSession], run: str, *, object_key: str
 ) -> dict[str, Any]:
     """One teacher/student/task/assignment/claim, one DUE submission,
     and one §30 SUBMISSION_APPROVED audit row targeting that submission
@@ -100,7 +100,10 @@ async def _seed_world(
     )
     from app.modules.tasks.models import Assignment, AssignmentClaim, Task
 
-    object_key = f"submissions/{run}-audit-survival/{uuid.uuid4()}.csv"
+    # The object key arrives pre-minted by the storage fake's presign flow
+    # (create_upload_url pins the content type put_object later requires) —
+    # the same _stored_object discipline test_file_cleanup.py uses.
+    assert object_key
     async with maker() as session:
         teacher = User(
             username=f"t{run}",
@@ -292,13 +295,18 @@ def test_cleanup_deletion_keeps_the_submission_audit_rows() -> None:
 
     maker = _factory()
     run = uuid.uuid4().hex[:8]
-    world = asyncio.run(_seed_world(maker, run))
+    storage = FakeObjectStorage()
+    upload_url = storage.create_upload_url(
+        claim_id=uuid.uuid4(), content_type="text/csv", expires_in=timedelta(minutes=5)
+    )
+    world = asyncio.run(_seed_world(maker, run, object_key=upload_url.object_key))
     try:
         before = asyncio.run(_audit_snapshot(maker, world["submission_id"]))
         assert before is not None, "the seeded audit row is missing pre-cleanup"
         assert before["actions"] == ["SUBMISSION_APPROVED"]
 
-        storage = FakeObjectStorage()
+        # The fake was primed with the upload URL BEFORE seeding (the row's
+        # object_key is the minted one); complete the PUT now.
         storage.put_object(object_key=world["object_key"], size=128)
         repository = SubmissionCleanupRepository(maker, lease_seconds=300)
         summary = asyncio.run(cleanup_expired_files(NOW, repository, storage))
