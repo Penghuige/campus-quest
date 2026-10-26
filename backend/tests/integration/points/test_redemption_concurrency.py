@@ -947,6 +947,69 @@ async def test_fulfill_is_idempotent_and_records_metadata(
         await service.fulfill_redemption(db_session, admin_actor, fresh.id)
 
 
+@pytest.mark.integration
+async def test_fulfilled_redemption_keeps_the_last_stock_unit_consumed(
+    db_session: AsyncSession,
+) -> None:
+    """RW8's FULFILLED half (spec §16.1 库存语义: FULFILLED 将预占转为
+    永久消耗 — gap G-3): after the whole chain redeem -> approve ->
+    fulfill on a stock=1 item, the FULFILLED row STILL counts toward
+    derived occupancy — a second funded user cannot take the last unit
+    (REWARD_OUT_OF_STOCK), unlike REJECTED which releases it.
+
+    The points side shows the permanent-consumption state, distinct
+    from "the freeze still holds": the reservation is CONSUMED (not
+    ACTIVE) and the wallet's available already carries the spend —
+    a still-frozen redemption would read available 500 / ACTIVE."""
+    run = uuid4().hex[:8]
+    student = _student(f"2025{run}001")
+    admin = _admin(f"a{run}001")
+    other = _student(f"2025{run}002")
+    item = _reward_item(point_cost=200, stock=1)
+    await _flush(db_session, student, admin, other, item)
+    student_id, admin_id, other_id, item_id = (
+        student.id,
+        admin.id,
+        other.id,
+        item.id,
+    )
+    await _fund(db_session, student_id, 500)
+    await db_session.commit()
+    service = _service()
+    actor = _actor(admin_id, Role.ADMIN)
+
+    redemption = await service.request_redemption(db_session, student_id, item_id)
+    redemption_id = redemption.id  # rollbacks expire instances
+    await service.approve_redemption(db_session, actor, redemption_id)
+    fulfilled = await service.fulfill_redemption(
+        db_session, actor, redemption_id, note="平时分已录入"
+    )
+    assert fulfilled.status == "FULFILLED"
+
+    # Points: permanently consumed, NOT still frozen (the state the
+    # REQUESTED row would show is ACTIVE + available 500).
+    reservation = (
+        await db_session.scalars(
+            select(PointReservation).where(
+                PointReservation.redemption_id == redemption_id
+            )
+        )
+    ).one()
+    assert reservation.status == ReservationStatus.CONSUMED.value
+    wallet = await db_session.get(PointWallet, student_id)
+    assert wallet is not None
+    assert wallet.available_points == 300  # 500 - 200, the spend landed
+    assert await LedgerService().get_spendable_points(db_session, student_id) == 300
+
+    # Stock: the FULFILLED row keeps the only unit occupied forever —
+    # a funded second user gets the typed conflict, not the last item.
+    await _fund(db_session, other_id, 500)
+    await db_session.commit()
+    with pytest.raises(RewardOutOfStockError) as denied:
+        await service.request_redemption(db_session, other_id, item_id)
+    assert denied.value.code == ErrorCode.REWARD_OUT_OF_STOCK
+
+
 # --- the review guard (Admin OR granted Teacher; Plan 08 T4) --------------------------
 
 
