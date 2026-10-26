@@ -1,0 +1,34 @@
+{
+  "run_label": "exploration 2026-10-25",
+  "probes": [
+    {
+      "name": "双击领取按钮（并发点击）",
+      "status": "passed",
+      "duration_ms": 1840,
+      "file": "exploration/claim_race.py",
+      "case": "double_click_claim",
+      "detail": "服务端一次成功、一次业务冲突，积分只入账一次"
+    },
+    {
+      "name": "过期重置链接重放",
+      "status": "failed",
+      "duration_ms": 920,
+      "file": "exploration/auth_replay.py",
+      "case": "expired_reset_link",
+      "message": "过期链接返回 200 并重置了密码（预期 400）"
+    },
+    {
+      "name": "管理员后台越权路径",
+      "status": "skipped",
+      "duration_ms": 0,
+      "file": "exploration/rbac.py",
+      "case": "admin_surface",
+      "detail": "需要管理员夹具，本轮跳过"
+    },
+    {
+      "name": "支付回调伪造（尚未覆盖）",
+      "status": "not_run",
+      "detail": "下一轮排期；探针写好前保留为未运行"
+    }
+  ]
+}
