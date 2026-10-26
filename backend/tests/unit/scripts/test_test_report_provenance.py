@@ -256,6 +256,67 @@ def test_valid_schema_and_utc_still_classify_by_content(
     assert prov is not None and prov.state == "stale"
 
 
+# --- input validity: one closure, every malformed field ---------------
+
+
+@pytest.mark.parametrize(
+    "bad_schema",
+    [True, 1.0, "1", 2, None],
+)
+def test_non_integer_schema_is_unknown(
+    report_module: Any, tmp_path: Path, bad_schema: Any
+) -> None:
+    """Only the INTEGER 1 is the known schema. Python's == would accept
+    True and 1.0; JSON booleans and floats are not shapes the stamper
+    writes — unknown, never fresh."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"schema": bad_schema})
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+@pytest.mark.parametrize("bad_command", ["", "   ", "\t\n"])
+def test_blank_command_is_unknown(
+    report_module: Any, tmp_path: Path, bad_command: str
+) -> None:
+    """An unidentifiable producing command is invalid provenance — the
+    sidecar must name the command that made the artifact."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"command": bad_command})
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+@pytest.mark.parametrize(
+    "bad_sha",
+    ["a" * 39, "a" * 41, "z" * 40, "A" * 40, "abc", ""],
+)
+def test_malformed_source_sha_is_unknown(
+    report_module: Any, tmp_path: Path, bad_sha: str
+) -> None:
+    """The source must be a full 40-hex LOWERCASE sha — the exact form
+    git rev-parse emits and the stamper records. Anything else
+    (truncated, non-hex, uppercased, empty) is invalid metadata:
+    unknown, never stale (a malformed sha is not 'a different
+    commit')."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, source_sha=bad_sha)
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_lowercase_40_hex_sha_comparisons_classify_normally(
+    report_module: Any, tmp_path: Path
+) -> None:
+    """The case policy's control: a proper lowercase 40-hex sha keeps
+    the content rules — fresh on a match, never affected by the
+    malformed-sha closure."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, command="uv run pytest tests/unit")
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "fresh"
+
+
 # --- report integration ----------------------------------------------------
 
 

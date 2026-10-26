@@ -48,6 +48,11 @@ ProvenanceState = Literal["fresh", "dirty", "stale", "unknown"]
 
 _SIDECAR_SUFFIX = ".provenance.json"
 
+#: The exact source-sha shape the stamper records (and git emits):
+#: 40 lowercase hex characters. Malformed or uppercased values are
+#: invalid metadata, not "a different commit".
+_SHA40_RE = re.compile(r"[0-9a-f]{40}")
+
 PROVENANCE_LABELS: dict[ProvenanceState, str] = {
     "fresh": "fresh",
     "dirty": "dirty",
@@ -214,6 +219,15 @@ def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
     None means the artifact itself is absent (nothing to attribute).
     An existing artifact always classifies — invalid or incomplete
     metadata degrades to ``unknown``, never to fresh or stale.
+
+    Input validity is closed over EVERY field before classification:
+    the schema must be the INTEGER 1 (bool/float/string forms that
+    compare equal are not shapes the stamper writes); the source sha
+    must be a full 40-hex LOWERCASE commit sha (the exact form git
+    rev-parse emits and the stamper records — comparison is
+    lowercase-on-lowercase, and an uppercase or malformed sha is
+    invalid metadata, not "a different commit"); the command must be
+    a non-blank string; the hash/dirty/timestamp rules are unchanged.
     """
     if not artifact.is_file():
         return None
@@ -231,17 +245,18 @@ def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
     schema = payload.get("schema")
     generated_at = payload.get("generated_at_utc")
     if not (
-        schema == 1
+        type(schema) is int
+        and schema == 1
         and isinstance(source_sha, str)
-        and bool(source_sha)
+        and _SHA40_RE.fullmatch(source_sha) is not None
         and isinstance(command, str)
+        and command.strip() != ""
         and isinstance(recorded_hash, str)
         and isinstance(dirty, bool)
         and isinstance(generated_at, str)
         and _is_utc_stamp(generated_at)
     ):
-        # Every field this script stamps must be present, well-typed,
-        # and of the known schema — anything else is metadata this
+        # Anything the stamper would not have written is metadata this
         # classification cannot stand on.
         return ArtifactProvenance("unknown", "", False, "", "")
     try:
