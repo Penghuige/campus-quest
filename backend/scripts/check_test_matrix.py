@@ -14,10 +14,18 @@ Checks, per matrix file:
    path) whose FILE part exists on disk — backend suites (``tests/``)
    resolve against the backend root, frontend suites
    (``frontend/e2e/`` or ``frontend/src/``) against the repository
-   root;
+   root — and, when a ``::name`` part is present, that the name is
+   really defined in the file: backend citations as ``(async) def
+   name(``, frontend citations (Playwright titles may contain spaces)
+   as a substring of the file text;
 3. gap rows reference a gap id (G-\\d+) that the file's gap section
    also lists;
-4. mismatch rows appear in the file's mismatch section.
+4. mismatch rows appear in the file's mismatch section;
+5. the header carries a 覆盖章节 line pinning the spec sections the
+   matrix reconciles — format ``> 覆盖章节：§5 · §9 | path/to/spec.md#§3``
+   (groups separated by ``|``; a group without a path defaults to the
+   main design spec) — and every claimed section must exist as a
+   ``## N.`` heading in the referenced spec.
 
 Exit code: 0 = the matrix holds together; 1 = any violation (one line
 per violation on stdout). Deliberately tiny: no markdown dependency —
@@ -47,10 +55,20 @@ _RETIRED = ("已退役", "retired")
 
 # A covered row's citation: a backend suite path (tests/...) or a
 # frontend suite path (frontend/e2e/... or frontend/src/...), each with
-# an optional ::test suffix. The two roots differ (backend root vs
-# repository root), so _cite_file resolves the prefix.
-_TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::[\w.]+)?`")
+# an optional ::name suffix. The two roots differ (backend root vs
+# repository root), so _cite_file resolves the prefix. The name may
+# contain spaces (frontend Playwright titles), so it captures up to the
+# closing backtick rather than a word-char run.
+_TEST_CITE = re.compile(r"`(tests/[^`:]+|frontend/(?:e2e|src)/[^`:]+)(?:::([^`]+))?`")
 _GAP_ID = re.compile(r"G-\d+")
+
+# The spec-drift linkage: every matrix declares which spec sections it
+# reconciles. A group is "§5 · §9" (main design spec) or
+# "docs/.../some-design.md#§3 · §4" (explicit spec file).
+_SECTION_LINE = re.compile(r"^>\s*覆盖章节：\s*(.+)$", re.MULTILINE)
+_SECTION_REF = re.compile(r"§(\d+)")
+
+_MAIN_SPEC_REL = "docs/superpowers/specs/2026-09-19-campusquest-design.md"
 
 
 def _cite_file(cited: str) -> Path:
@@ -59,6 +77,17 @@ def _cite_file(cited: str) -> Path:
     if cited.startswith("frontend/"):
         return _REPO_ROOT / cited
     return _BACKEND_ROOT / cited
+
+
+def _cite_name_ok(cited_file: Path, name: str) -> bool:
+    """A cited test name must be defined in the cited file: backend
+    suites define tests as ``(async) def name(`` (a dotted citation
+    pins its final segment); frontend suites embed the cited title as
+    a substring of the spec text."""
+    text = cited_file.read_text(encoding="utf-8", errors="replace")
+    if cited_file.suffix == ".py":
+        return f"def {name.split('.')[-1]}(" in text
+    return name in text
 
 
 def _status_of(cells: list[str]) -> str | None:
@@ -83,6 +112,39 @@ def check_matrix(path: Path) -> list[str]:
 
     gap_section = text.split("缺口明细", 1)[-1] if "缺口明细" in text else ""
     mismatch_section = text.split("不匹配明细", 1)[-1] if "不匹配明细" in text else ""
+
+    section_match = _SECTION_LINE.search(text)
+    if section_match is None:
+        violations.append(
+            f"{path.name}: header declares no 覆盖章节 line (spec drift linkage)"
+        )
+    else:
+        for group in section_match.group(1).split("|"):
+            group = group.strip()
+            if "#" in group:
+                spec_rel, _, claimed = group.partition("#")
+                spec_rel = spec_rel.strip()
+            else:
+                spec_rel = _MAIN_SPEC_REL
+                claimed = group
+            sections = _SECTION_REF.findall(claimed)
+            if not sections:
+                continue
+            spec_path = _REPO_ROOT / spec_rel
+            if not spec_path.exists():
+                violations.append(
+                    f"{path.name}: 覆盖章节 references missing spec {spec_rel}"
+                )
+                continue
+            spec_text = spec_path.read_text(encoding="utf-8")
+            for number in sections:
+                if f"\n## {number}." not in spec_text and not spec_text.startswith(
+                    f"## {number}."
+                ):
+                    violations.append(
+                        f"{path.name}: 覆盖章节 claims {spec_rel.split('/')[-1]}"
+                        f" §{number}, which has no '## {number}.' heading"
+                    )
 
     row_id = 0
     for line in text.splitlines():
@@ -109,10 +171,16 @@ def check_matrix(path: Path) -> list[str]:
                     f"{path.name}: row {row} is covered but cites no test location"
                 )
                 continue
-            for cited_file in citations:
-                if not _cite_file(cited_file).exists():
+            for cited_file, cited_name in citations:
+                file_path = _cite_file(cited_file)
+                if not file_path.exists():
                     violations.append(
                         f"{path.name}: row {row} cites missing file {cited_file}"
+                    )
+                elif cited_name and not _cite_name_ok(file_path, cited_name):
+                    violations.append(
+                        f"{path.name}: row {row} cites missing test "
+                        f"{cited_name.strip()} in {cited_file}"
                     )
         elif status == "gap":
             ids = _GAP_ID.findall(" ".join(cells))

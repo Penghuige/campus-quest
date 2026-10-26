@@ -259,15 +259,29 @@ async def test_full_happy_path_chain(
                 },
             )
             assert registered.status_code == 201, registered.text
-            student_id = uuid.UUID(registered.json()["id"])
+            # Registration ends logged in (V1.1 item 4): the body is the
+            # account view beside the session, not a bare id.
+            student_id = uuid.UUID(registered.json()["user"]["id"])
+
+            # Open registration lands PENDING_APPROVAL (V1.1 2026-10-16
+            # §2); the admin approves before the student may act.
+            approved = await client.post(
+                f"/api/v1/admin/users/{student_id}/approve",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert approved.status_code == 200, approved.text
 
             logged_in = await client.post(
                 "/api/v1/auth/login",
-                json={"username": student_number, "password": _PASSWORD},
+                json={"identifier": student_number, "password": _PASSWORD},
             )
             assert logged_in.status_code == 200, logged_in.text
+            # The unified login answers the three-state outcome; a
+            # student's password login lands authenticated with tokens.
+            login_body = logged_in.json()
+            assert login_body["status"] == "authenticated", login_body
             student_headers = {
-                "Authorization": f"Bearer {logged_in.json()['access_token']}"
+                "Authorization": f"Bearer {login_body['tokens']['access_token']}"
             }
 
             # --- teacher publishes Task + Assignments (real mgmt API) -----

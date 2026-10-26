@@ -68,6 +68,15 @@ export const BUSINESS_ERROR_CODES = [
   // every acting endpoint refused).
   "MOBILE_CODE_INVALID",
   "APPROVAL_PENDING",
+  // Innovation batch 1 (talent): the Redis-backed authorized-contacts
+  // read fails CLOSED when the limiter is unavailable (G5) — the
+  // frontend maps it to a retryable service error, never a bypass.
+  // Registered in interfaces.md by the same batch.
+  "TALENT_CONTACTS_UNAVAILABLE",
+  "PROJECT_DRAFT_VERSION_CONFLICT",
+  "PROJECT_DRAFT_REQUEST_CONFLICT",
+  "OWNER_PROFILE_VERSION_CONFLICT",
+  "RECRUITMENT_CONTACTS_UNAVAILABLE",
 ] as const;
 
 export type BusinessErrorCode = (typeof BUSINESS_ERROR_CODES)[number];

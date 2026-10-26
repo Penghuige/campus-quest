@@ -290,16 +290,21 @@ def test_job_signatures_carry_ids_and_params_only() -> None:
     # then calls a service. bind=True consumes `self` (job-id logging
     # only), so producers pass the correlation id and nothing else.
     task_parameters = inspect.signature(dispatch_due_notifications).parameters
-    assert list(task_parameters) == ["request_id"]
-    assert all(
-        parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-        for parameter in task_parameters.values()
-    )
+    # Batch 4 adds two keyword-only filters for the local innovation-dev
+    # profile (select the recruitment reminder events, target its queue);
+    # the default production call still passes the correlation id alone.
+    assert list(task_parameters) == ["request_id", "event_types", "queue"]
+    assert task_parameters["event_types"].default is None
+    assert task_parameters["queue"].default is None
+    assert task_parameters["request_id"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert task_parameters["event_types"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert task_parameters["queue"].kind is inspect.Parameter.KEYWORD_ONLY
 
     # The candidate query's inputs are the session and the instant,
     # with the batch size and lease threshold keyword-only.
     collector = inspect.signature(collect_due_deliveries).parameters
-    assert list(collector) == ["session", "now", "limit", "stale_after"]
+    assert list(collector) == ["session", "now", "limit", "stale_after", "event_types"]
+    assert collector["event_types"].default is None
     assert collector["limit"].kind is inspect.Parameter.KEYWORD_ONLY
     assert collector["stale_after"].kind is inspect.Parameter.KEYWORD_ONLY
 

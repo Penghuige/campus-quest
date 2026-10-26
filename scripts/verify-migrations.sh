@@ -85,6 +85,22 @@ KEY_TABLES=(
   audit_logs
   system_settings
   reward_review_grants
+  ie_talent_profiles
+  ie_talent_revisions
+  ie_talent_files
+  ie_project_drafts
+  ie_owner_profiles
+  ie_owner_qualifications
+  ie_operations_grants
+  ie_achievement_drafts
+  ie_achievement_evidence
+  ie_achievement_revisions
+  ie_achievement_review_cases
+  ie_achievement_workflows
+  ie_recruitment_drafts
+  ie_recruitment_revisions
+  ie_recruitment_contacts
+  ie_recruitment_receipts
 )
 
 # Unique indexes whose absence would silently reopen a §31 race.
@@ -99,6 +115,14 @@ KEY_UNIQUE_INDEXES=(
   uq_comment_reactions_comment_id_user_id_emoji
   uq_task_ratings_task_id_user_id
   uq_notification_deliveries_event_key_user_id_channel
+  # Innovation batch 1 (talent): one profile per owner, idempotent
+  # command receipts, one storage object per file record.
+  uq_ie_talent_owner
+  uq_ie_talent_request
+  uq_ie_talent_file_object
+  # Innovation batch 2 (project library): one draft/profile per owner
+  # per creation request — the immutable creation fingerprint.
+  uq_ie_project_drafts_owner_request
 )
 
 psql_admin() {

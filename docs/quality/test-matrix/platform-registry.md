@@ -1,6 +1,7 @@
 # 平台注册表 规约-测试对账矩阵
 
 > 建立日期：2026-10-16 · 域：平台注册表（platforms 表 / 字典 API / admin CRUD / 导入校验）
+> 覆盖章节：docs/superpowers/specs/2026-10-16-platform-registry-design.md#§1 · §2 · §3 · §4 · §5
 > 方法论：`campusquest-test-process` skill 规约对账节；模板 `docs/quality/test-matrix/points-ledger.md`。
 > **纪律**：预期列先于测试检索从 spec 原文推导落笔；找不到测试=缺口（列出，不补）；测试行为≠预期=不匹配（上报，不擅改）。
 > 规约来源：docs/superpowers/specs/2026-10-16-platform-registry-design.md §1-§5（owner 已批）。

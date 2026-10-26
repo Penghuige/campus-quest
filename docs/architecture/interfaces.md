@@ -301,6 +301,11 @@ Canonical codes (exact strings; the frontend must branch on `code`, never parse 
 | `MOBILE_CODE_INVALID` | V1.1 2026-10-16 §3 |
 | `APPROVAL_PENDING` | V1.1 2026-10-16 §2 |
 | `CHALLENGE_CODE_INVALID` | 统一登录 2026-10-19 §3.4 |
+| `TALENT_CONTACTS_UNAVAILABLE` | 创新板块批 1(人才库)· interfaces.md "Innovation module" 小节 |
+| `PROJECT_DRAFT_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `PROJECT_DRAFT_REQUEST_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `OWNER_PROFILE_VERSION_CONFLICT` | 创新板块批 2(项目库)· 同上小节 |
+| `RECRUITMENT_CONTACTS_UNAVAILABLE` | 创新板块批 4(招募)· 同上小节 |
 
 Claim-failure codes return 4xx, never 500 (spec §8.4). New codes require updating this table first.
 
@@ -454,6 +459,32 @@ anywhere, and its few holders simply re-login once.
   `revoke_all` (`DELETE /me/devices`) drops every slot of the account
   across all browsers, unchanged.
 
+### Innovation module (batch 2, project library)
+
+The owner-side preparation surfaces — `/ie/me/project-drafts*`,
+`/ie/me/owner-profile`, `/ie/me/owner-qualification`,
+`/ie/me/operations-grants`, and the admin activation surfaces
+`/admin/ie/owner-qualifications` and `/admin/ie/operations-grants` —
+share the batch-1 conventions: approved-student guards on every
+owner surface (PENDING_APPROVAL browses the campus shell, never acts),
+admin surfaces compose `require_admin_actor` with the store-backed
+management-network guard, and every command carries `request_id` +
+expected `version` (idempotent receipts; stale versions answer the
+three `*_CONFLICT` codes above). The draft service locks the actor's
+user row through the raw `users` table (`innovation/accounts.py`), not
+the identity ORM — the directory port contract stays KEPT.
+
+### Innovation module (batch 1, talent)
+
+Contact-reveal is a fail-closed read: the per-viewer Redis limiter
+(`ie:talent-contacts`, 30/min) must authorize before any contact value
+leaves the database; Redis being unreachable is a 503 with
+`TALENT_CONTACTS_UNAVAILABLE`, never an open door (G5). The talent
+endpoints (`/ie/me/talent-profile*`, `/ie/talents*`, `/ie/talent-tags`)
+sit under the innovation privacy middleware (Cache-Control:
+private, no-store on every `/api/v1/ie/` response, success and error
+alike).
+
 ### System / framework codes
 
 Framework-level failures reuse the same §29 envelope (same shape, same `request_id` threading) with these codes. They are SYSTEM codes, not business codes: business logic never raises them, and the frontend treats them as transport/framework errors, never as domain branches.
@@ -504,6 +535,8 @@ External systems are consumed only through these Protocols; domain modules never
 ```python
 class ObjectStorage(Protocol):
     def create_upload_url(...) -> ...: ...   # short-lived presigned PUT/POST
+    def create_talent_file_upload_url(...) -> ...: ...  # write-once talent upload, `talent/{profile_id}/{uuid}` key (innovation batch 1)
+    def read_bounded_object(...) -> ...: ...  # read at most max_bytes+1; StoredObjectTooLargeError on excess (innovation batch 1)
     def head_object(...) -> ...: ...         # existence + size/content metadata
     def create_download_url(...) -> ...: ... # short-lived signed download URL
     def delete_object(...) -> None: ...      # retention cleanup (§13/§27); FileNotFoundError when absent
@@ -512,6 +545,26 @@ class ObjectStorage(Protocol):
 Object keys are server-generated (`submissions/{claim_id}/{uuid}`); original filenames are display metadata only.
 
 Upload-PUT client contract (PR #2 hardening, adapter-owned since pass 4c): every presigned upload URL signs `If-None-Match: *` (write-once: exactly one successful PUT per key; replay and post-finalize overwrites answer 412 — proven against the pinned MinIO), plus the declared `Content-Length` and `Content-Type` (mismatches answer 403). `UploadUrl` carries the signing contract — `client_headers` (the signed headers the client MUST echo verbatim: If-None-Match, Content-Type) and `pinned_content_length` (the exact byte count the body must carry). Content-Length is deliberately NOT a client header: browsers cannot set it (forbidden request header) — a browser satisfies the pin with a Blob of exactly that size. The adapter owns this contract end to end; the application passes it through and never reconstructs it. MinIO CORS is configured through `MINIO_API_CORS_ALLOW_ORIGIN` (the pinned MinIO has no bucket-CORS API — verified).
+
+### Evidence scanner (ClamAV, innovation batch 1)
+
+```python
+class EvidenceScanner(Protocol):
+    def scan(self, content: bytes) -> None: ...  # clean return, or raise
+```
+
+One method, fail-closed by exception type: `InvalidEvidenceError` /
+`EvidenceThreatError` are permanent verdicts (type/size/truncation via
+`validate_evidence_type` magic checks; virus found); anything else —
+including an unreachable ClamAV — raises `EvidenceCheckUnavailableError`
+and the caller keeps the file unverified (never a clean verdict from an
+unknown outcome, G4). `MAX_EVIDENCE_BYTES` (10 MiB) and
+`EVIDENCE_CONTENT_TYPES` (PDF/PNG/JPEG) are the shared ceilings; the
+real adapter (`evidence_scanner_clamd.py`) speaks clamd INSTREAM with a
+single wall-clock budget and a private-literal-IP host validator; test
+fakes are local fixtures in the consuming test modules. First consumer:
+talent file completion; the name keeps it available to any future
+upload surface.
 
 ### SMS
 

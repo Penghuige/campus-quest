@@ -130,6 +130,22 @@ _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
             "by host, ruling C 2026-10-24; root fix on the backlog"
         ),
     },
+    {
+        # Batch 3 (2026-10-25): the evidence/review/operations service
+        # family rides the same greenlet bridge; the full-suite run
+        # leaked one endpoint (211) onto operations_service.py — an
+        # exact-set entry per policy, with the source recorded as
+        # provenance (review_operations_service 622 lines / the
+        # achievement update signature both sit in reach of line 211).
+        "beyond": frozenset({211}),
+        "seen_in": ("app/modules/innovation/operations_service.py",),
+        "reason": (
+            "the batch-3 async service family's greenlet cross-talk, "
+            "first seen in the batch-3 coverage run 2026-10-25 — one "
+            "leaked endpoint, exact-set waived; any drift re-fails the "
+            "gate and gets re-registered"
+        ),
+    },
 )
 
 

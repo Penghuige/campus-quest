@@ -1,6 +1,7 @@
 # 注册审批与手机码登录 规约-测试对账矩阵
 
 > 建立日期：2026-10-16 · 域：开放注册/PENDING_APPROVAL 冻结面/审批裁决/手机码登录/白名单退役
+> 覆盖章节：docs/superpowers/specs/2026-10-16-registration-approval-and-mobile-login-design.md#§1 · §2 · §3 · §4 · §5 · §6
 > 方法论：`campusquest-test-process` skill 规约对账节；**预期列先于测试检索落笔**。
 > 规约来源：docs/superpowers/specs/2026-10-16-registration-approval-and-mobile-login-design.md §1-§6（owner 四决策定稿）。
 

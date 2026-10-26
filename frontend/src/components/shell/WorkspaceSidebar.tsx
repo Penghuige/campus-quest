@@ -54,6 +54,15 @@ export interface SideNavItem {
   href: string;
   label: string;
   icon?: ReactNode;
+  /**
+   * Honest placeholder for a destination a later batch will open
+   * (innovation batch 1: 项目库/校内成果/正在招募). A disabled item
+   * renders as a muted `<span>` INSIDE the nav — deliberately NOT an
+   * `aria-disabled` link: a link that navigates nowhere is a broken
+   * control, while inert text that says "(即将开放)" is honest
+   * permission/availability state (design §10, patterns §19).
+   */
+  disabled?: boolean;
 }
 
 export interface SideNavGroup {
@@ -268,17 +277,28 @@ export function WorkspaceSidebar({
       </div>
       {groups.map((group) => (
         <nav key={group.label} className="side-nav" aria-label={group.label}>
-          {group.items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
-              title={pref.collapsed ? item.label : undefined}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          ))}
+          {group.items.map((item) =>
+            item.disabled ? (
+              <span
+                key={item.href}
+                className="side-nav-item-disabled"
+                title={pref.collapsed ? item.label : undefined}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={navItemActive(pathname, item.href) ? "page" : undefined}
+                title={pref.collapsed ? item.label : undefined}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </Link>
+            ),
+          )}
         </nav>
       ))}
       {footer !== undefined && <div className="app-sidebar-footer">{footer}</div>}
