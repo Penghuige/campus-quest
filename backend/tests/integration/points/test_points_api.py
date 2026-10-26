@@ -50,7 +50,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -858,3 +858,73 @@ async def test_review_surfaces_reject_student_roles(
         response = await client.request(method, path, headers=world["student_headers"])
         assert response.status_code == 403, path
         assert response.json()["error"]["code"] == "PERMISSION_DENIED"
+
+
+# --- the advisory catalogue fields (RW1 / gap G-1) -------------------------------------
+
+
+async def test_reward_item_advisory_fields_round_trip(
+    client: httpx.AsyncClient, db_session: AsyncSession, points_world: dict[str, Any]
+) -> None:
+    """RW1's advisory-field half (gap G-1, spec §16 字段建议):
+    ``description`` and ``fulfillment_instructions`` ride the REAL
+    admin create transport, LAND in the columns (a fresh read, not the
+    request-scoped instance), and round-trip on both surfaces — the
+    student catalogue carries ``description`` (and deliberately NOT the
+    staff-only ``fulfillment_instructions``, the RewardItemResponse
+    ruling), the admin management listing carries BOTH."""
+    world = points_world
+    name = f"无理由请假条x1-{uuid4().hex[:6]}"
+    description = "一张无理由请假条，线上兑换后线下凭码核销。"
+    instructions = "学生持兑换码到教务值班窗口领取纸质请假条，当日有效。"
+    created = await client.post(
+        "/api/v1/admin/rewards",
+        json={
+            "name": name,
+            "point_cost": 300,
+            "description": description,
+            "fulfillment_instructions": instructions,
+        },
+        headers=world["admin_headers"],
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["description"] == description
+    assert body["fulfillment_instructions"] == instructions
+
+    # 落库: the persisted row carries both columns (fresh identity-map
+    # read, the registration round-trip discipline).
+    db_session.expunge_all()
+    persisted = await db_session.scalar(
+        select(RewardItem).where(RewardItem.name == name)
+    )
+    assert persisted is not None
+    assert persisted.description == description
+    assert persisted.fulfillment_instructions == instructions
+
+    # Student catalogue: description round-trips; the delivery
+    # instructions stay staff-side (the _REWARD_FIELDS freeze pins the
+    # whole shape; this pins the VALUES).
+    catalogue = await client.get("/api/v1/rewards", headers=world["student_headers"])
+    assert catalogue.status_code == 200
+    student_row = next(
+        item for item in catalogue.json()["items"] if item["name"] == name
+    )
+    assert student_row["description"] == description
+    assert "fulfillment_instructions" not in student_row
+
+    # Admin management listing: BOTH fields round-trip. Presence-based
+    # over the 50-row family-cap page — the shared database may carry
+    # other suites' committed catalogue rows (the admin-suite
+    # discipline).
+    listed = await client.get(
+        "/api/v1/admin/rewards",
+        params={"limit": 50},
+        headers=world["admin_headers"],
+    )
+    assert listed.status_code == 200
+    admin_row = next(
+        item for item in listed.json()["items"] if item["name"] == name
+    )
+    assert admin_row["description"] == description
+    assert admin_row["fulfillment_instructions"] == instructions
