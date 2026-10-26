@@ -180,6 +180,82 @@ def test_unknown_head_classifies_unknown(report_module: Any, tmp_path: Path) -> 
     assert prov is not None and prov.state == "unknown"
 
 
+# --- metadata validity: every required field, or unknown ---------------
+
+
+def test_missing_schema_is_unknown(report_module: Any, tmp_path: Path) -> None:
+    """A sidecar without the schema marker is a shape this script never
+    wrote — unknown, never fresh."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"schema": None})
+    sidecar = artifact.with_name(artifact.name + ".provenance.json")
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    del payload["schema"]
+    sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_unknown_schema_version_is_unknown(report_module: Any, tmp_path: Path) -> None:
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"schema": 2})
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_missing_generated_at_is_unknown(report_module: Any, tmp_path: Path) -> None:
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact)
+    sidecar = artifact.with_name(artifact.name + ".provenance.json")
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    del payload["generated_at_utc"]
+    sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_non_string_generated_at_is_unknown(report_module: Any, tmp_path: Path) -> None:
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"generated_at_utc": 12345})
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+@pytest.mark.parametrize(
+    "bad_time",
+    ["not-a-time", "2026-10-26 12:00:00", "2026-10-26T12:00:00+08:00", ""],
+)
+def test_non_utc_generated_at_is_unknown(
+    report_module: Any, tmp_path: Path, bad_time: str
+) -> None:
+    """The timestamp must be the UTC form the stamper writes
+    (…Z); a local-time or offset form is invalid metadata."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, extra={"generated_at_utc": bad_time})
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_empty_source_sha_is_unknown(report_module: Any, tmp_path: Path) -> None:
+    """An empty source sha is invalid metadata (no commit of record),
+    not 'a different commit' — unknown, never stale."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, source_sha="")
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "unknown"
+
+
+def test_valid_schema_and_utc_still_classify_by_content(
+    report_module: Any, tmp_path: Path
+) -> None:
+    """Strictness is not a fresh-loosening trick: a fully valid sidecar
+    keeps classifying by the sha/dirty/hash rules (stale here)."""
+    artifact = _artifact(tmp_path)
+    _write_sidecar(artifact, source_sha=_OTHER_HEAD)
+    prov = report_module.load_provenance(artifact, head=_HEAD)
+    assert prov is not None and prov.state == "stale"
+
+
 # --- report integration ----------------------------------------------------
 
 

@@ -212,8 +212,8 @@ def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
     """Classify one artifact's provenance against ``head``.
 
     None means the artifact itself is absent (nothing to attribute).
-    An existing artifact always classifies — missing or corrupt
-    metadata degrades to ``unknown``, never to fresh.
+    An existing artifact always classifies — invalid or incomplete
+    metadata degrades to ``unknown``, never to fresh or stale.
     """
     if not artifact.is_file():
         return None
@@ -228,12 +228,21 @@ def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
     command = payload.get("command")
     recorded_hash = payload.get("artifact_sha256")
     dirty = payload.get("dirty")
+    schema = payload.get("schema")
+    generated_at = payload.get("generated_at_utc")
     if not (
-        isinstance(source_sha, str)
+        schema == 1
+        and isinstance(source_sha, str)
+        and bool(source_sha)
         and isinstance(command, str)
         and isinstance(recorded_hash, str)
         and isinstance(dirty, bool)
+        and isinstance(generated_at, str)
+        and _is_utc_stamp(generated_at)
     ):
+        # Every field this script stamps must be present, well-typed,
+        # and of the known schema — anything else is metadata this
+        # classification cannot stand on.
         return ArtifactProvenance("unknown", "", False, "", "")
     try:
         intact = recorded_hash == hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -255,8 +264,18 @@ def load_provenance(artifact: Path, *, head: str) -> ArtifactProvenance | None:
         source_sha=source_sha,
         dirty=dirty,
         command=command,
-        generated_at_utc=str(payload.get("generated_at_utc", "")),
+        generated_at_utc=generated_at,
     )
+
+
+def _is_utc_stamp(value: str) -> bool:
+    """The stamper writes ``%Y-%m-%dT%H:%M:%SZ``; that exact UTC form
+    (and only it) is valid provenance metadata."""
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
 
 
 def parse_matrices(matrix_dir: Path) -> dict[tuple[str, str | None], list[MatrixRef]]:
