@@ -55,6 +55,14 @@ jobs:
       # provider overridden; locally the same module skips without this
       # flag.
       CQ_COMPOSITION_SMOKE: "1"
+      # Runs the real-Clamd smokes (tests/integration/test_evidence_scanner_smoke.py
+      # and the two innovation composition smokes) against the ClamAV
+      # step container below. Locally the same modules skip without this
+      # flag, and the local release-gate starts the identical compose
+      # stack (make release-evidence-scanner); without it here the
+      # adapter and innovation evidence paths sat unexercised and the
+      # app/integrations ratchet failed by 1.6pp.
+      CQ_EVIDENCE_SCAN_SMOKE: "1"
 
     services:
       postgres:
@@ -206,6 +214,20 @@ jobs:
             'mc alias set campusquest http://127.0.0.1:9000 campusquest campusquest-dev &&
              mc mb --ignore-existing campusquest/campusquest &&
              mc mb --ignore-existing campusquest/campusquest-test'
+
+      # The evidence scanner (ClamAV): the same compose stack the local
+      # release-gate starts, so the smoke/composition tests above run
+      # against the real Clamd protocol instead of skipping. Freshclam
+      # downloads the signature database on a cold runner volume — the
+      # wait covers it (healthcheck start_period 180s).
+      - name: Start evidence scanner (ClamAV)
+        run: |
+          docker compose -p campusquest-evidence \
+            -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 420 || {
+            docker compose -p campusquest-evidence \
+              -f infra/docker-compose.clamav.yml logs || true
+            exit 1
+          }
 
       # Runs against the still-empty service database: proves a clean
       # database migrates from zero to head and that the committed

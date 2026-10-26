@@ -31,6 +31,8 @@ from app.modules.identity import (
     users_router as identity_users_router,
 )
 from app.modules.identity.dependencies import get_actor
+from app.modules.innovation import aggregated as innovation_aggregated
+from app.modules.innovation.privacy import InnovationPrivacyMiddleware
 from app.modules.notifications import router as notifications_router
 from app.modules.points import admin_router as points_admin_router
 from app.modules.points import router as points_router
@@ -138,6 +140,15 @@ def create_app() -> FastAPI:
     app.include_router(audit_router.router, prefix="/api/v1")
     app.include_router(identity_admin_router.router, prefix="/api/v1")
     app.include_router(points_admin_router.router, prefix="/api/v1")
+
+    # Innovation module (talent, batch 1): one aggregate entry, mounted
+    # once per the boundary covenant — the module composes its own
+    # sub-routers under /ie/... and its BusinessError family renders
+    # through the core envelope handler. The privacy middleware forces
+    # private, no-store on every /api/v1/ie/ response, success and
+    # error alike.
+    app.include_router(innovation_aggregated.router, prefix="/api/v1")
+    app.add_middleware(InnovationPrivacyMiddleware)
 
     # Composition-root wiring for core's role-guard seam (app/core/rbac.py):
     # the identity module's actor dependency IS the bearer provider. Done

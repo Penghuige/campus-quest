@@ -75,6 +75,16 @@ FROZEN_BUSINESS_CODES = (
     "APPROVAL_PENDING",
     # The unified login challenge family (2026-10-19 spec §3.4).
     "CHALLENGE_CODE_INVALID",
+    # Innovation batch 1 (talent): registered in interfaces.md before
+    # this enum grew — the contact-reveal limiter's fail-closed envelope.
+    "TALENT_CONTACTS_UNAVAILABLE",
+    # Innovation batch 2 (project library): draft/owner-profile command
+    # conflicts, registered in interfaces.md first.
+    "PROJECT_DRAFT_VERSION_CONFLICT",
+    "PROJECT_DRAFT_REQUEST_CONFLICT",
+    "OWNER_PROFILE_VERSION_CONFLICT",
+    # Innovation batch 4 (recruitment).
+    "RECRUITMENT_CONTACTS_UNAVAILABLE",
 )
 
 FROZEN_SYSTEM_CODES = (

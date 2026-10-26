@@ -51,7 +51,7 @@ from itertools import count
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import hash_password
@@ -694,6 +694,162 @@ async def clean_world(
             delete(NotificationDelivery).where(NotificationDelivery.user_id.in_(users))
         )
         await db.execute(delete(Notification).where(Notification.user_id.in_(users)))
+
+        # Talent worlds own their talent rows too. History guards are
+        # disabled only here, transactionally, in an explicitly guarded test DB.
+        from app.core.config import get_settings
+        from app.modules.innovation.talent_models import (
+            TalentActionReceipt,
+            TalentFile,
+            TalentProfile,
+            TalentRevision,
+            TalentRevisionFile,
+            TalentTagSuggestion,
+        )
+        from tests.integration.db_guard import require_test_database
+
+        require_test_database(get_settings().database_url)
+        talents = select(TalentProfile.id).where(TalentProfile.owner_user_id.in_(users))
+        await db.execute(
+            update(TalentProfile)
+            .where(TalentProfile.owner_user_id.in_(users))
+            .values(visibility="HIDDEN", public_revision_id=None)
+        )
+        for model in (
+            TalentRevisionFile,
+            TalentRevision,
+            TalentFile,
+            TalentActionReceipt,
+        ):
+            table = model.__tablename__
+            await db.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            condition = (
+                model.actor_user_id.in_(users)
+                if model is TalentActionReceipt
+                else model.profile_id.in_(talents)
+            )
+            await db.execute(delete(model).where(condition))
+            await db.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        await db.execute(
+            delete(TalentTagSuggestion).where(
+                TalentTagSuggestion.owner_user_id.in_(users)
+            )
+        )
+        await db.execute(
+            delete(TalentProfile).where(TalentProfile.owner_user_id.in_(users))
+        )
+
+        # Project-library worlds (batch 2) own their preparation rows:
+        # drafts, the owner profile, its qualification snapshot, and the
+        # operations grants. No history triggers on these tables — plain
+        # FK-ordered deletes suffice.
+        # Batch 3: the achievement family (drafts, evidence, revisions,
+        # review cases/workflows, operator conflicts) hangs off the
+        # project drafts by FK and must go first, in dependency order.
+        from app.modules.innovation.evidence_models import AchievementEvidence
+        from app.modules.innovation.models import (
+            AchievementDraft,
+            OperationsGrant,
+            OwnerProfile,
+            OwnerQualification,
+            ProjectDraft,
+        )
+        from app.modules.innovation.review_models import (
+            AchievementReviewCase,
+            AchievementRevision,
+            AchievementWorkflow,
+            ReviewConflict,
+            RevisionEvidence,
+        )
+
+        projects = select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+        achievements = select(AchievementDraft.id).where(
+            AchievementDraft.project_id.in_(projects)
+        )
+        await db.execute(
+            delete(ReviewConflict).where(
+                ReviewConflict.project_id.in_(projects)
+                | ReviewConflict.user_id.in_(users)
+            )
+        )
+        await db.execute(
+            delete(AchievementReviewCase).where(
+                AchievementReviewCase.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementWorkflow).where(
+                AchievementWorkflow.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(RevisionEvidence).where(
+                RevisionEvidence.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementRevision).where(
+                AchievementRevision.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementEvidence).where(
+                AchievementEvidence.achievement_id.in_(achievements)
+            )
+        )
+        await db.execute(
+            delete(AchievementDraft).where(
+                AchievementDraft.project_id.in_(
+                    select(ProjectDraft.id).where(ProjectDraft.owner_user_id.in_(users))
+                )
+            )
+        )
+        # Batch 4: recruitment rows hang off project drafts. Break the
+        # draft -> public-revision pointer first (the published-consistency
+        # check requires DRAFT once it is NULL), then children in FK order.
+        from app.modules.innovation.recruitment_models import (
+            RecruitmentActionReceipt,
+            RecruitmentContactAuthorization,
+            RecruitmentDraft,
+            RecruitmentRevision,
+        )
+
+        recruitments = select(RecruitmentDraft.id).where(
+            RecruitmentDraft.project_id.in_(projects)
+        )
+        await db.execute(
+            update(RecruitmentDraft)
+            .where(RecruitmentDraft.project_id.in_(projects))
+            .values(status="DRAFT", public_revision_id=None)
+        )
+        await db.execute(
+            delete(RecruitmentContactAuthorization).where(
+                RecruitmentContactAuthorization.recruitment_id.in_(recruitments)
+            )
+        )
+        # The two history triggers here are BEFORE UPDATE only; disable
+        # USER triggers around the deletes to match the talent-block
+        # discipline.
+        for model in (RecruitmentRevision, RecruitmentActionReceipt):
+            table = model.__tablename__
+            await db.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            await db.execute(
+                delete(model).where(model.recruitment_id.in_(recruitments))
+            )
+            await db.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        await db.execute(
+            delete(RecruitmentDraft).where(RecruitmentDraft.id.in_(recruitments))
+        )
+        await db.execute(
+            delete(ProjectDraft).where(ProjectDraft.owner_user_id.in_(users))
+        )
+        await db.execute(
+            delete(OwnerQualification).where(OwnerQualification.user_id.in_(users))
+        )
+        await db.execute(delete(OwnerProfile).where(OwnerProfile.user_id.in_(users)))
+        await db.execute(
+            delete(OperationsGrant).where(OperationsGrant.user_id.in_(users))
+        )
 
         # Identity: honors grants, staff artifacts, sessions, 2FA, then
         # the users themselves.

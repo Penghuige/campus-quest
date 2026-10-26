@@ -24,25 +24,34 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SectionError } from "@/components/ui/sectionStates";
+import { useSection } from "@/components/ui/useSection";
 import { BottomNav } from "@/components/shell/BottomNav";
 import { SwitchAccountButton } from "@/components/shell/SwitchAccountButton";
-import { WorkspaceSidebar, navItemActive } from "@/components/shell/WorkspaceSidebar";
-import { BellIcon, GiftIcon, HomeIcon, InboxIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
-import { useSession } from "@/features/auth/session";
+import { WorkspaceSidebar, navItemActive, type SideNavItem } from "@/components/shell/WorkspaceSidebar";
+import { BellIcon, GiftIcon, HomeIcon, InboxIcon, ReviewIcon, TasksIcon, TrophyIcon, UserIcon } from "@/components/shell/navIcons";
+import { useSession, type MeProfile } from "@/features/auth/session";
 import { NicknameNudge } from "@/features/auth/NicknameNudge";
 import { ApprovalPendingBanner } from "@/features/auth/ApprovalPendingBanner";
 import { shellChromeFor, type ShellHint } from "@/features/auth/shellChrome";
 import { StaffRouteRedirect } from "@/features/auth/StaffRouteRedirect";
 import { studentWorkspaceGate } from "@/features/auth/workspace";
+import { OPERATIONS_NAV } from "@/features/innovation/InnovationNavigation";
+import { getInnovationCapabilities } from "@/features/innovation/operationsApi";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { getAuthEpoch } from "@/lib/accessToken";
 
 /* Plan 11 Task 3 — the frozen navigation contract (route-true
  * amendment): desktop sidebar primary + secondary, narrow bottom nav.
  * 我的任务 stays anchored on the dashboard (its only list surface);
- * 社区 stays anchored on task detail — V1 has neither route. */
+ * 社区 stays anchored on task detail — V1 has neither route.
+ * Innovation batch 1 adds the 创新创新创业 entry to the rail and the
+ * medium top nav (PR #43's INNOVATION_NAV position, ReviewIcon); the
+ * narrow BottomNav keeps its fixed 5 slots by owner decision — the
+ * campus shell's own top nav covers the narrow band there. */
 const SIDEBAR_PRIMARY = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
+  { href: "/innovation", label: "创新创业", icon: <ReviewIcon /> },
   { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
   { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
 ] as const;
@@ -62,6 +71,7 @@ const SIDEBAR_GROUPS = [
 const MEDIUM_NAV = [
   { href: "/", label: "首页" },
   { href: "/tasks", label: "任务" },
+  { href: "/innovation", label: "创新创业" },
   { href: "/rankings", label: "排行榜" },
   { href: "/rewards", label: "奖励" },
   { href: "/notifications", label: "通知" },
@@ -86,10 +96,11 @@ function nicknameInitial(nickname: string): string {
 
 /** The medium band's horizontal top nav — shared by the authenticated
  * shell and the optimistic pre-resolve frame so the two cannot drift. */
-function MediumTopNav({ pathname }: { pathname: string }) {
+function MediumTopNav({ pathname, extra = [] }: { pathname: string; extra?: readonly SideNavItem[] }) {
+  const items = extra.length ? [...MEDIUM_NAV, ...extra] : MEDIUM_NAV;
   return (
     <nav className="app-nav" aria-label="主导航">
-      {MEDIUM_NAV.map((item) => (
+      {items.map((item) => (
         <Link
           key={item.href}
           href={item.href}
@@ -301,19 +312,56 @@ export function StudentShell({
   }
 
   return (
+    <AuthenticatedWorkspaceShell
+      key={`${state.me.id}:${getAuthEpoch()}`}
+      me={state.me}
+      pathname={pathname}
+    >
+      {children}
+    </AuthenticatedWorkspaceShell>
+  );
+}
+
+/**
+ * The authenticated student workspace. It mounts only once the session
+ * has answered, so the capabilities query below loads under the settled
+ * account (and the key remount above re-reads it after every account
+ * change). The operations entry stays hidden until the backend says the
+ * account holds an operations grant — availability is server-authoritative
+ * (design §10), so a grant-less student never sees a dead lead.
+ */
+function AuthenticatedWorkspaceShell({
+  me,
+  pathname,
+  children,
+}: {
+  me: MeProfile;
+  pathname: string;
+  children: ReactNode;
+}) {
+  const { state: capabilities, retry } = useSection(() =>
+    me.status === "ACTIVE"
+      ? getInnovationCapabilities().then((data) => data.operations_enabled)
+      : Promise.resolve(false),
+  );
+  const operationsEnabled = capabilities.status === "ready" && capabilities.data;
+  const groups = operationsEnabled
+    ? [...SIDEBAR_GROUPS, { label: "双创运营", items: [OPERATIONS_NAV] }]
+    : SIDEBAR_GROUPS;
+  return (
     <div className="app-shell" data-shell="workspace">
       <WorkspaceSidebar
         brand={{ href: "/", label: "CampusQuest" }}
-        groups={SIDEBAR_GROUPS}
+        groups={groups}
         footer={
           // Review round 2: the account lives in the rail footer — a
           // purposeful bottom anchor for the dark rail, and one less
           // floating generic-admin element at the top.
           <Link className="rail-account" href="/profile" title="我的账户">
             <span className="rail-avatar" aria-hidden="true">
-              {nicknameInitial(state.me.nickname)}
+              {nicknameInitial(me.nickname)}
             </span>
-            <span className="rail-account-name">{state.me.nickname}</span>
+            <span className="rail-account-name">{me.nickname}</span>
           </Link>
         }
       />
@@ -321,7 +369,10 @@ export function StudentShell({
         <header className="app-topbar">
           <div className="app-topbar-inner">
             <span className="app-brand">CampusQuest</span>
-            <MediumTopNav pathname={pathname} />
+            <MediumTopNav
+              pathname={pathname}
+              extra={operationsEnabled ? [OPERATIONS_NAV] : []}
+            />
             <div className="app-topbar-actions">
               <SwitchAccountButton />
               <NotificationBell />
@@ -331,14 +382,21 @@ export function StudentShell({
                 aria-label="我的账户"
                 title="我的账户"
               >
-                <span aria-hidden="true">{nicknameInitial(state.me.nickname)}</span>
+                <span aria-hidden="true">{nicknameInitial(me.nickname)}</span>
               </Link>
             </div>
           </div>
         </header>
         <main className="app-main">
-          <ApprovalPendingBanner me={state.me} />
-          <NicknameNudge me={state.me} />
+          {capabilities.status === "error" ? (
+            <SectionError
+              error={capabilities.error}
+              onRetry={retry}
+              retryLabel="重新读取运营入口"
+            />
+          ) : null}
+          <ApprovalPendingBanner me={me} />
+          <NicknameNudge me={me} />
           {children}
         </main>
       </div>

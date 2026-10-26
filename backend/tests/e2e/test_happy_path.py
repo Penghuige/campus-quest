@@ -259,31 +259,29 @@ async def test_full_happy_path_chain(
                 },
             )
             assert registered.status_code == 201, registered.text
-            # RegisterResponse (V1.1 login iteration item 4): {user, tokens};
-            # the account lands PENDING_APPROVAL — the admin's approve
-            # unlocks the acting surfaces (approval gate: browsing stays
-            # open, claims answer 403 APPROVAL_PENDING until then).
+            # Registration ends logged in (V1.1 item 4): the body is the
+            # account view beside the session, not a bare id.
             student_id = uuid.UUID(registered.json()["user"]["id"])
+
+            # Open registration lands PENDING_APPROVAL (V1.1 2026-10-16
+            # §2); the admin approves before the student may act.
             approved = await client.post(
                 f"/api/v1/admin/users/{student_id}/approve",
-                headers=admin_headers,
+                headers={"Authorization": f"Bearer {admin_token}"},
             )
             assert approved.status_code == 200, approved.text
-            assert approved.json()["status"] == "ACTIVE"
 
             logged_in = await client.post(
                 "/api/v1/auth/login",
-                # The unified identifier form (2026-10-19 spec §3.2;
-                # PR-3 retired the legacy {username} shape).
                 json={"identifier": student_number, "password": _PASSWORD},
             )
             assert logged_in.status_code == 200, logged_in.text
-            # Unified login answers the discriminated union: a student
-            # password login lands "authenticated" with tokens nested
-            # (unified-login §3.2; the flat top-level shape is retired).
-            assert logged_in.json()["status"] == "authenticated"
+            # The unified login answers the three-state outcome; a
+            # student's password login lands authenticated with tokens.
+            login_body = logged_in.json()
+            assert login_body["status"] == "authenticated", login_body
             student_headers = {
-                "Authorization": f"Bearer {logged_in.json()['tokens']['access_token']}"
+                "Authorization": f"Bearer {login_body['tokens']['access_token']}"
             }
 
             # --- teacher publishes Task + Assignments (real mgmt API) -----

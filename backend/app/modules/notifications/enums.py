@@ -59,3 +59,9 @@ class NotificationEventType(StrEnum):
     REWARD_REDEMPTION_APPROVED = "REWARD_REDEMPTION_APPROVED"
     REWARD_REDEMPTION_REJECTED = "REWARD_REDEMPTION_REJECTED"
     ACCOUNT_SECURITY = "ACCOUNT_SECURITY"
+    # Innovation achievements (batch 3): the review verdict reaches the
+    # owner through the standard inbox/delivery pipeline.
+    IE_ACHIEVEMENT_APPROVED = "IE_ACHIEVEMENT_APPROVED"
+    IE_ACHIEVEMENT_RETURNED = "IE_ACHIEVEMENT_RETURNED"
+    # Innovation recruitments (batch 4): the due-confirmation nudge.
+    IE_RECRUITMENT_CONFIRMATION_DUE = "IE_RECRUITMENT_CONFIRMATION_DUE"

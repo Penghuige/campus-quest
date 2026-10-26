@@ -205,7 +205,7 @@ TEST_STACK_ENV = DATABASE_URL=$${DATABASE_URL:-postgresql+asyncpg://test:test@lo
 # appear in this combined run, so every coverage-measuring leg uses it.
 COV_APPEND_FLAGS = --cov=app --cov-branch --cov-report= --cov-append
 BACKEND_UNIT_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit
-BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 uv run pytest tests/integration -m integration
+BACKEND_INTEGRATION_CMD = cd backend && $(TEST_STACK_ENV) CQ_S3_SMOKE=1 CQ_COMPOSITION_SMOKE=1 CQ_EVIDENCE_SCAN_SMOKE=1 uv run pytest tests/integration -m integration
 BACKEND_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/workers
 BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/unit tests/workers
 
@@ -213,17 +213,29 @@ BACKEND_UNIT_WORKER_CMD = cd backend && $(TEST_STACK_ENV) uv run pytest tests/un
         backend-unit-worker-cov backend-integration-cov \
         migration-verify frontend-typecheck frontend-lint frontend-css-guard \
         frontend-unit frontend-build playwright-e2e release-test-db release-gate \
+        reset-test-db release-evidence-scanner innovation-visual \
         coverage-clean coverage-baseline coverage-ratchet pip-audit npm-audit \
         pre-push-full
 
 # The gate's self-bootstrapping first step (PR #6 final review P1): the
 # integration and e2e suites assume a MIGRATED campusquest_test and
-# nothing else creates one on fresh compose volumes (the init script
-# only CREATEs the empty database). `alembic upgrade head` is a no-op
-# when the schema is already at head, so the target is idempotent and
-# costs one version query on warm stacks.
-release-test-db:
+# reset-test-db: the pristine-database precondition, CI's own procedure
+# (release-checklist "Resetting the test stack"): browser-e2e debris —
+# from killed runs AND from a full local battery chained ahead of the
+# visual stages — leaves orphaned users that break directory-style
+# first-page assertions and pixel baselines. CI starts every job with a
+# pristine database; this gives the local gate the same precondition.
+reset-test-db:
+	docker compose -f infra/docker-compose.yml exec -T postgres psql -U campusquest -d campusquest \
+	  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='campusquest_test' AND pid <> pg_backend_pid()" \
+	  -c "DROP DATABASE IF EXISTS campusquest_test" \
+	  -c "CREATE DATABASE campusquest_test OWNER test"
+	docker compose -f infra/docker-compose.yml exec -T redis redis-cli -n 0 FLUSHDB
 	cd backend && $(TEST_STACK_ENV) uv run alembic upgrade head
+
+# The gate's opening precondition step (fresh schema for the backend
+# legs); the browser legs reset again ahead of themselves below.
+release-test-db: reset-test-db
 
 backend-unit:
 	$(BACKEND_UNIT_CMD) -v
@@ -263,7 +275,7 @@ coverage-clean:
 # committed floors (the CI gate; CI accumulates via --cov-append in
 # the same shape), then the frontend native-coverage ratchet, which
 # self-runs its unit suite and needs no wired input.
-coverage-baseline:
+coverage-baseline: coverage-clean
 	$(BACKEND_UNIT_WORKER_CMD) $(COV_APPEND_FLAGS) -q
 	$(BACKEND_INTEGRATION_CMD) $(COV_APPEND_FLAGS) -q
 	cd backend && uv run python scripts/coverage_ratchet.py --update
@@ -301,6 +313,9 @@ frontend-build:
 	cd frontend && npm run build
 
 playwright-e2e:
+	# Prerequisite dedup means a reset listed twice in the chain runs once —
+	# recurse so EVERY browser leg opens from the pristine database.
+	@$(MAKE) --no-print-directory reset-test-db
 	# CQ_E2E_LOGIN_RATELIMIT: the same battery-scale relief CI's e2e job
 	# runs with (ci.yml sets it; the comment there claims the local
 	# battery matches). Without it the dense login specs — unified-login's
@@ -311,8 +326,6 @@ playwright-e2e:
 	# the webServer on 8000. CI has been paused since 2026-10-07, so these
 	# specs only ever ran green under whatever env each author exported
 	# locally; pin the battery to its own webServer explicitly.
-	# (Same fix as talent-batch1's Makefile — keep the two in sync until
-	# both merge; drop this note on resolution.)
 	cd frontend && CQ_E2E=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e
 	# unexpected-skip guard (PR #6 final review P1; P1-visibility v2):
 	# watches EVERY e2e spec by default — a spec absent from the report
@@ -321,11 +334,37 @@ playwright-e2e:
 	# watch list left to drift.
 	cd frontend && node scripts/assert-e2e-no-skips.mjs
 
-release-gate: arch-lint coverage-clean release-test-db \
+# --- Innovation batch 1: the ClamAV scanner stack -----------------------------
+#
+# Separate project name (campusquest-evidence) so the scanner lives beside
+# the compose stack without inheriting its networks or credentials; the
+# talent file-completion path fails closed when this service is down, so
+# the release gate requires it up before the integration suite runs.
+release-evidence-scanner:
+	docker compose -p campusquest-evidence -f infra/docker-compose.clamav.yml up -d --wait --wait-timeout 360
+
+# Every browser leg opens from the pristine precondition: the battery
+# seeds its own world, and its teardown cannot be trusted to leave the
+# shared database pixel-exact for the NEXT stage (admin directory
+# baselines are whole-table sensitive) — CI sidesteps this with isolated
+# jobs; the local chain resets between stages instead.
+release-gate: arch-lint coverage-clean release-test-db release-evidence-scanner \
               backend-unit-worker-cov backend-integration-cov \
               backend-e2e migration-verify frontend-typecheck frontend-lint \
-              frontend-css-guard frontend-unit frontend-build playwright-e2e \
-              visual-regression pip-audit npm-audit coverage-ratchet
+              frontend-css-guard frontend-unit frontend-build \
+              playwright-e2e visual-regression innovation-visual pip-audit \
+              npm-audit coverage-ratchet
+
+# The innovation visual battery runs in its own pinned-font Linux stage
+# with a disposable real publication world (noskip-exempted from the
+# standard battery; see frontend/e2e/noskip-exemptions.mjs for the reason
+# strings). Covers the talent family (batch 1) and the campus landing +
+# project workspace (batch 2). The relief+API_URL pair matches
+# playwright-e2e: the gate runs its legs against ONE shared stack, so the
+# login buckets the battery filled must not bleed into this stage.
+innovation-visual:
+	@$(MAKE) --no-print-directory reset-test-db
+	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npx playwright test innovation-talents-visual.spec.ts innovation-navigation-visual.spec.ts innovation-review-visual.spec.ts innovation-recruitment-visual.spec.ts --project=chromium
 
 # --- Plan 12 task 9: pixel visual regression --------------------------------
 #
@@ -339,9 +378,8 @@ release-gate: arch-lint coverage-clean release-test-db \
 # when 3000/8000 are occupied — same rule as playwright-e2e).
 .PHONY: visual-regression
 visual-regression:
+	@$(MAKE) --no-print-directory reset-test-db
 	# Same relief+API_URL pair as playwright-e2e — the gate's legs share
 	# one stack, so the battery's login volume must not rate-limit the
 	# visual stage out of its own logins.
-	# (Same fix as talent-batch1's Makefile — keep the two in sync until
-	# both merge; drop this note on resolution.)
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e:visual

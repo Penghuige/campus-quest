@@ -95,6 +95,23 @@ class ErrorCode(StrEnum):
     # unified arms — the branch reason stays in server logs.
     CHALLENGE_CODE_INVALID = "CHALLENGE_CODE_INVALID"
 
+    # Innovation module (batch 1, talent): the contact-reveal limiter's
+    # fail-closed envelope — Redis unavailable means no contact values
+    # are handed out, 503 rather than an open door.
+    TALENT_CONTACTS_UNAVAILABLE = "TALENT_CONTACTS_UNAVAILABLE"
+
+    # Innovation module (batch 2, project library): the draft and owner-
+    # profile command conflicts — a stale version loses to the other
+    # window (VERSION), and a reused request_id with a different payload
+    # is refused (REQUEST). Both registered in interfaces.md first.
+    PROJECT_DRAFT_VERSION_CONFLICT = "PROJECT_DRAFT_VERSION_CONFLICT"
+    PROJECT_DRAFT_REQUEST_CONFLICT = "PROJECT_DRAFT_REQUEST_CONFLICT"
+    OWNER_PROFILE_VERSION_CONFLICT = "OWNER_PROFILE_VERSION_CONFLICT"
+
+    # Innovation module (batch 4, recruitment): the contact-reveal
+    # limiter's fail-closed envelope, same shape as the talent one.
+    RECRUITMENT_CONTACTS_UNAVAILABLE = "RECRUITMENT_CONTACTS_UNAVAILABLE"
+
     # System / framework codes (interfaces.md "System / framework codes").
     # Not business codes; raised only by framework error handlers.
     INTERNAL_ERROR = "INTERNAL_ERROR"

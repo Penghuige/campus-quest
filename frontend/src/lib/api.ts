@@ -68,6 +68,8 @@ export interface ApiRequestInit extends Omit<RequestInit, "body"> {
   body?: unknown;
   /** Forwarded as the `X-Request-ID` header (pass-through, optional). */
   requestId?: string;
+  /** Successful private downloads use the same auth/refresh transport. */
+  responseFormat?: "json" | "blob";
 }
 
 function hasNativeBody(value: unknown): boolean {
@@ -107,7 +109,7 @@ async function performApiRequest<T>(
   init: ApiRequestInit,
   allowRefreshRetry: boolean,
 ): Promise<T> {
-  const { body: initBody, headers: initHeaders, method: initMethod, requestId, ...rest } = init;
+  const { body: initBody, headers: initHeaders, method: initMethod, requestId, responseFormat, ...rest } = init;
   const method = (initMethod ?? "GET").toUpperCase();
 
   const headers = new Headers(initHeaders);
@@ -206,6 +208,8 @@ async function performApiRequest<T>(
   if (response.status === 204 || response.status === 205) {
     return undefined as T;
   }
+
+  if (response.ok && responseFormat === "blob") return await response.blob() as T;
 
   const requestIdHeader = response.headers.get(REQUEST_ID_HEADER);
   const text = await response.text();

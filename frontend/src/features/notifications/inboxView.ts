@@ -96,6 +96,12 @@ const EVENT_VIEWS: Readonly<Record<string, NotificationEventView>> = {
     tone: "info",
     category: "system",
   },
+  IE_RECRUITMENT_CONFIRMATION_DUE: {
+    label: "招募确认",
+    glyph: "📋",
+    tone: "info",
+    category: "system",
+  },
 };
 
 /** Degrade an unknown event type to a generic entry (never throws). */
@@ -109,6 +115,12 @@ export const UNKNOWN_EVENT_VIEW: NotificationEventView = {
 /** The view for one event_type: a known mapping or the generic fallback. */
 export function notificationEventView(eventType: string): NotificationEventView {
   return EVENT_VIEWS[eventType] ?? UNKNOWN_EVENT_VIEW;
+}
+
+/** Only a whitespace-delimited local route from the known event is navigable. */
+export function recruitmentNotificationLink(eventType: string, body: string): string | null {
+  if (eventType !== "IE_RECRUITMENT_CONFIRMATION_DUE") return null;
+  return /(?:^|\s)(\/profile\/project-drafts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/recruitments)(?=\s|$)/i.exec(body)?.[1] ?? null;
 }
 
 // --- filter tabs (patterns §4: the filter rides the URL) ---------------------------

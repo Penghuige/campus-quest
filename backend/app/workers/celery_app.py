@@ -57,6 +57,7 @@ JOB_MODULES = (
     "app.workers.jobs.rebuild_rankings",
     "app.workers.jobs.recover_stuck_sending",
     "app.workers.jobs.requeue_stale_validating",
+    "app.workers.jobs.schedule_recruitments",
     "app.workers.jobs.send_notification",
     "app.workers.jobs.validate_submission",
 )
@@ -75,6 +76,11 @@ def _beat_schedule(settings: Settings) -> dict[str, Any]:
     the Celery task id the jobs already log.
     """
     return {
+        "workers.schedule_recruitments": {
+            "task": "workers.schedule_recruitments",
+            "schedule": float(settings.recruitment_scan_interval_seconds),
+            "args": ("beat.workers.schedule_recruitments",),
+        },
         "workers.cleanup_expired_files": {
             "task": "workers.cleanup_expired_files",
             "schedule": float(settings.file_cleanup_scan_interval_seconds),

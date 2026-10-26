@@ -595,6 +595,62 @@ body {
   color: var(--danger);
 }
 
+/* Private innovation drafts use the same restrained form and list hierarchy. */
+.ie-draft-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ie-draft-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ie-draft-copy {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ie-draft-excerpt {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.ie-draft-row > .btn { flex-shrink: 0; }
+.ie-draft-form, .ie-draft-remote { min-width: 0; }
+.ie-draft-textarea { resize: vertical; }
+
+.ie-draft-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ie-draft-remote dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ie-draft-remote dd {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .input {
   width: 100%;
   min-height: var(--control-height);
@@ -935,6 +991,18 @@ a:visited {
   font-weight: 550;
 }
 
+/* Innovation batch 1 — the medium-band twin of the rail's disabled
+   rows: same geometry as a topbar link, inert subtle text. */
+.app-nav .app-nav-item-disabled {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  color: var(--subtle-foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
 /* Topbar identity cluster. The 10rem bound sits on the WHOLE cluster
    (the pre-restructure geometry), but the ellipsis machinery lives on
    the name child: a long nickname truncates on its own line while the
@@ -1183,12 +1251,12 @@ a:visited {
   gap: var(--space-2);
 }
 
-.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand, .side-nav a, .rail-account) {
+.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand, .side-nav a, .side-nav .side-nav-item-disabled, .rail-account) {
   justify-content: center;
   padding-inline: 0;
 }
 
-.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand-name, .side-nav a span, .rail-account-name, .rail-account-name-slot) {
+.app-sidebar[data-collapsed="true"] :is(.app-sidebar-brand-name, .side-nav a span, .side-nav .side-nav-item-disabled span, .rail-account-name, .rail-account-name-slot) {
   position: absolute;
   clip-path: inset(50%);
   width: 1px;
@@ -1401,6 +1469,22 @@ a:visited {
 
 .side-nav svg {
   flex: none;
+}
+
+/* Innovation batch 1 — an honest "coming soon" row in the rail: the
+   same geometry as a nav link, but inert text on the subtle rail tone
+   (a disabled destination is availability STATE, design §10 — never a
+   broken-looking link and never a hover affordance it cannot honor). */
+.side-nav .side-nav-item-disabled {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--rail-subtle);
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
 .app-sidebar-footer {
@@ -4533,4 +4617,83 @@ a:visited {
   .claim-rows > .claim-row-link:nth-child(-n + 3) {
     animation-name: cq-fade-in;
   }
+}
+
+/* Innovation talent (batch 1): authorized-contact reading content
+   keeps literal line breaks and long links. */
+.ie-review-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ie-recruitment-fields { display: grid; gap: var(--space-4); min-width: 0; border: 0; padding: 0; margin: 0; }
+.ie-recruitment-fields legend { margin-bottom: var(--space-4); }
+.ie-recruitment-confirm { overscroll-behavior: contain; }
+.ie-recruitment-public, .ie-talent-public { overflow-wrap: anywhere; min-width: 0; }
+
+/* R4.1: compact discovery and grouped reading, within the shared view step. */
+.ie-talent-directory, .ie-talent-public, .ie-talent-editor {
+  width: 100%;
+  max-width: 56rem;
+  min-width: 0;
+}
+.ie-talent-filters { align-items: start; }
+.ie-talent-filter-tags { gap: var(--space-2); }
+.ie-talent-filter-tags legend { margin-bottom: var(--space-2); }
+.ie-talent-choices, .ie-talent-tags, .ie-talent-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.ie-talent-choices > label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  min-height: 2.75rem;
+}
+.ie-talent-choices > label:has(:checked) { border-color: var(--primary); }
+.ie-talent-choices > label:has(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ie-talent-tags { list-style: none; padding: 0; margin: 0; }
+.ie-talent-tags > li, .ie-talent-state {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  background: var(--surface-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.ie-talent-heading { justify-content: space-between; }
+.ie-talent-heading > :first-child { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.ie-talent-material {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+.ie-talent-material svg { width: var(--space-4); height: var(--space-4); flex-shrink: 0; }
+.ie-talent-results .ie-draft-row { padding-block: var(--space-5); }
+.ie-talent-advantage { white-space: pre-wrap; }
+.ie-talent-summary, .ie-talent-reading, .ie-talent-preview {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ie-talent-reading { border-top: 1px solid var(--border); padding-top: var(--space-5); }
+.ie-talent-prose { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.ie-talent-prose > div { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.ie-talent-prose dd { margin: 0; }
+.ie-talent-editor .ie-recruitment-fields + .ie-recruitment-fields {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.ie-talent-identity-fields, .ie-talent-cooperation-fields { display: grid; gap: var(--space-4); }
+.ie-talent-editor .ie-draft-form { gap: var(--space-5); }
+@media (min-width: 48rem) {
+  .ie-talent-filters { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  .ie-talent-filter-tags, .ie-talent-filters > .ie-draft-actions { grid-column: 1 / -1; }
+  .ie-talent-identity-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ie-talent-cooperation-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

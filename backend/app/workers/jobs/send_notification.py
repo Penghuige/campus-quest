@@ -109,6 +109,19 @@ def build_delivery_service(
             )
 
     settings = get_settings()
+
+    async def _recruitment_current(
+        session: AsyncSession, recruitment_id: UUID, cycle_id: UUID
+    ) -> bool:
+        # Lazy import: the innovation scheduler drags the recruitment
+        # module in, and this worker must stay importable in its absence
+        # for plain notification deployments.
+        from app.modules.innovation.recruitment_scheduler import RecruitmentScheduler
+
+        return await RecruitmentScheduler(clock=SystemClock()).lock_current_reminder(
+            session, recruitment_id=recruitment_id, cycle_id=cycle_id
+        )
+
     return DeliveryService(
         session_maker=session_maker,
         sms_sender=build_sms_sender(settings.sms_provider, settings),
@@ -121,6 +134,7 @@ def build_delivery_service(
             seconds=settings.notification_dispatch_stale_sending_seconds
         ),
         claim_status_resolver=_claim_status,
+        recruitment_reminder_resolver=_recruitment_current,
     )
 
 
