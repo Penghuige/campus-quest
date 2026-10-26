@@ -8,6 +8,9 @@ when the application forgets:
 - UNIQUE(task_id, platform, keyword) on assignments (§31.3);
 - grace_period_minutes is CHECK-pinned to exactly 1440 minutes (spec §6
   fixes V1 grace at 24 hours; any other value is rejected);
+- retention_policy is the closed four-tier set of spec §13 (30/90/180
+  days, permanent): unknown values are rejected by the database CHECK
+  and an input-less insert lands on the DAYS_180 default tier;
 - at most one active Claim per Assignment via partial unique index (§31.4);
 - at most one non-terminal Claim per user per Task via partial unique
   index (§31.5), and terminal Claims (COMPLETED/ABANDONED/EXPIRED) free
@@ -193,6 +196,50 @@ async def test_grace_period_pinned_value_accepted(
     owner = _teacher()
     await _flush(db_session, owner)
     await _flush(db_session, _task(owner, grace_period_minutes=1440))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "policy",
+    ["BOGUS", "days_30", "DAYS_360", ""],
+)
+async def test_retention_policy_outside_the_four_tiers_rejected(
+    db_session: AsyncSession,
+    policy: str,
+) -> None:
+    """The retention-policy column is the closed four-tier set of spec
+    §13 (DAYS_30/DAYS_90/DAYS_180/PERMANENT) as VARCHAR + CHECK: the
+    database boundary itself rejects an unknown value, a near-miss tier,
+    and a case-variant — the same discipline as the submissions closed
+    sets (the service layer has no V1 input face that could pre-check
+    it)."""
+    owner = _teacher()
+    await _flush(db_session, owner)
+
+    db_session.add(_task(owner, retention_policy=policy))
+    with pytest.raises(IntegrityError, match="ck_tasks_retention_policy"):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+@pytest.mark.integration
+async def test_task_default_retention_policy_is_days_180(
+    db_session: AsyncSession,
+) -> None:
+    """A Task created with no retention-policy input lands on the spec
+    §13 default tier DAYS_180 — the 180-day default asserted from the
+    reloaded row: the column's server default is the ONLY source of the
+    default (no API or service input face exists in V1), so this pin is
+    what turns a silent default drift into a red test."""
+    owner = _teacher()
+    await _flush(db_session, owner)
+    task = _task(owner)  # no retention_policy passed
+    await _flush(db_session, task)
+    db_session.expunge_all()
+
+    loaded = await db_session.scalar(select(Task).where(Task.id == task.id))
+    assert loaded is not None
+    assert loaded.retention_policy == "DAYS_180"
 
 
 @pytest.mark.integration

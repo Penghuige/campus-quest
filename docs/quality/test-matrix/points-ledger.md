@@ -10,8 +10,8 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 23 | E1-E15、E17、E18、E20-E24 |
-| 缺口（轻，列出不补） | 2 | G-1（榜单 DTO 字段集显式冻结测试）、G-2（积分列 integer 类型冻结测试） |
+| 已覆盖 | 24 | E1-E24 |
+| 缺口（轻，列出不补） | 0 | —（G-1/G-2 已补，见缺口明细） |
 | 不匹配 | 0 | — |
 | 流程行（无对应测试，按定义） | 1 | E25（G13 元规则——本矩阵自身即其机制） |
 
@@ -34,10 +34,10 @@
 | E13 | §17.2 | 冲销不删原行 + REVERSAL 链接 + 正常作弊双影响 | `tests/integration/points/test_reward_reversal.py::test_reverse_posts_negative_entry_linked_to_untouched_original`（配套：`tests/integration/points/test_reward_reversal.py::test_reversal_requires_reason` / `test_reversal_requires_admin_actor` / `test_reversal_target_must_be_assignment_reward` / `test_reversal_overdraft_drives_available_negative`） | 已覆盖 |
 | E14 | §17.2 末段（spec 明言"此规则必须有测试"） | reversal.ranking_effective_at = 原奖励的（8月奖9月冲→修8月榜与总榜） | `tests/integration/rankings/test_rankings.py::test_reversal_repairs_original_period_only` + `test_reward_reversal.py::test_reversal_before_snapshot_reads_the_lock_time_balance` | 已覆盖 |
 | E15 | §17.3 + G7/G16 | Redis 榜是投影：PG→Redis 重建方法存在；缓存更新失败不回滚已提交事务 | 重建：`tests/workers/test_ranking_rebuild.py` + e2e `tests/e2e/test_ranking_recovery.py`；不回滚：`test_submission_reward.py::test_approve_survives_ranking_dispatcher_failure_after_commit` + `test_reward_reversal.py::test_reversal_survives_ranking_dispatcher_failure_after_commit` | 已覆盖 |
-| E16 | §17 展示约束 + G11 | 榜单 DTO 恰含 nickname/display_honor/score/rank；学号/手机/邮箱不可表示 | 值面：`tests/integration/rankings/test_rankings.py::test_top_orders_desc_and_enriches_display_profile`（恰好四字段值断言）；DTO by-construction 冻结（`RankingEntryResponse` extra=forbid） | 已覆盖；轻缺口 **G-1**（无 UserPublic 式 model_fields 显式冻结测试，对照 `tests/integration/identity/test_registration.py::test_user_public_excludes_private_fields` 模式） |
+| E16 | §17 展示约束 + G11 | 榜单 DTO 恰含 nickname/display_honor/score/rank；学号/手机/邮箱不可表示 | 值面：`tests/integration/rankings/test_rankings.py::test_top_orders_desc_and_enriches_display_profile`（恰好四字段值断言）；DTO 字段集显式冻结：`tests/unit/rankings/test_ranking_entry_dto.py::test_ranking_entry_response_freezes_the_public_shape`（set(model_fields) 恰为四字段，UserPublic 模式） | 已覆盖 |
 | E17 | §31.12 | 兑换不得使 spendable 为负（含并发） | `tests/integration/points/test_points_api.py::test_redeem_insufficient_points_answers_conflict_envelope` + `tests/integration/points/test_redemption_concurrency.py::test_concurrent_double_spend_freezes_at_most_one_reservation` + `tests/integration/points/test_redemption_concurrency.py::test_wallet_funded_exactly_the_cost_redeems` | 已覆盖 |
 | E18 | §31.13 | Reward stock 并发不变负 | `tests/integration/points/test_redemption_concurrency.py::test_concurrent_last_stock_yields_exactly_one_winner` | 已覆盖 |
-| E19 | §31.14 | 积分列全 integer，无浮点 | 模型/迁移以 Integer 定义并被 E10/E8 类约束测试间接使用；**无显式列类型冻结测试** | **缺口 G-2（轻，列出不补）** |
+| E19 | §31.14 | 积分列全 integer，无浮点 | `tests/unit/points/test_points_column_types.py::test_quantity_columns_freeze_their_exact_integer_types`（八数量列精确 Integer/BigInteger 冻结表）+ `tests/unit/points/test_points_column_types.py::test_no_points_model_column_uses_floating_point_storage`（六模型全列无 Float/Numeric 扫掠，Double/REAL/DECIMAL 经子类一并拒） | 已覆盖 |
 | E20 | §31.15 + §31.1 | 百分比奖励 floor(base×pct)；后端统一计算 | `tests/unit/tasks/test_deadlines.py::test_reward_points_floor_for_101`（101×80%=80 家族）+ `tests/unit/tasks/test_deadlines.py::test_reward_points_floors_below_one_to_zero`（floor(0.8)=0） | 已覆盖 |
 | E21 | §32 + G8 | Redemption approve/reject/fulfill 幂等 | `tests/integration/points/test_redemption_concurrency.py::test_concurrent_double_approve_posts_one_consumption_entry` + `tests/integration/points/test_redemption_concurrency.py::test_reject_releases_points_and_stock_without_consumption_entry` + `tests/integration/points/test_redemption_concurrency.py::test_fulfill_is_idempotent_and_records_metadata` | 已覆盖 |
 | E22 | §32 投影行 + G8 | 排行榜投影更新幂等（事件重放不双计） | `tests/integration/rankings/test_rankings.py::test_projection_retry_converges_to_postgres_aggregate` + `tests/integration/points/test_ledger_service.py::test_grant_assignment_reward_twice_posts_one_entry_and_one_increment` | 已覆盖 |
@@ -47,8 +47,8 @@
 
 ## 缺口明细（列出不补）
 
-- **G-1**（E16 附带）：`RankingEntryResponse` 缺 `set(model_fields)` 显式冻结测试——隐私由 by-construction + 值面断言承担，对照 identity 域 `test_user_public_excludes_private_fields` 的模式可补，但按对账纪律仅列出。
-- **G-2**（E19）：积分/金额列的 integer 类型无显式冻结测试——类型由模型与迁移承载，行为测试（值域、约束）间接依赖它；如需防漂移可加 `column.type` 断言族。
+- **G-1**（E16 附带）：**已补（2026-10-26 缺口闭合批）**——`tests/unit/rankings/test_ranking_entry_dto.py::test_ranking_entry_response_freezes_the_public_shape` 以 `set(model_fields)` 显式冻结四字段集。勘误：该测试实际早于本批落库（2026-10-10 随 766cd7a 进 main，在本矩阵建立之后、战役清单复述之前），战役清单未感知属定位遗漏；本批实跑验证绿并翻转 E16 行。
+- **G-2**（E19）：**已补（2026-10-26 缺口闭合批）**——`tests/unit/points/test_points_column_types.py`：`test_quantity_columns_freeze_their_exact_integer_types` 把五个数量承载表的八条数量列钉成精确整型闭集表（改名/换型/删除即红），`test_no_points_model_column_uses_floating_point_storage` 对全部六个 points 模型的每一列扫掠断言无 Float/Numeric（Double/REAL/DECIMAL 经子类一并拒）。
 
 ## 不匹配明细
 
