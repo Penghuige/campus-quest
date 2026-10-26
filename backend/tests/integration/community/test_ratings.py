@@ -322,6 +322,84 @@ async def test_re_rate_updates_in_place_and_moves_the_summary(
 
 
 @pytest.mark.integration
+async def test_re_rate_moves_updated_at_forward_and_keeps_created_at(
+    db_engine: AsyncEngine,
+) -> None:
+    """The §20 field list's behavioral half (matrix TR5 / G-5): re-rating
+    the same (task, user) UPDATES in place, and the row's ``updated_at``
+    moves strictly forward while ``created_at`` keeps the insert instant.
+
+    PostgreSQL ``now()`` is transaction-stable, so the savepoint harness
+    (one outer transaction) could never show the movement — INSERT and
+    UPDATE would read the same clock. This test therefore rates through
+    TWO REAL committed transactions on independent sessions (the
+    race-test discipline: committed rows, explicit committed DELETEs in
+    ``finally``), separated by a wall-clock sleep that dwarfs
+    timestamptz's microsecond resolution."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    service = RatingService()
+    run = uuid4().hex[:8]
+
+    user_ids: list[UUID] = []
+    task_ids: list[UUID] = []
+    claim_ids: list[UUID] = []
+    assignment_ids: list[UUID] = []
+    try:
+        async with factory() as session:
+            teacher = _user(username=f"t{run}", role=Role.TEACHER)
+            student = _user(username=f"2025{run}001", nickname="改评时间证人")
+            await _persist(session, teacher, student)
+            task = _task(teacher)
+            await _persist(session, task)
+            assignment = _assignment(task, "考研英语", AssignmentAvailability.COMPLETED)
+            await _persist(session, assignment)
+            claim = _claim(assignment, student, ClaimStatus.COMPLETED)
+            await _persist(session, claim)
+            await session.commit()
+            task_ids.append(task.id)
+            assignment_ids.append(assignment.id)
+            claim_ids.append(claim.id)
+            user_ids.extend([teacher.id, student.id])
+
+        async with factory() as session:
+            await service.rate_task(session, user_ids[1], task_ids[0], 3)
+        async with factory() as session:
+            rows = await _rows(session, task_ids[0])
+            assert len(rows) == 1
+            created_at, updated_at = rows[0].created_at, rows[0].updated_at
+            assert created_at is not None
+            # Born together: both clock columns default in the INSERT.
+            assert updated_at == created_at
+
+        await asyncio.sleep(0.05)  # >> the timestamp's microsecond tick
+
+        async with factory() as session:
+            await service.rate_task(session, user_ids[1], task_ids[0], 5)
+        async with factory() as session:
+            rows = await _rows(session, task_ids[0])
+            assert len(rows) == 1  # still the one §31.7 row
+            assert rows[0].rating == 5
+            # The edit moved the row's clock forward; the insert instant
+            # is immutable — the in-place UPDATE, never a new row.
+            assert rows[0].created_at == created_at
+            assert rows[0].updated_at > updated_at
+    finally:
+        async with factory() as session:
+            await session.execute(
+                delete(TaskRating).where(TaskRating.task_id.in_(task_ids))
+            )
+            await session.execute(
+                delete(AssignmentClaim).where(AssignmentClaim.id.in_(claim_ids))
+            )
+            await session.execute(
+                delete(Assignment).where(Assignment.id.in_(assignment_ids))
+            )
+            await session.execute(delete(Task).where(Task.id.in_(task_ids)))
+            await session.execute(delete(User).where(User.id.in_(user_ids)))
+            await session.commit()
+
+
+@pytest.mark.integration
 async def test_two_raters_are_two_rows_and_one_aggregate(
     db_session: AsyncSession,
 ) -> None:
