@@ -27,8 +27,13 @@
  */
 import { expect, test } from "./fixtures";
 
-import { ensureStudentLogin } from "./fixtures";
-import { createUnreadNotification, deleteNotification } from "./isolation";
+import { ensureStudentLogin, mintToken } from "./fixtures";
+import {
+  createUnreadNotification,
+  deleteUserCascade,
+  deleteNotification,
+  spawnDedicatedStudent,
+} from "./isolation";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -174,12 +179,26 @@ test.describe("owner mark-read (the §28 owner-only surface)", () => {
     // run-unique, so the walk finds ITS row however many other rows or
     // consumers exist; the row is removed afterwards (no battery or
     // visual residue).
-    const marker = `隔离未读 ${Date.now()}`;
-    const notificationId = createUnreadNotification(
-      process.env.CQ_E2E_STUDENT_ID!,
-      marker,
+    //
+    // The OTHER consumer is real too: a dedicated second student with
+    // their OWN unread row consumes it through the owner API before
+    // the walk — the target row must stay unread and answer only its
+    // owner (the §28 owner-only boundary the chain pins).
+    const apiBase = process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
+    const other = spawnDedicatedStudent();
+    const otherNotificationId = createUnreadNotification(
+      other.id,
+      `他人未读 ${Date.now()}`,
     );
+    const marker = `隔离未读 ${Date.now()}`;
+    const notificationId = createUnreadNotification(STUDENT_ID!, marker);
     try {
+      const consumed = await page.request.post(
+        `${apiBase}/notifications/${otherNotificationId}/read`,
+        { headers: { Authorization: `Bearer ${mintToken(other.id)}` } },
+      );
+      expect(consumed.ok(), await consumed.text()).toBe(true);
+
       await loginAs(page);
       await page.goto(`${BASE_URL}/notifications`);
 
@@ -204,6 +223,7 @@ test.describe("owner mark-read (the §28 owner-only surface)", () => {
       ).toHaveCount(0);
     } finally {
       deleteNotification(notificationId);
+      deleteUserCascade(other.id);
     }
   });
 });

@@ -47,6 +47,7 @@ const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' D
 const RUN = process.env.CQ_E2E_RUN;
 const REWARD_ITEM_ID = process.env.CQ_E2E_REWARD_ITEM_ID;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
+const STUDENT_ID = process.env.CQ_E2E_STUDENT_ID;
 const PRIVATE_STRINGS = (process.env.CQ_E2E_PRIVATE_STRINGS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -178,9 +179,25 @@ test.describe("insufficient spendable (a dedicated wallet)", () => {
     // (CQ_E2E_POOR_STUDENT) this chain used to borrow never existed in
     // the standard world, so it env-skipped; nothing environmental is
     // needed now.
+    //
+    // The bystanders are pinned, not presumed: an EXISTING student's
+    // wallet figures and the enabled catalogue (id/name/cost/stock)
+    // are snapshotted before the dedicated student exists and asserted
+    // item-by-item unchanged after the walk.
+    const walletBefore = await walletStrip(page);
+    const catalogBefore = await catalogSnapshot(page);
+
     const dedicated = spawnDedicatedStudent();
     dedicatedRef.student = dedicated;
-    await loginAs(page, `${dedicated.username}:${dedicated.password}`);
+
+    // The unified password form (the chain's own student — number and
+    // password, never a shared account).
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("账号", { exact: true }).fill(dedicated.username);
+    await page.getByLabel("密码").fill(dedicated.password);
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).not.toHaveURL(/\/login/);
     await page.goto(`${BASE_URL}/rewards`);
 
     // Plan-13 T1 (owner P2 ruling): the tile CTA carries the state — the
@@ -201,8 +218,50 @@ test.describe("insufficient spendable (a dedicated wallet)", () => {
     ).toBeDisabled();
     await expect(card.locator(".reward-cta-note")).toContainText("还差");
     await expect(card.locator(".reward-cta-note")).toContainText("积分");
+
+    // The bystanders are untouched: same wallet figures, same catalogue
+    // items, item-by-item.
+    const walletAfter = await walletStrip(page);
+    const catalogAfter = await catalogSnapshot(page);
+    expect(walletAfter).toEqual(walletBefore);
+    expect(catalogAfter).toEqual(catalogBefore);
   });
 });
+
+/** The shared student's wallet strip through the real API (the same
+ * figures the rewards page renders). */
+async function walletStrip(
+  page: import("@playwright/test").Page,
+): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`${API_URL}/points/me`, {
+    headers: { Authorization: `Bearer ${mintToken(STUDENT_ID!)}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  return (await response.json()) as Record<string, unknown>;
+}
+
+/** The enabled catalogue's stable projection (id/name/cost/stock),
+ * id-sorted for a deterministic compare. */
+async function catalogSnapshot(
+  page: import("@playwright/test").Page,
+): Promise<unknown[]> {
+  const response = await page.request.get(`${API_URL}/rewards`, {
+    headers: { Authorization: `Bearer ${mintToken(STUDENT_ID!)}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  const body = (await response.json()) as {
+    items: Array<Record<string, unknown>>;
+  };
+  return body.items
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      cost: item.cost,
+      stock: item.stock,
+    }))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+}
+
 
 test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", () => {
   test.skip(
