@@ -4,14 +4,14 @@
 > 覆盖章节：§30
 > 方法论：`campusquest-test-process` skill 规约对账节；**预期列先于测试检索从 spec 原文落笔**；缺口列出不补；不匹配上报不擅改。
 > 规约来源：spec §30（动作枚举含 owner 2026-10-11 扩列与 V1.1 2026-10-15/2026-10-16 增补）。
-> 域界（已覆盖章节不重复建行，让渡如下）：Task 生命周期 publish/pause/resume/close/archive（含 before/after status 快照）、协作者授予/移除、Assignment 批量导入确认 → `tasks-square.md` S9；评论管理删除 → `community.md` M8；匿名身份追溯（揭示审计）→ `identity-rbac.md` I13 与 `community.md` M11；User suspend/ban/unban → `identity-rbac.md` I12（状态机转移同事务审计）+ `admin-powers.md` AP5（批量逐行审计）；记住设备清退 OWN_DEVICES_REVOKED → `identity-rbac.md` I20；注册审批 USER_APPROVED/USER_REJECTED → `registration-approval.md` RA6；平台注册表 PLATFORM_CREATED/PLATFORM_UPDATED → `platform-registry.md` PR6/PR7。登录流行为本身在 `unified-login.md`（其矩阵未含审计行断言，§30 的登录审计行落点仍在本表，见 G-3/G-4）。
+> 域界（已覆盖章节不重复建行，让渡如下）：Task 生命周期 publish/pause/resume/close/archive（含 before/after status 快照）、协作者授予/移除、Assignment 批量导入确认 → `tasks-square.md` S9；评论管理删除 → `community.md` M8；匿名身份追溯（揭示审计）→ `identity-rbac.md` I13 与 `community.md` M11；User suspend/ban/unban → `identity-rbac.md` I12（状态机转移同事务审计）+ `admin-powers.md` AP5（批量逐行审计）；记住设备清退 OWN_DEVICES_REVOKED → `identity-rbac.md` I20；注册审批 USER_APPROVED/USER_REJECTED → `registration-approval.md` RA6；平台注册表 PLATFORM_CREATED/PLATFORM_UPDATED → `platform-registry.md` PR6/PR7。登录流行为本身在 `unified-login.md`（其矩阵未含审计行断言，§30 的登录审计行落点仍在本表，见 AL10/AL11）。
 
 ## 对账摘要
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 11 | AL1-AL5、AL8、AL9、AL12-AL15 |
-| 缺口（列出不补） | 4 | G-1（AL6 Task 级状态修复）、G-2（AL7 StudentWhitelist 变更审计——面已退役）、G-3（AL10 邮箱码登录审计行）、G-4（AL11 手机码登录审计行） |
+| 已覆盖 | 13 | AL1-AL5、AL8-AL15（AL10/AL11 为 2026-10-26 缺口补钉批新增） |
+| 缺口（列出不补） | 2 | G-1（AL6 Task 级状态修复）、G-2（AL7 StudentWhitelist 变更审计——面已退役） |
 | 不匹配 | 0 | — |
 | 流程行 | 0 | — |
 
@@ -28,8 +28,8 @@
 | AL7 | §30「StudentWhitelist 重要变更」 | 白名单重要变更写审计行 | 无测试可引：白名单时代已被 V1.1 spec 2026-10-16 §1 开放注册终结（backend/app/modules/identity/service.py:59「the whitelist era ended」；`registration-approval.md` 域界即「白名单退役」）——现存代码无 StudentWhitelist 管理写面、无对应审计动作常量、`tests/` 全域零命中 | 缺口 G-2（spec §30 该行所指面已退役，行本身待修订裁决——按纪律列出不补） |
 | AL8 | §30「系统配置变更」 | 系统配置写入审计（每次写 bump version 并入审计行 details.version）；被拒写入零行零审计 | `tests/integration/system/test_system_settings_registry.py::test_each_write_bumps_version_and_audits_it` + `tests/integration/admin/test_admin_api.py::test_audit_log_search_filters_and_paginates`（检索侧证：SYSTEM_SETTING_UPDATED 行 target_id=设置键可过滤） | 已覆盖 |
 | AL9 | §30「手工修复 Claim/Assignment 状态」 | 命名修复命令写一行审计：reason、before/after 可用性快照、claim 事实入 details、request_id/ip 同行，且与修复同事务；被拒修复零行 | `tests/integration/audit/test_repairs.py::test_release_returns_dangling_occupied_assignment_to_available`（恰一行+快照对+关联列全断言）+ `tests/integration/audit/test_repairs.py::test_force_fail_flips_sending_to_failed_and_audits`（邻接第二命令：delivery 强制失败同构审计）+ `tests/integration/audit/test_repairs.py::test_release_refuses_non_occupied_assignment_with_a_typed_409`（拒绝零审计行） | 已覆盖 |
-| AL10 | §30 邮箱验证码登录扩列（V1.1 2026-10-15） | EMAIL_LOGIN_SUCCEEDED（channel=email_code/+device/+totp 快照）与 EMAIL_LOGIN_TOTP_REQUIRED 各写审计行；actor=登录账号本人；行内不落邮箱（G11） | 无测试可引：服务侧写行存在于 backend/app/modules/identity/email_login_service.py:388/418/452/546（含 channel 快照），但 `tests/` 全域对 EMAIL_LOGIN_SUCCEEDED/EMAIL_LOGIN_TOTP_REQUIRED 零命中；identity-rbac I17 引用的 `test_audit_rows_for_success_and_totp_required` 已随 PR-3 路由族退役，unified-login 矩阵 U 行亦不含审计断言 | 缺口 G-3 |
-| AL11 | §30 注册审批扩列末句（V1.1 2026-10-16） | 学生手机码登录成功写 MOBILE_LOGIN_SUCCEEDED 审计行（channel=mobile_code/+device 快照，行内不落手机号 G11） | 无测试可引：服务侧写行存在于 backend/app/modules/identity/mobile_login_service.py:368/729，`tests/` 全域对 MOBILE_LOGIN_SUCCEEDED 零命中 | 缺口 G-4 |
+| AL10 | §30 邮箱验证码登录扩列（V1.1 2026-10-15） | EMAIL_LOGIN_SUCCEEDED（channel=email_code/+device/+totp 快照）与 EMAIL_LOGIN_TOTP_REQUIRED 各写审计行；actor=登录账号本人；行内不落邮箱（G11） | `tests/integration/identity/test_login_audit_rows.py::test_teacher_email_code_login_writes_one_succeeded_audit_row`（TEACHER 一轮：action/actor=target=本人/actor_role/channel=email_code 快照/request_id+ip 穿线/G11 邮箱不落行）+ `tests/integration/identity/test_login_audit_rows.py::test_admin_email_login_writes_totp_required_then_succeeded_rows`（ADMIN 三行全钉：TOTP_REQUIRED（无快照）→ totp 腿 SUCCEEDED（channel=email_code+totp）→ 记住设备 cookie 在 verify 直接完成的「+device」变体（channel=email_code+remembered_device=true）；邮箱三个面均不落行） | 已覆盖 |
+| AL11 | §30 注册审批扩列末句（V1.1 2026-10-16） | 学生手机码登录成功写 MOBILE_LOGIN_SUCCEEDED 审计行（channel=mobile_code/+device 快照，行内不落手机号 G11） | `tests/integration/identity/test_login_audit_rows.py::test_student_mobile_code_login_writes_one_succeeded_audit_row`（学生腿：action/actor=target=本人/actor_role=STUDENT/channel=mobile_code 快照/G11 手机号不落行）+ `tests/integration/identity/test_login_audit_rows.py::test_staff_mobile_code_login_writes_one_succeeded_audit_row`（员工写行点：教师绑定手机经 staff 服务完成，channel=staff_mobile_code；G11 同钉） | 已覆盖 |
 | AL12 | §30 末段第 1 句 | AuditLog 不允许通过普通管理后台删除（不可变历史） | `tests/integration/audit/test_audit_log.py::test_audit_log_model_is_append_only_by_convention`（全列无 onupdate、无 updated_at、唯一 INSERT 写者=AuditLogWriter.append）+ `tests/integration/audit/test_repairs.py::test_no_destructive_repair_method_exists`（禁面清单显式含 delete_audit_log）+ 管理台面仅 GET /admin/audit-logs 与两个修复 POST、无删除端点（backend/app/modules/audit/router.py 全文） | 已覆盖（约定式+结构钉，同 ledger 0007 裁决） |
 | AL13 | §30 末段第 2 句 | 敏感 before/after snapshot 必须脱敏：密码 hash、OTP、完整 Refresh Token 等禁入（任意嵌套深度） | `tests/integration/audit/test_audit_log.py::test_writer_redacts_secrets_from_every_payload_column`（password_hash/otp/refresh_token/access_token/totp_secret/recovery_codes 任意嵌套→[REDACTED]，reason 为自由文本豁免）+ 单元族 `tests/unit/audit/test_redaction.py::test_redacts_every_secret_at_any_nesting_depth` / `tests/unit/audit/test_redaction.py::test_covers_the_full_secret_vocabulary` / `tests/unit/audit/test_redaction.py::test_matches_key_names_case_insensitively` | 已覆盖 |
 | AL14 | §30 字段 ip_address/request_id（关联穿线） | HTTP 审计动作从请求穿线 request_id 与客户端 ip；无 header 时仍可关联；敌意 header 不透传 | `tests/integration/submissions/test_review_audit.py::test_http_review_actions_carry_request_id_and_ip` + `tests/integration/submissions/test_review_audit.py::test_http_without_request_id_header_still_correlates` + `tests/unit/audit/test_audit_context.py::test_resolved_request_id_is_kept_verbatim` + `tests/unit/audit/test_audit_context.py::test_hostile_header_resolves_to_the_replacement_not_the_header` | 已覆盖 |
@@ -39,8 +39,8 @@
 
 - **G-1**（AL6）：Task 级状态修复命令不存在——`RepairService` 公面被 `test_service_public_surface_is_exactly_the_two_named_commands` 结构测试钉死为恰两命令（Assignment 占用释放、Delivery 强制失败），无 Task 状态修复词汇、无路由、无测试；§30 该行的「强制关闭」半边已由生命周期 close 动词（Admin 可调）+ tasks-square S9 审计覆盖（让渡）。
 - **G-2**（AL7）：StudentWhitelist 重要变更审计——白名单管理面已随 V1.1 2026-10-16 §1 开放注册整体退役（identity/service.py:59；注册改走 PENDING_APPROVAL+审批，审批审计在 registration-approval RA6），现存无写面即无审计对象与测试；spec §30 该行走留待修订裁决（过时行 vs 需求遗漏），按纪律列出不补。
-- **G-3**（AL10）：EMAIL_LOGIN_SUCCEEDED / EMAIL_LOGIN_TOTP_REQUIRED 审计行零测试——服务侧确实写行（email_login_service.py 四处，含 channel 快照与「行内不落邮箱」形状），但 identity/unified-login 两矩阵与 `tests/` 全域均无断言（I17 引用的旧断言件已随 PR-3 退役）；含 actor=本人与 G11 邮箱不落行两个子断言面。
-- **G-4**（AL11）：MOBILE_LOGIN_SUCCEEDED 审计行零测试——mobile_login_service.py:368/729 写行（channel 快照），`tests/` 全域零命中；G11 手机号不落行子断言面同缺。
+- **G-3**（AL10）：**已补（本批 2026-10-26）**——EMAIL_LOGIN_SUCCEEDED / EMAIL_LOGIN_TOTP_REQUIRED 断言缺失；`tests/integration/identity/test_login_audit_rows.py` 经统一登录流走真实 HTTP 腿钉死两个 action 的全部四个写行点（email_login_service.py:385/415/449/543），行级断言含 actor/target/channel 快照与 G11 邮箱不落行。
+- **G-4**（AL11）：**已补（本批 2026-10-26）**——MOBILE_LOGIN_SUCCEEDED 断言缺失；同文件钉死 mobile_login_service.py 两个写行点（:365 学生腿、:726 员工 `_staff_login_succeeded`），G11 手机号不落行同钉。
 
 ## 不匹配明细
 
@@ -50,5 +50,5 @@
 
 - 字段命名映射：spec 的 resource_type/resource_id 落地为多态对 `target_type`/`target_id`（语义等价，ledger source_* 同判）；实现额外携带 `actor_role`（动作时角色快照，VARCHAR 不 CHECK——冻结历史不随角色词汇演进破裂）与 `details`（JSONB 结构化上下文）。`actor_user_id` 刻意无外键：审计行存续超越所指账号的删除（models.py docstring 裁决）。
 - AL12 的不可删是**约定式强制**（模型无 UPDATE/DELETE 路径 + 唯一 INSERT 写者 + 修复服务禁面钉 + 审查），DB 不加触发器——与 points_ledger 的 0007 裁决同判，测试 docstring 记录该 ruling。
-- 登录类审计动作（G-3/G-4）的写入代码在 PR-3 路由退役中存活（服务层被 unified challenge 复用），故缺口是「断言缺失」而非「行为缺失」——补断言时应同时钉 channel 快照与行内不落邮箱/手机号（G11）两个面。
+- 登录类审计动作（AL10/AL11）的写入代码在 PR-3 路由退役中存活（服务层被 unified challenge 复用），本批补钉已同时钉 channel 快照与行内不落邮箱/手机号（G11）两个面（`tests/integration/identity/test_login_audit_rows.py`）。spec「channel=email_code / +device / +totp」与「channel=mobile_code / +device」的速记映射到实际写行形状：email 三变体 email_code / email_code+totp / email_code+`remembered_device: true`（仅 ADMIN 记住设备在 verify 直接完成的腿携带设备事实；教师码腿的 snapshot 恒为 `{"channel": "email_code"}`）；mobile 学生腿恒为 `{"channel": "mobile_code"}`（无设备变体——员工 verify 腿文档明示不 honor cookie），员工腿为 `staff_mobile_code` / `staff_mobile_code+totp`。
 - 让渡汇总见文件头「域界」行；被让渡章节的对账以所引矩阵行为准，本表不重复建行。
