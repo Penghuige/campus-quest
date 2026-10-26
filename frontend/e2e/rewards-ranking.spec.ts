@@ -240,8 +240,10 @@ async function walletStrip(
   return (await response.json()) as Record<string, unknown>;
 }
 
-/** The enabled catalogue's stable projection (id/name/cost/stock),
- * id-sorted for a deterministic compare. */
+/** The enabled catalogue's stable projection (id/name/point_cost/stock),
+ * id-sorted for a deterministic compare. The projection guards make a
+ * mistyped field name fail LOUDLY here — a snapshot of undefineds
+ * would compare equal and prove nothing. */
 async function catalogSnapshot(
   page: import("@playwright/test").Page,
 ): Promise<unknown[]> {
@@ -252,14 +254,26 @@ async function catalogSnapshot(
   const body = (await response.json()) as {
     items: Array<Record<string, unknown>>;
   };
-  return body.items
+  expect(body.items.length, "the catalogue snapshot must be non-empty").toBeGreaterThan(0);
+  const projection = body.items
     .map((item) => ({
       id: item.id,
       name: item.name,
-      cost: item.cost,
+      point_cost: item.point_cost,
       stock: item.stock,
     }))
     .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  for (const entry of projection) {
+    expect(
+      typeof entry.point_cost,
+      "point_cost must project a number — a mistyped field reads undefined",
+    ).toBe("number");
+    expect(
+      entry.stock === null || typeof entry.stock === "number",
+      "stock is number|null by contract",
+    ).toBe(true);
+  }
+  return projection;
 }
 
 
