@@ -45,7 +45,11 @@ ValueError, not a silent default.
 Filename sanitization (spec §10: display-only metadata, length-capped
 and cleaned, never a path): path components are stripped on both
 separators, length caps at 255, and an empty result falls back to a
-stable placeholder.
+stable placeholder. The transport boundary carries its own cap —
+``UploadIntentRequest.filename`` accepts exactly 255 characters and
+rejects one more (422 before the service runs) — while the sanitizer's
+cap is the defense-in-depth truncation for direct service callers; the
+exact-boundary legs pin both ends (matrix S4 / gap G-4).
 """
 
 from __future__ import annotations
@@ -55,9 +59,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.submissions.enums import FileType, RetentionPolicy
+from app.modules.submissions.schemas import UploadIntentRequest
 from app.modules.submissions.upload_service import (
     FILENAME_FALLBACK,
     MAX_FILENAME_LENGTH,
@@ -483,3 +489,52 @@ def test_sanitize_filename_caps_length_and_falls_back() -> None:
 def test_sanitize_filename_drops_non_printable_characters() -> None:
     assert sanitize_filename("data\x00.csv") == "data.csv"
     assert sanitize_filename(" data.csv ") == "data.csv"
+
+
+def test_sanitize_filename_exact_cap_boundary() -> None:
+    """The cap's exact edges: a name of exactly MAX_FILENAME_LENGTH
+    passes through UNCHANGED (no needless truncation of a legal name),
+    and one character over is truncated to exactly the first cap — the
+    boundary the 600-char leg brackets only from afar."""
+    at_cap = "长" * MAX_FILENAME_LENGTH
+    assert sanitize_filename(at_cap) == at_cap
+    over_cap = "长" * (MAX_FILENAME_LENGTH + 1)
+    assert sanitize_filename(over_cap) == at_cap
+
+
+# --- the transport boundary's own filename cap (spec §10; matrix S4/G-4) --------------
+
+
+def _intent_request(filename: str) -> UploadIntentRequest:
+    """A minimal valid intent request around the filename under test."""
+    return UploadIntentRequest(
+        claim_id=uuid4(),
+        filename=filename,
+        declared_type=FileType.CSV,
+        size=128,
+    )
+
+
+def test_intent_request_filename_accepts_exactly_the_cap() -> None:
+    """恰好上限：255 characters is the widest legal display filename at
+    the transport boundary — accepted verbatim (the API path then stores
+    it through sanitize_filename, which keeps a cap-length name whole
+    per the exact-cap leg above)."""
+    request = _intent_request("长" * 255)
+    assert request.filename == "长" * 255
+
+
+def test_intent_request_filename_one_over_the_cap_is_rejected() -> None:
+    """超限被拒：256 characters never reaches the service — the schema
+    rejects it with a 422-shaped ValidationError before an intent row
+    or a presigned URL can exist."""
+    with pytest.raises(ValidationError):
+        _intent_request("长" * 256)
+
+
+def test_intent_request_filename_blank_is_rejected() -> None:
+    """The min_length=1 edge: an EMPTY filename is refused at the same
+    boundary (a whitespace-only name passes the schema and is cleaned
+    to the stable fallback by sanitize_filename instead)."""
+    with pytest.raises(ValidationError):
+        _intent_request("")
