@@ -11,10 +11,11 @@
  * - CQ_E2E_STUDENT     pre-seeded student credentials
  *                      "student-number:password" (required for the
  *                      authenticated tests);
- * - the mark-read test depends on a side-effect unread row from an
- *                      earlier battery test (the world seeds zero
- *                      notifications — see the noskip exemption
- *                      entry); it self-skips without one.
+ * - CQ_E2E_STUDENT_ID  the seeded student's user id — the mark-read
+ *                      chain's OWN unread row is created for it
+ *                      through the isolation fixtures (the world
+ *                      seeds zero notifications); no battery side
+ *                      effect or runtime skip is involved.
  *
  * OWNER-ONLY under test (spec §28 + notifications router): the inbox is
  * the caller's OWN rows and mark-read is owner-only server-side — the
@@ -27,10 +28,12 @@
 import { expect, test } from "./fixtures";
 
 import { ensureStudentLogin } from "./fixtures";
+import { createUnreadNotification, deleteNotification } from "./isolation";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
+const STUDENT_ID = process.env.CQ_E2E_STUDENT_ID;
 
 test.skip(
   !E2E_ENABLED,
@@ -157,36 +160,50 @@ test.describe("inbox render + filter tabs (§28; patterns §4 URL state)", () =>
 
 test.describe("owner mark-read (the §28 owner-only surface)", () => {
   test.skip(
-    STUDENT === undefined,
-    "needs CQ_E2E_STUDENT (seeded student credentials); Plan 10's fixture provides them.",
+    STUDENT === undefined || STUDENT_ID === undefined,
+    "needs CQ_E2E_STUDENT and CQ_E2E_STUDENT_ID (the seeded world export).",
   );
 
   test("marking a row read flips it in place and drops it from the unread tab", async ({
     page,
   }) => {
-    await loginAs(page);
-    await page.goto(`${BASE_URL}/notifications`);
+    // The chain OWNS its unread row (CQH-FE-ISOLATION-01): the world
+    // seeds zero notifications, and the row this test used to borrow
+    // was a battery side effect an earlier consumer could drain — an
+    // order dependency that surfaced as a runtime skip. The marker
+    // title is run-unique, so the walk finds ITS row however many
+    // other rows or consumers exist; the row is removed afterwards
+    // (no battery or visual residue).
+    const marker = `隔离未读 ${Date.now()}`;
+    const notificationId = createUnreadNotification(
+      process.env.CQ_E2E_STUDENT_ID!,
+      marker,
+    );
+    try {
+      await loginAs(page);
+      await page.goto(`${BASE_URL}/notifications`);
 
-    const unreadRow = page.locator(".notif-item[data-read='false']").first();
-    if (!(await unreadRow.isVisible())) {
-      test.skip(
-        true,
-        "needs a seeded UNREAD notification for CQ_E2E_STUDENT (Plan 10's fixture seeds one).",
-      );
+      const unreadRow = page.locator(".notif-item[data-read='false']", {
+        hasText: marker,
+      });
+      await expect(unreadRow).toBeVisible();
+      await expect(unreadRow.getByText("未读", { exact: true })).toBeVisible();
+      await unreadRow.getByRole("button", { name: "标为已读" }).click();
+
+      // Optimistic flip confirmed by the server echo: read state, no 未读
+      // badge, no further action (design §10/§12 — weight + badge, not color).
+      const row = page.locator(".notif-item", { hasText: marker }).first();
+      await expect(row).toHaveAttribute("data-read", "true");
+      await expect(row.getByText("未读", { exact: true })).toHaveCount(0);
+      await expect(row.getByRole("button", { name: "标为已读" })).toHaveCount(0);
+
+      // A read row no longer matches the unread filter.
+      await page.getByRole("link", { name: "未读", exact: true }).click();
+      await expect(
+        page.locator(".notif-item", { hasText: marker }),
+      ).toHaveCount(0);
+    } finally {
+      deleteNotification(notificationId);
     }
-    const title = (await unreadRow.locator(".notif-title").innerText()).trim();
-    await expect(unreadRow.getByText("未读", { exact: true })).toBeVisible();
-    await unreadRow.getByRole("button", { name: "标为已读" }).click();
-
-    // Optimistic flip confirmed by the server echo: read state, no 未读
-    // badge, no further action (design §10/§12 — weight + badge, not color).
-    const row = page.locator(".notif-item", { hasText: title }).first();
-    await expect(row).toHaveAttribute("data-read", "true");
-    await expect(row.getByText("未读", { exact: true })).toHaveCount(0);
-    await expect(row.getByRole("button", { name: "标为已读" })).toHaveCount(0);
-
-    // A read row no longer matches the unread filter.
-    await page.getByRole("link", { name: "未读", exact: true }).click();
-    await expect(page.locator(".notif-item", { hasText: title })).toHaveCount(0);
   });
 });

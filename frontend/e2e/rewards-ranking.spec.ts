@@ -18,10 +18,6 @@
  *                            seeded reward card (name derives from the
  *                            run marker) and mint the Admin bearer the
  *                            approve/fulfill calls ride;
- * - CQ_E2E_POOR_STUDENT      seeded student with LESS spendable points
- *                            than the cheapest open reward (optional;
- *                            drives the INSUFFICIENT_POINTS conflict
- *                            test);
  * - CQ_E2E_PRIVATE_STRINGS   comma-separated seeded identity values
  *                            (student numbers, phones, emails of OTHER
  *                            seeded users that appear on the boards)
@@ -30,6 +26,11 @@
  *                            pins run (no user-id attributes, no
  *                            6+ digit runs in the rendered boards).
  *
+ * The INSUFFICIENT_POINTS chain needs NO environment export: it spawns
+ * its own dedicated student (the isolation fixtures — an ACTIVE
+ * student with no wallet events, spendable deterministically 0) and
+ * removes them afterwards (CQH-FE-ISOLATION-01).
+ *
  * Privacy pins under test (spec §17/§40): the ranking surfaces render
  * EXACTLY nickname / display_honor / score / rank — never a student
  * number, phone, email, or user id.
@@ -37,6 +38,7 @@
 import { expect, test } from "./fixtures";
 
 import { ensureStudentLogin, mintToken } from "./fixtures";
+import { deleteUserCascade, spawnDedicatedStudent } from "./isolation";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -45,7 +47,6 @@ const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' D
 const RUN = process.env.CQ_E2E_RUN;
 const REWARD_ITEM_ID = process.env.CQ_E2E_REWARD_ITEM_ID;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
-const POOR_STUDENT = process.env.CQ_E2E_POOR_STUDENT;
 const PRIVATE_STRINGS = (process.env.CQ_E2E_PRIVATE_STRINGS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -152,14 +153,35 @@ test.describe("student rewards redemption", () => {
     await expect(latest.locator(".badge", { hasText: "待审核" })).toBeVisible();
   });
 
+});
+
+test.describe("insufficient spendable (a dedicated wallet)", () => {
+  // The dedicated student's whole lifecycle is the chain's own
+  // (CQH-FE-ISOLATION-01): spawned before the walk, removed after it —
+  // whatever the outcome — so no row outlives the test (the
+  // registered-user residue trap).
+  const dedicatedRef: {
+    student?: { id: string; username: string; password: string };
+  } = {};
+
+  test.afterEach(() => {
+    if (dedicatedRef.student !== undefined) {
+      deleteUserCascade(dedicatedRef.student.id);
+      dedicatedRef.student = undefined;
+    }
+  });
+
   test("insufficient spendable disables the tile CTA with the quiet distance", async ({
     page,
   }) => {
-    test.skip(
-      POOR_STUDENT === undefined,
-      "needs CQ_E2E_POOR_STUDENT (spendable below the cheapest reward)",
-    );
-    await loginAs(page, POOR_STUDENT!);
+    // A dedicated student with NO wallet events: spendable is
+    // deterministically 0, below every open reward. The world export
+    // (CQ_E2E_POOR_STUDENT) this chain used to borrow never existed in
+    // the standard world, so it env-skipped; nothing environmental is
+    // needed now.
+    const dedicated = spawnDedicatedStudent(`iso${Date.now()}`);
+    dedicatedRef.student = dedicated;
+    await loginAs(page, `${dedicated.username}:${dedicated.password}`);
     await page.goto(`${BASE_URL}/rewards`);
 
     // Plan-13 T1 (owner P2 ruling): the tile CTA carries the state — the

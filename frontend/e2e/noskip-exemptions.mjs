@@ -85,20 +85,6 @@ export const NOSKIP_EXEMPTIONS = [
     reason: "Wave-probe instrumentation runs as its own battery stage.",
   },
   {
-    file: "notifications.spec.ts",
-    title: "owner mark-read (the §28 owner-only surface)",
-    gate: "runtime seed state",
-    reason:
-      "In-test conditional skip: needs a seeded UNREAD notification for the student at run time (the fixture seeds one, but an earlier same-battery consumer can drain it); the read-path coverage also rides the same spec's other green tests.",
-  },
-  {
-    file: "rewards-ranking.spec.ts",
-    title: "insufficient spendable disables the tile CTA",
-    gate: "CQ_E2E_POOR_STUDENT",
-    reason:
-      "Needs a student whose spendable points sit below the cheapest reward; not part of the standard world export.",
-  },
-  {
     file: "submission.spec.ts",
     title: "mocked storage PUT: pinned wire shape",
     gate: "CQ_E2E_MOCK_STORAGE=1",
