@@ -9,8 +9,8 @@
 
 | 状态 | 数量 | 明细 |
 |---|---|---|
-| 已覆盖 | 25 | S1-S3、S5-S26（S4 拆半：key 生成覆盖；见 G-4） |
-| 缺口（轻，列出不补） | 1 | G-4（原文件名长度限制/清理无显式断言——S4 后半） |
+| 已覆盖 | 26 | S1-S26 |
+| 缺口（轻，列出不补） | 0 | —（G-4 已补，见缺口明细） |
 | 不匹配 | 0 | — |
 
 ## 矩阵
@@ -20,7 +20,7 @@
 | S1 | §9.3 分段（MUST 单测）+ §38.3 | 五档边界恰值：deadline=100%、+4h=50%、+12h=20%、grace=拒；±1ms 十二边界 | `tests/unit/tasks/test_deadlines.py::test_reward_fraction_boundary_ladder`（参数化边界梯）+ `tests/integration/submissions/test_reward_lock.py::test_first_valid_on_time_submission_locks_provisional_at_full` / `test_first_valid_at_plus_two_hours_locks_eighty_percent` | 已覆盖 |
 | S2 | §10 八步流 | intent→校验→短时 URL→直传→通知→元数据验证→建 Submission→Worker 异步 | `tests/integration/submissions/test_upload_finalize.py::test_full_flow_creates_version_one_submission` + `tests/integration/submissions/test_submission_api.py`（intent/finalize API 族） | 已覆盖 |
 | S3 | §10 步骤2 五项校验 | Claim 权限/状态/类型声明/大小上限/提交窗口 | `tests/unit/submissions/test_upload_policy.py::test_in_window_claimed_student_passes_all_gates` + `test_upload_policy.py::test_wrong_owner_refused` / `test_non_submittable_claim_status_refused` / `test_type_outside_task_allowed_set_refused` / `test_size_over_task_limit_refused` / `test_revision_required_claim_with_future_revision_deadline_passes`（窗口） | 已覆盖 |
-| S4 | §10 安全①② | object key 服务端生成；原文件名仅显示 metadata + 长度限制与清理 | key 半：`tests/integration/submissions/test_submission_constraints.py::test_duplicate_object_key_rejected`（服务端键域）+ `tests/e2e/test_file_security.py::test_pathological_files_fail_with_bounded_typed_codes`（不可构造路径）；metadata 半：`tests/integration/submissions/test_submission_api.py`（original_filename 显示字段断言）。**长度限制/清理无显式断言** | 已覆盖（key 半）；**轻缺口 G-4** |
+| S4 | §10 安全①② | object key 服务端生成；原文件名仅显示 metadata + 长度限制与清理 | key 半：`tests/integration/submissions/test_submission_constraints.py::test_duplicate_object_key_rejected`（服务端键域）+ `tests/e2e/test_file_security.py::test_pathological_files_fail_with_bounded_typed_codes`（不可构造路径）；metadata 半：`tests/integration/submissions/test_submission_api.py`（original_filename 显示字段断言 + `../../考研数据.csv`→`考研数据.csv` 清理接线）；长度/清理显式断言：`tests/unit/submissions/test_upload_policy.py::test_sanitize_filename_strips_path_components` / `test_sanitize_filename_caps_length_and_falls_back` / `test_sanitize_filename_drops_non_printable_characters` / `test_sanitize_filename_exact_cap_boundary`（清理规则四则+恰值截断）+ `tests/unit/submissions/test_upload_policy.py::test_intent_request_filename_accepts_exactly_the_cap` / `test_intent_request_filename_one_over_the_cap_is_rejected` / `test_intent_request_filename_blank_is_rejected`（传输边界恰好 255 通过/超限 422/空拒） | 已覆盖 |
 | S5 | §10 安全③④ | 下载短时签名 URL；越权不可读他人文件 | `tests/integration/submissions/test_submission_api.py::test_download_url_issued_only_after_authorization` + `test_submission_api.py::test_download_staff_arm_requires_confirmed_totp` | 已覆盖 |
 | S6 | §10 安全⑤ | 默认 200MB、按 Task 调整 | `tests/unit/submissions/test_upload_policy.py::test_size_over_task_limit_refused`（Task 上限执法）+ `test_upload_policy.py::test_in_window_claimed_student_passes_all_gates`（默认通道）；全局默认值：`tests/unit/submissions/test_upload_service.py::test_settings_default_ttls_are_the_documented_pair`（组合默认族） | 已覆盖 |
 | S7 | §10 末段 解析器独立限制 | 行/列/解压大小/CPU/内存/超时各有限制 | 三校验器各有 `tests/unit/submissions/test_csv_validator.py::test_timeout_trips_with_fake_clock` / `tests/unit/submissions/test_xlsx_validator.py::test_row_cap_aborts_with_scan_incomplete_semantics` / `tests/unit/submissions/test_sqlite_validator.py::test_too_many_columns_aborts`（行/列/超时三面 × 三格式）+ XLSX 解压比族（S20 引） | 已覆盖 |
@@ -46,7 +46,7 @@
 
 ## 缺口明细（列出不补）
 
-- **G-4**（S4 后半）：原文件名的**长度限制与清理**无显式测试——显示 metadata 语义与不可构造路径均有覆盖，但"超长/恶意文件名被限制清理"的独立断言未定位到。按纪律列出；补法参照 upload_policy 的 gate 模式加一条即可。
+- **G-4**（S4 后半）：**已补（2026-10-26 缺口闭合批）**。勘误与补法：上限与清理逻辑经查**存在**——schema 层 `UploadIntentRequest.filename` 带 `Field(min_length=1, max_length=255)`（超限 422 拒于服务之前），服务层 `sanitize_filename` 在 intent 建立时落库前清理（双分隔符路径剥离/非打印字符丢弃/255 截断/空回退），API 接线由 `test_submission_api.py` 的路径清理断言承载；其中 sanitize 函数级断言自 2026-09-20（PR #2 批）已在本域，战役"未定位到"属定位遗漏。本批补齐的真残余：`test_intent_request_filename_accepts_exactly_the_cap`（恰好 255 通过）、`test_intent_request_filename_one_over_the_cap_is_rejected`（256 拒）、`test_intent_request_filename_blank_is_rejected`（空拒）、`test_sanitize_filename_exact_cap_boundary`（sanitize 恰值 255 不动/256 截为前 255）。
 
 ## 不匹配明细
 
