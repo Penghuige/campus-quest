@@ -107,3 +107,5 @@ claims-lifecycle C3：Claim 状态转移集中化 pin 由 `tests/unit/tasks/test
 - 措辞映射注记（非矛盾）：spec「mobile +device 快照」的设备变体仅存在于 email ADMIN 记住设备腿；mobile 学生腿快照恒 `{channel: mobile_code}`——已记 audit-log.md 备注，待 owner 备览。
 - 验证：checker 28 份 OK；单测 1450 全绿（标准 TEST_STACK_ENV 形态）；三连绿；分支零生产代码改动。
 - 集成腿（8 件）借栈窗口实跑，结果回填于下。
+
+**借栈窗口回填（2026-10-26）**：8 件集成钉实跑 **13 passed**（含文件内全部用例；test_cleanup_audit_survival 首跑暴露夹具未走 presign 流程的假件前置，按 test_file_cleanup 先例修复后过，修复随分支提交）。十二缺口闭合批全数落地。
