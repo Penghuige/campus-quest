@@ -39,7 +39,7 @@ import hmac
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -376,62 +376,27 @@ class EmailLoginService:
 
         remember = bool(remember_device)
         if role_value is Role.TEACHER:
-            _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-            device_cookie, device_slot = (
-                await issue_device(db, user, clock=self._clock)
-                if remember
-                else ("", "")
-            )
-            await self._audit.append(
+            return await self._login_succeeded(
                 db,
-                actor=actor,
-                action=AUDIT_EMAIL_LOGIN_SUCCEEDED,
-                target_type=_AUDIT_TARGET_TYPE,
-                target_id=str(user_id),
-                after_snapshot={"channel": "email_code"},
-                ip_address=audit_context.ip_address if audit_context else None,
-                request_id=audit_context.request_id if audit_context else None,
-            )
-            await db.commit()
-            logger.info("email login succeeded user_id=%s channel=email_code", user_id)
-            return EmailCodeLoginOutcome(
-                user_id=user_id,
-                role=role_value,
-                tokens=tokens,
-                device_cookie=device_cookie or None,
-                device_slot=device_slot or None,
+                user,
+                now=now,
+                remember_device=remember,
+                channel="email_code",
+                audit_context=audit_context,
             )
 
         # ADMIN: a valid remembered device finishes the login here.
         if device_cookies and await any_valid_for(
             db, device_cookies, user_id, clock=self._clock
         ):
-            _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-            new_cookie, new_slot = (
-                await issue_device(db, user, clock=self._clock)
-                if remember
-                else ("", "")
-            )
-            await self._audit.append(
+            return await self._login_succeeded(
                 db,
-                actor=actor,
-                action=AUDIT_EMAIL_LOGIN_SUCCEEDED,
-                target_type=_AUDIT_TARGET_TYPE,
-                target_id=str(user_id),
-                after_snapshot={"channel": "email_code", "remembered_device": True},
-                ip_address=audit_context.ip_address if audit_context else None,
-                request_id=audit_context.request_id if audit_context else None,
-            )
-            await db.commit()
-            logger.info(
-                "email login succeeded user_id=%s channel=email_code+device", user_id
-            )
-            return EmailCodeLoginOutcome(
-                user_id=user_id,
-                role=role_value,
-                tokens=tokens,
-                device_cookie=new_cookie or None,
-                device_slot=new_slot or None,
+                user,
+                now=now,
+                remember_device=remember,
+                channel="email_code",
+                audit_context=audit_context,
+                used_remembered_device=True,
             )
 
         # ADMIN without the device: an OPAQUE pending credential for the
@@ -459,6 +424,58 @@ class EmailLoginService:
         logger.info("email login totp_required user_id=%s", user_id)
         return EmailCodeLoginOutcome(
             user_id=user_id, role=role_value, pending_token=pending_token
+        )
+
+    async def _login_succeeded(
+        self,
+        db: AsyncSession,
+        user: User,
+        *,
+        now: datetime,
+        remember_device: bool,
+        channel: str,
+        audit_context: AuditContext | None,
+        used_remembered_device: bool = False,
+    ) -> EmailCodeLoginOutcome:
+        """Issue the session, device cookie/slot, audit row, and outcome
+        atomically — the single write point every login-success leg
+        (teacher code, remembered device, totp) funnels through.
+
+        ``channel`` is the snapshot shorthand; a remembered-device
+        completion is the only leg whose snapshot carries the device
+        fact and whose log renders the «+device» suffix.
+        """
+        assert self._sessions is not None
+        user_id = user.id
+        role = Role(user.role)
+        _, tokens = await self._sessions.issue_session(db, user=user, now=now)
+        new_cookie, new_slot = (
+            await issue_device(db, user, clock=self._clock)
+            if remember_device
+            else ("", "")
+        )
+        after_snapshot: dict[str, str | bool] = {"channel": channel}
+        if used_remembered_device:
+            after_snapshot["remembered_device"] = True
+        await self._audit.append(
+            db,
+            actor=Actor(user_id=user_id, role=role),
+            action=AUDIT_EMAIL_LOGIN_SUCCEEDED,
+            target_type=_AUDIT_TARGET_TYPE,
+            target_id=str(user_id),
+            after_snapshot=after_snapshot,
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        log_channel = f"{channel}+device" if used_remembered_device else channel
+        logger.info("email login succeeded user_id=%s channel=%s", user_id, log_channel)
+        return EmailCodeLoginOutcome(
+            user_id=user_id,
+            role=role,
+            tokens=tokens,
+            device_cookie=new_cookie or None,
+            device_slot=new_slot or None,
         )
 
     async def verify_totp(
@@ -534,30 +551,13 @@ class EmailLoginService:
             )
 
         await self._guard.reset(user_id)
-        _, tokens = await self._sessions.issue_session(db, user=user, now=now)
-        device_cookie, device_slot = (
-            await issue_device(db, user, clock=self._clock)
-            if remember_device
-            else ("", "")
-        )
-        await self._audit.append(
+        return await self._login_succeeded(
             db,
-            actor=Actor(user_id=user_id, role=Role.ADMIN),
-            action=AUDIT_EMAIL_LOGIN_SUCCEEDED,
-            target_type=_AUDIT_TARGET_TYPE,
-            target_id=str(user_id),
-            after_snapshot={"channel": "email_code+totp"},
-            ip_address=audit_context.ip_address if audit_context else None,
-            request_id=audit_context.request_id if audit_context else None,
-        )
-        await db.commit()
-        logger.info("email login succeeded user_id=%s channel=email_code+totp", user_id)
-        return EmailCodeLoginOutcome(
-            user_id=user_id,
-            role=Role.ADMIN,
-            tokens=tokens,
-            device_cookie=device_cookie or None,
-            device_slot=device_slot or None,
+            user,
+            now=now,
+            remember_device=remember_device,
+            channel="email_code+totp",
+            audit_context=audit_context,
         )
 
 
