@@ -91,6 +91,24 @@
 - 依赖容器（15432/6379/9000/ClamAV evidence）全程在线未动；未重启常驻栈（按 ack 归还方式：通告发 campus reviewer 由其 stack.sh start 恢复）。
 - worktree 干净 @ 4bcbd2e（test-results/.coverage 均为 gitignored 工件）。
 
+## 全量门禁·续窗（CQ-PORT-STACK-02，2026-10-28 00:03 放行）——**两门禁全绿**
+
+对象前移至 `6d9e956`（= 712fb48 merge origin/main@7307a5a，#149/#150 并入，含上窗红腿的 307 语义重写 `3293ec5/719d70c test(e2e): align anonymous inbox access with login redirect`、isolation.ts 夹具隔离批与 noskip 豁免清理）。ack：`notes/collaboration/CQ-PORT-STACK-02-ack.md`。同 Node 22 纪律、零拼接。
+
+| 门禁 | 退出码 | 关键数字 |
+|---|---|---|
+| `PATH=node22 make verify` | **0** | backend 全量 **3183 passed / 54 skipped**（368.00s，较上窗 +39 = #149/#150 增量）；前端 typecheck/lint/check:css/build 绿 |
+| `PATH=node22 make release-gate` | **0** | unit+worker cov **1621**（2:10）；integration cov **1571 passed / 8 deselected**（9:16）；backend-e2e **47**（1:04）；Playwright 主电池 **216 passed（15.3m）**；visual-regression **18**（46.4s）；innovation-visual **8**（1.1m）；no-skip 守卫过；coverage ratchet OK（lines 95.38 / branches 92.29 / functions 90.7 vs 地板 94.99/91.78/90.63） |
+
+**上窗红腿转绿实证**：电池输出 `✓ 131 [chromium] e2e/notifications.spec.ts:58:7 anonymous visitor (the server-side 307 handoff) › /notifications is handed to /login server-side — no inbox, no stale CTA (427ms)`——重写后以 `page.request.get(maxRedirects:0)` 断言 307+location，与 327fd5a 服务端直跳语义对齐；上窗「不可收口」裁决由 main 侧修复兑现。
+
+### 现场清理（续窗留档）
+
+- 3000/8000 随电池退出释放，8100 全程未占用；无游离 next/uvicorn/playwright 进程。
+- `make reset-test-db`（exit 0）：campusquest_test 回 head=0045、users=0，Redis db0 FLUSH。
+- 依赖容器在线未动；常驻栈未重启（归还通告发 campus reviewer，由其 stack.sh start 恢复）。
+- worktree 干净（test-results/.coverage 为 gitignored 工件）。
+
 ## 提交清单（本批 HEAD = 见 git log；基线 56ef06f）
 
 1. `ddfd5a7` test(identity): pin the login-success INFO log channel shorthand via caplog（测试增量 + AL10 矩阵）
@@ -99,7 +117,8 @@
 4. `1e8ebac` docs(notes): 本记录首版
 5. `4c21f6b` refactor(identity): funnel the email-login success legs through _login_succeeded（延伸批结构收敛）
 6. `4bcbd2e` docs(notes): 延伸批修订
-7. 本条之后的提交：门禁窗口批修订（全量门禁结果与现场清理留档，见「全量门禁」节）
+7. `712fb48` docs(notes): 门禁窗口 01 结果（verify 绿 / release-gate 红因留档）
+8. 续窗 02 修订：head 前移 6d9e956 后两门禁全绿（见「全量门禁·续窗」节）
 
 ## 环境注记
 
