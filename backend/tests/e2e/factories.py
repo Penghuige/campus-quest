@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from itertools import count
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -221,6 +221,68 @@ async def seed_student(
             username=student.username,
             password=DEFAULT_PASSWORD,
         )
+
+
+async def create_unread_notification(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    user_id: UUID,
+    title: str,
+    body: str = "测试自建的隔离未读通知",
+) -> UUID:
+    """One UNREAD, inbox-VISIBLE notification for ``user_id``, committed.
+
+    The notifications e2e's isolation fixture: the mark-read test owns
+    its row instead of borrowing whatever battery side effect happens
+    to precede it. The inbox's visibility gate (§25.2) lists only rows
+    whose IN_APP delivery completed a REAL send — so the fixture writes
+    the logical row AND its IN_APP SENT delivery (a true pair, exactly
+    what a dispatched event leaves behind); ``read_at`` stays NULL
+    until the UI marks it.
+    """
+    now = mint_now()
+    event_key = f"e2e-iso-{uuid4()}"
+    async with factory() as db:
+        row = Notification(
+            user_id=user_id,
+            event_key=event_key,
+            event_type="ACCOUNT_SECURITY",
+            title=title,
+            body=body,
+            read_at=None,
+        )
+        db.add(row)
+        await db.flush()
+        db.add(
+            NotificationDelivery(
+                notification_id=row.id,
+                user_id=user_id,
+                event_key=event_key,
+                channel="IN_APP",
+                status="SENT",
+                scheduled_at=now,
+                attempts=1,
+                sent_at=now,
+            )
+        )
+        await db.commit()
+        return row.id
+
+
+async def delete_notification(
+    factory: async_sessionmaker[AsyncSession],
+    notification_id: UUID,
+) -> None:
+    """Remove one fixture row (deliveries first — none exist today, the
+    delete keeps the FK order honest anyway)."""
+    async with factory() as db:
+        await db.execute(
+            delete(NotificationDelivery).where(
+                NotificationDelivery.notification_id == notification_id
+            )
+        )
+        await db.execute(delete(Notification).where(Notification.id == notification_id))
+        await db.commit()
 
 
 async def seed_teacher_confirmed_totp(

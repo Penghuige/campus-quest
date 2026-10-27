@@ -11,26 +11,34 @@
  * - CQ_E2E_STUDENT     pre-seeded student credentials
  *                      "student-number:password" (required for the
  *                      authenticated tests);
- * - the mark-read test depends on a side-effect unread row from an
- *                      earlier battery test (the world seeds zero
- *                      notifications — see the noskip exemption
- *                      entry); it self-skips without one.
+ * - CQ_E2E_STUDENT_ID  the seeded student's user id — the mark-read
+ *                      chain's OWN unread row is created for it
+ *                      through the isolation fixtures (the world
+ *                      seeds zero notifications); no battery side
+ *                      effect or runtime skip is involved.
  *
  * OWNER-ONLY under test (spec §28 + notifications router): the inbox is
  * the caller's OWN rows and mark-read is owner-only server-side — the
  * frontend makes no access decision. Here that means: an anonymous
- * visitor gets the login CTA (the 401 path through the shell gate), and
- * the owner flow marks a row read from the server echo. The 403 paths
- * (staff token, foreign id -> PERMISSION_DENIED) are backend contract,
- * pinned by the S3 router tests.
+ * visitor is handed to /login by the SERVER (the #145 307 redirect),
+ * and the owner flow marks a row read from the server echo. The 403
+ * paths (staff token, foreign id -> PERMISSION_DENIED) are backend
+ * contract, pinned by the S3 router tests.
  */
 import { expect, test } from "./fixtures";
 
-import { ensureStudentLogin } from "./fixtures";
+import { ensureStudentLogin, mintToken } from "./fixtures";
+import {
+  createUnreadNotification,
+  deleteUserCascade,
+  deleteNotification,
+  spawnDedicatedStudent,
+} from "./isolation";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
 const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' DEFAULT_PASSWORD)
+const STUDENT_ID = process.env.CQ_E2E_STUDENT_ID;
 
 test.skip(
   !E2E_ENABLED,
@@ -46,13 +54,23 @@ async function loginAs(page: import("@playwright/test").Page): Promise<void> {
   await ensureStudentLogin(page);
 }
 
-test.describe("anonymous visitor (the guard's 401 path)", () => {
-  test("/notifications shows the login CTA, not a broken page", async ({
+test.describe("anonymous visitor (the server-side 307 handoff)", () => {
+  test("/notifications is handed to /login server-side — no inbox, no stale CTA", async ({
     page,
   }) => {
+    // #145 (327fd5a): a visitor with no session evidence is redirected
+    // by the SERVER — the document answer is a 307 to /login, not an
+    // in-page 401 CTA (the old "去登录" link retired with that shape).
+    const answer = await page.request.get(`${BASE_URL}/notifications`, {
+      maxRedirects: 0,
+    });
+    expect(answer.status()).toBe(307);
+    expect(answer.headers()["location"]).toContain("/login");
+
+    // The browser walk: /notifications lands on the LOGIN page.
     await page.goto(`${BASE_URL}/notifications`);
+    await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: "登录 CampusQuest" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "去登录" })).toBeVisible();
     // No inbox affordances leak to the anonymous shell.
     await expect(page.getByLabel("通知收件箱")).toHaveCount(0);
   });
@@ -157,36 +175,65 @@ test.describe("inbox render + filter tabs (§28; patterns §4 URL state)", () =>
 
 test.describe("owner mark-read (the §28 owner-only surface)", () => {
   test.skip(
-    STUDENT === undefined,
-    "needs CQ_E2E_STUDENT (seeded student credentials); Plan 10's fixture provides them.",
+    STUDENT === undefined || STUDENT_ID === undefined,
+    "needs CQ_E2E_STUDENT and CQ_E2E_STUDENT_ID (the seeded world export).",
   );
 
   test("marking a row read flips it in place and drops it from the unread tab", async ({
     page,
   }) => {
-    await loginAs(page);
-    await page.goto(`${BASE_URL}/notifications`);
-
-    const unreadRow = page.locator(".notif-item[data-read='false']").first();
-    if (!(await unreadRow.isVisible())) {
-      test.skip(
-        true,
-        "needs a seeded UNREAD notification for CQ_E2E_STUDENT (Plan 10's fixture seeds one).",
+    // The chain OWNS its unread row: the world seeds zero
+    // notifications, and the row this test used to borrow was a
+    // battery side effect an earlier consumer could drain — an order
+    // dependency that surfaced as a runtime skip. The marker title is
+    // run-unique, so the walk finds ITS row however many other rows or
+    // consumers exist; the row is removed afterwards (no battery or
+    // visual residue).
+    //
+    // The OTHER consumer is real too: a dedicated second student with
+    // their OWN unread row consumes it through the owner API before
+    // the walk — the target row must stay unread and answer only its
+    // owner (the §28 owner-only boundary the chain pins).
+    const apiBase = process.env.CQ_E2E_API_URL ?? "http://localhost:8100/api/v1";
+    const other = spawnDedicatedStudent();
+    const otherNotificationId = createUnreadNotification(
+      other.id,
+      `他人未读 ${Date.now()}`,
+    );
+    const marker = `隔离未读 ${Date.now()}`;
+    const notificationId = createUnreadNotification(STUDENT_ID!, marker);
+    try {
+      const consumed = await page.request.post(
+        `${apiBase}/notifications/${otherNotificationId}/read`,
+        { headers: { Authorization: `Bearer ${mintToken(other.id)}` } },
       );
+      expect(consumed.ok(), await consumed.text()).toBe(true);
+
+      await loginAs(page);
+      await page.goto(`${BASE_URL}/notifications`);
+
+      const unreadRow = page.locator(".notif-item[data-read='false']", {
+        hasText: marker,
+      });
+      await expect(unreadRow).toBeVisible();
+      await expect(unreadRow.getByText("未读", { exact: true })).toBeVisible();
+      await unreadRow.getByRole("button", { name: "标为已读" }).click();
+
+      // Optimistic flip confirmed by the server echo: read state, no 未读
+      // badge, no further action (design §10/§12 — weight + badge, not color).
+      const row = page.locator(".notif-item", { hasText: marker }).first();
+      await expect(row).toHaveAttribute("data-read", "true");
+      await expect(row.getByText("未读", { exact: true })).toHaveCount(0);
+      await expect(row.getByRole("button", { name: "标为已读" })).toHaveCount(0);
+
+      // A read row no longer matches the unread filter.
+      await page.getByRole("link", { name: "未读", exact: true }).click();
+      await expect(
+        page.locator(".notif-item", { hasText: marker }),
+      ).toHaveCount(0);
+    } finally {
+      deleteNotification(notificationId);
+      deleteUserCascade(other.id);
     }
-    const title = (await unreadRow.locator(".notif-title").innerText()).trim();
-    await expect(unreadRow.getByText("未读", { exact: true })).toBeVisible();
-    await unreadRow.getByRole("button", { name: "标为已读" }).click();
-
-    // Optimistic flip confirmed by the server echo: read state, no 未读
-    // badge, no further action (design §10/§12 — weight + badge, not color).
-    const row = page.locator(".notif-item", { hasText: title }).first();
-    await expect(row).toHaveAttribute("data-read", "true");
-    await expect(row.getByText("未读", { exact: true })).toHaveCount(0);
-    await expect(row.getByRole("button", { name: "标为已读" })).toHaveCount(0);
-
-    // A read row no longer matches the unread filter.
-    await page.getByRole("link", { name: "未读", exact: true }).click();
-    await expect(page.locator(".notif-item", { hasText: title })).toHaveCount(0);
   });
 });

@@ -42,6 +42,7 @@ When deciding whether to copy a pattern from another codebase, read:
 
 ## Development discipline
 
+- Sedimented practices for testing/CI tasks live in `docs/best-practices/testing-ci.md` — check them before starting such work.
 - Use test-driven development for features and bug fixes.
 - Reproduce a bug with a failing regression test before fixing it.
 - Run focused tests while developing, then the relevant module gate before completion.
