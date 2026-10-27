@@ -46,6 +46,22 @@ BACKEND_APP = REPO_ROOT / "backend" / "app"
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
 OUT_PATH = REPO_ROOT / "docs" / "architecture" / "as-built.md"
 
+# The map stamps the HEAD it was rendered from (informational
+# provenance). A byte-exact freshness check would flag a fresh map the
+# moment any later commit lands — the gate compares the SCANNED CONTENT
+# with the stamp line normalized out.
+_HEAD_STAMP_RE = re.compile(r"Generated from HEAD [0-9a-zA-Z\-]+")
+
+
+def _normalize_stamp(text: str) -> str:
+    return _HEAD_STAMP_RE.sub("Generated from HEAD <stamp>", text)
+
+
+def check_freshness(committed: str, generated: str) -> bool:
+    """Content equality with the HEAD stamp normalized out — only real
+    tree drift is staleness."""
+    return _normalize_stamp(committed) == _normalize_stamp(generated)
+
 # ---------------------------------------------------------------------------
 # Backend scan (AST — precise for Python)
 # ---------------------------------------------------------------------------
@@ -476,11 +492,11 @@ def self_test() -> bool:
     return ok
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.self_test:
         return 0 if self_test() else 1
@@ -498,7 +514,7 @@ def main() -> int:
         current = (
             OUT_PATH.read_text(encoding="utf-8") if OUT_PATH.exists() else ""
         )
-        if current != text:
+        if not check_freshness(current, text):
             print(
                 "as-built map is STALE — regenerate with `make arch-map` "
                 "and commit it with the change that drifted it.",

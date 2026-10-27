@@ -84,6 +84,43 @@ cp frontend/test-results/report.json reports/artifacts/playwright.json
 
 注意最后一次 Playwright 运行会覆盖该文件；要一份同时含电池和像素的报告，就在一次运行里同时打开 `CQ_E2E=1 CQ_VISUAL=1`。
 
+### 2.1 结果文件来源（provenance）
+
+每个结果文件可以带一个同名 sidecar `<artifact>.provenance.json`，记录它从哪来：
+
+```json
+{
+  "schema": 1,
+  "source_sha": "<产生时的工作区 HEAD 全 sha>",
+  "dirty": false,
+  "artifact_sha256": "<stamp 时刻该文件内容的 sha256>",
+  "command": "产生命令",
+  "generated_at_utc": "2026-10-26T12:00:00Z"
+}
+```
+
+- `make test-report` 自动补跑的两层（后端单测/前端单测）在生成后**自动 stamp**；手动层跑完命令后补一条：
+
+  ```bash
+  cd backend && uv run python scripts/test_report.py \
+    --stamp-artifact ../reports/artifacts/backend-integration.xml \
+    --command "uv run pytest tests/integration --junitxml"
+  ```
+
+- 报告生成时对每个**存在**的结果文件按 sidecar 判定来源（fail-closed，页面顶部与每层标题旁显示）：
+
+  | 判定 | 条件 |
+  |---|---|
+  | fresh | sidecar 的 `source_sha` == 本报告 HEAD、`dirty=false`、且文件内容与 stamp 时的哈希一致 |
+  | dirty | 同 SHA 但产生时工作区有未提交改动——**不称 commit fresh** |
+  | stale | `source_sha` 是另一个提交 |
+  | 来源未知 | 无 sidecar（旧格式/外部拷入）、sidecar 损坏、字段缺失、或文件在 stamp 后被改动（哈希不符） |
+
+- 混合来源（各层 SHA 不一）按层分别显示，不合并成单一结论；历史归档的 `meta.json` 保留同样的逐层 provenance 摘要（`artifact_provenance` 字段）。
+- **CI 记录与本地 artifact 来源分开显示**：页面顶部的 CI 条来自 `ci.json`（该 commit 的 GitHub Actions 状态），各层旁的来源章来自 sidecar——两者互不冒充。
+- provenance 只做显示判定，**不是**报告生成的门禁：红测试、缺 sidecar 都照常出报告；判定一律就低不就高（证不出 fresh 就不写 fresh）。
+
+
 ## 2.5 探索轮（手动形态，2026-10-26 reviewer 裁定）
 
 ```bash
