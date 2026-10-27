@@ -53,6 +53,7 @@ When deciding whether to copy a pattern from another codebase, read:
 - Do not silently change product semantics to make implementation easier. Amend the spec or plan first if a real ambiguity is discovered.
 - Do not introduce a new dependency when a project dependency or platform primitive already solves the problem adequately.
 - Do not make unrelated refactors.
+- Behavior-preserving refactoring: follow docs/best-practices/refactoring.md for scope, invariants, and verification.
 
 ## Next.js rule
 

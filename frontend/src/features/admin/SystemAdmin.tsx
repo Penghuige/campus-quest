@@ -1032,10 +1032,8 @@ function RepairForm({ kind }: { kind: "release-assignment" | "force-fail" }) {
     setOutcome(null);
     try {
       if (isRelease) {
-        const result = await releaseOccupiedAssignment(targetId.trim(), reason.trim());
-        setOutcome(
-          `任务单元已释放，可再次被领取`,
-        );
+        await releaseOccupiedAssignment(targetId.trim(), reason.trim());
+        setOutcome("任务单元已释放，可再次被领取");
       } else {
         const result = await forceFailDelivery(targetId.trim(), reason.trim());
         setOutcome(

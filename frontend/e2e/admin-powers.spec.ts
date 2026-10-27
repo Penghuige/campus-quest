@@ -12,7 +12,7 @@
  * reactivate, the kick only burns sessions (re-login is the next
  * spec's own business).
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { mintToken, staffLogin } from "./fixtures";
 

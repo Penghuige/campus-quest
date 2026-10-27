@@ -25,11 +25,17 @@ Channel snapshot mapping (spec's «channel=email_code / +device /
 - staff (teacher) mobile-code completion → {"channel":
   "staff_mobile_code"} (the second mobile write point, the shared
   _staff_login_succeeded helper).
+
+The success INFO log renders the same channel shorthand
+(channel=email_code / +device / +totp) one line per login — the
+ops-triage counterpart of the snapshot; the email legs pin it via
+caplog (ported with CQ-REFACTOR-PORT-01).
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
@@ -276,17 +282,20 @@ async def test_teacher_email_code_login_writes_one_succeeded_audit_row(
     db_session: AsyncSession,
     api_email: FakeEmailSender,
     api_redis: aioredis.Redis,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A TEACHER completes at verify: exactly one EMAIL_LOGIN_SUCCEEDED
     row, actor=target=the account itself, the email_code channel
     snapshot, and the HTTP correlation pair threaded from the request —
-    with the mailbox nowhere on the row (G11)."""
+    with the mailbox nowhere on the row (G11) and the success INFO log
+    rendering the same channel shorthand."""
     teacher = await _seed_user(
         db_session,
         username=f"audit-teacher-{uuid4().hex[:8]}@campus.example.edu",
         role=Role.TEACHER,
     )
     await db_session.commit()
+    caplog.set_level(logging.INFO, logger="app.modules.identity.email_login_service")
 
     code = await _email_request_and_code(client, api_email, api_redis, teacher.username)
     verified = await client.post(
@@ -309,6 +318,9 @@ async def test_teacher_email_code_login_writes_one_succeeded_audit_row(
     assert row.request_id == "login-aud-0001"
     assert row.ip_address == "127.0.0.1"
     _assert_identifier_never_lands_on_the_row(row, teacher.username)
+    # The log face of the same channel contract: the success INFO log
+    # renders the snapshot's channel shorthand for ops triage.
+    assert "channel=email_code" in caplog.text
 
 
 async def test_admin_email_login_writes_totp_required_then_succeeded_rows(
@@ -317,13 +329,15 @@ async def test_admin_email_login_writes_totp_required_then_succeeded_rows(
     api_clock: FrozenClock,
     api_email: FakeEmailSender,
     api_redis: aioredis.Redis,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The ADMIN second-leg dispatch: the code leg answers totp_required
     with an EMAIL_LOGIN_TOTP_REQUIRED row (no snapshot — nothing
     migrated yet), the totp leg writes the email_code+totp success, and
     a later remembered-cookie completion writes the «+device» variant
     ({remembered_device: true}) AT verify — three rows, each pinned;
-    the mailbox appears on none of them (G11)."""
+    the mailbox appears on none of them (G11) and each success INFO log
+    renders its own channel shorthand."""
     secret = pyotp.random_base32()
     admin = await _seed_user(
         db_session,
@@ -332,6 +346,7 @@ async def test_admin_email_login_writes_totp_required_then_succeeded_rows(
         totp_secret=secret,
     )
     await db_session.commit()
+    caplog.set_level(logging.INFO, logger="app.modules.identity.email_login_service")
 
     # Leg 1: the code is good, the second factor is owed.
     code = await _email_request_and_code(client, api_email, api_redis, admin.username)
@@ -376,6 +391,9 @@ async def test_admin_email_login_writes_totp_required_then_succeeded_rows(
     )
     assert succeeded.after_snapshot == {"channel": "email_code+totp"}
     _assert_identifier_never_lands_on_the_row(succeeded, admin.username)
+    # Log face, leg 2: the totp completion renders its own shorthand.
+    assert "channel=email_code+totp" in caplog.text
+    caplog.clear()
 
     # Leg 3: a valid remembered cookie replaces the second factor — the
     # login completes AT verify with the device fact snapshotted.
@@ -389,6 +407,9 @@ async def test_admin_email_login_writes_totp_required_then_succeeded_rows(
     )
     assert warm.status_code == 200, warm.text
     assert warm.json()["status"] == "authenticated"
+    # Log face, leg 3: the remembered-device completion is the ONLY leg
+    # whose log renders the «+device» shorthand.
+    assert "channel=email_code+device" in caplog.text
 
     final_rows = await _login_audit_rows(db_session, admin.id)
     assert sorted(row.action for row in final_rows) == [
