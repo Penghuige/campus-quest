@@ -1,8 +1,18 @@
 # CQ-REFACTOR-PORT-01 — 移植 CQ-REFACTOR-01 的仍有效部分到 main
 
-- 日期：2026-10-27
+- 日期：2026-10-27（同日延伸批：`_login_succeeded` 结构收敛）
 - 分支：`health/channel-audit`（基线 `origin/main@56ef06f`，worktree `.claude/worktrees/campusquest-port-main`）
 - 源材料：本仓库对象库中的本地提交 `b03d8f5`（重构本体，做在落后的 ci-pipeline-hardening 基线上）与 `7cea962`（协作档案）。前端组件抽取部分（StaffCodeLogin 家族）已被 main 的 unified-login 批次取代，明确不在本批范围。
+
+## 延伸批（2026-10-27 第二批令）：`_login_succeeded` 结构收敛
+
+- **契约先行（改前落笔）**：①审计行——action=EMAIL_LOGIN_SUCCEEDED、actor=Actor(user_id, Role(user.role))、target=user/self、after_snapshot 三变体（`{"channel": "email_code"}` / +`remembered_device: True` / `{"channel": "email_code+totp"}`）、ip/request_id 穿线（钉在 test_login_audit_rows.py 五形态 + AL10）；②INFO 日志渲染文本 `email login succeeded user_id=<id> channel=email_code[+device|+totp]`（钉在 caplog 断言）；③Outcome——tokens=issue_session(user, now)、device_cookie/slot 仅 remember 时铸造否则 None、commit 先于 return。
+- **改法**：verify_code 的 teacher 腿与 remembered-device 腿（main 仍近逐行重复，批令核实属实）+ verify_totp 的 totp 成功腿（同型，已确认）全部收敛为 `_login_succeeded(channel=..., used_remembered_device=...)`，参照 b03d8f5 模板适配 main 演化：`issue_device(db, user, clock=...)` 的 `(cookie, slot)` 元组穿线、两值 `or None` 归一；helper 顶部（commit 前）读 `user.id`/`user.role`，守住 no-post-commit-attribute-access 规则。日志以 `%s` 渲染 channel（模板同法），渲染文本逐字不变。
+- **RED/GREEN（行为保持批：保护网先绿后零修改复绿，非新增行为的 RED）**：
+  - 基线（1e8ebac，树净）：`pytest tests/integration/identity/test_login_audit_rows.py` → 0（4 passed）；
+  - 重构后同一命令 → 0（4 passed），`git diff -- tests/` 零改动；
+  - identity 集成 310 passed（exit 0）；identity 单测（CI 形态环境）144 passed（exit 0）；ruff format/check/mypy 单文件 0/0/0。
+- **提交**：`4c21f6b` refactor(identity): funnel the email-login success legs through _login_succeeded（+72/-72，纯收敛零行数变化）。
 
 ## 移植了什么
 
@@ -23,7 +33,7 @@
 
 - **前端组件抽取**（StaffCodeLogin.tsx / api.ts / staffEmailLoginView.ts 等）：范围明确排除——main 的 unified-login 批次已取代该形态。
 - **渠道审计生产代码**：main 已有等价实现（见上），按批令"main 已有则不移植"。
-- **b03d8f5 的 email_login_service.py 三成功点收敛（`_login_succeeded` helper）**：main 经 unified-login + device-slot（4a01d72）演化，结构已不同（`issue_device(db, user, ...)` 元组形态、`any_valid_for` 槽匹配）；main 现行实现无重复收敛需求，强行套 b03d8f5 的 helper 形态属无关重构，不移植。
+- **b03d8f5 的 email_login_service.py 三成功点收敛（`_login_succeeded` helper）**：首批令范围仅渠道审计，未评估、未移植（当时注记"main 无重复收敛需求"）；同日延伸批令核实 main 的 teacher/remembered-device/totp 三腿仍近逐行重复，**已按延伸批移植**（见文首"延伸批"节，提交 `4c21f6b`）。
 - **b03d8f5 的 after_snapshot 测试断言**：main 的 test_login_audit_rows.py 已有更强断言（五种 channel 形态全钉 + G11），不重复。
 
 ## 命令与退出码
@@ -63,7 +73,9 @@
 1. `ddfd5a7` test(identity): pin the login-success INFO log channel shorthand via caplog（测试增量 + AL10 矩阵）
 2. `3966a24` docs: port the behavior-preserving refactoring practices from CQ-REFACTOR-01（refactoring.md 逐字节 + AGENTS 指针）
 3. `ebc3f7e` fix(admin): drop the dead Page import and the unused release result binding（admin 两处）
-4. 本记录（notes/collaboration/CQ-REFACTOR-PORT-01.md）
+4. `1e8ebac` 本记录首版（notes/collaboration/CQ-REFACTOR-PORT-01.md）
+5. `4c21f6b` refactor(identity): funnel the email-login success legs through _login_succeeded（延伸批结构收敛）
+6. 本记录延伸批修订
 
 ## 环境注记
 
