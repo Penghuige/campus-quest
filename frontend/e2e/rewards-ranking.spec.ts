@@ -18,10 +18,6 @@
  *                            seeded reward card (name derives from the
  *                            run marker) and mint the Admin bearer the
  *                            approve/fulfill calls ride;
- * - CQ_E2E_POOR_STUDENT      seeded student with LESS spendable points
- *                            than the cheapest open reward (optional;
- *                            drives the INSUFFICIENT_POINTS conflict
- *                            test);
  * - CQ_E2E_PRIVATE_STRINGS   comma-separated seeded identity values
  *                            (student numbers, phones, emails of OTHER
  *                            seeded users that appear on the boards)
@@ -30,6 +26,11 @@
  *                            pins run (no user-id attributes, no
  *                            6+ digit runs in the rendered boards).
  *
+ * The INSUFFICIENT_POINTS chain needs NO environment export: it spawns
+ * its own dedicated student (the isolation fixtures — an ACTIVE
+ * student with no wallet events, spendable deterministically 0) and
+ * removes them afterwards.
+ *
  * Privacy pins under test (spec §17/§40): the ranking surfaces render
  * EXACTLY nickname / display_honor / score / rank — never a student
  * number, phone, email, or user id.
@@ -37,6 +38,7 @@
 import { expect, test } from "./fixtures";
 
 import { ensureStudentLogin, mintToken } from "./fixtures";
+import { deleteUserCascade, spawnDedicatedStudent } from "./isolation";
 
 const E2E_ENABLED = process.env.CQ_E2E === "1";
 const BASE_URL = process.env.CQ_E2E_BASE_URL ?? "https://localhost:3000";
@@ -45,7 +47,7 @@ const STUDENT = process.env.CQ_E2E_STUDENT; // "username:password" (factories' D
 const RUN = process.env.CQ_E2E_RUN;
 const REWARD_ITEM_ID = process.env.CQ_E2E_REWARD_ITEM_ID;
 const ADMIN_ID = process.env.CQ_E2E_ADMIN_ID;
-const POOR_STUDENT = process.env.CQ_E2E_POOR_STUDENT;
+const STUDENT_ID = process.env.CQ_E2E_STUDENT_ID;
 const PRIVATE_STRINGS = (process.env.CQ_E2E_PRIVATE_STRINGS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -152,14 +154,50 @@ test.describe("student rewards redemption", () => {
     await expect(latest.locator(".badge", { hasText: "待审核" })).toBeVisible();
   });
 
+});
+
+test.describe("insufficient spendable (a dedicated wallet)", () => {
+  // The dedicated student's whole lifecycle is the chain's own:
+  // spawned before the walk, removed after it — whatever the outcome
+  // — so no row outlives the test (the registered-user residue trap).
+  const dedicatedRef: {
+    student?: { id: string; username: string; password: string };
+  } = {};
+
+  test.afterEach(() => {
+    if (dedicatedRef.student !== undefined) {
+      deleteUserCascade(dedicatedRef.student.id);
+      dedicatedRef.student = undefined;
+    }
+  });
+
   test("insufficient spendable disables the tile CTA with the quiet distance", async ({
     page,
   }) => {
-    test.skip(
-      POOR_STUDENT === undefined,
-      "needs CQ_E2E_POOR_STUDENT (spendable below the cheapest reward)",
-    );
-    await loginAs(page, POOR_STUDENT!);
+    // A dedicated student with NO wallet events: spendable is
+    // deterministically 0, below every open reward. The world export
+    // (CQ_E2E_POOR_STUDENT) this chain used to borrow never existed in
+    // the standard world, so it env-skipped; nothing environmental is
+    // needed now.
+    //
+    // The bystanders are pinned, not presumed: an EXISTING student's
+    // wallet figures and the enabled catalogue (id/name/cost/stock)
+    // are snapshotted before the dedicated student exists and asserted
+    // item-by-item unchanged after the walk.
+    const walletBefore = await walletStrip(page);
+    const catalogBefore = await catalogSnapshot(page);
+
+    const dedicated = spawnDedicatedStudent();
+    dedicatedRef.student = dedicated;
+
+    // The unified password form (the chain's own student — number and
+    // password, never a shared account).
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByRole("button", { name: "使用密码登录" }).click();
+    await page.getByLabel("账号", { exact: true }).fill(dedicated.username);
+    await page.getByLabel("密码").fill(dedicated.password);
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page).not.toHaveURL(/\/login/);
     await page.goto(`${BASE_URL}/rewards`);
 
     // Plan-13 T1 (owner P2 ruling): the tile CTA carries the state — the
@@ -180,8 +218,64 @@ test.describe("student rewards redemption", () => {
     ).toBeDisabled();
     await expect(card.locator(".reward-cta-note")).toContainText("还差");
     await expect(card.locator(".reward-cta-note")).toContainText("积分");
+
+    // The bystanders are untouched: same wallet figures, same catalogue
+    // items, item-by-item.
+    const walletAfter = await walletStrip(page);
+    const catalogAfter = await catalogSnapshot(page);
+    expect(walletAfter).toEqual(walletBefore);
+    expect(catalogAfter).toEqual(catalogBefore);
   });
 });
+
+/** The shared student's wallet strip through the real API (the same
+ * figures the rewards page renders). */
+async function walletStrip(
+  page: import("@playwright/test").Page,
+): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`${API_URL}/points/me`, {
+    headers: { Authorization: `Bearer ${mintToken(STUDENT_ID!)}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  return (await response.json()) as Record<string, unknown>;
+}
+
+/** The enabled catalogue's stable projection (id/name/point_cost/stock),
+ * id-sorted for a deterministic compare. The projection guards make a
+ * mistyped field name fail LOUDLY here — a snapshot of undefineds
+ * would compare equal and prove nothing. */
+async function catalogSnapshot(
+  page: import("@playwright/test").Page,
+): Promise<unknown[]> {
+  const response = await page.request.get(`${API_URL}/rewards`, {
+    headers: { Authorization: `Bearer ${mintToken(STUDENT_ID!)}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  const body = (await response.json()) as {
+    items: Array<Record<string, unknown>>;
+  };
+  expect(body.items.length, "the catalogue snapshot must be non-empty").toBeGreaterThan(0);
+  const projection = body.items
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      point_cost: item.point_cost,
+      stock: item.stock,
+    }))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  for (const entry of projection) {
+    expect(
+      typeof entry.point_cost,
+      "point_cost must project a number — a mistyped field reads undefined",
+    ).toBe("number");
+    expect(
+      entry.stock === null || typeof entry.stock === "number",
+      "stock is number|null by contract",
+    ).toBe(true);
+  }
+  return projection;
+}
+
 
 test.describe("redeem -> Admin approve/fulfill (real API) -> wallet reflects", () => {
   test.skip(
