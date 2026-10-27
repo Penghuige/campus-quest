@@ -68,14 +68,38 @@
 - 后端 coverage ratchet（-cov 积累链）/ e2e 电池 / 像素回归：属 release-gate/CI 层，同上。
 - admin-powers.spec.ts 的 e2e 电池：改动仅删未用导入，无行为面；跑电池需借 3000 栈（owner 栈正被另一会话恢复），不值得。
 
+## 全量门禁（CQ-PORT-STACK-01 窗口，2026-10-27 22:39 放行）
+
+窗口 ack：`notes/collaboration/CQ-PORT-STACK-01-ack.md`（根检出，campus reviewer 落盘）。两跑均新鲜整跑、Node 22（`PATH=/usr/local/n/versions/node/22.20.0/bin:$PATH`）。
+
+| 门禁 | 命令 | 退出码 | 结果 |
+|---|---|---|---|
+| make verify | `PATH=node22 make verify`（日志 /tmp/cq-port-verify.log） | **0** | backend 全量 3144 passed / 54 skipped（377.74s；e2e 标记类按 verify 形态设计性跳过）；frontend typecheck/lint/check:css/build 全绿 |
+| make release-gate | `PATH=node22 make release-gate`（日志 /tmp/cq-port-releasegate.log） | **2** | 红于 `playwright-e2e` 腿（Makefile:425）：电池 213 passed / 37 skipped / **1 failed**（15.5m），其余腿到该点全绿（backend unit+worker cov、integration cov、backend-e2e、migration-verify、前端静态/单测/build 已过） |
+
+### release-gate 红因（确定性、先在于 main、与本批零重叠）——不可收口，停下上报
+
+- 失败测试：`e2e/notifications.spec.ts:50`「anonymous visitor › /notifications shows the login CTA, not a broken page」——期望匿名访问 /notifications 就地渲染 StudentShell 的 CTA 壳（`去登录` 链接，`data-shell="anonymous"`）。
+- 实际行为：页面快照（error-context.md）显示渲染的是**真正的 /login 登录表单**（账号输入框/获取验证码/忘记密码）。根因：`327fd5a`（feat(shell): no-evidence direct path，#145 首屏直跳批）在 `frontend/src/app/(student)/layout.tsx:49` 对无 csrf cookie 且无 cq_shell hint 的访客**服务端 `redirect("/login")`**（`shellRedirectsToLogin`，shellChrome.ts:111）。Playwright 全新上下文必触发 → `登录 CampusQuest` H1 在登录页同样存在故 :38 过、`去登录` 链接不存在故 :55 挂。
+- 确定性证据：①电池内失败一次；②隔离复跑 `npx playwright test notifications.spec.ts --grep "login CTA" --project=chromium`（同 env 形态）**同样失败**（ISOLATED_EXIT=1，同 locator 同缺失）；③spec 最后修改 2026-10-10（cf14afc，早于 327fd5a），从未随新行为更新——与「CI 停摆期 e2e 债」（2026-10-07 起 CI 暂停，本地电池未覆盖该批）记忆吻合。
+- 裁决归属：修复=改 spec 断言适配 327fd5a 的新产品行为，或 owner 调整重定向——产品语义决定，非本移植批范围（批令：范围外问题记录上报不扩修）。整门重跑必再红于此，未重跑（两跑不拼接原则下无意义消耗窗口）。
+
+### 现场清理（留档）
+
+- 我起的进程全拆：Playwright webServers（3000/8000）随电池/隔离跑退出自动拆除，3000/8000/8100 复验全空闲；无游离 next/uvicorn/playwright 进程。
+- 世界清零：`make reset-test-db`（exit 0）——campusquest_test drop/recreate + alembic 至 0045_recruitment_notifications（=ack 交付形态），users=0 复验，Redis db0 随 target FLUSHDB。
+- 依赖容器（15432/6379/9000/ClamAV evidence）全程在线未动；未重启常驻栈（按 ack 归还方式：通告发 campus reviewer 由其 stack.sh start 恢复）。
+- worktree 干净 @ 4bcbd2e（test-results/.coverage 均为 gitignored 工件）。
+
 ## 提交清单（本批 HEAD = 见 git log；基线 56ef06f）
 
 1. `ddfd5a7` test(identity): pin the login-success INFO log channel shorthand via caplog（测试增量 + AL10 矩阵）
 2. `3966a24` docs: port the behavior-preserving refactoring practices from CQ-REFACTOR-01（refactoring.md 逐字节 + AGENTS 指针）
 3. `ebc3f7e` fix(admin): drop the dead Page import and the unused release result binding（admin 两处）
-4. `1e8ebac` 本记录首版（notes/collaboration/CQ-REFACTOR-PORT-01.md）
+4. `1e8ebac` docs(notes): 本记录首版
 5. `4c21f6b` refactor(identity): funnel the email-login success legs through _login_succeeded（延伸批结构收敛）
-6. 本记录延伸批修订
+6. `4bcbd2e` docs(notes): 延伸批修订
+7. 本条之后的提交：门禁窗口批修订（全量门禁结果与现场清理留档，见「全量门禁」节）
 
 ## 环境注记
 
