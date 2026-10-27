@@ -19,10 +19,10 @@
  * OWNER-ONLY under test (spec §28 + notifications router): the inbox is
  * the caller's OWN rows and mark-read is owner-only server-side — the
  * frontend makes no access decision. Here that means: an anonymous
- * visitor gets the login CTA (the 401 path through the shell gate), and
- * the owner flow marks a row read from the server echo. The 403 paths
- * (staff token, foreign id -> PERMISSION_DENIED) are backend contract,
- * pinned by the S3 router tests.
+ * visitor is handed to /login by the SERVER (the #145 307 redirect),
+ * and the owner flow marks a row read from the server echo. The 403
+ * paths (staff token, foreign id -> PERMISSION_DENIED) are backend
+ * contract, pinned by the S3 router tests.
  */
 import { expect, test } from "./fixtures";
 
@@ -46,13 +46,23 @@ async function loginAs(page: import("@playwright/test").Page): Promise<void> {
   await ensureStudentLogin(page);
 }
 
-test.describe("anonymous visitor (the guard's 401 path)", () => {
-  test("/notifications shows the login CTA, not a broken page", async ({
+test.describe("anonymous visitor (the server-side 307 handoff)", () => {
+  test("/notifications is handed to /login server-side — no inbox, no stale CTA", async ({
     page,
   }) => {
+    // #145 (327fd5a): a visitor with no session evidence is redirected
+    // by the SERVER — the document answer is a 307 to /login, not an
+    // in-page 401 CTA (the old "去登录" link retired with that shape).
+    const answer = await page.request.get(`${BASE_URL}/notifications`, {
+      maxRedirects: 0,
+    });
+    expect(answer.status()).toBe(307);
+    expect(answer.headers()["location"]).toContain("/login");
+
+    // The browser walk: /notifications lands on the LOGIN page.
     await page.goto(`${BASE_URL}/notifications`);
+    await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: "登录 CampusQuest" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "去登录" })).toBeVisible();
     // No inbox affordances leak to the anonymous shell.
     await expect(page.getByLabel("通知收件箱")).toHaveCount(0);
   });

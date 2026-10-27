@@ -43,6 +43,13 @@ arch-lint: arch-lint-backend arch-lint-frontend
 arch-map:
 	cd backend && uv run python ../scripts/generate_as_built.py
 
+# The freshness gate over the derived map: the check compares scanned
+# CONTENT with the informational HEAD stamp normalized out — it fails
+# only on real tree drift, so it can ride pre-push and CI without
+# noising on every commit.
+arch-map-check:
+	cd backend && uv run python ../scripts/generate_as_built.py --check
+
 # Owner-facing 3D "code city" (optional visual layer; local-only tools):
 # churn metrics from git history + code metrics from tree-sitter parsing,
 # merged into one CodeCharta map. Height/complexity + color/commits =
@@ -82,8 +89,8 @@ verify: lint-backend arch-lint
 # that delete or rename a page, a stale .next cache fails typecheck
 # with phantom page.js errors — `rm -rf frontend/.next/types
 # frontend/.next/dev/types` and re-run (next dev/build regenerates).
-.PHONY: pre-push ratchet-direction test-matrix placeholder-guard
-pre-push: ratchet-direction lint-backend arch-lint test-matrix placeholder-guard
+.PHONY: pre-push ratchet-direction test-matrix placeholder-guard arch-map-check
+pre-push: ratchet-direction lint-backend arch-lint arch-map-check test-matrix placeholder-guard
 	cd backend && $(TEST_STACK_ENV) uv run python scripts/dump_openapi.py ../frontend/openapi.snapshot.json
 	git diff --exit-code frontend/openapi.snapshot.json
 	cd frontend && npm run api:types:snapshot
@@ -339,6 +346,11 @@ test-report:
 			echo "!!! backend unit+worker produced no JUnit XML"; \
 			exit 1; \
 		fi; \
+		echo "==> backend unit+worker: stamping provenance sidecar"; \
+		(cd backend && uv run python scripts/test_report.py \
+			--stamp-artifact "$(CURDIR)/$(REPORT_BACKEND_UNIT_XML)" \
+			--command "pytest tests/unit tests/workers --junitxml") || \
+			echo "!!! provenance stamp failed; the layer will show 来源未知"; \
 	fi
 	@if [ ! -d frontend/node_modules ]; then \
 		echo "==> frontend unit: skipped (frontend/node_modules missing; not running npm ci)"; \
@@ -355,6 +367,11 @@ test-report:
 			echo "!!! frontend unit produced no JUnit XML"; \
 			exit 1; \
 		fi; \
+		echo "==> frontend unit: stamping provenance sidecar"; \
+		(cd backend && uv run python scripts/test_report.py \
+			--stamp-artifact "$(CURDIR)/$(REPORT_FRONTEND_UNIT_XML)" \
+			--command "node --import tsx --test junit reporter") || \
+			echo "!!! provenance stamp failed; the layer will show 来源未知"; \
 	fi
 	@notes=""; \
 	if [ ! -d frontend/node_modules ]; then \
