@@ -347,7 +347,7 @@ test-report:
 			exit 1; \
 		fi; \
 		echo "==> backend unit+worker: stamping provenance sidecar"; \
-		(cd backend && uv run python scripts/test_report.py \
+		(cd "$(CURDIR)/backend" && uv run python scripts/test_report.py \
 			--stamp-artifact "$(CURDIR)/$(REPORT_BACKEND_UNIT_XML)" \
 			--command "pytest tests/unit tests/workers --junitxml") || \
 			echo "!!! provenance stamp failed; the layer will show 来源未知"; \
@@ -368,7 +368,7 @@ test-report:
 			exit 1; \
 		fi; \
 		echo "==> frontend unit: stamping provenance sidecar"; \
-		(cd backend && uv run python scripts/test_report.py \
+		(cd "$(CURDIR)/backend" && uv run python scripts/test_report.py \
 			--stamp-artifact "$(CURDIR)/$(REPORT_FRONTEND_UNIT_XML)" \
 			--command "node --import tsx --test junit reporter") || \
 			echo "!!! provenance stamp failed; the layer will show 来源未知"; \

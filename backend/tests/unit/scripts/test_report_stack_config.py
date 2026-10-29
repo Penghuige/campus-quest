@@ -51,3 +51,17 @@ def test_stack_down_is_a_full_compose_down() -> None:
     down = re.search(r"^stack-down:\n(.*?)(?=^\S|\Z)", text, re.MULTILINE | re.DOTALL)
     assert down is not None, "make stack-down target missing"
     assert "docker compose -f infra/docker-compose.yml down" in down.group(1)
+
+
+def test_stamp_subshells_use_absolute_curdir() -> None:
+    """The provenance stamp steps must not rely on the recipe shell's cwd:
+    BACKEND_UNIT_WORKER_CMD's `cd backend` persists across the `;`-joined
+    line, so a bare `cd backend` lands in backend/backend (the 2026-10-29
+    来源未知 bug). Every stamp subshell pins $(CURDIR); the final render
+    step (its own recipe line, cwd = make root) keeps the relative cd."""
+    text = _MAKEFILE.read_text(encoding="utf-8")
+    # Two stamp subshells (backend + frontend artifacts), both pinned to
+    # the absolute worktree path; the bare relative form must be gone.
+    assert '(cd "$(CURDIR)/backend" && uv run python scripts/test_report.py' in text
+    assert text.count('(cd "$(CURDIR)/backend"') == 2
+    assert "(cd backend && uv run python scripts/test_report.py" not in text
