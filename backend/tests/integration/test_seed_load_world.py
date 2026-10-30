@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -178,6 +179,66 @@ async def test_seed_world_refuses_without_force(tmp_path: Path) -> None:
     finally:
         if world is not None:
             await _cleanup(world)
+
+
+async def test_seed_world_force_replaces_after_submissions(
+    tmp_path: Path,
+) -> None:
+    """Regression (Task 5 dry-run triage): --force must drop a world whose
+    claims already carry submissions and downstream rows, not die on FKs."""
+
+    world = await seed_world(
+        students=3,
+        claim_slots=2,
+        race_users=1,
+        race_slots=1,
+        deadline_in_minutes=25,
+        out_dir=tmp_path,
+    )
+    try:
+        from sqlalchemy.ext.asyncio import (
+            async_sessionmaker,
+            create_async_engine,
+        )
+
+        from app.modules.submissions.models import Submission
+
+        claim_id = next(
+            u["claim_id"] for u in world["users"] if u["claim_id"] is not None
+        )
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with maker() as db:
+            claim = await db.get(AssignmentClaim, UUID(claim_id))
+            db.add(
+                Submission(
+                    claim_id=claim.id,
+                    version=1,
+                    object_key="loadtest/stale-probe",
+                    original_filename="stale.csv",
+                    declared_type="CSV",
+                    file_size=10,
+                    submitted_at=datetime.now(UTC),
+                    # retention CHECK: permanent keeps retention_until NULL
+                    retention_permanent=True,
+                )
+            )
+            await db.commit()
+        await engine.dispose()
+
+        replaced = await seed_world(
+            students=3,
+            claim_slots=2,
+            race_users=1,
+            race_slots=1,
+            deadline_in_minutes=25,
+            out_dir=tmp_path,
+            force=True,
+        )
+        assert replaced["task_id"] != world["task_id"]
+    finally:
+        await _cleanup(world)
 
 
 async def _cleanup(world: dict[str, Any]) -> None:

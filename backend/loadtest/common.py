@@ -41,6 +41,24 @@ def classify_status(status_code: int) -> str:
     return "err"
 
 
+def classify_business_status(status_code: int) -> str:
+    """The write-path view: business 4xx is a legitimate rejection.
+
+    A 409 (in-flight conflict, slots gone) or 422 near a deadline is the
+    product saying no — the S1 deadline-race and S2 claim-rush stories
+    hinge on counting those separately from real failures. 429 stays its
+    own class; 5xx stays an error.
+    """
+
+    if status_code == 429:
+        return "rate_limited"
+    if status_code < 400:
+        return "ok"
+    if status_code < 500:
+        return "rejected"
+    return "err"
+
+
 @dataclass(slots=True)
 class Identity:
     """One world.json user; tokens rotate in place on refresh."""
@@ -97,6 +115,7 @@ class Tracker:
     ok_count: int = 0
     err_count: int = 0
     rate_limited_429: int = 0
+    rejected_count: int = 0
     _latencies: list[float] = field(default_factory=list)
     _by_name: dict[str, dict[str, int]] = field(default_factory=dict)
 
@@ -105,19 +124,24 @@ class Tracker:
             self.rate_limited_429 += 1
         elif outcome == "ok":
             self.ok_count += 1
+        elif outcome == "rejected":
+            self.rejected_count += 1
         else:
             self.err_count += 1
         if response_time_ms is not None:
             self._latencies.append(float(response_time_ms))
-        bucket = self._by_name.setdefault(name, {"ok": 0, "err": 0, "rate_limited": 0})
+        bucket = self._by_name.setdefault(name, {})
         bucket[outcome] = bucket.get(outcome, 0) + 1
 
     def summary(self) -> dict[str, Any]:
-        total = self.ok_count + self.err_count + self.rate_limited_429
+        total = (
+            self.ok_count + self.err_count + self.rate_limited_429 + self.rejected_count
+        )
         return {
             "ok_count": self.ok_count,
             "err_count": self.err_count,
             "rate_limited_429": self.rate_limited_429,
+            "rejected_count": self.rejected_count,
             "total": total,
             "p99_ms": _percentile(self._latencies, 0.99),
             "by_name": self._by_name,
@@ -145,17 +169,21 @@ def request_with_refresh(
     name: str,
     base_headers: dict[str, str] | None = None,
     on_response: Callable[[Any], None] | None = None,
+    **request_kwargs: Any,
 ) -> str:
     """One authenticated request; on 401 refresh once, retry once.
 
     The refresh call goes through the same client so locust's stats see
     it under ``auth:refresh``. Rotation updates both tokens in place —
-    ``rotate_refresh`` invalidates the old refresh token.
+    ``rotate_refresh`` invalidates the old refresh token. Extra kwargs
+    (json, data, …) ride along to every attempt of the request.
     """
 
     headers = dict(base_headers or {})
     headers.setdefault("Authorization", f"Bearer {identity.access_token}")
-    response = client.request(method, path, name=name, headers=headers)
+    response = client.request(
+        method, path, name=name, headers=headers, **request_kwargs
+    )
     if on_response is not None:
         on_response(response)
     if response.status_code != 401:
@@ -180,7 +208,9 @@ def request_with_refresh(
 
     retry_headers = dict(base_headers or {})
     retry_headers["Authorization"] = f"Bearer {identity.access_token}"
-    retried = client.request(method, path, name=name, headers=retry_headers)
+    retried = client.request(
+        method, path, name=name, headers=retry_headers, **request_kwargs
+    )
     if on_response is not None:
         on_response(retried)
     return classify_status(retried.status_code)

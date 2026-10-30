@@ -535,4 +535,29 @@ loadtest-s3:
 		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s3 \
 		uv run locust -f loadtest/s3_baseline.py --headless \
 		-u 20 -r 5 -t 2m --host http://localhost:8000 \
-		--csv ../$$out/locust
+		--csv ../$$out/locust --exit-code-on-error 0
+
+# S1 deadline submission rush (spec §Targets: 50 concurrent submitters,
+# 3-minute window by default). Escalation: run repeatedly with rising
+# S1_USERS (100, 200, ...) — each invocation is its own run directory.
+.PHONY: loadtest-s1 loadtest-s1-dryrun
+
+loadtest-s1:
+	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s1; \
+	mkdir -p $$out; \
+	cd backend && $(TEST_STACK_ENV) \
+		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s1 \
+		uv run locust -f loadtest/s1_deadline.py --headless \
+		-u $${S1_USERS:-50} -r $${S1_SPAWN_RATE:-10} -t $${S1_RUNTIME:-3m} \
+		--host http://localhost:8000 --csv ../$$out/locust --exit-code-on-error 0
+
+# 5 users / 40 s against a tiny world; no last-second cohort, so every
+# user submits during the window (submit_ok must equal 5).
+loadtest-s1-dryrun:
+	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s1-dryrun; \
+	mkdir -p $$out; \
+	cd backend && $(TEST_STACK_ENV) \
+		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s1-dryrun \
+		CQ_S1_LAST_SECOND_PCT=0 \
+		uv run locust -f loadtest/s1_deadline.py --headless \
+		-u 5 -r 1 -t 40s --host http://localhost:8000 --csv ../$$out/locust --exit-code-on-error 0

@@ -25,6 +25,13 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import User
 from app.modules.identity.session_service import SessionService
+from app.modules.submissions.models import (
+    RewardLockHistory,
+    Submission,
+    SubmissionReview,
+    SubmissionValidation,
+    UploadIntent,
+)
 from app.modules.tasks.claim_service import REWARD_POLICY_SNAPSHOT_V1
 from app.modules.tasks.commands import CreateTask
 from app.modules.tasks.deadlines import compute_claim_deadlines
@@ -278,10 +285,35 @@ async def _ensure_students(db: AsyncSession, count: int, now: datetime) -> list[
 
 
 async def _drop_world(db: AsyncSession, task: Task) -> None:
-    """Remove the previous load world's rows (audit history is plain
-    UUIDs, no FK — it survives task deletion, matching product history
-    semantics for a tooling-only world)."""
+    """Remove the previous load world's rows, submission chain first.
 
+    FK order matters (found the hard way by Task 5's dry-run): intents,
+    validations, reviews, and reward-lock history reference submissions,
+    and submissions reference claims. Audit history is plain UUIDs with
+    no FK — it survives task deletion, matching product history
+    semantics for a tooling-only world. Uploaded objects stay in the
+    bucket; capacity worlds are throwaway.
+    """
+
+    claim_ids = select(AssignmentClaim.id).where(AssignmentClaim.task_id == task.id)
+    submission_ids = select(Submission.id).where(Submission.claim_id.in_(claim_ids))
+    await db.execute(
+        delete(RewardLockHistory).where(
+            RewardLockHistory.submission_id.in_(submission_ids)
+        )
+    )
+    await db.execute(
+        delete(SubmissionReview).where(
+            SubmissionReview.submission_id.in_(submission_ids)
+        )
+    )
+    await db.execute(
+        delete(SubmissionValidation).where(
+            SubmissionValidation.submission_id.in_(submission_ids)
+        )
+    )
+    await db.execute(delete(UploadIntent).where(UploadIntent.claim_id.in_(claim_ids)))
+    await db.execute(delete(Submission).where(Submission.claim_id.in_(claim_ids)))
     await db.execute(delete(AssignmentClaim).where(AssignmentClaim.task_id == task.id))
     await db.execute(delete(Assignment).where(Assignment.task_id == task.id))
     await db.execute(delete(Task).where(Task.id == task.id))

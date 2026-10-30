@@ -13,9 +13,25 @@ from typing import Any
 from loadtest.common import (
     Identity,
     Tracker,
+    classify_business_status,
     classify_status,
     request_with_refresh,
 )
+
+
+def test_classify_business_status_separates_rejections() -> None:
+    # business 4xx (deadline passed, in-flight conflict, slots gone) is a
+    # LEGITIMATE scenario outcome, not an error — the S1/S2 story depends
+    # on telling them apart from real failures
+    assert classify_business_status(200) == "ok"
+    assert classify_business_status(201) == "ok"
+    assert classify_business_status(409) == "rejected"
+    assert classify_business_status(422) == "rejected"
+    assert classify_business_status(403) == "rejected"
+    assert classify_business_status(429) == "rate_limited"
+    assert classify_business_status(500) == "err"
+    # the strict read-path view keeps 404 an error
+    assert classify_status(404) == "err"
 
 
 class FakeResponse:
@@ -67,6 +83,11 @@ def test_tracker_counts_and_p99() -> None:
     assert summary["total"] == 7
     # p99 computed over all recorded latencies
     assert summary["p99_ms"] == 500
+
+    tracker.record("s1:intent", "rejected", 25)
+    summary = tracker.summary()
+    assert summary["rejected_count"] == 1
+    assert summary["total"] == 8
 
 
 def test_401_triggers_one_refresh_with_rotation_and_retry() -> None:
@@ -137,3 +158,23 @@ def test_429_and_5xx_never_trigger_refresh() -> None:
     )
     assert outcome == "err"
     assert not any("refresh" in c["path"] for c in client.calls)
+
+
+def test_request_kwargs_forwarded_to_client() -> None:
+    identity = Identity(
+        username="u", access_token="t", refresh_token="r", claim_id=None
+    )
+    client = FakeClient([FakeResponse(201)])
+
+    outcome = request_with_refresh(
+        client,
+        identity,
+        "POST",
+        "/api/v1/submissions/upload-intent",
+        name="s1:intent",
+        json={"claim_id": "c1", "size": 123},
+    )
+
+    assert outcome == "ok"
+    sent = client.calls[0]
+    assert sent["json"] == {"claim_id": "c1", "size": 123}
