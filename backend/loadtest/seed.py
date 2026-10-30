@@ -48,10 +48,6 @@ from loadtest.env import loadtest_env
 LOAD_TASK_TITLE = "loadtest-capacity-hot-task"
 LOAD_TEACHER_EMAIL = "loadtest-teacher@campus.example.edu"
 LOAD_PASSWORD = "loadtest-world-2026"
-#: Spec §9.1 default cutoff; publish validation pins FIXED deadline
-#: >= now + cutoff, which is why the run window needs seed surgery below.
-_CLAIM_CUTOFF_MINUTES = 240
-_PUBLISH_SLACK_MINUTES = 5
 
 
 class LoadWorldExistsError(RuntimeError):
@@ -107,8 +103,14 @@ async def seed_world(
                 clock=clock,
                 max_upload_bytes=settings.max_upload_bytes_default,
             )
-            # Created with a publishable deadline (now + cutoff + slack +
-            # window), published, then tightened to the run window below.
+            # claim_cutoff_minutes=0 (found live in the S2 smoke: §9.1's
+            # default 240-minute cutoff rejects every claim on a task
+            # whose deadline is minutes away, so 30-for-10 gave 1 winner).
+            # Zero cutoff lets S2 race the SAME tight-deadline task S1
+            # submits against, and publish validation accepts the tight
+            # deadline directly — no post-publish surgery. The §9.1
+            # cutoff behavior itself is the product claim suite's turf.
+            run_deadline = now + timedelta(minutes=deadline_in_minutes)
             task = await service.create_task(
                 db,
                 actor,
@@ -119,14 +121,7 @@ async def seed_world(
                     ),
                     base_reward_points=100,
                     deadline_mode=DeadlineMode.FIXED,
-                    fixed_deadline_at=now
-                    + timedelta(
-                        minutes=(
-                            _CLAIM_CUTOFF_MINUTES
-                            + deadline_in_minutes
-                            + _PUBLISH_SLACK_MINUTES
-                        )
-                    ),
+                    fixed_deadline_at=run_deadline,
                     # Structured family only: the product forbids mixing
                     # structured (CSV/XLSX/SQLITE) and document
                     # (DOCX/PDF) types on one task (publish validation).
@@ -138,7 +133,7 @@ async def seed_world(
                         "SQLITE",
                     ),
                     max_file_size_bytes=settings.max_upload_bytes_default,
-                    claim_cutoff_minutes=_CLAIM_CUTOFF_MINUTES,
+                    claim_cutoff_minutes=0,
                     submission_schema_version=1,
                     target_count=claim_slots + race_slots,
                 ),
@@ -151,17 +146,6 @@ async def seed_world(
                 await _drop_world(db, task)
                 await db.commit()
                 raise
-
-            # Seed surgery: publish validation (§9.1) requires deadline
-            # >= now + cutoff, but the run window is minutes away. The
-            # claims below snapshot the tightened deadline, so S1's
-            # deadline-race leg races the real window. Seed-only; the
-            # product's own publish path never sees this.
-            run_deadline = now + timedelta(minutes=deadline_in_minutes)
-            task = await db.get(Task, task.id)
-            assert task is not None
-            task.fixed_deadline_at = run_deadline
-            await db.flush()
 
             users = await _ensure_students(db, students, now)
             assignments = (

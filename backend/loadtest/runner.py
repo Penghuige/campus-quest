@@ -37,13 +37,24 @@ class CampusQuestUser(HttpUser):
     identities: list[Identity] = []
     _cursor = itertools.count()
 
+    @classmethod
+    def identity_pool(cls) -> list[Identity]:
+        """Which identities this scenario runs as (default: all).
+
+        Scenarios override this so the spawned user count IS the real
+        concurrency — round-robin-then-StopUser silently wastes slots
+        (found live in the S2 smoke: 30-for-10 gave 29 fired)."""
+
+        return CampusQuestUser.identities
+
     def on_start(self) -> None:
         if not CampusQuestUser.identities:
             CampusQuestUser.identities, CampusQuestUser.world = load_identities(
                 latest_world_path()
             )
-        index = next(CampusQuestUser._cursor) % len(CampusQuestUser.identities)
-        self.identity = CampusQuestUser.identities[index]
+        pool = self.identity_pool()
+        index = next(CampusQuestUser._cursor) % len(pool)
+        self.identity = pool[index]
 
     def call(self, method: str, path: str, *, name: str) -> str:
         def _tally(response: Any) -> None:

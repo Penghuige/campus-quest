@@ -20,11 +20,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from locust import between, task
-from locust.exception import StopUser
 
 from loadtest.common import (
     API_PREFIX,
     TRACKER,
+    Identity,
     classify_business_status,
     classify_status,
     elapsed_ms,
@@ -53,10 +53,13 @@ def _payload_pool() -> dict[str, bytes]:
 class DeadlineRushUser(CampusQuestUser):
     wait_time = between(5, 15)
 
+    @classmethod
+    def identity_pool(cls) -> list[Identity]:
+        # only the pre-claimed submitters; spawned count == real concurrency
+        return [i for i in CampusQuestUser.identities if i.claim_id is not None]
+
     def on_start(self) -> None:
         super().on_start()
-        if self.identity.claim_id is None:
-            raise StopUser()  # racer identities belong to S2, not here
         deadline = datetime.fromisoformat(self.world["deadline_at"])
         if deadline.tzinfo is None:
             deadline = deadline.replace(tzinfo=UTC)

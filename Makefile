@@ -572,3 +572,24 @@ loadtest-s1-dryrun:
 		CQ_S1_LAST_SECOND_PCT=0 \
 		uv run locust -f loadtest/s1_deadline.py --headless \
 		-u 5 -r 1 -t 40s --host http://localhost:8000 --csv ../$$out/locust --exit-code-on-error 0
+
+# S2 claim rush (spec §Targets: 300 racers for 60 slots; smoke = 30/10).
+# Racers fire once at a common gate; losers must be clean rejections.
+# Escalation: rerun with rising S2_USERS (600, 1200, ...).
+.PHONY: loadtest-s2 loadtest-check-s2
+
+loadtest-s2:
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	out=$$(dirname $$world)/s2; mkdir -p $$out; \
+	cd backend && $(TEST_STACK_ENV) \
+		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s2 \
+		uv run locust -f loadtest/s2_claim.py --headless \
+		-u $${S2_USERS:-300} -r $${S2_SPAWN_RATE:-50} -t $${S2_RUNTIME:-1m} \
+		--host http://localhost:8000 --csv ../$$out/locust --exit-code-on-error 0
+
+loadtest-check-s2:
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	run=$$(dirname $$world)/s2; \
+	cd backend && $(TEST_STACK_ENV) uv run python -m loadtest.check_s2 --run-dir ../$$run
