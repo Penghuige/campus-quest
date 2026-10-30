@@ -63,3 +63,6 @@ build/
 
 # Load-test run artifacts (scratch; numbers live in the capacity report)
 backend/loadtest/runs/
+
+# Celery beat runtime schedule db (loadtest stack runs beat locally)
+backend/celerybeat-schedule*

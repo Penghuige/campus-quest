@@ -85,9 +85,7 @@ async def run_checks(
         1 for user in world["users"] if user.get("claim_id") is not None
     )
     if not claims:
-        violations.append(
-            f"world task {task_id} not found in DB (re-seeded or wiped?)"
-        )
+        violations.append(f"world task {task_id} not found in DB (re-seeded or wiped?)")
     elif len(claims) < expected_preseeded:
         violations.append(
             f"world missing claims: DB has {len(claims)} "

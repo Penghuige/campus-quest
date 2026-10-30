@@ -42,7 +42,7 @@ from app.modules.tasks.enums import (
     RewardLockStatus,
 )
 from app.modules.tasks.models import Assignment, AssignmentClaim, Task
-from app.modules.tasks.service import TaskService
+from app.modules.tasks.service import GENERIC_PLATFORM_CODE, TaskService
 from loadtest.env import loadtest_env
 
 LOAD_TASK_TITLE = "loadtest-capacity-hot-task"
@@ -135,9 +135,28 @@ async def seed_world(
                     max_file_size_bytes=settings.max_upload_bytes_default,
                     claim_cutoff_minutes=0,
                     submission_schema_version=1,
-                    target_count=claim_slots + race_slots,
+                    # units seeded below, not via target_count: the one-step
+                    # creation caps at MAX_TARGET_COUNT=200, which the S1
+                    # escalation ladder (200+ submitters) must exceed
+                    target_count=None,
                 ),
             )
+
+            # Units in the same shape the service's one-step creation
+            # would have made (platform=generic, keyword 单元N), just
+            # without the 200-row cap. Publish requires units to exist,
+            # so they land before the transition.
+            db.add_all(
+                Assignment(
+                    task_id=task.id,
+                    platform=GENERIC_PLATFORM_CODE,
+                    keyword=f"单元{index}",
+                    availability_status=AssignmentAvailability.AVAILABLE.value,
+                )
+                for index in range(1, claim_slots + race_slots + 1)
+            )
+            await db.flush()
+
             try:
                 await service.publish_task(db, actor, task.id)
             except Exception:

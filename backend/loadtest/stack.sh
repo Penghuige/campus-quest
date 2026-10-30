@@ -14,6 +14,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# The loadtest overlay (slow-query logging) merges in when present.
+COMPOSE_FILES="-f infra/docker-compose.yml"
+if [[ -f infra/docker-compose.loadtest.yml ]]; then
+  COMPOSE_FILES="$COMPOSE_FILES -f infra/docker-compose.loadtest.yml"
+fi
+
 LOG_DIR="$REPO_ROOT/backend/loadtest/runs/stack-logs"
 SHAPE_FILE="$REPO_ROOT/backend/loadtest/SUT-SHAPE.md"
 
@@ -48,7 +54,7 @@ stack_up() {
   fi
   mkdir -p "$LOG_DIR"
 
-  docker compose -f infra/docker-compose.yml up -d
+  docker compose $COMPOSE_FILES up -d
   uv run --directory backend alembic upgrade head
 
   : >"$LOG_DIR/env.txt"
@@ -111,7 +117,7 @@ stack_down() {
   stop_one beat
   stop_one celery
   stop_one uvicorn
-  docker compose -f infra/docker-compose.yml down
+  docker compose $COMPOSE_FILES down
   echo "loadtest-stack: down (volumes kept; seed with --force for a fresh world)"
 }
 

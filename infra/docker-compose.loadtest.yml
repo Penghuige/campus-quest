@@ -1,0 +1,9 @@
+# Loadtest-only compose overlay (plan Task 8, spec §Measurement):
+# PostgreSQL slow-query logging without touching the shared compose
+# file — `stack.sh` merges this file when it exists.
+services:
+  postgres:
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=200
