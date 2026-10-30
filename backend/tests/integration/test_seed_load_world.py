@@ -35,6 +35,7 @@ pytestmark = pytest.mark.integration
 async def test_seed_world_builds_publishable_task_with_pre_seeded_claims(
     tmp_path: Path,
 ) -> None:
+    # force=True: the shared DB may carry a load world from a live run
     world = await seed_world(
         students=3,
         claim_slots=2,
@@ -42,6 +43,7 @@ async def test_seed_world_builds_publishable_task_with_pre_seeded_claims(
         race_slots=1,
         deadline_in_minutes=25,
         out_dir=tmp_path,
+        force=True,
     )
     try:
         from sqlalchemy.ext.asyncio import (
@@ -138,6 +140,8 @@ async def test_seed_world_tokens_authenticate(tmp_path: Path) -> None:
 async def test_seed_world_refuses_without_force(tmp_path: Path) -> None:
     world: dict[str, Any] | None = None
     try:
+        # force=True first: the shared DB may carry a load world from a
+        # live run, and this test's subject is the SECOND seed's refusal
         world = await seed_world(
             students=3,
             claim_slots=2,
@@ -145,6 +149,7 @@ async def test_seed_world_refuses_without_force(tmp_path: Path) -> None:
             race_slots=1,
             deadline_in_minutes=25,
             out_dir=tmp_path,
+            force=True,
         )
         with pytest.raises(LoadWorldExistsError):
             await seed_world(
