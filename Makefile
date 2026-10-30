@@ -509,3 +509,30 @@ loadtest-stack-up:
 
 loadtest-stack-down:
 	bash backend/loadtest/stack.sh down
+
+# Seed the load world (spec §Auth/§Scenarios): pre-seeded claims for S1,
+# token-bearing racers for S2, offline-minted sessions (never the login
+# route). Defaults match the spec targets; override on the command line.
+.PHONY: loadtest-seed
+
+loadtest-seed:
+	@ts=$$(date -u +%Y%m%dT%H%M%SZ); \
+	cd backend && $(TEST_STACK_ENV) uv run python scripts/seed_load_world.py \
+		--claim-slots $${SEED_CLAIM_SLOTS:-50} \
+		--race-users $${SEED_RACE_USERS:-300} \
+		--race-slots $${SEED_RACE_SLOTS:-60} \
+		--deadline-in-minutes $${SEED_DEADLINE_MIN:-20} \
+		--out-dir loadtest/runs/$$ts $${SEED_FORCE:+--force}
+
+# S3 read baseline (spec §Scenarios S3): 20 users, 2 minutes, human pacing.
+# Locust picks the newest seeded world; summary lands in runs/<ts>/s3/.
+.PHONY: loadtest-s3
+
+loadtest-s3:
+	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s3; \
+	mkdir -p $$out; \
+	cd backend && $(TEST_STACK_ENV) \
+		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s3 \
+		uv run locust -f loadtest/s3_baseline.py --headless \
+		-u 20 -r 5 -t 2m --host http://localhost:8000 \
+		--csv ../$$out/locust
