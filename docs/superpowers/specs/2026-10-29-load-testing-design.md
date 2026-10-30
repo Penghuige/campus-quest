@@ -100,13 +100,14 @@ the final window. The suite intentionally includes:
 - a step-ramp escalation leg past the target until degradation/failure,
   yielding the breaking point.
 
-**File profile (owner 2026-10-29: all homework families occur; mix weights =
-agent call):** real submissions span all five `declared_type` families
-(CSV/XLSX/SQLITE/DOCX/PDF — the DB CHECK-constrained enum). The suite
-generates synthetic files per spec §10.1 families with a weighted mix: 60%
-small documents (0.1–2 MB, DOCX/PDF), 30% medium structured (2–10 MB,
-CSV/XLSX), 10% large (10–50 MB, large XLSX/SQLITE) — none approaching the
-200 MB cap. Weights adjustable before the headline run.
+**File profile (amended 2026-10-30 during implementation):** the product
+forbids mixing structured (CSV/XLSX/SQLITE) and document (DOCX/PDF) types
+on one task (publish validation) — discovered by the seeder's first
+failing test. The hot task is therefore a **structured** task
+(CSV/XLSX/SQLITE), which also mirrors production reality (recruitment
+data collection). Weighted mix: 60% CSV (0.1–2 MB), 30% XLSX (2–10 MB),
+10% SQLITE (10–50 MB) — none approaching the 200 MB cap. Weights
+adjustable before the headline run.
 
 **S2 — claim rush (second act).** `POST /tasks/{task_id}/claim` with limited
 slots: N racers for S slots at task-open (no pre-seeded claims for racers;
