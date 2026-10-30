@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -161,7 +162,10 @@ async def run_checks(
                 f"locked={row.reward_tier_locked} expected={expected}"
             )
 
-    # (d) drain: no submission stuck non-terminal; measure drain seconds
+    # (d) drain: no submission stuck non-terminal. Drain is measured PER
+    # SUBMISSION (validation finished_at - submitted_at), not window
+    # span — a 4-minute run's window span is 240 s regardless of how
+    # fast the pipeline actually drained (review M1).
     pending = [
         s for s in submissions if s.validation_status not in _TERMINAL_VALIDATION
     ]
@@ -170,16 +174,28 @@ async def run_checks(
             f"validation not terminal for submission {submission.id} "
             f"({submission.validation_status})"
         )
-    drain_seconds: float | None = None
+    drains: list[float] = []
     if submissions:
-        finished = await db.scalar(
-            select(func.max(SubmissionValidation.finished_at)).where(
-                SubmissionValidation.submission_id.in_([s.id for s in submissions])
-            )
+        finished_by_sub = dict(
+            (
+                await db.execute(
+                    select(
+                        SubmissionValidation.submission_id,
+                        func.max(SubmissionValidation.finished_at),
+                    )
+                    .where(
+                        SubmissionValidation.submission_id.in_(
+                            [s.id for s in submissions]
+                        )
+                    )
+                    .group_by(SubmissionValidation.submission_id)
+                )
+            ).all()
         )
-        earliest = min(s.submitted_at for s in submissions)
-        if finished is not None and earliest.tzinfo is not None:
-            drain_seconds = (finished - earliest).total_seconds()
+        for submission in submissions:
+            finished = finished_by_sub.get(submission.id)
+            if finished is not None:
+                drains.append((finished - submission.submitted_at).total_seconds())
 
     return {
         "ok": not violations,
@@ -188,7 +204,8 @@ async def run_checks(
             "submissions": len(submissions),
             "claims": len(claims),
             "reward_lock_rows": len(lock_rows),
-            "drain_seconds": drain_seconds,
+            "drain_max_seconds": max(drains) if drains else None,
+            "drain_mean_seconds": (sum(drains) / len(drains) if drains else None),
         },
     }
 
@@ -204,6 +221,13 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="world.json (default: <run-dir>/../world.json)",
     )
+    parser.add_argument(
+        "--wait-drain",
+        type=int,
+        default=90,
+        help="seconds to poll for the validation pipeline to reach "
+        "terminal state before checking (0 = check immediately)",
+    )
     return parser.parse_args()
 
 
@@ -215,8 +239,16 @@ async def main() -> int:
 
     engine = create_async_engine(loadtest_env().database_url)
     try:
-        async with async_sessionmaker(engine)() as db:
-            report = await run_checks(db, world, summary)
+        deadline = time.monotonic() + max(0, args.wait_drain)
+        while True:
+            async with async_sessionmaker(engine)() as db:
+                report = await run_checks(db, world, summary)
+            still_draining = any(
+                "not terminal" in violation for violation in report["violations"]
+            )
+            if not still_draining or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(5)
     finally:
         await engine.dispose()
 

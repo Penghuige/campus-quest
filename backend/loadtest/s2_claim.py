@@ -21,6 +21,7 @@ from loadtest.common import (
     TRACKER,
     Identity,
     classify_business_status,
+    classify_status,
     elapsed_ms,
     request_with_refresh,
 )
@@ -66,6 +67,19 @@ class ClaimRushUser(CampusQuestUser):
                 classify_business_status(response.status_code),
                 elapsed_ms(response),
             )
+            # pin the stable BusinessError codes (plan RF3): a loser must
+            # be a clean business rejection with a known code, never a
+            # bare 4xx — the checker asserts on exactly these
+            code = _error_code(response)
+            if code is not None:
+                TRACKER.record_code("s2:claim", code)
+
+        def _tally_refresh(response: Any) -> None:
+            TRACKER.record(
+                "auth:refresh",
+                classify_status(response.status_code),
+                elapsed_ms(response),
+            )
 
         request_with_refresh(
             self.client,
@@ -74,6 +88,7 @@ class ClaimRushUser(CampusQuestUser):
             path,
             name="s2:claim",
             on_response=_tally,
+            on_refresh=_tally_refresh,
         )
         response = captured[-1] if captured else None
         if (
@@ -88,6 +103,18 @@ class ClaimRushUser(CampusQuestUser):
                 path,
                 name="s2:claim-retry",
                 on_response=_tally,
+                on_refresh=_tally_refresh,
             )
         # each racer fires once, then leaves the swarm
         raise StopUser()
+
+
+def _error_code(response: Any) -> str | None:
+    """The BusinessError envelope's stable code, when present."""
+
+    try:
+        payload = response.json()
+        code = payload.get("error", {}).get("code")
+        return code if isinstance(code, str) else None
+    except (ValueError, TypeError, AttributeError):
+        return None

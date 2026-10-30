@@ -62,8 +62,8 @@ async def test_seed_world_builds_publishable_task_with_pre_seeded_claims(
             assert task.deadline_mode == DeadlineMode.FIXED
             assert set(task.allowed_file_types) == {"CSV", "XLSX", "SQLITE"}
             assert task.fixed_deadline_at is not None
-            # the run window: ~25 minutes out (publish margin consumed by
-            # the post-publish seed surgery; tolerance covers test runtime)
+            # the run window: ~25 minutes out (cutoff=0 publishes the
+            # tight deadline directly; tolerance covers test runtime)
             delta_min = (
                 task.fixed_deadline_at - datetime.now(UTC)
             ).total_seconds() / 60

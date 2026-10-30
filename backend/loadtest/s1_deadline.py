@@ -95,6 +95,13 @@ class DeadlineRushUser(CampusQuestUser):
                 elapsed_ms(response),
             )
 
+        def _tally_refresh(response: Any) -> None:
+            TRACKER.record(
+                "auth:refresh",
+                classify_status(response.status_code),
+                elapsed_ms(response),
+            )
+
         outcome = request_with_refresh(
             self.client,
             self.identity,
@@ -102,6 +109,7 @@ class DeadlineRushUser(CampusQuestUser):
             INTENT_PATH,
             name="s1:intent",
             on_response=_tally,
+            on_refresh=_tally_refresh,
             json={
                 "claim_id": self.identity.claim_id,
                 "filename": f"loadtest.{family.lower()}",
@@ -111,7 +119,11 @@ class DeadlineRushUser(CampusQuestUser):
         )
         if outcome != "ok" or not captured:
             return  # counted (429 / business rejection); iteration ends
-        grant = captured[-1].json()
+        try:
+            grant = captured[-1].json()
+        except ValueError:
+            TRACKER.record("s1:intent", "err", None)
+            return
 
         put_response = self.client.put(
             grant["upload_url"],
@@ -141,6 +153,13 @@ class DeadlineRushUser(CampusQuestUser):
                 elapsed_ms(response),
             )
 
+        def _tally_refresh(response: Any) -> None:
+            TRACKER.record(
+                "auth:refresh",
+                classify_status(response.status_code),
+                elapsed_ms(response),
+            )
+
         request_with_refresh(
             self.client,
             self.identity,
@@ -148,21 +167,47 @@ class DeadlineRushUser(CampusQuestUser):
             COMPLETE_PATH,
             name="s1:complete",
             on_response=_tally,
+            on_refresh=_tally_refresh,
             json={"intent_id": grant["intent_id"]},
         )
         response = captured[-1] if captured else None
         # §32 replay: an unexpected failure (5xx, or the limiter's 429)
-        # retries the SAME intent exactly once — a healthy system returns
-        # the SAME submission, which the S1 checker asserts in the DB.
+        # retries the SAME intent exactly once. The replayed response's
+        # submission id is compared to the first attempt's — same id is
+        # the §32 guarantee seen LIVE (plan RF1), tallied under its own
+        # stat; a different id or a failed replay is an err.
         if response is not None and response.status_code in {429} | set(
             range(500, 600)
         ):
+            first_id = _submission_id(response)
+            replayed: list[Any] = []
+
+            def _tally_replay(resp: Any) -> None:
+                replayed.append(resp)
+                TRACKER.record(
+                    "s1:replay-idempotent",
+                    "ok"
+                    if first_id is not None and _submission_id(resp) == first_id
+                    else "err",
+                    elapsed_ms(resp),
+                )
+
             request_with_refresh(
                 self.client,
                 self.identity,
                 "POST",
                 COMPLETE_PATH,
                 name="s1:complete-replay",
-                on_response=_tally,
+                on_response=_tally_replay,
+                on_refresh=_tally_refresh,
                 json={"intent_id": grant["intent_id"]},
             )
+
+
+def _submission_id(response: Any) -> str | None:
+    try:
+        payload = response.json()
+        value = payload.get("id")
+        return str(value) if value is not None else None
+    except (ValueError, TypeError, AttributeError):
+        return None

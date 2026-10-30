@@ -39,6 +39,67 @@ def _summary(*, ok: int, rejected: int, err: int = 0) -> dict[str, Any]:
     }
 
 
+async def test_checker_flags_unstable_loser_codes(tmp_path: Path) -> None:
+    """RF3: losers must carry stable business codes — a bare/unknown code
+    in the summary's code evidence is a violation."""
+
+    world = await seed_world(
+        students=4,
+        claim_slots=1,
+        race_users=3,
+        race_slots=2,
+        deadline_in_minutes=25,
+        out_dir=tmp_path,
+        force=True,
+    )
+    engine, maker = await _engine_maker()
+    try:
+        async with maker() as db:
+            task = await _load_task(db)
+            racers = [u for u in world["users"] if u["claim_id"] is None]
+            for entry in racers[:2]:
+                assignment = await _first_open_assignment(db, task.id)
+                await _plant_active_claim(db, task, assignment, UUID(entry["user_id"]))
+            await db.commit()
+            summary = _summary(ok=2, rejected=1)
+            summary["codes"] = {
+                "s2:claim": {"NO_ASSIGNMENT_AVAILABLE": 1, "INTERNAL_ERROR": 1}
+            }
+            report = await run_checks(db, world, summary)
+        assert report["ok"] is False
+        assert any("unstable" in v or "code" in v for v in report["violations"])
+    finally:
+        await _cleanup(world)
+
+
+async def test_checker_flags_missing_code_evidence(tmp_path: Path) -> None:
+    world = await seed_world(
+        students=4,
+        claim_slots=1,
+        race_users=3,
+        race_slots=2,
+        deadline_in_minutes=25,
+        out_dir=tmp_path,
+        force=True,
+    )
+    engine, maker = await _engine_maker()
+    try:
+        async with maker() as db:
+            task = await _load_task(db)
+            racers = [u for u in world["users"] if u["claim_id"] is None]
+            for entry in racers[:2]:
+                assignment = await _first_open_assignment(db, task.id)
+                await _plant_active_claim(db, task, assignment, UUID(entry["user_id"]))
+            await db.commit()
+            # rejected>0 but no code evidence at all -> unverifiable claim
+            summary = _summary(ok=2, rejected=1)
+            report = await run_checks(db, world, summary)
+        assert report["ok"] is False
+        assert any("code evidence" in v for v in report["violations"])
+    finally:
+        await _cleanup(world)
+
+
 async def _engine_maker() -> tuple[Any, Any]:
     engine = create_async_engine(get_settings().database_url)
     return engine, async_sessionmaker(engine, expire_on_commit=False)
@@ -110,11 +171,11 @@ async def test_checker_green_when_racers_fill_slots_exactly(
                 assignment = await _first_open_assignment(db, task.id)
                 await _plant_active_claim(db, task, assignment, UUID(entry["user_id"]))
             await db.commit()
-            report = await run_checks(
-                db,
-                world,
-                _summary(ok=2, rejected=len(racers) - 2),
-            )
+            summary = _summary(ok=2, rejected=len(racers) - 2)
+            summary["codes"] = {
+                "s2:claim": {"NO_ASSIGNMENT_AVAILABLE": len(racers) - 2}
+            }
+            report = await run_checks(db, world, summary)
         assert report["ok"] is True, report["violations"]
         assert report["metrics"]["winners"] == 2
     finally:

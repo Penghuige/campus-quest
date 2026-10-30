@@ -32,13 +32,22 @@ _RUNS_DIR = Path(__file__).resolve().parent / "runs"
 
 
 def classify_status(status_code: int) -> str:
-    """Bucket one HTTP status: ok | rate_limited | err."""
+    """Bucket one HTTP status: ok | rate_limited | err.
+
+    ``0`` is locust's safe-mode marker for a RequestException (connection
+    reset/refused/timeout) — a transport failure, never a success.
+    """
 
     if status_code == 429:
         return "rate_limited"
-    if status_code < 400:
+    if 200 <= status_code < 400:
         return "ok"
     return "err"
+
+
+#: 4xx that is OUR side's trouble (auth, routing, authz) or transport —
+#: never the product making a legitimate business decision
+_INFRASTRUCTURE_4XX = frozenset({401, 403, 404})
 
 
 def classify_business_status(status_code: int) -> str:
@@ -46,15 +55,18 @@ def classify_business_status(status_code: int) -> str:
 
     A 409 (in-flight conflict, slots gone) or 422 near a deadline is the
     product saying no — the S1 deadline-race and S2 claim-rush stories
-    hinge on counting those separately from real failures. 429 stays its
-    own class; 5xx stays an error.
+    hinge on counting those separately from real failures. Infrastructure
+    4xx (401/403/404) is NEVER a business outcome — at the breaking
+    point a 404-on-complete means the object never landed, and folding
+    that into "rejected" would hide the failure. 429 stays its own
+    class; 5xx and transport failures (0) stay errors.
     """
 
     if status_code == 429:
         return "rate_limited"
-    if status_code < 400:
+    if 200 <= status_code < 400:
         return "ok"
-    if status_code < 500:
+    if 400 <= status_code < 500 and status_code not in _INFRASTRUCTURE_4XX:
         return "rejected"
     return "err"
 
@@ -117,7 +129,12 @@ class Tracker:
     rate_limited_429: int = 0
     rejected_count: int = 0
     _latencies: list[float] = field(default_factory=list)
+    _latencies_by_name: dict[str, list[float]] = field(default_factory=dict)
     _by_name: dict[str, dict[str, int]] = field(default_factory=dict)
+    #: response codes captured per name (BusinessError envelope), e.g.
+    #: {"s2:claim": {"ASSIGNMENT_LIMIT_REACHED": 20}} — the stable-code
+    #: evidence the checkers assert on
+    codes: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def record(self, name: str, outcome: str, response_time_ms: float | None) -> None:
         if outcome == "rate_limited":
@@ -130,13 +147,24 @@ class Tracker:
             self.err_count += 1
         if response_time_ms is not None:
             self._latencies.append(float(response_time_ms))
+            self._latencies_by_name.setdefault(name, []).append(float(response_time_ms))
         bucket = self._by_name.setdefault(name, {})
         bucket[outcome] = bucket.get(outcome, 0) + 1
+
+    def record_code(self, name: str, code: str) -> None:
+        bucket = self.codes.setdefault(name, {})
+        bucket[code] = bucket.get(code, 0) + 1
 
     def summary(self) -> dict[str, Any]:
         total = (
             self.ok_count + self.err_count + self.rate_limited_429 + self.rejected_count
         )
+        api_latencies = [
+            ms
+            for name, latencies in self._latencies_by_name.items()
+            if not name.endswith(":put")
+            for ms in latencies
+        ]
         return {
             "ok_count": self.ok_count,
             "err_count": self.err_count,
@@ -144,7 +172,9 @@ class Tracker:
             "rejected_count": self.rejected_count,
             "total": total,
             "p99_ms": _percentile(self._latencies, 0.99),
+            "p99_api_ms": _percentile(api_latencies, 0.99),
             "by_name": self._by_name,
+            "codes": self.codes,
         }
 
 
@@ -169,14 +199,19 @@ def request_with_refresh(
     name: str,
     base_headers: dict[str, str] | None = None,
     on_response: Callable[[Any], None] | None = None,
+    on_refresh: Callable[[Any], None] | None = None,
     **request_kwargs: Any,
 ) -> str:
     """One authenticated request; on 401 refresh once, retry once.
 
-    The refresh call goes through the same client so locust's stats see
-    it under ``auth:refresh``. Rotation updates both tokens in place —
-    ``rotate_refresh`` invalidates the old refresh token. Extra kwargs
-    (json, data, …) ride along to every attempt of the request.
+    Tallying contract (review I1): ``on_response`` fires EXACTLY ONCE,
+    on the logical request's FINAL response (the initial attempt when no
+    refresh happened, the retry when it did) — an intermediate 401 never
+    lands in the scenario's bucket. The refresh call has its own hook,
+    ``on_refresh``, so it can be tallied under ``auth:refresh``. Rotation
+    updates both tokens in place — ``rotate_refresh`` invalidates the
+    old refresh token. Extra kwargs (json, data, …) ride along to every
+    attempt of the request.
     """
 
     headers = dict(base_headers or {})
@@ -184,9 +219,9 @@ def request_with_refresh(
     response = client.request(
         method, path, name=name, headers=headers, **request_kwargs
     )
-    if on_response is not None:
-        on_response(response)
     if response.status_code != 401:
+        if on_response is not None:
+            on_response(response)
         return classify_status(response.status_code)
 
     refreshed = client.request(
@@ -195,15 +230,19 @@ def request_with_refresh(
         name="auth:refresh",
         json={"refresh_token": identity.refresh_token},
     )
-    if on_response is not None:
-        on_response(refreshed)
+    if on_refresh is not None:
+        on_refresh(refreshed)
     if refreshed.status_code != 200:
+        if on_response is not None:
+            on_response(refreshed)
         return "err"
     try:
         payload = refreshed.json()
         identity.access_token = payload["access_token"]
         identity.refresh_token = payload["refresh_token"]
     except (KeyError, ValueError, TypeError):
+        if on_response is not None:
+            on_response(refreshed)
         return "err"
 
     retry_headers = dict(base_headers or {})

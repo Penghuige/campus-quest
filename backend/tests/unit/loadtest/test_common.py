@@ -27,11 +27,24 @@ def test_classify_business_status_separates_rejections() -> None:
     assert classify_business_status(201) == "ok"
     assert classify_business_status(409) == "rejected"
     assert classify_business_status(422) == "rejected"
-    assert classify_business_status(403) == "rejected"
+    # infrastructure 4xx is NEVER a legitimate business outcome: a 404 on
+    # complete means the object never landed (disk!), 401/403 are auth
+    # trouble — collapsing them into "rejected" hides the breaking point
+    assert classify_business_status(401) == "err"
+    assert classify_business_status(403) == "err"
+    assert classify_business_status(404) == "err"
     assert classify_business_status(429) == "rate_limited"
     assert classify_business_status(500) == "err"
     # the strict read-path view keeps 404 an error
     assert classify_status(404) == "err"
+
+
+def test_status_zero_is_a_transport_failure_never_ok() -> None:
+    # locust's safe mode returns status_code=0 for RequestException
+    # (connection reset/refused/timeout) — counting that as ok made the
+    # headline error rate a lie exactly at the breaking point (review C1)
+    assert classify_status(0) == "err"
+    assert classify_business_status(0) == "err"
 
 
 class FakeResponse:
@@ -88,6 +101,19 @@ def test_tracker_counts_and_p99() -> None:
     summary = tracker.summary()
     assert summary["rejected_count"] == 1
     assert summary["total"] == 8
+
+
+def test_tracker_api_p99_excludes_upload_leg() -> None:
+    # spec pass line is API-leg P99; the MinIO PUT leg rides separately
+    tracker = Tracker()
+    for ms in (100, 200, 300):
+        tracker.record("s1:intent", "ok", ms)
+    for ms in (900, 1000):
+        tracker.record("s1:put", "ok", ms)
+
+    summary = tracker.summary()
+    assert summary["p99_ms"] == 1000  # overall includes the PUT leg
+    assert summary["p99_api_ms"] == 300  # API view does not
 
 
 def test_401_triggers_one_refresh_with_rotation_and_retry() -> None:
@@ -158,6 +184,39 @@ def test_429_and_5xx_never_trigger_refresh() -> None:
     )
     assert outcome == "err"
     assert not any("refresh" in c["path"] for c in client.calls)
+
+
+def test_refresh_flow_tallies_final_only_and_own_refresh_stat() -> None:
+    """One logical request = one scenario tally (the FINAL response);
+    the refresh call tallies under its own name — never the scenario's
+    (review I1: double-counting poisoned ok/rejected and check_s1)."""
+
+    identity = Identity(
+        username="u", access_token="old", refresh_token="r", claim_id=None
+    )
+    client = FakeClient(
+        [
+            FakeResponse(401),
+            FakeResponse(200, {"access_token": "new", "refresh_token": "r2"}),
+            FakeResponse(200),
+        ]
+    )
+    finals: list[int] = []
+    refreshes: list[int] = []
+
+    outcome = request_with_refresh(
+        client,
+        identity,
+        "POST",
+        "/api/v1/submissions/upload-complete",
+        name="s1:complete",
+        on_response=lambda r: finals.append(r.status_code),
+        on_refresh=lambda r: refreshes.append(r.status_code),
+    )
+
+    assert outcome == "ok"
+    assert finals == [200]  # exactly one scenario tally — the retry
+    assert refreshes == [200]  # the refresh has its own stat hook
 
 
 def test_request_kwargs_forwarded_to_client() -> None:

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from locust import HttpUser, events
+from locust.exception import StopUser
 
 from loadtest.common import (
     TRACKER,
@@ -36,6 +37,7 @@ class CampusQuestUser(HttpUser):
     world: dict[str, Any] = {}
     identities: list[Identity] = []
     _cursor = itertools.count()
+    _overflow_warned = False
 
     @classmethod
     def identity_pool(cls) -> list[Identity]:
@@ -53,7 +55,20 @@ class CampusQuestUser(HttpUser):
                 latest_world_path()
             )
         pool = self.identity_pool()
-        index = next(CampusQuestUser._cursor) % len(pool)
+        index = next(CampusQuestUser._cursor)
+        if index >= len(pool):
+            # Review I6: silently reusing identities (index % len) makes
+            # -u 200 against a 50-identity world measure "50 people at 4x
+            # rate" — shared claims collide (409) and the per-user 10/min
+            # limiter trips (429). Excess users stop loudly instead.
+            if not CampusQuestUser._overflow_warned:
+                CampusQuestUser._overflow_warned = True
+                print(
+                    f"loadtest: WARNING -u exceeds the identity pool "
+                    f"({len(pool)}); excess users stopped — seed more "
+                    f"identities for honest higher concurrency"
+                )
+            raise StopUser()
         self.identity = pool[index]
 
     def call(self, method: str, path: str, *, name: str) -> str:
@@ -62,8 +77,13 @@ class CampusQuestUser(HttpUser):
                 name, classify_status(response.status_code), elapsed_ms(response)
             )
 
-        # a 401 that survived refresh was tallied as "err" per-response
-        # already; nothing further to do here.
+        def _tally_refresh(response: Any) -> None:
+            TRACKER.record(
+                "auth:refresh",
+                classify_status(response.status_code),
+                elapsed_ms(response),
+            )
+
         return request_with_refresh(
             self.client,
             self.identity,
@@ -72,6 +92,7 @@ class CampusQuestUser(HttpUser):
             name=name,
             base_headers={"Authorization": f"Bearer {self.identity.access_token}"},
             on_response=_tally,
+            on_refresh=_tally_refresh,
         )
 
 

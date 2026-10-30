@@ -33,6 +33,17 @@ from loadtest.env import loadtest_env
 
 _ACTIVE_STATUSES = {status.value for status in ACTIVE_CLAIM_STATUSES}
 
+#: The §8.4 claim-refusal family — a loser seeing anything else (or a
+#: bare 4xx with no envelope) is not a stable business rejection
+_ALLOWED_LOSER_CODES = frozenset(
+    {
+        "ASSIGNMENT_LIMIT_REACHED",
+        "NO_ASSIGNMENT_AVAILABLE",
+        "TASK_ACTIVE_CLAIM_EXISTS",
+        "TASK_NOT_CLAIMABLE",
+    }
+)
+
 
 async def run_checks(
     db: AsyncSession, world: dict[str, Any], summary: dict[str, Any]
@@ -116,6 +127,19 @@ async def run_checks(
         violations.append(
             f"{summary_err} claim-rush requests failed with 5xx "
             "(losers must be clean business rejections)"
+        )
+
+    # (c, RF3) losers carry stable business codes — the §8.4 family.
+    codes = summary.get("codes", {}).get("s2:claim", {})
+    unstable = sorted(set(codes) - _ALLOWED_LOSER_CODES)
+    if unstable:
+        violations.append(
+            f"unstable loser codes (expected only the §8.4 family): {unstable}"
+        )
+    if summary_rejected and not codes:
+        violations.append(
+            "no code evidence for rejected claims — the scenario did not "
+            "capture BusinessError envelopes (verifiability gap)"
         )
 
     return {
