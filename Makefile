@@ -525,12 +525,14 @@ loadtest-seed:
 		--out-dir loadtest/runs/$$ts $${SEED_FORCE:+--force}
 
 # S3 read baseline (spec §Scenarios S3): 20 users, 2 minutes, human pacing.
-# Locust picks the newest seeded world; summary lands in runs/<ts>/s3/.
+# Runs nest under the newest SEED dir so world.json sits beside the run
+# (check_s1's default --world is <run-dir>/../world.json).
 .PHONY: loadtest-s3
 
 loadtest-s3:
-	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s3; \
-	mkdir -p $$out; \
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	out=$$(dirname $$world)/s3; mkdir -p $$out; \
 	cd backend && $(TEST_STACK_ENV) \
 		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s3 \
 		uv run locust -f loadtest/s3_baseline.py --headless \
@@ -540,22 +542,31 @@ loadtest-s3:
 # S1 deadline submission rush (spec §Targets: 50 concurrent submitters,
 # 3-minute window by default). Escalation: run repeatedly with rising
 # S1_USERS (100, 200, ...) — each invocation is its own run directory.
-.PHONY: loadtest-s1 loadtest-s1-dryrun
+.PHONY: loadtest-s1 loadtest-s1-dryrun loadtest-check-s1
 
 loadtest-s1:
-	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s1; \
-	mkdir -p $$out; \
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	out=$$(dirname $$world)/s1; mkdir -p $$out; \
 	cd backend && $(TEST_STACK_ENV) \
 		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s1 \
 		uv run locust -f loadtest/s1_deadline.py --headless \
 		-u $${S1_USERS:-50} -r $${S1_SPAWN_RATE:-10} -t $${S1_RUNTIME:-3m} \
 		--host http://localhost:8000 --csv ../$$out/locust --exit-code-on-error 0
 
+# The post-run correctness gate: exit 0 = guarantees held under load.
+loadtest-check-s1:
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	run=$$(dirname $$world)/s1; \
+	cd backend && $(TEST_STACK_ENV) uv run python -m loadtest.check_s1 --run-dir ../$$run
+
 # 5 users / 40 s against a tiny world; no last-second cohort, so every
-# user submits during the window (submit_ok must equal 5).
+# user submits during the window (complete ok >= 5, err 0).
 loadtest-s1-dryrun:
-	@ts=$$(date -u +%Y%m%dT%H%M%SZ); out=backend/loadtest/runs/$$ts/s1-dryrun; \
-	mkdir -p $$out; \
+	@world=$$(ls -1 backend/loadtest/runs/*/world.json 2>/dev/null | sort | tail -1); \
+	[ -n "$$world" ] || { echo 'no seeded world — run make loadtest-seed first' >&2; exit 2; }; \
+	out=$$(dirname $$world)/s1-dryrun; mkdir -p $$out; \
 	cd backend && $(TEST_STACK_ENV) \
 		CQ_LOADTEST_OUT=../$$out CQ_LOADTEST_SCENARIO=s1-dryrun \
 		CQ_S1_LAST_SECOND_PCT=0 \
