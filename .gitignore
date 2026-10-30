@@ -60,3 +60,6 @@ infra/e2e-certs/
 
 # architecture visual artifacts (make arch-city; derived, not committed)
 build/
+
+# Load-test run artifacts (scratch; numbers live in the capacity report)
+backend/loadtest/runs/

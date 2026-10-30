@@ -16,8 +16,8 @@ test-integration:
 	cd backend && uv run pytest tests/integration -v -m integration
 
 lint-backend:
-	cd backend && uv run ruff format --check app tests alembic
-	cd backend && uv run ruff check app tests alembic
+	cd backend && uv run ruff format --check app tests alembic loadtest
+	cd backend && uv run ruff check app tests alembic loadtest
 	cd backend && uv run mypy
 
 # Architecture contract gate (owner-approved addition 2026-10-16): the
@@ -496,3 +496,16 @@ visual-regression:
 	# one stack, so the battery's login volume must not rate-limit the
 	# visual stage out of its own logins.
 	cd frontend && CQ_E2E=1 CQ_VISUAL=1 CQ_E2E_FIXED_LABELS=1 CQ_E2E_LOGIN_RATELIMIT=1 CQ_E2E_API_URL=http://localhost:8000/api/v1 npm run test:e2e:visual
+
+# --- loadtest (spec: docs/superpowers/specs/2026-10-29-load-testing-design.md) --
+# On-demand capacity suite: locust against the local compose stack.
+# stack.sh refuses non-local DATABASE_URL — production is never the SUT
+# (spec §Non-goals). Login is offline-minted by the seed script; the
+# numbers describe the API, not the browser (spec §Auth).
+.PHONY: loadtest-stack-up loadtest-stack-down
+
+loadtest-stack-up:
+	$(TEST_STACK_ENV) bash backend/loadtest/stack.sh up
+
+loadtest-stack-down:
+	bash backend/loadtest/stack.sh down
