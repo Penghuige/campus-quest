@@ -89,6 +89,13 @@ EOF
 start_bg() { # name command...
   local name="$1"
   shift
+  # Archive, never truncate (2026-10-31 lesson: the upload-intent
+  # deadlock's original traceback was destroyed by a later stack-up
+  # overwriting uvicorn.log — forensic evidence must outlive restarts).
+  if [[ -s "$LOG_DIR/$name.log" ]]; then
+    mv "$LOG_DIR/$name.log" \
+      "$LOG_DIR/$name.$(date -u +%Y%m%dT%H%M%SZ).log"
+  fi
   nohup "$@" >"$LOG_DIR/$name.log" 2>&1 &
   echo $! >"$LOG_DIR/$name.pid"
   echo "loadtest-stack: $name started (pid $(cat "$LOG_DIR/$name.pid"))"

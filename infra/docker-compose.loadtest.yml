@@ -7,3 +7,10 @@ services:
       - postgres
       - -c
       - log_min_duration_statement=200
+      # deadlock forensics (2026-10-31): full statement log lets us
+      # reconstruct both transactions' lock-acquisition order after a
+      # deadlock; lock waits over 1s are logged with both pids
+      - -c
+      - log_statement=all
+      - -c
+      - log_lock_waits=on
