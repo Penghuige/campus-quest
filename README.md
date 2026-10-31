@@ -57,6 +57,21 @@
 
 后端是模块化单体（按业务域组织：identity / tasks / submissions / points / community / notifications / audit），每个域内 `router → service → repository/port → adapter` 分层，事务边界在服务层。
 
+## 容量验证与架构决策
+
+首次容量验证（locust，按需套件 `backend/loadtest/`）：50 并发提交者目标负载零错误零丢失（API 腿 P99 1.64 s）；300 人并发抢 60 个名额恰好 60 胜、**零超发**；崩溃点约 200 并发（单机磁盘先于应用倒下）。完整数字与发现见 [docs/loadtest/capacity-report-2026-10.md](docs/loadtest/capacity-report-2026-10.md)——每个数都有留存的 run 工件支撑。
+
+关键取舍以 ADR 记录（[docs/architecture/adr/](docs/architecture/adr/)）：
+
+| ADR | 决策 |
+|---|---|
+| [0001](docs/architecture/adr/0001-load-testing.md) | 容量测试方法论：容量估算先行、场景即代码、正确性断言为中心 |
+| [0002](docs/architecture/adr/0002-modular-monolith.md) | 模块化单体 + 机器可检架构契约（import-linter / as-built 真相图） |
+| [0003](docs/architecture/adr/0003-concurrency-in-the-database.md) | 并发正确性放数据库：部分唯一索引与锁序契约 |
+| [0004](docs/architecture/adr/0004-contract-first.md) | 契约优先：OpenAPI 快照与生成类型是单一事实源 |
+| [0005](docs/architecture/adr/0005-upload-pipeline.md) | 上传流水线：预签名直传、单次 intent、幂等与异步校验 |
+| [0006](docs/architecture/adr/0006-evidence-culture.md) | 证据文化：覆盖率棘轮、对账矩阵、双审与新鲜门禁验收 |
+
 ## 快速开始
 
 ```bash
