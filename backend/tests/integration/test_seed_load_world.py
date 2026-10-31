@@ -8,6 +8,7 @@ snapshots, and offline-minted tokens that really authenticate.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,8 +17,10 @@ from uuid import UUID
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.db.session import get_db_session
 from app.main import create_app
 from app.modules.identity.models import User, UserSession
 from app.modules.tasks.claim_service import REWARD_POLICY_SNAPSHOT_V1
@@ -124,14 +127,36 @@ async def test_seed_world_tokens_authenticate(tmp_path: Path) -> None:
             force=True,
         )
         user = world["users"][0]
-        transport = ASGITransport(app=create_app())
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get(
-                "/api/v1/me",
-                headers={"Authorization": f"Bearer {user['access_token']}"},
-            )
-        assert response.status_code == 200
-        assert response.json()["username"] == user["username"]
+        engine = create_async_engine(get_settings().database_url)
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            async with maker() as db:
+                # Repo app-test harness pattern (test_platforms_api.py):
+                # override get_db_session with THIS loop's session. The
+                # app engine is process-wide lru_cache'd (app/db/session.py)
+                # — in the full CI suite a smoke test binds its pool to a
+                # since-closed loop, and an un-overridden app then reuses
+                # a dead-loop connection ("Future attached to a different
+                # loop", PR #153 CI). /me is read-only, so sharing the
+                # session commits nothing.
+                app = create_app()
+
+                async def _test_db_session() -> AsyncIterator[AsyncSession]:
+                    yield db
+
+                app.dependency_overrides[get_db_session] = _test_db_session
+                transport = ASGITransport(app=app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.get(
+                        "/api/v1/me",
+                        headers={"Authorization": f"Bearer {user['access_token']}"},
+                    )
+                assert response.status_code == 200
+                assert response.json()["username"] == user["username"]
+        finally:
+            await engine.dispose()
     finally:
         if world is not None:
             await _cleanup(world)
