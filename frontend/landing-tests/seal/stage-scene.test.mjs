@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Texture,Vector2 } from '../../public/landing/seal/vendor/three/build/three.module.js';
+import { journeyFrame } from '../../public/landing/seal/scroll-presentation.mjs';
+import { autoFrame } from '../../public/landing/seal/motion.mjs';
+const api=await import('../../public/landing/seal/stage-scene.mjs').catch(()=>({}));
+const layout={width:1,waterY:-1.6212,hoverGap:.7,startDistance:12,viewDistance:8,waterHalfExtent:40,viewport:{width:1280,height:800,left:0,top:0}};
+test('scene uses horizontal upright ink, depth-only proxy and a terminal CSS projection',()=>{
+ assert.equal(typeof api.createStageScene,'function');
+ const s=api.createStageScene({texture:new Texture(),layout,resolution:{value:new Vector2(1280,800)},time:{value:0},count:128});
+ s.applyFrame(journeyFrame(5.9,layout));
+ assert.equal(s.body.scale.x,1);assert.equal(s.body.scale.y,1);
+ assert.equal(s.proxy.material.colorWrite,false);assert.equal(s.proxy.material.transparent,false);
+ assert.equal(s.paper.material.depthTest,false);assert.equal(s.ink.material.depthTest,true);
+ assert.equal(s.field.reflection.material.depthTest,true);
+ s.applyFrame(autoFrame(1.8,layout));
+ const r=s.finalRect(layout.viewport),[tl,tr,br,bl]=r.corners;
+ assert.ok(tl.x<tr.x&&tl.y<bl.y&&tr.y<br.y);
+ assert.ok(Math.abs(r.width-r.height)<.5);
+ assert.ok(Math.abs(r.left+r.width/2-640)<.5&&Math.abs(r.top+r.height/2-400)<.5);
+ assert.ok(s.camera.up.z<-.999);
+});

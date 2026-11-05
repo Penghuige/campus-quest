@@ -66,3 +66,14 @@ backend/loadtest/runs/
 
 # Celery beat runtime schedule db (loadtest stack runs beat locally)
 backend/celerybeat-schedule*
+
+# Local implementation/gate logs are not product artifacts.
+.local-dev/
+
+# These audited static runtime libraries are production assets, not build output.
+!frontend/public/landing/dist/
+!frontend/public/landing/dist/trail.js
+!frontend/public/landing/seal/vendor/gsap/dist/
+!frontend/public/landing/seal/vendor/gsap/dist/*.js
+!frontend/public/landing/seal/vendor/three/build/
+!frontend/public/landing/seal/vendor/three/build/*.js

@@ -196,8 +196,11 @@ export function StudentShell({
   children,
   sessionCookiePresent,
   shellHint,
+  anonymousFallback,
 }: {
   children: ReactNode;
+  /** Only the public home supplies this; protected pages retain their login gate. */
+  anonymousFallback?: ReactNode;
   /** The layout's server-side probe: did the document request carry
    * the readable csrf cookie (session evidence)? */
   sessionCookiePresent: boolean;
@@ -247,6 +250,7 @@ export function StudentShell({
   }
 
   if (state.status === "anonymous") {
+    if (anonymousFallback !== undefined) return anonymousFallback;
     return (
       <div className="app-shell" data-shell="anonymous">
         <main className="auth-shell">

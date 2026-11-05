@@ -16,7 +16,7 @@ import {
   honorRowView,
   honorTypeLabel,
   HONOR_TYPE_LABELS,
-} from "../features/rankings/growthView";
+} from "../features/rankings/growthViewState";
 
 function honor(overrides: Partial<OwnedHonorDto>): OwnedHonorDto {
   return {

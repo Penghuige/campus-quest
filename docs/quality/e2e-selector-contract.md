@@ -190,3 +190,14 @@ owner-approved product decision — never "to fit the new DOM".
 4. New UI primitives that replace a B-class region must expose an
    equally specific hook (test id, class, or aria contract) at the
    same granularity.
+
+
+## Landing Q15 contracts (2026-11-05)
+
+| Selector | Public contract / surface |
+|---|---|
+| `iframe[title="智汇华师校园介绍"]` | isolated approved Landing on anonymous `/` and public `/about`; no workspace frame for first-time visitors |
+| frame role link `直接进入` | native top-level real login |
+| frame role button `登录智汇华师` | terminal real login; hidden until terminal/static, never a demo |
+| frame role link `前往登录` | media-failure recovery, pointer/keyboard operable |
+| frame `#hero[data-mode="static"]` | reduced/mobile deterministic view for new screenshot; no changes to existing workspace baselines |

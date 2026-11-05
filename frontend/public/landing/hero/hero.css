@@ -1,0 +1,30 @@
+@font-face{font-family:HeroSerif;src:url('../assets/fonts/hero-serif.woff2') format('woff2');font-weight:250 900;font-style:normal;font-display:swap}
+html[data-scene=hero]{scrollbar-gutter:auto}
+#hero.hero-v2{position:relative;isolation:isolate;width:100%;height:100vh;height:100svh;overflow:hidden;background:#f5f3ec;cursor:auto;touch-action:pan-y}
+#hero .campus-painting,#hero .ink-reveal{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;user-select:none}
+#hero .campus-painting{z-index:0;object-fit:cover;object-position:center bottom;opacity:0}
+#hero[data-mode=static] .campus-painting{opacity:1}
+#hero .ink-reveal{z-index:1}
+#hero:not([data-mode=animated]) .ink-reveal{display:none}
+#hero .brand-corner{position:absolute;z-index:3;top:28px;left:32px}
+#hero .school-logo{display:block;width:196px;height:53px;object-fit:contain;object-position:left top;user-select:none}
+#hero .hero-title{position:absolute;z-index:2;top:31%;left:50%;transform:translate(-50%,-50%);margin:0;padding:0 0 0 .12em;white-space:nowrap;color:#18221f;font:600 clamp(64px,8.75vw,112px)/1.2 HeroSerif,'Noto Serif SC','Source Han Serif SC',SimSun,serif;letter-spacing:.12em;text-align:center;pointer-events:none;user-select:none}
+#hero .direct-entry{position:absolute;z-index:3;top:28px;right:32px;display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:44px;padding:0 4px;border:1px solid transparent;background:transparent;color:#254657;font:500 15px/1.2 HeroSerif,'Noto Serif SC',SimSun,serif;letter-spacing:.12em;white-space:nowrap;text-decoration:none;cursor:pointer;touch-action:manipulation}
+#hero .direct-entry svg{display:block;flex:none;width:28px;height:10px}
+#hero .direct-entry:hover{color:#152f3d;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
+#hero .scene-next{position:absolute;z-index:3;left:50%;bottom:24px;transform:translateX(-50%);display:grid;place-items:center;width:48px;height:48px;padding:0;border:0;background:transparent;color:#383835;cursor:pointer;touch-action:manipulation}
+#hero .scene-next svg{display:block;width:20px;height:20px;overflow:visible}
+#hero .scene-next .arrow-halo{stroke:#f5f3ec;stroke-width:3.5}
+#hero :is(a,button):focus-visible{outline:2px solid #385d97;outline-offset:3px;border-radius:3px}
+#hero .cursor-hint{position:absolute;z-index:3;right:30px;bottom:24px;margin:0;color:#7c817a;font:10px/1.25 system-ui,sans-serif;pointer-events:none}
+#hero:not([data-mode=animated]) .cursor-hint{display:none}
+#hero .hero-feedback{position:absolute;z-index:3;top:82px;right:36px;margin:0;color:#47616a;font:12px/1.6 system-ui,sans-serif}
+@media(max-width:767px){
+ #hero.hero-v2{background:linear-gradient(180deg,#f5f3ec 0%,#f4f4ef 45%,#f2f5f8 75%,#f2f5f8 100%)}
+ #hero .campus-painting{object-position:center center;transform:scale(1.5);transform-origin:center;-webkit-mask-image:linear-gradient(to bottom,transparent 0%,#000 24%,#000 100%);mask-image:linear-gradient(to bottom,transparent 0%,#000 24%,#000 100%)}
+ #hero .hero-title{top:36%;font-size:clamp(44px,13vw,56px)}
+ #hero .brand-corner{top:18px;left:16px}
+ #hero .direct-entry{top:18px;right:16px;padding:0 2px}
+ #hero .hero-feedback{top:70px;right:18px}
+}
+@media(max-width:375px){#hero .school-logo{width:min(196px,calc(100vw - 176px));height:auto}}

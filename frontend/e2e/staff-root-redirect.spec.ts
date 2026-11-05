@@ -9,7 +9,7 @@
  *    rail, no card), and releasing /me AUTO-replaces to the role's
  *    landing path — no manual click anywhere;
  * 2. students keep the optimistic workspace (no redirect, URL stays);
- * 3. anonymous keeps the auth card;
+ * 3. anonymous sees the public Landing;
  * 4. a /me FAILURE under a staff hint renders the error frame inside
  *    the placeholder shell — retry AND a way out to the staff login,
  *    never an infinite 正在前往.
@@ -103,9 +103,9 @@ test.describe("staff on student routes: redirect, not a card (audit item A)", ()
     await expect(page.getByText("正在前往工作台")).toHaveCount(0);
   });
 
-  test("anonymous keeps the auth card", async ({ page }) => {
+  test("anonymous sees the public Landing", async ({ page }) => {
     await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
-    await expect(page.locator(".auth-card")).toBeVisible();
+    await expect(page.getByTitle("智汇华师校园介绍")).toBeVisible();
     await expect(page.getByText("正在前往工作台")).toHaveCount(0);
   });
 

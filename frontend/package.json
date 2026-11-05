@@ -8,7 +8,7 @@
     "check:css": "node scripts/check-css-integrity.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:unit": "tsx --test src/__tests__/*.test.ts",
+    "test:unit": "tsx --test src/__tests__/*.test.ts && npm run test:landing-unit",
     "test": "npm run test:unit",
     "api:types": "openapi-typescript \"${OPENAPI_URL:-http://localhost:8000/openapi.json}\" -o src/lib/api/schema.d.ts",
     "api:types:snapshot": "openapi-typescript openapi.snapshot.json -o src/lib/api/schema.d.ts",
@@ -20,7 +20,9 @@
     "audit:gate": "node scripts/check-audit.mjs",
     "arch:lint": "depcruise src --config .dependency-cruiser.cjs",
     "test:e2e:a11y": "playwright test accessibility.spec.ts",
-    "test:e2e:smoke": "playwright test --project=firefox --project=webkit"
+    "test:e2e:smoke": "playwright test --project=firefox --project=webkit",
+    "test:e2e:landing": "npm run build && playwright test --config playwright.landing.config.ts",
+    "test:landing-unit": "node --test landing-tests/hero/*.test.mjs landing-tests/seal/*.test.mjs"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.13.0",

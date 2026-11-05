@@ -42,9 +42,11 @@ function makeFixture(files: Record<string, string>): string {
   for (const [name, body] of Object.entries(files)) {
     writeFileSync(join(dir, "src", name), body);
   }
+  // Windows junctions are directories to Git; never stage the borrowed install.
+  writeFileSync(join(dir, ".gitignore"), "node_modules/\n");
   // Tailwind resolves `@import "tailwindcss/…"` by walking node_modules
   // up from the CSS file — point the fixture at the real install.
-  symlinkSync(join(frontendRoot, "node_modules"), join(dir, "node_modules"));
+  symlinkSync(join(frontendRoot, "node_modules"), join(dir, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   // Env immunity (the push-hook class): an ambient GIT_DIR (the hook
   // exports one) would send this init INTO the real gitdir instead of
   // the fixture — the checker's stripped-env discovery then finds no
