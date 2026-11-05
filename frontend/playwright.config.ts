@@ -107,7 +107,8 @@ export default defineConfig({
     {
       name: "chromium",
       use: { browserName: "chromium" },
-      testIgnore: /cross-browser-smoke\.spec\.ts/,
+      // Public Landing owns an isolated server/origin and a dedicated CI gate.
+      testIgnore: [/cross-browser-smoke\.spec\.ts/, /landing\.integration\.spec\.ts/],
     },
     {
       name: "firefox",

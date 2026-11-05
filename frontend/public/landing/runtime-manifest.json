@@ -200,8 +200,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 160908,
-      "sha256": "08b21a5d7a366525d93b063d39dd40e20ab07b085ab7deeefd4d2159ea46510a"
+      "bytes": 161141,
+      "sha256": "61d1d95cd4dc74a2ad5f57171abb29261be8f1974c6f07a4b18a5e5322eb4f89"
     },
     {
       "path": "intro-animation.mjs",
@@ -215,8 +215,8 @@
     },
     {
       "path": "landing.css",
-      "bytes": 4256,
-      "sha256": "bf71b62791ac5051cd5e5deb7ad8e3f491c2b369a6515d7395188da53e949ee7"
+      "bytes": 4675,
+      "sha256": "4886bd7a0b86028894ab97fe0bdfd54d903ea80f7881c22216e5bdacdabbdff1"
     },
     {
       "path": "lifecycle.js",
@@ -225,8 +225,8 @@
     },
     {
       "path": "scene-host.mjs",
-      "bytes": 4531,
-      "sha256": "c50d26110054d8a4304d087e2791bd7f04c4dc86573a77998a88a578410d802c"
+      "bytes": 5368,
+      "sha256": "9bf919761088d41098b2230565c62bafab2250c9f119088f73c60b75ec562771"
     },
     {
       "path": "scene.css",

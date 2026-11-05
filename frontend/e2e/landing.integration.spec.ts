@@ -127,3 +127,27 @@ test("desktop motion reaches DONE through the real composed document", async ({ 
   await stamp.click();
   await expect(page).toHaveURL(new RegExp(`${prefix}/login$`));
 });
+test("failed renderer module retains an independent actionable login", async ({ page }) => {
+  await page.route("**/seal/render.mjs", (route) => route.abort());
+  await page.goto(`${prefix}/about`);
+  const frame = intro(page);
+  await frame.getByRole("button", { name: "进入图文介绍" }).click();
+  await frame.getByRole("button", { name: "进入聚树成印" }).click();
+  const recovery = frame.getByRole("link", { name: "前往登录", exact: true });
+  await expect(recovery).toBeVisible();
+  await recovery.click();
+  await expect(page).toHaveURL(new RegExp(`${prefix}/login$`));
+});
+
+
+test("failed renderer dependency restores keyboard login focus", async ({ page }) => {
+  await page.route("**/seal/vendor/three/build/three.core.js", (route) => route.abort());
+  await page.goto(`${prefix}/about`);
+  const frame = intro(page);
+  await frame.getByRole("button", { name: "进入图文介绍" }).click();
+  await frame.getByRole("button", { name: "进入聚树成印" }).click();
+  const recovery = frame.getByRole("link", { name: "前往登录", exact: true });
+  await expect(recovery).toBeFocused();
+  await recovery.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`${prefix}/login$`));
+});

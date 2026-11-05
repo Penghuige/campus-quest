@@ -12,6 +12,6 @@ Q14已确认三屏设计，Q15批准访客首页介绍、已登录首页工作�
 
 验证命令：使用CI相同的Node22。`npm run typecheck`、`npm run lint`、`npm run check:css`、`npm run arch:lint`、`npm run test:unit`（应用870项加动效110项）、`npm run coverage:ratchet`、`npm run test:e2e:landing`。最后一项先生产构建，再通过独立49356端口跑真实Next/public组合，无需共用DB/MinIO；会话角色与错误响应在该专用套件明确控制，不能冒充真实后端登录验证。既有工作台/登录电池保留。CI分别测试根部署与/campus。
 
-本次已验证：应用870项与动效110项、覆盖率95.38/92.25/90.70、构建、根路径完整11例、前缀完整10例以及补充真实桌面动效到DONE；后续最终结果以当前head日志和CI为准。移动axe和Windows新稳定截图已检查。两张新Linux基线从fork运行41973717483的产物13390178651取得（ZIP校验通过），已人工对照Windows与批准构图；仅新增Landing基线，不复写旧工作台baseline。首次Linux9/11的两失败均为缺新基线，补入后的比较结果另记。原生305px印面高DPR柔化、实际后台/BFCache/物理高刷和外部正式部署仍不声称本轮验证。
+本次本地最终验证：应用870项与动效110项，覆盖率95.38/92.25/90.70；生产构建、根路径与/campus各13例（含脚本/依赖下载失败真实登录、移动axe、正常桌面DONE、新屏幕像素比较）；类型/lint/CSS/架构及后端静态契约共18项通过。专用套件通过实际Playwright收集检查，与共享电池分离。Linux新屏幕比较已在be44b34的根路径及/campus各11/11通过，评审修复后的最终CI另见docs/quality/landing-integration-review.md。新基线来源与SHA256见docs/quality/landing-visual-baselines.md；仅新增Landing基线，未刷新旧工作台截图。原生305px印面高DPR柔化、实际后台/BFCache/物理高刷和外部正式部署仍不声称本轮验证。
 
 当前账号对上游仓库没有直接写权限，因此发布为现有fork的分支，再向Penghuige/campus-quest main提交PR；推送/PR不代表owner已合并或网站已部署。

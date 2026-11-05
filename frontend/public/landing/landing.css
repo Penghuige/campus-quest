@@ -53,3 +53,8 @@ html[data-inspect="true"] #seal-ui #tools{display:block}
 
 /* The real missing-image recovery link must accept pointer and keyboard input. */
 #seal-experience #feedback a{pointer-events:auto;color:inherit;text-decoration:underline}
+
+/* Independent recovery remains available when the rendering module cannot load. */
+#seal-module-error{position:fixed;inset:0;z-index:50;display:grid;place-content:center;gap:16px;padding:24px;text-align:center;background:#f6f3ed;color:#24392e}
+#seal-module-error[hidden]{display:none}
+#seal-module-error a{pointer-events:auto;display:inline-block;min-height:44px;padding:12px;text-decoration:underline;color:inherit}

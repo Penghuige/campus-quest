@@ -7,3 +7,5 @@
 - 走查：手机标题、校徽、入口、中轴取景与Windows/批准稿一致；桌面静态五条内容和原生305px新印面、暖纸水纹均完整。截图允许Linux字体光栅环境差异，不改变容忍度。
 - 该次Linux其余9项功能/axe/资源/正常DONE测试通过；两项失败是预期的新基线缺失。补入后须再次由Linux运行比较，不把写新图当作比较已通过。
 - 上游PR156的Actions需维护者批准，fork证据不能冒充上游运行。
+
+补入后的Linux比较已通过：[fork run41974186897](https://github.com/YeZesen0121/campus-quest/actions/runs/41974186897)，head be44b34eddcf5b06920097bfce2ddd2026542826，根路径及/campus均11/11；评审修复后的13例仍需按其head复核。

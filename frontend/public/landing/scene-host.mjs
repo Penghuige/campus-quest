@@ -7,7 +7,7 @@ const shade=document.getElementById('scene-shade'),status=document.getElementByI
 const motion=matchMedia('(prefers-reduced-motion: reduce)');
 const positions={hero:0,intro:0,seal:0};
 const names={hero:'智汇华师',intro:'图文介绍',seal:'聚树成印'};
-let animation=null,loadedIntro=null,displayed='hero';
+let animation=null,loadedIntro=null,displayed='hero',sealModuleFailed=false;
 // Scene positions are restored at the fade midpoint, never by native hash scrolling.
 history.scrollRestoration='manual';
 window.ScrollTrigger.clearScrollMemory('manual');
@@ -68,6 +68,7 @@ async function fade(to,{restore=false,interrupt=false,record=true}={}){
   }
   if(!flow.complete(token))return;
   shade.style.opacity='0';animation?.cancel();animation=null;
+  if(to==='seal'&&sealModuleFailed)document.querySelector('#seal-module-error a')?.focus({preventScroll:true});
   if(to!=='seal')document.querySelector('#'+(to==='hero'?'hero':'paperLayer')+' .scene-next')?.focus({preventScroll:true});
  }catch(error){
   // Cancellation belongs to a newer history navigation. It must not finish this one.
@@ -89,3 +90,15 @@ document.addEventListener('visibilitychange',syncHero);
 addEventListener('pageshow',()=>syncHero());
 history.replaceState({scene:'hero'},'',location.pathname+location.search);
 show('hero');
+
+// A failed module/dependency cannot run render.mjs's own init().catch.
+// Keep recovery outside that dependency graph and outside its inert UI.
+const moduleFallback=document.getElementById('seal-module-error');
+moduleFallback.hidden=false;
+void import('./seal/render.mjs').then(()=>{moduleFallback.hidden=true;}).catch(error=>{
+ sealModuleFailed=true;
+ moduleFallback.querySelector('h2').textContent='校园动效未能载入';
+ moduleFallback.querySelector('p').textContent='你仍可进入平台，或刷新后再试';
+ if(displayed==='seal'&&flow.snapshot().phase==='idle')moduleFallback.querySelector('a').focus({preventScroll:true});
+ console.error('Campus scene module unavailable',error);
+});
