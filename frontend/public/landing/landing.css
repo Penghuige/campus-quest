@@ -1,0 +1,60 @@
+#seal-experience { color-scheme: dark; font-family: system-ui, sans-serif; background:#040a0a; }
+#seal-experience * { box-sizing:border-box; }
+#seal-experience { margin:0; color:#cbd8d2; }
+#stage { position:fixed; inset:0; z-index:-1; }
+#seal-experience canvas { width:100%; height:100%; display:block; }
+
+.intro { position:fixed; inset:24px 28px auto; display:flex; justify-content:space-between; gap:16px; font-size:12px; letter-spacing:0.06em; pointer-events:none; }
+#scroll-space { height:900svh; pointer-events:none; }
+#tools { position:fixed; left:20px; bottom:18px; width:268px; background:rgba(20,33,30,.88); color:#dde7df; border:1px solid #52665b; border-radius:10px; padding:13px; font-size:12px; backdrop-filter:blur(10px); z-index:4; }
+#seal-experience summary { cursor:pointer; }
+.actions { display:flex; gap:7px; margin:12px 0; }
+#seal-experience button:not(.stamp) { border:1px solid #657c6d; background:#233b30; color:#eff4f0; padding:7px 9px; border-radius:5px; font:inherit; cursor:pointer; }
+#seal-experience button:disabled { opacity:.5; cursor:default; }
+#seal-experience label { display:block; margin:12px 0; }
+.seek-label { display:flex; flex-wrap:wrap; justify-content:space-between; }
+#seal-experience input[type=range] { width:100%; margin:10px 0 0; accent-color:#b6d9b5; }
+#tools small { line-height:1.6; color:#b4c4b9; display:block; margin-top:10px; }
+#state { font-family:ui-monospace,monospace; margin:12px 0 0; }
+.stamp { position:fixed; border:0; padding:0; background:none; cursor:pointer; overflow:visible; }
+.stamp img { width:100%; height:100%; display:block; }
+#seal-experience.stamping .intro, #seal-experience.paper .intro { opacity:0; }
+.stamp:focus-visible { outline:3px solid #385d97; outline-offset:10px; }
+.stamp:active { transform:scale(.985); }
+.stamp.text-fallback { background:#a62714; color:#f5f3ec; font-size:24px; }
+#feedback { position:fixed; margin:0; text-align:center; color:#662a1c; font-size:14px; width:100%; padding:0 24px; }
+#seal-experience.paper { color:#3c483e; color-scheme:light; }
+#seal-experience.paper #tools { background:rgba(245,243,236,.94); color:#5d6258; border-color:#d4d8cb; }
+#seal-experience.paper #tools:not([open]) { width:auto; background:none; border-color:transparent; backdrop-filter:none; padding:0; color:#73766b; }
+#seal-experience.paper button:not(.stamp) { background:#fbfaf5; color:#4c5c4a; border-color:#c6ccbd; }
+#seal-experience.paper #tools small { color:#747b6f; }
+#water-state { margin:8px 0 0; font-size:11px; }
+@media(max-width:700px) { .intro{inset:18px 18px auto;} #tools{left:12px;bottom:14px;width:220px;padding:10px;} #tools[open]{max-height:45svh;overflow:auto;} }
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+
+/* Scene host selects one white section or the original fixed seal stage. */
+#seal-experience{position:fixed;inset:0;z-index:0;visibility:hidden;pointer-events:none;font-family:system-ui,sans-serif}
+#seal-experience #stage{z-index:0}
+#seal-ui{position:fixed;inset:0;visibility:hidden;pointer-events:none}
+#seal-ui[data-ready="true"]{visibility:visible}
+#seal-ui .stamp{pointer-events:auto}
+#seal-ui #tools{pointer-events:auto;display:none}
+html[data-inspect="true"] #seal-ui #tools{display:block}
+#scroll-space{position:relative;z-index:-1}
+#seal-experience #hint.scroll-prompt{position:fixed;bottom:32px;left:50%;width:max-content;margin:0;opacity:1;--cue-rgb:255,255,255}
+#seal-experience #hint .scroll-prompt-label{font-size:11px;font-weight:600;color:rgba(var(--cue-rgb),.82)}
+#seal-experience #hint .scroll-prompt-track{width:2px;background:rgba(var(--cue-rgb),.24)}
+#seal-experience #hint .scroll-prompt-bar{width:2px;background:rgba(var(--cue-rgb),.9)}
+#seal-experience.paper #hint.scroll-prompt{--cue-rgb:13,13,13}
+#seal-experience.stamping #hint.scroll-prompt,#seal-experience.paper #hint.scroll-prompt{opacity:0}
+#seal-experience.stamping #hint .scroll-prompt-bar,#seal-experience.paper #hint .scroll-prompt-bar{animation-play-state:paused}
+#seal-experience #feedback{line-height:1.5}
+#seal-experience.paper{background:#F5F3EC}
+
+/* The real missing-image recovery link must accept pointer and keyboard input. */
+#seal-experience #feedback a{pointer-events:auto;color:inherit;text-decoration:underline}
+
+/* Independent recovery remains available when the rendering module cannot load. */
+#seal-module-error{position:fixed;inset:0;z-index:50;display:grid;place-content:center;gap:16px;padding:24px;text-align:center;background:#f6f3ed;color:#24392e}
+#seal-module-error[hidden]{display:none}
+#seal-module-error a{pointer-events:auto;display:inline-block;min-height:44px;padding:12px;text-decoration:underline;color:inherit}

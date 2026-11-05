@@ -22,7 +22,7 @@ import {
   readNudgeDismissed,
   writeNudgeDismissed,
   type NudgeStorage,
-} from "../features/auth/nicknameNudge";
+} from "../features/auth/nicknameNudgeState";
 
 /** Minimal Storage fake (get/set only — the module's whole contract). */
 function fakeStorage(): NudgeStorage {

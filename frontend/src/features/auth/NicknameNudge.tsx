@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { safeLocalStorage } from "@/lib/sidebarPreference";
 
 import type { MeProfile } from "./session";
-import { isAutoNickname, readNudgeDismissed, writeNudgeDismissed } from "./nicknameNudge";
+import { isAutoNickname, readNudgeDismissed, writeNudgeDismissed } from "./nicknameNudgeState";
 
 export function NicknameNudge({ me }: { me: MeProfile }) {
   const [dismissed, setDismissed] = useState(() => {

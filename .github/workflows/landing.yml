@@ -1,0 +1,40 @@
+name: Landing integration
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+jobs:
+  landing:
+    name: Public Landing (${{ matrix.prefix || 'root' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        prefix: ['', '/campus']
+    env:
+      CQ_BASE_PATH: ${{ matrix.prefix }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/check-landing-collection.mjs
+      - run: npm run test:landing-unit
+      - run: npm run test:e2e:landing
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: landing-evidence-${{ strategy.job-index }}
+          path: |
+            frontend/test-results/landing/
+            frontend/test-results/landing-report.json
+            frontend/e2e/landing.integration.spec.ts-snapshots/
+          retention-days: 7

@@ -1,0 +1,8 @@
+
+# Preserve the audited static runtime bytes and hashes on Windows and Linux.
+frontend/public/landing/** -text
+
+# Byte-preserved vendor distributions retain upstream whitespace.
+frontend/public/landing/seal/vendor/** -whitespace
+frontend/public/landing/dist/** -whitespace
+frontend/public/landing/licenses/** -whitespace

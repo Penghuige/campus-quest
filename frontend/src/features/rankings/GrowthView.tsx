@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sectionStates";
 import { useSection } from "@/components/ui/useSection";
 import { myGrowth } from "@/features/rankings/api";
-import { growthView } from "@/features/rankings/growthView";
+import { growthView } from "@/features/rankings/growthViewState";
 
 export function GrowthView() {
   const { state, retry } = useSection(() => myGrowth(), "GET /api/v1/points/me/growth");

@@ -1,0 +1,18 @@
+/* Click-gated scenes. Only the selected white scene occupies document flow. */
+[hidden]{display:none!important}
+html{background:#f4f4f2;scrollbar-gutter:stable;overflow-anchor:none}
+body{min-height:100svh}
+.hero .scroll-prompt{display:none}
+.intro-section{padding-bottom:104px}
+.intro-section .snapshot-stage{clip-path:none}
+.scene-next{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:6;display:grid;place-items:center;width:48px;height:48px;padding:0;border:0;background:transparent;color:#383835;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.scene-next svg{display:block;width:20px;height:20px;overflow:visible}
+.scene-next .arrow-halo{stroke:#f4f4f2;stroke-width:3.5}
+.scene-next:focus-visible{outline:2px solid #385d97;outline-offset:3px;border-radius:6px}
+.scene-next:active svg{transform:translateY(2px)}
+.scene-next:disabled{cursor:default}
+#introTitle:not([data-enter-state]),#introTitle[data-enter-state=waiting]{visibility:hidden}
+#scene-shade{position:fixed;inset:0;z-index:100;opacity:0;visibility:hidden;pointer-events:none;background:#f4f4f2}
+html[data-scene-phase=out] #scene-shade,html[data-scene-phase=in] #scene-shade{visibility:visible;pointer-events:auto;touch-action:none}
+.scene-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+@media(prefers-reduced-motion:reduce){.scene-next:active svg{transform:none}}

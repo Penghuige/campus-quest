@@ -13,5 +13,5 @@ export default defineConfig([
   // skips it (tsconfig's include has no e2e/** — Playwright transpiles
   // the specs itself), and `next build` never touches files outside
   // src/app.
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "test-results/**", "playwright-report/**", "public/landing/seal/vendor/**", "public/landing/dist/**"]),
 ]);

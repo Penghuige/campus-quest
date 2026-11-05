@@ -1,0 +1,24 @@
+@font-face{font-family:OrbitSerif;src:url('../assets/fonts/orbit-serif.woff2') format('woff2');font-style:normal;font-weight:200 900;font-display:swap}
+@font-face{font-family:OrbitSans;src:url('../assets/fonts/orbit-sans.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
+#seal-experience #seal-orbit{position:fixed;inset:0;z-index:2;isolation:isolate;pointer-events:none;color:#e8eeeb}
+#seal-experience #seal-orbit .orbit-title{position:absolute;left:50%;top:clamp(32px,10svh,112px);max-width:calc(100% - 32px);margin:0;font-family:OrbitSerif,'Noto Serif SC',SimSun,serif;font-size:clamp(24px,3.125vw,40px);font-weight:500;line-height:1.25;white-space:nowrap;letter-spacing:0;transform:translateX(-50%);will-change:opacity,transform}
+#seal-experience #seal-orbit .orbit-char{display:inline-block;opacity:0;transform:translateY(8px);filter:blur(4px)}
+#seal-experience #seal-orbit[data-entered=true] .orbit-char{animation:orbit-character-in 600ms cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--char-index)*28ms)}
+#seal-experience #seal-orbit[data-paused=true] .orbit-char{animation-play-state:paused}
+@keyframes orbit-character-in{to{opacity:1;transform:translateY(0);filter:blur(0)}}
+#seal-experience #seal-orbit .orbit-track{position:absolute;inset:0;perspective:1100px}
+#seal-experience #seal-orbit .orbit-card{position:absolute;left:0;top:0;width:228px;height:104px;padding:10px 0;display:grid;grid-template-rows:18px 60px;gap:6px;border-radius:2px;background:rgba(9,19,22,.90);box-shadow:inset 0 0 0 1px rgba(196,216,220,.20);text-align:center;opacity:0;will-change:transform,opacity;backface-visibility:hidden}
+#seal-experience #seal-orbit .orbit-label{margin:0;font-family:OrbitSans,'Noto Sans SC','Microsoft YaHei',sans-serif;font-size:12px;font-weight:400;line-height:18px;color:#a5b7b9;letter-spacing:.04em}
+#seal-experience #seal-orbit .orbit-sentence{margin:0;font-family:OrbitSerif,'Noto Serif SC',SimSun,serif;font-size:24px;font-weight:500;line-height:30px;letter-spacing:0;white-space:nowrap}
+#seal-experience #seal-orbit .orbit-sentence span{display:block}
+/* One complete semantic copy, made visible as a list only in static mode. */
+#seal-experience #seal-orbit[data-mode=animated] .orbit-reading{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#seal-experience #seal-orbit[data-mode=static] .orbit-title,#seal-experience #seal-orbit[data-mode=static] .orbit-track{display:none}
+#seal-experience #seal-orbit[data-mode=static] .orbit-reading{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(440px,calc(100% - 32px));max-height:min(calc(58svh - 16px),var(--static-list-height,55svh));overflow:auto;overscroll-behavior:contain;pointer-events:auto;padding:4px 12px 12px;color:#344b41;scrollbar-width:thin}
+#seal-experience #seal-orbit .orbit-reading h2{margin:0 0 18px;font-family:OrbitSerif,SimSun,serif;font-weight:500;font-size:clamp(21px,5.8vw,28px);line-height:1.35;white-space:nowrap;text-align:center}
+#seal-experience #seal-orbit .orbit-reading ol{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+#seal-experience #seal-orbit .orbit-reading li{display:grid;gap:3px;text-align:center}
+#seal-experience #seal-orbit .orbit-reading .reading-label{font:400 12px/18px OrbitSans,'Microsoft YaHei',sans-serif;color:#69756d}
+#seal-experience #seal-orbit .orbit-reading .reading-sentence{font:500 18px/28px OrbitSerif,SimSun,serif}
+#seal-experience #seal-orbit .orbit-reading:focus-visible{outline:2px solid #385d97;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){#seal-experience #seal-orbit .orbit-char{animation:none;filter:none;transform:none;opacity:1}}
