@@ -28,6 +28,8 @@
 
 完整本地日志与显式exit保存在独立工作树.local-dev/landing-integration/，final-root-e2e.*、final-prefix-e2e.*及gates/final-fix-*。测试控制角色/故障API响应；不替代真实后端登录测试。
 
-Linux最终修复head的结果在取得后补录；新基线来源与校验见landing-visual-baselines.md。
+最终运行代码head为00fb8b2423256598996ea7e5c2e45d00c73d6f0a：[fork Linux run41975917214](https://github.com/YeZesen0121/campus-quest/actions/runs/41975917214)成功。root job127074619191与/campus job127074619416均收集隔离检查通过、原生110/110、生产构建与浏览器13/13，失败与跳过均0；两张新增Linux基线比较通过。随后收尾提交只更新本文档/计划并移除临时fork分支触发，所有frontend代码及基线与该通过head逐字相同。正式工作流保留main push与main PR触发。
+
+上游同一代码head运行41975924137（Landing）及41975924113（CI）状态action_required，尚待维护者批准；最终PR head同样必须由上游按自己的完整门禁验证。因此保持draft，不把fork公开页面套件等同于完整Backend/Frontend/Pixel绿灯。新基线来源与校验见landing-visual-baselines.md。
 
 上游Actions对fork贡献需要维护者批准，fork专用运行不等于上游Backend、Frontend和Pixel完整门禁已绿。没有执行合并或部署。

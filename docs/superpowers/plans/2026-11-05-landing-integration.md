@@ -28,10 +28,10 @@
 ### Task2: 根路由与工作台组合
 - [x] 路由/SSR/过期cookie失败测试，观察RED。
 - [x] 根页移出学生组；复用StudentShell，新增根页专用anonymousFallback；/about与有标题全屏iframe及无JS入口。
-- [x] 保留登录/角色/受保护路由，支持basePath，metadata按访客/工作台区分；针对测试GREEN。
+- [x] 保留登录/角色/受保护路由，支持basePath，metadata使用智汇华师名称；针对测试GREEN。
 
 ### Task3: 验证、证据与推送
 - [x] 加Landing真实Next e2e、稳定视觉/axe、资源/入口/手机/reduced/noGL/前缀检查；只更新被Q15取代的匿名根页旧期待。
 - [x] 同PR更新测试矩阵、选择器与新视觉工件；运行类型/lint/CSS/架构/单测/覆盖/构建与相关e2e，说明未能完成的环境门禁。
 - [x] 一次独立全量评审，重要项一次RED→GREEN修复；文档与事实一致。
-- [ ] 明确exitcode核验pre-push，提交、push到origin并核对远端SHA；创建PR并跟进本次CI，不合并。
+- [x] 明确exitcode核验pre-push，提交并核对远端SHA；origin403后按裁决push已有fork并创建上游PR156，fork最终代码CI通过，上游完整CI需owner批准，不合并。
