@@ -73,8 +73,7 @@ Keyboard-only pass:
 - logical focus order;
 - dialog open and close restores focus appropriately;
 - menus and tabs follow primitive patterns;
-- no keyboard trap;
-- focus returns to a sensible place when a dialog closes.
+- no keyboard trap.
 
 Content pass:
 
