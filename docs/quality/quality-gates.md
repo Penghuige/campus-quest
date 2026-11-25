@@ -72,8 +72,9 @@ Keyboard-only pass:
 - visible focus;
 - logical focus order;
 - dialog open and close restores focus appropriately;
-- menus and tabs follow primitive behavior;
-- no keyboard trap.
+- menus and tabs follow primitive patterns;
+- no keyboard trap;
+- focus returns to a sensible place when a dialog closes.
 
 Content pass:
 
@@ -213,7 +214,7 @@ Any change touching points or rewards must prove:
 - original Ledger rows are immutable;
 - idempotent source key prevents duplicate assignment reward;
 - wallet and reservation update is transactional;
-- spendable points never go negative;
+- normal redemption never makes spendable points negative; reversing an already-consumed reward may leave a negative raw wallet balance, which must be exposed as point debt;
 - limited stock never oversells;
 - normal redemption does not reduce historical ranking contribution;
 - reversal corrects the intended historical period;
