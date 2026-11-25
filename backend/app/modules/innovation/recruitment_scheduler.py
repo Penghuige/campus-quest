@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
 from app.modules.audit.context import AuditContext
+from app.modules.identity.directory import lock_user_for_update
 from app.modules.identity.enums import Role
 from app.modules.identity.events import Actor
-from app.modules.identity.models import User
 from app.modules.innovation.models import OwnerQualification, ProjectDraft
 from app.modules.innovation.public_recruitment_service import PublicRecruitmentService
 from app.modules.innovation.recruitment_models import (
@@ -63,11 +63,7 @@ class RecruitmentScheduler:
             return None
         # Same user -> qualification -> project -> recruitment order as commands.
         # Expiry remains valid even when the owner is no longer active.
-        await db.execute(
-            select(User.__table__.c.id)
-            .where(User.__table__.c.id == parent.owner_user_id)
-            .with_for_update()
-        )
+        await lock_user_for_update(db, parent.owner_user_id)
         await db.execute(
             select(OwnerQualification)
             .where(OwnerQualification.user_id == parent.owner_user_id)
