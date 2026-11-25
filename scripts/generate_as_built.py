@@ -20,8 +20,8 @@ Usage
     uv run python scripts/generate_as_built.py [--check] [--self-test]
 
     --check      regenerate to memory and exit 1 if the committed
-                 docs/architecture/as-built.md differs (CI-style freshness
-                 gate; not wired into CI yet).
+                 docs/architecture/as-built.md differs (freshness gate wired
+                 into make pre-push and CI).
     --self-test  prove the scanners can fail: parse synthetic snippets and
                  assert the exact expected edges, then exit 0.
 
@@ -62,13 +62,12 @@ def check_freshness(committed: str, generated: str) -> bool:
     tree drift is staleness."""
     return _normalize_stamp(committed) == _normalize_stamp(generated)
 
+
 # ---------------------------------------------------------------------------
 # Backend scan (AST — precise for Python)
 # ---------------------------------------------------------------------------
 
-TS_IMPORT_RE = re.compile(
-    r"""(?:from\s+|import\s+)['"](@/[^'"]+|\.\.?/[^'"]+)['"]"""
-)
+TS_IMPORT_RE = re.compile(r"""(?:from\s+|import\s+)['"](@/[^'"]+|\.\.?/[^'"]+)['"]""")
 
 
 def backend_scan() -> dict:
@@ -151,24 +150,33 @@ def backend_module_file_stats() -> dict[str, dict[str, int]]:
     return stats
 
 
+def _current_scan_status(file_count: int) -> str:
+    noun = "file" if file_count == 1 else "files"
+    return (
+        f"{file_count} {noun} currently scanned; "
+        "active gate waivers live in backend/pyproject.toml"
+    )
+
+
 def backend_debt(cross: dict) -> list[tuple[str, str, list[str]]]:
     """Truth-side drift vs documented rules (mirrors the gate's waivers)."""
     debt: list[tuple[str, str, list[str]]] = []
     # 1. any module importing identity's ORM models (directory-port rule)
-    hits = [
-        f"{src}:{loc[0]}:{loc[1]}"
+    identity_hits = [
+        (src, loc)
         for src, tgts in cross.items()
         if src.startswith("modules.") and src != "modules.identity"
         for loc in tgts.get("modules.identity", [])
         if _imports_identity_models(loc[0])
     ]
-    if hits:
+    if identity_hits:
+        identity_files = sorted({f"{loc[0]}.py" for _, loc in identity_hits})
         debt.append(
             (
                 "identity ORM models imported outside identity "
                 "(rule: directory port only — interfaces.md)",
-                "5 files (2026-10-16), waived in the gate",
-                _identity_model_files(),
+                _current_scan_status(len(identity_files)),
+                identity_files,
             )
         )
     # 2. modules importing the worker runtime
@@ -181,10 +189,18 @@ def backend_debt(cross: dict) -> list[tuple[str, str, list[str]]]:
         for loc in locs
     )
     if worker_hits:
+        worker_files = {
+            loc[0]
+            for src, tgts in cross.items()
+            if src.startswith("modules.")
+            for tgt, locs in tgts.items()
+            if tgt.startswith("workers")
+            for loc in locs
+        }
         debt.append(
             (
                 "modules import the worker runtime (dispatch seams)",
-                "2 routers (2026-10-16), waived in the gate",
+                _current_scan_status(len(worker_files)),
                 worker_hits,
             )
         )
@@ -211,9 +227,7 @@ def backend_debt(cross: dict) -> list[tuple[str, str, list[str]]]:
 
 
 def _imports_identity_models(rel_file: str) -> bool:
-    return "identity.models" in _file_import_lines(
-        BACKEND_APP / f"{rel_file}.py"
-    )
+    return "identity.models" in _file_import_lines(BACKEND_APP / f"{rel_file}.py")
 
 
 def _imports_foreign_models(src_mod: str, tgt_mod: str) -> bool:
@@ -222,14 +236,6 @@ def _imports_foreign_models(src_mod: str, tgt_mod: str) -> bool:
         if f"app.modules.{tgt_mod.split('.')[1]}.models" in text:
             return True
     return False
-
-
-def _identity_model_files() -> list[str]:
-    hits = []
-    for f in (BACKEND_APP / "modules" / "notifications").glob("*.py"):
-        if "app.modules.identity.models" in f.read_text(encoding="utf-8"):
-            hits.append(f"modules/notifications/{f.name}")
-    return sorted(hits)
 
 
 _file_cache: dict[Path, str] = {}
@@ -314,16 +320,13 @@ def _resolve_spec(src_dir: Path, spec: str) -> Path | None:
 
 def _git_head() -> str:
     try:
-        return (
-            subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            .stdout.strip()
-        )
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
     except subprocess.CalledProcessError:
         return "unknown-head"
 
@@ -339,7 +342,7 @@ def render(cross: dict, fe_edges: dict, stats: dict) -> str:
         f"     the tree as it is. Generated from HEAD {head}. -->",
         "",
         "Regenerate: `make arch-map`. The contract gate is `make arch-lint`",
-        "(config: `backend/pyproject.toml [tool.importlinter]`,",
+        "(config: `backend/pyproject.toml [tool.importlinter]`)",
         "`frontend/.dependency-cruiser.cjs`).",
         "",
         "## Backend: cross-module dependency graph",
@@ -353,7 +356,12 @@ def render(cross: dict, fe_edges: dict, stats: dict) -> str:
     ]
     mods = sorted(
         {k.split(".")[1] for k in cross if k.startswith("modules.")}
-        | {t.split(".")[1] for v in cross.values() for t in v if t.startswith("modules.")}
+        | {
+            t.split(".")[1]
+            for v in cross.values()
+            for t in v
+            if t.startswith("modules.")
+        }
     )
     for m in mods:
         lines.append(f"    {m}[{m}]")
@@ -457,24 +465,40 @@ def self_test() -> bool:
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        # backend: synthetic module with a cross-module import
-        mod = tmp_path / "alpha"
-        mod.mkdir()
-        (mod / "service.py").write_text(
+        # backend: exercise the real scanner and debt renderer, including an
+        # identity ORM import outside notifications (the former blind spot).
+        modules = tmp_path / "modules"
+        (modules / "alpha").mkdir(parents=True)
+        (modules / "gamma").mkdir()
+        (modules / "alpha" / "service.py").write_text(
             "from app.modules.beta.models import Thing\n", encoding="utf-8"
+        )
+        (modules / "gamma" / "scheduler.py").write_text(
+            "from app.modules.identity.models import User\n", encoding="utf-8"
         )
         global BACKEND_APP
         saved = BACKEND_APP
         BACKEND_APP = tmp_path
+        _file_cache.clear()
         try:
-            tree = ast.parse((mod / "service.py").read_text())
+            cross = backend_scan()
             found = [
-                node.module
-                for node in ast.walk(tree)
-                if isinstance(node, ast.ImportFrom) and node.module
+                loc
+                for loc in cross.get("modules.gamma", {}).get("modules.identity", [])
+                if loc[0] == "modules/gamma/scheduler"
             ]
-            if found != ["app.modules.beta.models"]:
-                print("SELF-TEST FAIL: backend scanner missed the edge", found)
+            if not found:
+                print("SELF-TEST FAIL: backend scanner missed identity ORM edge")
+                ok = False
+            identity_debt = [
+                item
+                for item in backend_debt(cross)
+                if item[0].startswith("identity ORM")
+            ]
+            if not identity_debt or identity_debt[0][2] != [
+                "modules/gamma/scheduler.py"
+            ]:
+                print("SELF-TEST FAIL: debt renderer missed non-notifications file")
                 ok = False
             key = _pkg_key(["modules", "alpha", "service"])
             key2 = _pkg_key(["app", "modules", "alpha", "service"])
@@ -483,6 +507,7 @@ def self_test() -> bool:
                 ok = False
         finally:
             BACKEND_APP = saved
+            _file_cache.clear()
         # frontend: resolver behaviour
         rel = _resolve_spec(tmp_path, "@/features/x/api")
         if rel is not None:  # tmp tree has no src/features — must resolve None
@@ -511,9 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.check:
-        current = (
-            OUT_PATH.read_text(encoding="utf-8") if OUT_PATH.exists() else ""
-        )
+        current = OUT_PATH.read_text(encoding="utf-8") if OUT_PATH.exists() else ""
         if not check_freshness(current, text):
             print(
                 "as-built map is STALE — regenerate with `make arch-map` "
