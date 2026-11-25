@@ -72,7 +72,7 @@ Keyboard-only pass:
 - visible focus;
 - logical focus order;
 - dialog open and close restores focus appropriately;
-- menus and tabs follow primitive patterns;
+- menus and tabs follow primitive behavior;
 - no keyboard trap.
 
 Content pass:
