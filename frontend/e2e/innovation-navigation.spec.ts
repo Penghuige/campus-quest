@@ -18,6 +18,9 @@ test("R2: the campus entry opens the landing page with the project-library and t
   await expect(page.getByRole("heading", { name: "创新创业", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "双创板块入口", exact: true }).getByRole("link", { name: "项目库", exact: true })).toHaveAttribute("href", "/innovation/projects");
   await expect(page.getByRole("region", { name: "双创板块入口", exact: true }).getByRole("link", { name: "人才库 · 找同学", exact: true })).toHaveAttribute("href", "/innovation/talents");
+  for (const label of ["招募机会", "项目发现", "人才发现", "成果发现"]) {
+    await expect(page.getByRole("region", { name: label, exact: true })).toBeVisible();
+  }
   // The operations workbench arrives with batch 3; nothing may link there yet.
   await expect(page.getByRole("link", { name: "双创运营工作台", exact: true })).toHaveCount(0);
   await page.goto(`${BASE_URL}/profile`);
@@ -26,6 +29,18 @@ test("R2: the campus entry opens the landing page with the project-library and t
   await expect(page.getByRole("link", { name: "我的人才档案", exact: true })).toHaveAttribute("href", "/profile/talent-profile");
   await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test("R2: narrow students reach campus from home without losing rankings", async ({ page }) => {
+  await ensureStudentLogin(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`);
+  const navigation = page.getByRole("navigation", { name: "主导航", exact: true }).filter({ visible: true });
+  await expect(navigation.getByRole("link", { name: "双创", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "查看排行榜", exact: true })).toHaveAttribute("href", "/rankings");
+  await navigation.getByRole("link", { name: "双创", exact: true }).click();
+  await expect(page).toHaveURL(/\/innovation$/);
+  await expect(page.getByRole("heading", { name: "创新创业", exact: true })).toBeVisible();
 });
 
 test("R2: narrow viewports reach the campus pages without horizontal scroll", async ({ page }) => {

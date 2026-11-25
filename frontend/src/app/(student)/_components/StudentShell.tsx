@@ -40,14 +40,12 @@ import { getInnovationCapabilities } from "@/features/innovation/operationsApi";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 import { getAuthEpoch } from "@/lib/accessToken";
 
-/* Plan 11 Task 3 — the frozen navigation contract (route-true
- * amendment): desktop sidebar primary + secondary, narrow bottom nav.
+/* Plan 11 Task 3 — desktop sidebar primary + secondary, narrow bottom nav.
  * 我的任务 stays anchored on the dashboard (its only list surface);
  * 社区 stays anchored on task detail — V1 has neither route.
- * Innovation batch 1 adds the 创新创新创业 entry to the rail and the
- * medium top nav (PR #43's INNOVATION_NAV position, ReviewIcon); the
- * narrow BottomNav keeps its fixed 5 slots by owner decision — the
- * campus shell's own top nav covers the narrow band there. */
+ * The narrow shell keeps five slots, but 创新创业 must be reachable from
+ * the student workspace: it replaces 排行榜, which remains available from
+ * the dashboard's rank section and the wider navigation bands. */
 const SIDEBAR_PRIMARY = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
@@ -81,7 +79,7 @@ const MEDIUM_NAV = [
 const BOTTOM_NAV = [
   { href: "/", label: "首页", icon: <HomeIcon /> },
   { href: "/tasks", label: "任务", icon: <TasksIcon /> },
-  { href: "/rankings", label: "排行榜", icon: <TrophyIcon /> },
+  { href: "/innovation", label: "双创", icon: <ReviewIcon /> },
   { href: "/rewards", label: "积分奖励", icon: <GiftIcon /> },
   { href: "/profile", label: "我的", icon: <UserIcon /> },
 ] as const;
