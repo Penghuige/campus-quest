@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
+import "./discovery.css";
 
 import { DESIGN_TOKENS, oklchToHex } from "@/lib/designTokens";
 
