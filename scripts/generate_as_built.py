@@ -342,7 +342,7 @@ def render(cross: dict, fe_edges: dict, stats: dict) -> str:
         f"     the tree as it is. Generated from HEAD {head}. -->",
         "",
         "Regenerate: `make arch-map`. The contract gate is `make arch-lint`",
-        "(config: `backend/pyproject.toml [tool.importlinter]`)",
+        "(config: `backend/pyproject.toml [tool.importlinter]`,",
         "`frontend/.dependency-cruiser.cjs`).",
         "",
         "## Backend: cross-module dependency graph",
