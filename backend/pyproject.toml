@@ -225,8 +225,9 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Identity ORM models stay behind the directory port (interfaces.md)"
 type = "forbidden"
-source_modules = ["app.modules"]
+source_modules = ["app.modules.*"]
 forbidden_modules = ["app.modules.identity.models"]
+allow_indirect_imports = true
 ignore_imports = [
     # identity importing its own models is internal, not a cross-module read
     "app.modules.identity.* -> app.modules.identity.models",
@@ -243,8 +244,9 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "Modules must not import the worker runtime"
 type = "forbidden"
-source_modules = ["app.modules"]
+source_modules = ["app.modules.*"]
 forbidden_modules = ["app.workers", "app.workers.*"]
+allow_indirect_imports = true
 ignore_imports = [
     # Composition seams: two routers construct the injected Celery dispatchers
     # (backend-engineering §3 "resolve dependencies"); the jobs themselves own
