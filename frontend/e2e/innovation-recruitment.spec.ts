@@ -367,6 +367,20 @@ test("R3: independent publication, private saves, deliberate contact grant and l
   } finally { await browsing.close(); }
 });
 
+test("R3: a published role becomes real discovery content on campus and home", async ({ page }) => {
+  await prepare(page);
+  await fillRole(page);
+  await page.getByRole("button", { name: "保存招募草稿", exact: true }).click();
+  await expect(page.getByRole("status", { name: "招募操作结果" })).toContainText("已保存");
+  await publish(page);
+
+  for (const path of ["/innovation", "/"]) {
+    await page.goto(`${BASE_URL}${path}`);
+    await expect(page.getByRole("region", { name: "招募机会", exact: true }).getByRole("link", { name: "研究伙伴", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "项目发现", exact: true }).getByRole("link", { name: "模拟学习实验", exact: true })).toBeVisible();
+  }
+});
+
 test("R3: campus recruitment entry has accessible empty/mobile content", async ({ page }) => {
   await ensureStudentLogin(page);
   await page.setViewportSize({ width: 390, height: 844 });

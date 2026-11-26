@@ -33,7 +33,7 @@ export const declareConflict = (c: string, version: number) => request<void>(`${
 export const getReviewDetail = (c: string) => request<ReviewDetailDto>(opsPath(c), { cache: "no-store" });
 export const decideReview = (c: string, body: DecisionCommand) => request<Schema["ReviewCaseSummary"]>(`${opsPath(c)}/decision`, { method: "POST", body });
 export const readReviewEvidence = (c: string, e: string) => request<Blob>(`${opsPath(c)}/evidence/${encoded(e)}/content`, { responseFormat: "blob", cache: "no-store" });
-export const listPublicAchievements = (offset = 0) => request<Schema["PublicAchievementListResponse"]>(`/api/v1/ie/achievements?limit=20&offset=${offset}`);
+export const listPublicAchievements = (offset = 0, limit = 20) => request<Schema["PublicAchievementListResponse"]>(`/api/v1/ie/achievements?limit=${limit}&offset=${offset}`);
 export const getPublicAchievement = (a: string) => request<PublicAchievementDto>(`/api/v1/ie/achievements/${encoded(a)}`);
 
 /** Signed intent is transient. It is never cached, logged or attached to DOM. */

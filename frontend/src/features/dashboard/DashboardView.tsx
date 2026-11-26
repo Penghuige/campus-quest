@@ -24,6 +24,7 @@ import { useSection, type SectionState } from "@/components/ui/useSection";
 import { listRewards, myWallet, type WalletDto } from "@/features/points/api";
 import { monthlyBoard, type BoardDto } from "@/features/rankings/api";
 import { listNotifications } from "@/features/notifications/api";
+import { HomeDiscovery } from "@/features/innovation/PublicDiscovery";
 import { formatDeadlineSummary, parseServerInstant } from "@/lib/time";
 import {
   listMyClaims,
@@ -75,6 +76,7 @@ export function DashboardView() {
         now={now}
         claims={claims.state.status === "ready" ? claims.state.data.items : []}
       />
+      <HomeDiscovery />
       <NotificationsPreviewSection />
     </>
   );
@@ -369,7 +371,14 @@ function RankSection() {
 
   return (
     <section className="section" aria-label="本月排名">
-      <SectionHeading title="本月排名" />
+      <SectionHeading
+        title="本月排名"
+        action={
+          <Link className="section-link" href="/rankings">
+            查看排行榜
+          </Link>
+        }
+      />
       {state.status === "loading" ? <SectionSkeleton lines={3} /> : null}
       {state.status === "error" ? (
         <SectionError error={state.error} onRetry={retry} />

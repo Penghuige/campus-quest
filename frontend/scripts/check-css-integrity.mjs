@@ -3,13 +3,17 @@
 // token declarations, !important. Runs in CI; the only dependencies are
 // the already-installed postcss + @tailwindcss/postcss, used to harvest
 // the utilities the app's own compiled pipeline generates (Plan 14 T2).
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
 
 const cssPath = "src/app/globals.css";
-const css = readFileSync(cssPath, "utf8");
+const discoveryCssPath = "src/app/discovery.css";
+const cssPaths = [cssPath, ...(existsSync(discoveryCssPath) ? [discoveryCssPath] : [])];
+const cssByPath = new Map(cssPaths.map((path) => [path, readFileSync(path, "utf8")]));
+const globals = cssByPath.get(cssPath);
+const css = [...cssByPath.values()].join("\n");
 const errors = [];
 
 // Bracket-form arbitrary values sanctioned by an owner ruling; empty at
@@ -20,13 +24,13 @@ const ALLOWED_ARBITRARY = new Set([
 const warnings = [];
 
 // --- defined classes: every .class token appearing in any selector ---
-// `definedInGlobals` alone feeds the dead-CSS warning (its purpose is
+// `definedInStylesheets` alone feeds the dead-CSS warning (its purpose is
 // flagging stale hand-written rules); the union feeds the used-check.
-const definedInGlobals = new Set();
+const definedInStylesheets = new Set();
 for (const m of css.matchAll(/\.([a-z][a-z0-9-]*)/g)) {
-  definedInGlobals.add(m[1]);
+  definedInStylesheets.add(m[1]);
 }
-const defined = new Set(definedInGlobals);
+const defined = new Set(definedInStylesheets);
 
 // --- defined classes, compiled pipeline: Tailwind v4 generates utilities
 // by scanning the source for candidates, so a used utility never appears
@@ -34,7 +38,7 @@ const defined = new Set(definedInGlobals);
 // and harvest the emitted selectors (unescaping variant syntax, so the
 // compiled `.md\:grid` defines the class token `md:grid`). A compilation
 // failure propagates and fails the guard — never silently skipped.
-const compiled = await postcss([tailwindcss()]).process(css, {
+const compiled = await postcss([tailwindcss()]).process(globals, {
   from: cssPath,
 });
 // Strip comments first: the compiler banner carries a URL whose ".tld"
@@ -127,20 +131,22 @@ for (const [cls, where] of used) {
 }
 
 // --- raw colors: strip custom-property declarations, then scan ---
-const withoutDecls = css.replace(/^\s*--[a-z0-9-]+\s*:[^;]+;.*$/gim, "");
-for (const [i, line] of withoutDecls.split("\n").entries()) {
-  if (/#[0-9a-fA-F]{3,8}\b/.test(line))
-    errors.push(`raw hex color at ${cssPath}:${i + 1}: ${line.trim()}`);
-  if (/\boklch\(/.test(line))
-    errors.push(`raw oklch() outside token declaration at ${cssPath}:${i + 1}: ${line.trim()}`);
-  if (/!important/.test(line))
-    errors.push(`!important at ${cssPath}:${i + 1}: ${line.trim()}`);
+for (const [path, stylesheet] of cssByPath) {
+  const withoutDecls = stylesheet.replace(/^\s*--[a-z0-9-]+\s*:[^;]+;.*$/gim, "");
+  for (const [i, line] of withoutDecls.split("\n").entries()) {
+    if (/#[0-9a-fA-F]{3,8}\b/.test(line))
+      errors.push(`raw hex color at ${path}:${i + 1}: ${line.trim()}`);
+    if (/\boklch\(/.test(line))
+      errors.push(`raw oklch() outside token declaration at ${path}:${i + 1}: ${line.trim()}`);
+    if (/!important/.test(line))
+      errors.push(`!important at ${path}:${i + 1}: ${line.trim()}`);
+  }
 }
 
 // --- defined-but-unreferenced: warning only (hand-written rules; the
 // compiled utility harvest is generated, never "dead CSS") ---
 const tsxAll = files.map((f) => readFileSync(f, "utf8")).join("\n");
-for (const cls of definedInGlobals) {
+for (const cls of definedInStylesheets) {
   if (!tsxAll.includes(cls) && !new RegExp(`\\.${cls}[^{]*\\{[^}]*\\.`, "s").test(css))
     warnings.push(`defined-but-unreferenced ".${cls}" (dead CSS candidate)`);
 }

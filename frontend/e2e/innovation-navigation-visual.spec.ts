@@ -14,6 +14,10 @@ test("R2 navigation visual: campus landing and the empty project workspace", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/innovation`);
   await expect(page.getByRole("heading", { name: "创新创业", exact: true })).toBeVisible();
+  for (const label of ["招募机会", "项目发现", "人才发现", "成果发现"]) {
+    await expect(page.getByRole("region", { name: label, exact: true })).toBeVisible();
+  }
+  await expect(page.locator(".discovery-section .skeleton")).toHaveCount(0, { timeout: 15_000 });
   await pinFonts();
   await expect(page).toHaveScreenshot("innovation-campus-landing.png", { fullPage: true, maxDiffPixelRatio: 0.01 });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
