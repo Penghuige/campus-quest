@@ -59,7 +59,7 @@
 
 ## 容量验证与架构决策
 
-首次容量验证（locust，按需套件 `backend/loadtest/`）：50 并发提交者目标负载零错误零丢失（API 腿 P99 1.64 s）；300 人并发抢 60 个名额恰好 60 胜、**零超发**；崩溃点约 200 并发（单机磁盘先于应用倒下）。完整数字与发现见 [docs/loadtest/capacity-report-2026-10.md](docs/loadtest/capacity-report-2026-10.md)——每个数都有留存的 run 工件支撑。
+首次容量探索（2026-10，locust 套件 `backend/loadtest/`，不是当前 HEAD 的重新验证）：留存工件支持 50 并发提交者目标负载零错误零丢失（API 腿 P99 1.64 s），以及 300 人抢 60 个名额恰好 60 胜、**零超发**。100/200 并发递增腿的 summary 工件已被覆盖销毁，200 并发也未重跑；约 200 并发时磁盘先耗尽仅是历史观察，不构成当前容量结论。完整数字、逐项工件状态和尚未闭环的上传死锁风险见 [docs/loadtest/capacity-report-2026-10.md](docs/loadtest/capacity-report-2026-10.md)。
 
 关键取舍以 ADR 记录（[docs/architecture/adr/](docs/architecture/adr/)）：
 

@@ -1,6 +1,6 @@
 # CampusQuest 首次容量报告（2026-10）
 
-Spec: `docs/superpowers/specs/2026-09-29-load-testing-design.md` ·
+Spec: `docs/superpowers/specs/2026-10-29-load-testing-design.md` ·
 方法: 容量估算 → 场景即代码 → 正确性断言（见 ADR 0001）
 
 ## 一句话结论
@@ -26,7 +26,7 @@ Spec: `docs/superpowers/specs/2026-09-29-load-testing-design.md` ·
   不可能；套件用种子期离线铸 token（与登录同一 `issue_session` 路径）
 - 本机磁盘全程 98% 满——它本身就是第一道容量天花板（见发现 2）
 
-## 结果矩阵（每行数字都由 `backend/loadtest/runs/` 留存工件支撑）
+## 结果矩阵（S1@50、S2、S3 有留存 run 工件；100/200 递增腿的工件状态逐行披露）
 
 | 场景 | 负载 | 结果 | P99（API 腿） | 正确性检查 |
 |---|---|---|---|---|

@@ -49,11 +49,11 @@ Design decisions:
   `grace_deadline_at`, `reward_policy_snapshot`, and
   `submission_schema_version` — a later Task schema or reward bump must
   never retroactively change an already-claimed Claim's requirements.
-  `submission_schema_version` is NOT NULL on the claim (unlike the
-  nullable Task column): claiming requires a PUBLISHED Task, which
-  requires a schema, so a version always exists at claim time; the claim
-  service copies it from the Task on creation. `task_id` is denormalized
-  onto the claim so the (user_id, task_id) partial index and per-task
+  `submission_schema_version` is nullable on both Task and Claim: schema-
+  validated tasks copy the published version at claim time, while document
+  tasks have no schema and keep it NULL (migration 0027). A later schema
+  change must still never rewrite a non-NULL claim snapshot. `task_id` is
+  denormalized onto the claim so the (user_id, task_id) partial index and per-task
   history queries never need a join. Later Task edits must not touch these.
 - `reward_tier_locked` is the locked percentage from the snapshotted
   ladder (spec §9.3: 100/80/50/20), not a string tier name — the ladder
@@ -370,8 +370,7 @@ class AssignmentClaim(Base):
     grace_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reward_policy_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB)
     base_reward_points_snapshot: Mapped[int] = mapped_column(Integer)
-    # §6.2 MUST-snapshot; NOT NULL here because a claim can only be created
-    # against a PUBLISHED Task, which always carries a schema version.
+    # §6.2 MUST-snapshot; nullable for document tasks, which have no schema.
     submission_schema_version: Mapped[int | None] = mapped_column(Integer)
     reward_lock_status: Mapped[str] = mapped_column(String(16))
     # Locked percentage from the snapshotted ladder (spec §9.3).

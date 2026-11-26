@@ -16,6 +16,9 @@ identity ORM models. The contract is deliberately minimal:
 - ``find_by_email`` normalizes its argument (strip + lowercase) exactly
   once, mirroring how identity itself normalizes emails, so consumers may
   pass raw user input.
+- ``lock_user_for_update`` is the narrow, write-free primitive for callers
+  whose global lock order starts at users; it exposes no ORM row and makes
+  no account-eligibility decision.
 - ``get_display_profile`` keeps the repository delegation for nickname
   and user existence; the display-honor title (Plan 05 Task 7's
   ``users.display_honor_id`` pointer) resolves through a
@@ -45,6 +48,7 @@ __all__ = [
     "SqlAlchemyUserDirectory",
     "UserDirectory",
     "UserSummary",
+    "lock_user_for_update",
     "resolve_display_honor_title",
 ]
 
@@ -122,6 +126,16 @@ def _summary(user: User) -> UserSummary:
         role=Role(user.role),
         status=UserStatus(user.status),
     )
+
+
+async def lock_user_for_update(session: AsyncSession, user_id: UUID) -> None:
+    """Lock an account in the caller's transaction without exposing its ORM row.
+
+    This is only the cross-module lock-order primitive: it deliberately does
+    not reject missing or inactive accounts. Each use case retains its own
+    eligibility policy after the lock has been acquired.
+    """
+    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
 # The injectable display-honor title read: (session, user_id) -> the

@@ -18,9 +18,10 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.identity.directory import (
@@ -28,6 +29,7 @@ from app.modules.identity.directory import (
     SqlAlchemyUserDirectory,
     UserDirectory,
     UserSummary,
+    lock_user_for_update,
 )
 from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.models import User
@@ -240,3 +242,25 @@ def test_display_profile_unknown_user_is_none():
     assert _run(directory.get_display_profile(None, uuid4())) is None
     # The unknown account short-circuits before the honor read fires.
     assert resolver.calls == []
+
+
+class _RecordingSession:
+    statement: Any = None
+
+    async def execute(self, statement: Any) -> None:
+        self.statement = statement
+
+
+def test_lock_user_for_update_uses_callers_transaction_and_user_id() -> None:
+    session = _RecordingSession()
+
+    _run(lock_user_for_update(cast(AsyncSession, session), _STUDENT_ID))
+
+    sql = str(
+        session.statement.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "FROM users" in sql
+    assert f"users.id = '{_STUDENT_ID}'" in sql
+    assert sql.endswith("FOR UPDATE")

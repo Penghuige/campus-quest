@@ -93,3 +93,47 @@ def test_check_cli_passes_on_stamp_only_difference(tmp_path: Path) -> None:
     finally:
         for key, value in saved.items():
             setattr(generator, key, value)
+
+
+def test_boundary_debt_scans_every_business_module_and_counts_current_files(
+    generator: Any, tmp_path: Path
+) -> None:
+    """A non-notifications identity import must appear in boundary debt.
+
+    This is the regression shape formerly missed by the hard-coded
+    notifications-only file list. Counts come from this scan, not a date-
+    stamped constant.
+    """
+    app = tmp_path / "app"
+    files = {
+        "modules/identity/models.py": "class User:\n    pass\n",
+        "modules/innovation/scheduler.py": (
+            "from app.modules.identity.models import User\n"
+        ),
+        "modules/notifications/service.py": (
+            "from app.modules.identity.models import User\n"
+        ),
+        "modules/alpha/router.py": "from app.workers.jobs import cleanup\n",
+    }
+    for rel, text in files.items():
+        path = app / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    saved = generator.BACKEND_APP
+    generator.BACKEND_APP = app
+    generator._file_cache.clear()
+    try:
+        debt = generator.backend_debt(generator.backend_scan())
+    finally:
+        generator.BACKEND_APP = saved
+        generator._file_cache.clear()
+
+    identity = next(item for item in debt if item[0].startswith("identity ORM"))
+    assert identity[1].startswith("2 files currently scanned")
+    assert identity[2] == [
+        "modules/innovation/scheduler.py",
+        "modules/notifications/service.py",
+    ]
+    workers = next(item for item in debt if item[0].startswith("modules import"))
+    assert workers[1].startswith("1 file currently scanned")
