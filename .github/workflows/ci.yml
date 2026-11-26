@@ -360,7 +360,9 @@ jobs:
   # a font-drift flake surfaces instead of retry-masking.
   visual-regression:
     name: Pixel visual regression (Playwright)
-    runs-on: ubuntu-latest
+    # Pinned to Ubuntu 24.04 (Noble) so fonts-noto-cjk=1:20230817+repack1-3
+    # stays available when ubuntu-latest rolls to a newer distro release.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
