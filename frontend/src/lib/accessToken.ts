@@ -1,31 +1,11 @@
 /**
- * Memory-only access-token manager (spec §5.6 auth model; PR #4
- * hardening Task 1).
+ * Memory-only access-token manager (spec §5.6).
  *
- * Session layout this module owns the client half of:
- * - the LONG-LIVED refresh token never touches JS — it lives only in the
- *   HttpOnly + Secure + SameSite=Lax cookie scoped to the auth paths;
- * - the SHORT-LIVED access token rides the login/refresh RESPONSE BODY
- *   and is kept HERE, in one module-level variable, for the tab's
- *   lifetime: `lib/api.ts` attaches it as `Authorization: Bearer …` on
- *   CampusQuest API requests. It is NEVER written to localStorage,
- *   sessionStorage, cookies, or any other persistent store — a page
- *   reload forgets it, and the refresh-cookie rotation below reissues
- *   it (the cold-start bootstrap).
- * - rotation is SINGLE-FLIGHT: concurrent 401 recoveries (several
- *   sections bootstrapping at once) share one in-flight `POST
- *   /auth/refresh`, so N concurrent callers cause exactly one cookie
- *   rotation — one refresh session, one rotation per wave, never a
- *   thundering herd against the rotate-once semantics.
- *
- * The rotation request authenticates by the HttpOnly cookie alone: no
- * `Authorization` header is attached (a stale bearer would be noise, and
- * the CSRF double-submit header is the mutation proof the endpoint's
- * guard wants when the cookie is presented).
- *
- * Server-side imports see an empty store: only browser flows call the
- * setters, so a Server Component reusing `apiRequest` simply sends no
- * bearer (the backend's 401 stays the authority there).
+ * - Refresh tokens live exclusively in an HttpOnly cookie; short-lived access
+ *   tokens stay in module memory only (never localStorage/sessionStorage).
+ * - Concurrent 401 recoveries coalesce into a single-flight POST /auth/refresh.
+ * - Explicit auth transitions (login/logout) bump `authEpoch` so stale
+ *   in-flight recoveries cannot replay or overwrite a new account's token.
  */
 import { readCsrfToken, CSRF_HEADER_NAME } from "./csrf";
 import { observeServerDateHeader, currentServerClockOffset } from "./serverClock";

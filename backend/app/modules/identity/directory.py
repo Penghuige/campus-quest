@@ -1,31 +1,13 @@
 # backend/app/modules/identity/directory.py
-"""Frozen cross-module identity read port (docs/architecture/interfaces.md).
+"""Cross-module identity read and lock-order port (docs/architecture/interfaces.md).
 
-Modules outside identity (points, community, ranking, the admin surface)
-read account facts ONLY through ``UserDirectory`` — never by importing
-identity ORM models. The contract is deliberately minimal:
-
-- ``UserSummary`` carries identity plus role/status and NOTHING else: no
-  phone, no email, no password material. Contact data stays inside the
-  identity module, so a consumer cannot even accidentally widen its
-  dependency to contact handling.
-- The adapter is a thin mapping over the existing ``UserRepository``; every
-  lookup joins the caller's transaction (same session-in, answer-out shape
-  as the other cross-module ports), so no second connection or commit ever
-  appears inside a consumer's unit of work.
-- ``find_by_email`` normalizes its argument (strip + lowercase) exactly
-  once, mirroring how identity itself normalizes emails, so consumers may
-  pass raw user input.
-- ``lock_user_for_update`` is the narrow, write-free primitive for callers
-  whose global lock order starts at users; it exposes no ORM row and makes
-  no account-eligibility decision.
-- ``get_display_profile`` keeps the repository delegation for nickname
-  and user existence; the display-honor title (Plan 05 Task 7's
-  ``users.display_honor_id`` pointer) resolves through a
-  constructor-injectable resolver whose default is one fresh Core
-  SELECT over the rankings-owned ``honors`` table — identity never
-  imports rankings models, mirroring the tasks module's ``_USERS_LOCK``
-  seam in reverse.
+Non-identity modules read account facts and acquire user row locks through
+this port rather than importing ``identity.models.User`` directly:
+- ``UserDirectory`` / ``UserSummary``: role/status lookups without contact PII.
+- ``NotificationRecipient`` / ``get_notification_recipient``: minimal contact
+  and status projection for notification routing.
+- ``lock_user_for_update``: write-free row lock for callers following the
+  global ``user -> claim`` lock order.
 """
 
 from __future__ import annotations

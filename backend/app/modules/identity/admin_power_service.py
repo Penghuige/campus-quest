@@ -1,19 +1,11 @@
 # backend/app/modules/identity/admin_power_service.py
-"""The admin console's cross-module read and emergency-stop use cases
-(V1.1 Wave 2a, spec §3.1/§3.3).
+"""Admin console read projections and emergency session-revocation use cases.
 
-``user_panorama`` is the §3.1 detail view: the account's own row plus
-the wallet projection, the ten most recent submissions, and the live
-credential counts (sessions, remembered devices). Read-only, one query
-per fact — the console shape, not a domain aggregate.
-
-``kick`` is the §3.3 stolen-account emergency stop: every still-live
-refresh session revoked and every remembered-device credential dropped
-in ONE transaction, with the ``ADMIN_SESSIONS_REVOKED`` audit row
-riding the same commit (flush-only writer, the #80 discipline). The
-revoked session rows survive (revocation is audit trail, never
-deletion); device credentials go because their whole value is being a
-live credential (the #87 module's design).
+- ``user_panorama``: read-only account summary (profile, wallet balance, recent
+  submissions, active sessions/devices) using Core light tables for foreign
+  domains so identity never imports foreign ORM models.
+- ``kick``: revokes all active refresh sessions and drops remembered-device
+  credentials in one transaction with an ``ADMIN_SESSIONS_REVOKED`` audit row.
 """
 
 from __future__ import annotations
