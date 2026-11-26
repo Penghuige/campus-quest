@@ -125,6 +125,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
+from app.modules.identity.directory import lock_user_for_update
 from app.modules.identity.events import DomainEvent, DomainEventPublisher
 from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
 from app.modules.submissions.enums import RewardLockStatus, ValidationStatus
@@ -248,13 +249,22 @@ class RewardLockService:
         no-op paths still commit the read-only transaction to release
         the row lock).
         """
-        # (1) Lock-free anchor read: the submission's claim_id. The FK
-        # guarantees the claim row exists.
-        anchor = await db.get(Submission, submission_id)
+        # (1) Lock-free anchor read: resolve claim_id + owning user_id so we
+        # can acquire locks in the global user -> claim order (matching
+        # UploadService and ClaimService) and prevent AB-BA deadlocks when
+        # UPDATE assignment_claims checks FK references against users.
+        anchor = (
+            await db.execute(
+                select(Submission.claim_id, AssignmentClaim.user_id)
+                .join(AssignmentClaim, AssignmentClaim.id == Submission.claim_id)
+                .where(Submission.id == submission_id)
+            )
+        ).one_or_none()
         if anchor is None:
             raise SubmissionNotFoundError(submission_id)
 
-        # (2) The claim row lock — the serialization point (§26).
+        # (2) Global lock order: user row first, then claim row (§26).
+        await lock_user_for_update(db, anchor.user_id)
         claim = await db.scalar(
             select(AssignmentClaim)
             .where(AssignmentClaim.id == anchor.claim_id)

@@ -1007,3 +1007,112 @@ def test_race_expiry_first_then_reward_lock_noops_idempotently() -> None:
     # Both orderings stay legal across iterations; the distribution
     # itself is scheduler property, not a contract.
     assert len(outcomes) == 5
+
+
+@pytest.mark.integration
+def test_concurrent_upload_intent_and_reward_lock_no_deadlock() -> None:
+    """Regression for the loadtest-discovered upload-intent vs reward-lock
+    PostgreSQL deadlock.
+
+    ``UploadService.create_upload_intent`` locks ``users`` then
+    ``assignment_claims``. ``RewardLockService.on_validation_passed``
+    updates ``assignment_claims`` (which takes FK ``FOR KEY SHARE`` on
+    ``users``); both paths must follow the same ``user -> claim`` lock
+    order so concurrent traffic never hits ``DeadlockDetectedError``.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    from app.modules.identity.events import Actor
+    from app.modules.submissions.upload_service import UploadService
+    from tests.fakes.integrations import FakeObjectStorage
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+
+    async def _run_contention() -> list[str]:
+        claims_count = 4
+        pairs: list[tuple[UUID, UUID, UUID]] = []
+        for idx in range(claims_count):
+            seed = await _seed(
+                factory,
+                f"{run}dl{idx}",
+                submissions=(
+                    SubmissionSpec(1, _DEADLINE - timedelta(minutes=5)),
+                ),
+            )
+            task_ids.append(seed.task.id)
+            user_ids.extend((seed.teacher.id, seed.student.id))
+            pairs.append((seed.claim.id, seed.student.id, seed.submissions[1].id))
+
+        uploads = UploadService(
+            clock=FrozenClock(_DEADLINE - timedelta(minutes=1)),
+            storage=FakeObjectStorage(),
+        )
+        reward, _ = _service()
+        deadlocks: list[str] = []
+        stop = asyncio.Event()
+
+        async def _reward_worker(claim_id: UUID, submission_id: UUID) -> None:
+            for _ in range(30):
+                if stop.is_set():
+                    return
+                async with factory() as db:
+                    try:
+                        claim = await db.get(AssignmentClaim, claim_id)
+                        assert claim is not None
+                        claim.status = ClaimStatus.VALIDATING.value
+                        await db.commit()
+                        await reward.on_validation_passed(db, submission_id)
+                    except BusinessError:
+                        await db.rollback()
+                    except DBAPIError as exc:
+                        await db.rollback()
+                        if "deadlock" in str(exc).lower():
+                            deadlocks.append(f"worker: {exc}")
+                            stop.set()
+                            return
+                        raise
+
+        async def _intent_caller(claim_id: UUID, user_id: UUID) -> None:
+            actor = Actor(user_id=user_id, role=Role.STUDENT)
+            for _ in range(30):
+                if stop.is_set():
+                    return
+                async with factory() as db:
+                    try:
+                        await uploads.create_upload_intent(
+                            db,
+                            actor,
+                            claim_id=claim_id,
+                            filename="probe.csv",
+                            declared_type="CSV",
+                            size=1024,
+                        )
+                    except BusinessError:
+                        await db.rollback()
+                    except DBAPIError as exc:
+                        await db.rollback()
+                        if "deadlock" in str(exc).lower():
+                            deadlocks.append(f"intent: {exc}")
+                            stop.set()
+                            return
+                        raise
+
+        workers = [
+            coro
+            for claim_id, user_id, submission_id in pairs
+            for coro in (
+                _reward_worker(claim_id, submission_id),
+                _intent_caller(claim_id, user_id),
+            )
+        ]
+        await asyncio.gather(*workers)
+        return deadlocks
+
+    try:
+        deadlocks = asyncio.run(_run_contention())
+        assert deadlocks == [], f"PostgreSQL deadlock detected: {deadlocks[0]}"
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
