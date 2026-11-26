@@ -63,7 +63,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
-from app.modules.identity.models import User
+from app.modules.identity.directory import NotificationRecipient
 from app.modules.notifications.deadline_scheduler import (
     schedule_claim_deadline_notifications,
 )
@@ -152,7 +152,7 @@ def normalize_event_type(
 
 def build_record_intents(
     *,
-    user: User,
+    user: NotificationRecipient,
     event_key: str,
     event_type: NotificationEventType | str,
     payload: Mapping[str, Any],
@@ -197,7 +197,7 @@ def build_record_intents(
 
 def _fanout_intent(
     *,
-    user: User,
+    user: NotificationRecipient,
     event_key: str,
     event_type: NotificationEventType,
     now: datetime,
@@ -224,7 +224,7 @@ def _fanout_intent(
 
 def _deadline_planning_intents(
     *,
-    user: User,
+    user: NotificationRecipient,
     payload: Mapping[str, Any],
     now: datetime,
     task_policy: TaskNotificationPolicy | None,

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -45,9 +46,12 @@ from app.modules.identity.repository import UserRepository
 __all__ = [
     "DisplayHonorTitleResolver",
     "DisplayProfile",
+    "NotificationRecipient",
+    "NotificationRecipientSnapshot",
     "SqlAlchemyUserDirectory",
     "UserDirectory",
     "UserSummary",
+    "get_notification_recipient",
     "lock_user_for_update",
     "resolve_display_honor_title",
 ]
@@ -83,6 +87,63 @@ class UserSummary:
     username: str
     role: Role
     status: UserStatus
+
+
+@runtime_checkable
+class NotificationRecipient(Protocol):
+    """Read-only account contact/status shape required by notification routing."""
+
+    @property
+    def id(self) -> UUID: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def phone_e164(self) -> str | None: ...
+
+    @property
+    def email_normalized(self) -> str | None: ...
+
+    @property
+    def email_verified_at(self) -> datetime | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationRecipientSnapshot:
+    """Frozen identity-owned projection for notification delivery."""
+
+    id: UUID
+    status: str
+    phone_e164: str | None
+    email_normalized: str | None
+    email_verified_at: datetime | None
+
+
+async def get_notification_recipient(
+    session: AsyncSession, user_id: UUID
+) -> NotificationRecipientSnapshot | None:
+    """Read notification routing/contact fields without exposing the User ORM."""
+    row = (
+        await session.execute(
+            select(
+                User.id,
+                User.status,
+                User.phone_e164,
+                User.email_normalized,
+                User.email_verified_at,
+            ).where(User.id == user_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return NotificationRecipientSnapshot(
+        id=row.id,
+        status=row.status,
+        phone_e164=row.phone_e164,
+        email_normalized=row.email_normalized,
+        email_verified_at=row.email_verified_at,
+    )
 
 
 @dataclass(frozen=True, slots=True)

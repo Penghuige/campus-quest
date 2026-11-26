@@ -63,7 +63,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.modules.identity.models import User
+from app.modules.identity.directory import NotificationRecipient
 from app.modules.notifications.enums import NotificationChannel, NotificationEventType
 from app.modules.notifications.service import (
     ChannelStatus,
@@ -164,7 +164,7 @@ def deadline_event_key(claim_id: UUID, event_type: NotificationEventType) -> str
 
 def schedule_claim_deadline_notifications(
     claim: AssignmentClaim,
-    user: User,
+    user: NotificationRecipient,
     now: datetime,
     policy: TaskNotificationPolicy,
 ) -> list[DeliveryPlan]:

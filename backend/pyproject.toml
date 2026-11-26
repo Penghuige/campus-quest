@@ -231,14 +231,6 @@ allow_indirect_imports = true
 ignore_imports = [
     # identity importing its own models is internal, not a cross-module read
     "app.modules.identity.* -> app.modules.identity.models",
-    # DRIFT (2026-10-16, 5 files): notifications imports identity.models.User
-    # directly instead of the identity directory port. Refactor is an owner
-    # decision; delete these waivers after routing through directory.py.
-    "app.modules.notifications.port -> app.modules.identity.models",
-    "app.modules.notifications.service -> app.modules.identity.models",
-    "app.modules.notifications.delivery_service -> app.modules.identity.models",
-    "app.modules.notifications.deadline_scheduler -> app.modules.identity.models",
-    "app.modules.notifications.event_handlers -> app.modules.identity.models",
 ]
 
 [[tool.importlinter.contracts]]

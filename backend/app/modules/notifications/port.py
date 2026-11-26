@@ -94,7 +94,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
-from app.modules.identity.models import User
+from app.modules.identity.directory import get_notification_recipient
 from app.modules.notifications.enums import (
     DeliveryStatus,
     NotificationChannel,
@@ -315,7 +315,7 @@ class NotificationPort:
         """
 
         now = self._clock.now()
-        user = await session.get(User, user_id)
+        user = await get_notification_recipient(session, user_id)
         if user is None:
             raise LookupError(
                 f"notification event {event_key!r} references missing user {user_id}"

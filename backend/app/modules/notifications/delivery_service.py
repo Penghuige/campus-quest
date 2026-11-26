@@ -153,7 +153,10 @@ from app.integrations.errors import (
     UnknownOutcomeError,
 )
 from app.integrations.sms import SmsSender
-from app.modules.identity.models import User
+from app.modules.identity.directory import (
+    NotificationRecipient,
+    get_notification_recipient,
+)
 from app.modules.notifications.deadline_scheduler import should_send_reminder
 from app.modules.notifications.enums import (
     SKIPPED_LAST_ERROR_PREFIX,
@@ -421,7 +424,7 @@ class DeliveryService:
             delivery.updated_at = now
 
             notification = await session.get(Notification, delivery.notification_id)
-            user = await session.get(User, delivery.user_id)
+            user = await get_notification_recipient(session, delivery.user_id)
             if notification is None or user is None:
                 # FK-backed: only reachable with a corrupted store.
                 raise LookupError(
@@ -684,7 +687,7 @@ def _recruitment_reminder_ids(event_key: str) -> tuple[UUID, UUID]:
 
 
 def _channel_decision(
-    user: User,
+    user: NotificationRecipient,
     event_type: NotificationEventType,
     channel: NotificationChannel,
 ) -> ChannelDecision:
