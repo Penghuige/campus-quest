@@ -3,14 +3,17 @@
 // token declarations, !important. Runs in CI; the only dependencies are
 // the already-installed postcss + @tailwindcss/postcss, used to harvest
 // the utilities the app's own compiled pipeline generates (Plan 14 T2).
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
 
 const cssPath = "src/app/globals.css";
-const discoveryCssPath = "src/app/discovery.css";
-const cssPaths = [cssPath, ...(existsSync(discoveryCssPath) ? [discoveryCssPath] : [])];
+const extraCssPaths = readdirSync("src/app")
+  .filter((name) => name.endsWith(".css") && name !== "globals.css")
+  .sort()
+  .map((name) => `src/app/${name}`);
+const cssPaths = [cssPath, ...extraCssPaths];
 const cssByPath = new Map(cssPaths.map((path) => [path, readFileSync(path, "utf8")]));
 const globals = cssByPath.get(cssPath);
 const css = [...cssByPath.values()].join("\n");
