@@ -99,6 +99,21 @@ _CROSSTALK_WAIVERS: tuple[dict[str, object], ...] = (
         ),
     },
     {
+        # The same signature shifted by the 12 lines #159 inserted into
+        # validation_service.py ({1910, 1971, 1988} -> {1922, 1983,
+        # 2000}). Three identical CI runs on 2026-11-27 (PR #160, run
+        # 45983921178) measured this set, so it stays an exact-set
+        # entry; any further drift still fails the gate red.
+        "beyond": frozenset({1922, 1983, 2000}),
+        "seen_in": ("app/modules/submissions/validation_service.py",),
+        "reason": (
+            "the registered greenlet cross-talk fingerprint after the "
+            "#159 line shift in validation_service.py — same three-arc "
+            "shape, +12 offset; the anchor line stays covered, the cost "
+            "is at most one partial branch"
+        ),
+    },
+    {
         # The workers-job host, waived BY HOST (reviewer ruling C,
         # 2026-10-24): three CI runs measured THREE DIFFERENT endpoint
         # sets on this one file —
