@@ -62,6 +62,7 @@ from app.modules.submissions.models import (
     RewardLockHistory,
     Submission,
     SubmissionValidation,
+    UploadIntent,
 )
 from app.modules.submissions.reward_lock_service import (
     REWARD_LOCKED,
@@ -282,6 +283,9 @@ async def _cleanup(
             )
             await session.execute(
                 delete(Submission).where(Submission.claim_id.in_(claim_ids))
+            )
+            await session.execute(
+                delete(UploadIntent).where(UploadIntent.claim_id.in_(claim_ids))
             )
             await session.execute(
                 delete(AssignmentClaim).where(AssignmentClaim.task_id.in_(task_ids))
