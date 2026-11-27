@@ -1,95 +1,15 @@
 # backend/app/modules/system/service.py
-"""The system-settings service: audited, TYPED writes and plain reads of
-the platform's current-value configuration (PR #2 hardening step 8;
-Plan 08 T5's versioned + typed-key surface).
+"""Audited, typed platform configuration service (``system_settings``).
 
-The service is GENERIC over keys at the STORAGE layer, but NOT an
-arbitrary KV dump: a module-level REGISTRY (``SYSTEM_SETTING_REGISTRY``)
-maps every key the platform knows to the validator/normalizer that owns
-its value semantics. An unregistered key is the typed §29
-``VALIDATION_ERROR`` (422) — "settings" must not become a garbage sink
-of ad-hoc rows nobody reads. Registering a key is the deliberate act of
-giving it a contract; the registry entries (this wave):
-
-=========================  =======================================
-Key                        Value contract (stored canonical form)
-=========================  =======================================
-``CURRENT_ACADEMIC_TERM``  str, stripped non-blank, ≤64 (the
-                           ``RewardRedemption.term_key`` width).
-``EMOJI_WHITELIST``        list[str], each 1-8 code points; the empty
-                           list is legal (= all emoji banned). Stored as
-                           a JSON array.
-``ABANDON_DAILY_LIMIT``    int ≥ 0 (0 = abandoning disabled). Stored as
-                           decimal text.
-``MANAGEMENT_NETWORK_ENABLED``  bool. Stored as ``"true"``/``"false"``.
-``MANAGEMENT_NETWORK_CIDRS``    list[str], each a valid CIDR per the
-                           standard library (strict — host bits set are
-                           a configuration error); the empty list is
-                           legal. Stored comma-separated in
-                           ``ipaddress``'s canonical spelling.
-=========================  =======================================
-
-Validators take the CALLER's typed value (str / bool / int / list[str])
-and return the canonical stored string; the storage, the audit
-snapshots, and every reader therefore see exactly one spelling per key.
-
-What else the service owns:
-
-- **``set`` writes the value and its audit row in ONE transaction**
-  (backend-engineering §5): the write path resolves first-write races
-  INSIDE the database (``INSERT ... ON CONFLICT DO NOTHING RETURNING``;
-  the loser then locks the winner's row ``FOR UPDATE`` — see ``set``),
-  the flush-only ``AuditLogWriter.append`` joins the caller's
-  transaction, and the service commits exactly once — value and trace
-  commit or roll back together, the RedemptionService discipline. The
-  optional free-text ``reason`` (T10's audit-completeness gap-fill)
-  rides the audit row's ``reason`` column under the reject-reason
-  discipline: ``None`` is legal (no reason given), but a PROVIDED
-  reason must be non-blank after trim — whitespace-only is the typed
-  §29 422 BEFORE any write, never a silently-dropped audit field. The
-  audit row carries the value MIGRATION on the §30 snapshot pair
-  (0016): the NEW value in ``after_snapshot.value`` and the PREVIOUS
-  value in ``before_snapshot.value`` (``None`` on the first write), so
-  the audit trail answers "what was it before?" without a time
-  machine — and the chain stays CONNECTED under a lost first-write
-  race (round-5 P1): the loser reads the winner's committed value
-  under the row lock, never a pre-read stale ``None``.
-- **Every write bumps the per-key ``version``** (0020): 1 on the first
-  write, +1 on every subsequent set, recorded in the audit row's
-  ``details.version``. An optimistic observation of the serialized
-  write path — NOT a CAS contract (0020's docstring); last-writer-wins
-  is unchanged.
-- **The ``MANAGEMENT_NETWORK_*`` pair has ONE write path —
-  ``set_management_network_policy`` (PR #5 final-review fix A, P0).**
-  The two keys are one policy, but the admin surface writes them one
-  key at a time, and the cross-key invariant (enabled=true requires a
-  non-empty effective CIDR list) reads the OTHER key — so the check is
-  only sound under mutual exclusion. The method takes a fixed
-  transaction-scoped ``pg_advisory_xact_lock`` before reading the
-  partner key's effective value (store row or env fallback), refuses
-  any post-write pair the per-request loader could not load, and
-  commits value + audit row + lock release as one unit. The plain
-  ``set`` REFUSES the two policy keys: an unlocked second write path
-  is exactly the cross-key race the advisory lock exists to close
-  (two concurrent single-key writes used to validate against stale
-  partner values and commit an unloadable pair, wedging every guarded
-  admin surface on the loader's ValueError).
-- **``MANAGEMENT_NETWORK_*`` values are non-sensitive by design and
-  ride the snapshots in full** (Plan 08 T5): a CIDR allowlist is
-  infrastructure fact, not PII — the full list lands in
-  ``after_snapshot.value``, never a truncated summary.
-- **``get`` is a read of the current value only**: ``None`` means "no
-  row" — the caller decides the fallback (the academic-term provider
-  falls back to the deployment seed; G7). Read-only, commits nothing.
-
-Module boundaries: like ``audit``, this module imports nothing from the
-domain modules — the arrow points IN (points' composition reads the
-setting; the admin router writes it). The management-network policy
-RESOLVER (``app.core.admin_network_policy``) still knows the stored
-value FORMS but not this module (core never imports app.modules), and
-the aggregate policy write path composes it the same way every reader
-does: rows read here, raw strings handed to the resolver, store-first
-with per-key env fallback.
+Invariants:
+- Only keys registered in ``SYSTEM_SETTING_REGISTRY`` may be written; unknown
+  keys raise ``VALIDATION_ERROR`` (422).
+- ``set`` writes the value, bumps ``version``, and appends an audit row
+  (with before/after snapshots) in a single transaction.
+- ``MANAGEMENT_NETWORK_ENABLED`` and ``MANAGEMENT_NETWORK_CIDRS`` must be
+  updated exclusively via ``set_management_network_policy`` under a
+  transaction-scoped ``pg_advisory_xact_lock`` so concurrent writes cannot
+  commit an unloadable policy pair.
 """
 
 from __future__ import annotations

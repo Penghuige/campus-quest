@@ -2,7 +2,7 @@
 # Backend tool versions are committed in backend/pyproject.toml (dev group),
 # so `uv run` never drifts; frontend tooling is committed in frontend/package.json.
 
-.PHONY: test-backend test-integration lint-backend verify \
+.PHONY: test-backend test-integration lint-backend verify dev-doctor \
         arch-lint-backend arch-lint-frontend arch-lint arch-map
 # Plan 10 task 11's release steps are individually runnable and composed
 # by `release-gate` below; .NOTPARALLEL keeps prerequisite order
@@ -11,6 +11,9 @@
 
 test-backend:
 	cd backend && uv run pytest tests/unit tests/workers -v
+
+dev-doctor:
+	bash scripts/dev-doctor.sh
 
 test-integration:
 	cd backend && uv run pytest tests/integration -v -m integration

@@ -57,8 +57,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from app.modules.identity.directory import NotificationRecipient
 from app.modules.identity.enums import UserStatus
-from app.modules.identity.models import User
 from app.modules.notifications.enums import NotificationChannel, NotificationEventType
 
 if TYPE_CHECKING:
@@ -152,7 +152,7 @@ class TaskNotificationPolicy:
 
 
 def eligible_channels(
-    user: User,
+    user: NotificationRecipient,
     task_policy: TaskNotificationPolicy | None,
     event_type: NotificationEventType,
 ) -> list[ChannelDecision]:
@@ -192,7 +192,7 @@ def eligible_channels(
 
 
 def _skip_reason(
-    user: User,
+    user: NotificationRecipient,
     task_policy: TaskNotificationPolicy | None,
     event_type: NotificationEventType,
     channel: NotificationChannel,

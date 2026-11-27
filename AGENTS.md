@@ -7,11 +7,13 @@ This file is the default entry point for coding agents working in this repositor
 When instructions conflict, use this precedence:
 
 1. The human's current explicit request.
-2. docs/superpowers/specs/2026-09-19-campusquest-design.md
-3. The relevant implementation plan under docs/superpowers/plans/
+2. docs/superpowers/specs/2026-09-19-campusquest-design.md, together with any explicitly active amendment.
+3. The implementation plan for an in-progress task, only within its authorized scope; historical plans do not override the current spec.
 4. This AGENTS.md and the quality documents under docs/quality/
 5. Official documentation matching the installed dependency version.
 6. External reference repositories and skills.
+
+An active amendment must name the spec sections it supersedes. When its rules are merged into the main spec, mark the amendment as merged/historical in the same change; do not leave both versions active. Review receipts, verification reports, and collaboration notes are historical evidence, not current product contracts. If current documents still conflict, stop and resolve the authority question instead of selecting the newest file by date.
 
 External templates are examples, not product requirements.
 
@@ -179,4 +181,3 @@ A feature or fix PR walks this manifest before requesting review; "yes" items sh
 - API surface changed → regenerated OpenAPI snapshot + generated client types. **Docstrings count**: any router/endpoint docstring edit lands in the OpenAPI `description` layer and flips both freshness gates — regen (`dump_openapi.py` + `npm run api:types:snapshot`) rides in the same PR. Two incidents on record: #71→#75, #76→this.
 
 The campusquest-test-process skill (repo `.claude/skills/`) holds the full gate matrix and protocols; invoke it when writing tests or touching test infrastructure.
-

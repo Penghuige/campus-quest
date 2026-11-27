@@ -1,148 +1,9 @@
 # backend/app/modules/community/router.py
-"""Community HTTP API: thin routes + the module's composition root.
+"""Community HTTP API: thin routes and module composition root.
 
-Spec §20-§24 (comments, votes, reactions, reports, ratings, hot ordering),
-§28 (URL shapes), §29 (envelope), §33.1 (rate limit), §40/§21.4 (privacy);
-backend-engineering §3 (router standard), §9 (DTO separation), §16
-(security boundary); plan 06 task 9.
-
-Every route is thin — parse transport input, resolve dependencies, call one
-service, serialize an explicit DTO — and owns no persistence logic. The
-services (tasks 2-8) carry every invariant; this module adds only what is
-genuinely transport.
-
-Endpoints
----------
-
-Community participant surfaces (``require_active_community_actor`` —
-spec §4.1/§4.2: §4.2's "除普通社区能力外，可：" grants Teacher the
-ordinary community capabilities listed for Student; the PR #2
-hardening ruling keeps Admin OUT of ordinary participation — Admin's
-community powers are the governance surfaces below):
-
-===========  =========================================================
-Method path  Purpose
-===========  =========================================================
-GET          ``/tasks/{task_id}/comments`` — one offset page of the
-             public comment list; ``sort=latest|hot`` (spec §24).
-POST         ``/tasks/{task_id}/comments`` — publish one comment or
-             reply immediately (spec §21.1); 201.
-PATCH        ``/comments/{comment_id}`` — owner edit (spec §21.3).
-DELETE       ``/comments/{comment_id}`` — owner soft delete (204).
-POST         ``/comments/{comment_id}/vote`` — like/dislike toggle
-             (spec §22).
-POST         ``/comments/{comment_id}/reactions`` — emoji toggle
-             (spec §22).
-POST         ``/comments/{comment_id}/reports`` — file into the
-             moderation queue (spec §23); 201.
-===========  =========================================================
-
-Student-only surfaces (``require_active_student_actor``):
-
-===========  =========================================================
-Method path  Purpose
-===========  =========================================================
-PUT          ``/tasks/{task_id}/rating`` — completer rating upsert
-             (spec §20: eligibility is the completed-claim
-             predicate, which only Students hold; deliberately NOT
-             widened with the participant surface).
-===========  =========================================================
-
-Staff/moderation surfaces (``require_staff_management_actor``, spec
-§33.4; ownership and capability checks live in the services):
-
-===========  =========================================================
-Method path  Purpose
-===========  =========================================================
-GET          ``/teacher/tasks/{task_id}/comments/moderation`` — the
-             Teacher-safe comment listing (spec §21.4 shape).
-GET          ``/teacher/tasks/{task_id}/reports`` — the report queue
-             (task 6's ``list_task_reports``).
-POST         ``/tasks/{task_id}/reports/{report_id}/dismiss`` —
-             close one report as DISMISSED, reason mandatory (PR #2
-             hardening step 10; the interfaces.md closure ruling's
-             URL shape — under ``/tasks`` beside the queue it closes,
-             same standing as the listing, ``admit_admin=True``).
-POST         ``/tasks/{task_id}/reports/{report_id}/handle`` —
-             close one report as HANDLED, note optional (registers
-             the moderation conclusion; the comment itself is acted
-             on through the existing audited paths).
-DELETE       ``/teacher/comments/{comment_id}`` — moderation soft
-             delete, reason mandatory (spec §21.4).
-POST         ``/teacher/comments/{comment_id}/hard-hide`` — Admin-only
-             subtree hide (spec §21.3; the admin guard composes the
-             management gate with an Admin role check).
-POST         ``/admin/comments/{comment_id}/reveal-identity`` —
-             Admin-only audited identity reveal (spec §21.4).
-===========  =========================================================
-
-Transport decisions
--------------------
-
-- **Wire shapes are built field by field from the module DTOs.** The
-  dataclasses in ``schemas.py`` are the privacy boundary for author and
-  reporter identity (spec §21.4/§23/§40); the Pydantic models below copy
-  exactly their fields, so an identity fact that no DTO carries can never
-  reach a response. ``RevealedIdentity`` is the one deliberate exception
-  surface: ``username`` (the student number) rides ONLY the explicit
-  Admin-reveal response.
-- **Write bodies forbid extras.** Comment create/edit, vote, reaction,
-  report, rating, and moderation bodies set ``extra="forbid"``: an
-  unknown field — including a client-supplied ``hot_score`` — is a 422
-  before any service call (spec §24 不得将客户端传入的 hot_score 当事实值:
-  the score is not merely ignored, it is unrepresentable on the wire).
-- **Hot ordering is server-computed on the read** (spec §24). ``sort=hot``
-  re-uses ``CommentService.list_comments`` for the rendered set (the
-  tombstone fixpoint stays in one place), fetches those comments'
-  engagement counts, and orders by ``compute_hot_score`` — a module-level
-  pure function (likes - dislikes + reactions under exponential age
-  decay) that is the documented replaceable implementation detail, never
-  a stored or client-supplied value. V1 rulings: the whole rendered
-  thread is fetched and ordered in Python (the service already fetches
-  the full thread for the fixpoint — same cost, capped by
-  ``_FULL_THREAD_FETCH_LIMIT``), tombstones sort after every live
-  comment (hot mode surfaces discussion worth reading; a tombstone is
-  none), and the score is NOT exposed in the response (clients take the
-  ordering, never a number they would start treating as fact).
-- **Edit single-flight semantics: last-write-wins, history retained.**
-  ``PATCH /comments/{id}`` carries no revision token: two racing edits
-  both append their predecessor to ``CommentRevision`` and the later
-  commit's content is the latest version — V1 consciously chooses this
-  over a 409 (the revision table keeps every superseded version, so no
-  edit is ever lost; §21.3 普通用户只看到最新版 is exactly the row read).
-- **Pagination: offset** (the tasks-router choice) — ``limit`` 1..50,
-  default 20, ``offset`` >= 0, ``total`` rendered for page counts.
-- **Rate limiting (spec §33.1 / §21.1 rate limit)** on the five
-  community write paths, normalized to the authenticated user id through
-  the shared ``RateLimiter`` port and ``RATE_LIMIT_RULES`` buckets
-  (``comments:create`` 10/min and ``comments:report`` 5/min are
-  deliberately stricter — publish-immediately content and queue-flooding
-  are the abuse surfaces; edit/vote/reaction get anti-hammering windows).
-  Owner self-delete carries no bucket: the deleted-state guard makes it
-  single-shot, so there is nothing to hammer. An exhausted window renders
-  the 429 ``RATE_LIMITED`` envelope before any service call.
-- **Typed-exception mapping.** Every community service exception already
-  subclasses ``BusinessError`` with its frozen code/status and renders
-  through the core handler unchanged. One exception is remapped at the
-  transport: ``rating_service.TaskCompletionRequiredError`` carries the
-  generic ``PERMISSION_DENIED`` (the service-level capability denial)
-  but §29 reserves ``RATING_NOT_ELIGIBLE`` for exactly this outcome —
-  ``register_community_exception_handlers`` maps that one type to that
-  one code (the identity module's one-type-one-code precedent), keeping
-  the service untouched.
-- **The moderation listing's standing** mirrors the report queue's
-  (owner Teacher / MODERATE_COMMUNITY collaborator / Admin — reading
-  hides nothing; the destructive powers stay service-gated where task 3
-  put them): ``moderate_delete`` refuses Admin by design, and
-  ``hard-hide``/``reveal`` are Admin-only, so a list route stricter than
-  the queue beside it would only blind the operator.
-- **Providers are the module composition root** (the tasks-router
-  pattern): process-cached Redis client, per-request services assembled
-  from injected clock/settings/publisher dependencies, and
-  ``Settings.comment_max_length`` flowing into ``CommentService`` (the
-  spec §21.1 可配置 cap). The audit-event seam (``get_event_publisher``)
-  feeds the comment and moderation services so the audit/outbox module
-  can swap the adapter without touching routes.
+Covers comments, votes, reactions, reports, ratings, and moderation surfaces
+(spec §20-§24, §28-§29, §33.1, §40). Domain invariants live in the community
+services; Pydantic wire models live in ``wire_schemas.py``.
 """
 
 from __future__ import annotations
@@ -156,7 +17,6 @@ from typing import Annotated, Any, Literal
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import String, Uuid, column, func, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
@@ -197,9 +57,7 @@ from app.modules.community.reaction_service import ReactionService
 from app.modules.community.report_service import ReportService
 from app.modules.community.schemas import (
     CommentPublic,
-    CommentReportView,
     CreateComment,
-    ModerationComment,
 )
 from app.modules.community.serializers import serialize_moderation_comment
 from app.modules.community.settings_emoji_whitelist import SystemEmojiWhitelistProvider
@@ -446,287 +304,32 @@ async def require_admin_management_actor(actor: StaffActor) -> Actor:
 AdminActor = Annotated[Actor, Depends(require_admin_management_actor)]
 
 
-# --- wire schemas (built field by field from the DTOs) -----------------------------
-
-
-class CommentPublicResponse(BaseModel):
-    """The public comment wire shape: exactly ``CommentPublic``'s fields
-    (spec §21.4/§40 — no user id, no contact, no username; the hot score
-    never rides either)."""
-
-    id: uuid.UUID
-    task_id: uuid.UUID
-    parent_id: uuid.UUID | None
-    content: str | None
-    is_anonymous: bool
-    author_display: str
-    created_at: datetime
-    updated_at: datetime
-    edited: bool
-    deleted: bool
-
-    @classmethod
-    def from_dto(cls, comment: CommentPublic) -> CommentPublicResponse:
-        return cls(
-            id=comment.id,
-            task_id=comment.task_id,
-            parent_id=comment.parent_id,
-            content=comment.content,
-            is_anonymous=comment.is_anonymous,
-            author_display=comment.author_display,
-            created_at=comment.created_at,
-            updated_at=comment.updated_at,
-            edited=comment.edited,
-            deleted=comment.deleted,
-        )
-
-
-class CommentListResponse(BaseModel):
-    items: list[CommentPublicResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class CommentCreateRequest(BaseModel):
-    """Publish body (spec §21.1/§21.2). ``extra="forbid"``: a client
-    cannot smuggle any other field past the parser — there is no hot
-    score, no author override, nothing but the three spec inputs."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    content: str
-    parent_id: uuid.UUID | None = None
-    is_anonymous: bool = False
-
-
-class CommentEditRequest(BaseModel):
-    """Edit body (spec §21.3): content only — ``parent_id`` immutability
-    is the create-only cycle guard, so it is unrepresentable here."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    content: str
-
-
-class VoteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    value: Literal[-1, 0, 1]
-
-
-class VoteResponse(BaseModel):
-    """The caller's post-transition stance plus the comment's totals
-    (exactly ``VoteResult``): the surface echoes the toggle without a
-    second read."""
-
-    current_value: int
-    likes: int
-    dislikes: int
-
-
-class ReactionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    emoji: str = Field(max_length=16)
-
-
-class ReactionResponse(BaseModel):
-    """The toggle verdict plus the comment's per-emoji reaction counts —
-    the echoing read the reaction service's docstring delegates to this
-    surface."""
-
-    emoji: str
-    added: bool
-    counts: dict[str, int]
-
-
-class ReportRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    category: str
-    note: str | None = None
-
-
-class ReportResponse(BaseModel):
-    """The caller's OWN report row (the report service returns it to the
-    reporter; one's own identity is not a leak, and no other reporter's
-    identity exists in the shape)."""
-
-    id: uuid.UUID
-    comment_id: uuid.UUID
-    category: str
-    note: str | None
-    status: str
-    created_at: datetime
-
-
-class RatingRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    rating: int = Field(ge=1, le=5)
-
-
-class RatingResponse(BaseModel):
-    """The rater's own rating echo (spec §20: the PUBLIC surface stays
-    aggregate-only; your own value back to you is not a disclosure)."""
-
-    task_id: uuid.UUID
-    rating: int
-    created_at: datetime
-    updated_at: datetime
-
-
-class ModerationCommentResponse(BaseModel):
-    """The Teacher-safe moderation wire shape: exactly
-    ``ModerationComment``'s fields — 匿名用户 display, the pseudonymous
-    ``moderation_key`` exactly on anonymous records, the hard-hidden
-    flag, and never a raw author id or contact fact."""
-
-    id: uuid.UUID
-    task_id: uuid.UUID
-    parent_id: uuid.UUID | None
-    content: str | None
-    is_anonymous: bool
-    author_display: str
-    created_at: datetime
-    updated_at: datetime
-    edited: bool
-    deleted: bool
-    moderation_key: str | None = None
-    hard_hidden: bool = False
-
-    @classmethod
-    def from_dto(cls, comment: ModerationComment) -> ModerationCommentResponse:
-        return cls(
-            id=comment.id,
-            task_id=comment.task_id,
-            parent_id=comment.parent_id,
-            content=comment.content,
-            is_anonymous=comment.is_anonymous,
-            author_display=comment.author_display,
-            created_at=comment.created_at,
-            updated_at=comment.updated_at,
-            edited=comment.edited,
-            deleted=comment.deleted,
-            moderation_key=comment.moderation_key,
-            hard_hidden=comment.hard_hidden,
-        )
-
-
-class ModerationCommentListResponse(BaseModel):
-    items: list[ModerationCommentResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class CommentReportResponse(BaseModel):
-    """One report-queue row (exactly ``CommentReportView``): the reported
-    comment in the Teacher-safe shape plus the REPORTER identity — the
-    moderation surface spec §23 admits (被举报用户不可看到举报者身份 is
-    the student-side wall; moderators act on reports and see who filed
-    them). Never composed into a student-facing response."""
-
-    id: uuid.UUID
-    comment: ModerationCommentResponse
-    category: str
-    note: str | None
-    status: str
-    reporter_user_id: uuid.UUID | None
-    reporter_nickname: str | None
-    created_at: datetime
-    handled_by: uuid.UUID | None
-    handled_at: datetime | None
-
-    @classmethod
-    def from_dto(cls, view: CommentReportView) -> CommentReportResponse:
-        return cls(
-            id=view.id,
-            comment=ModerationCommentResponse.from_dto(view.comment),
-            category=view.category,
-            note=view.note,
-            status=view.status,
-            reporter_user_id=view.reporter_user_id,
-            reporter_nickname=view.reporter_nickname,
-            created_at=view.created_at,
-            handled_by=view.handled_by,
-            handled_at=view.handled_at,
-        )
-
-
-class CommentReportListResponse(BaseModel):
-    items: list[CommentReportResponse]
-    total: int
-    limit: int
-    offset: int
-
-
-class ReportDismissRequest(BaseModel):
-    """Dismissal body (PR #2 hardening step 10): ``reason`` is a
-    mandatory part of the governance decision — absent here is the 422
-    parse refusal, blank-after-trim is the service's typed rejection,
-    and ``extra="forbid"`` keeps a reason all a caller can send (the
-    ModerationDeleteRequest shape)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str
-
-
-class ReportHandleRequest(BaseModel):
-    """Handling body: the optional governor note, normalized by the
-    service with the filing-note rules (blank is no note)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    note: str | None = None
-
-
-class ReportClosureResponse(BaseModel):
-    """The closed report row's facts back to the moderator: identity of
-    the decision target, the terminal status, and the closure stamps
-    (the actor is the caller themself, so ``handled_by`` is no
-    disclosure). The queue listing beside it renders the same fields
-    in the full row shape."""
-
-    id: uuid.UUID
-    task_id: uuid.UUID
-    comment_id: uuid.UUID
-    status: str
-    handled_by: uuid.UUID
-    handled_at: datetime
-
-
-class ModerationDeleteRequest(BaseModel):
-    """Reason-mandatory bodies (spec §21.3/§21.4): blank-after-trim is the
-    service's typed rejection; the schema forbids extras so a reason is
-    all a caller can send."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str
-
-
-class RevealRequest(BaseModel):
-    """The reveal reason (spec §21.4 每次追溯): mandatory (blank-after-trim
-    is the service's typed rejection) and capped at 1000 characters on the
-    raw body — the audit payload is bounded material, not a moderation
-    essay."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=1, max_length=1000)
-
-
-class RevealIdentityResponse(BaseModel):
-    """Exactly ``RevealedIdentity``: the one wire shape where the student
-    number (``username``) is representable at all (spec §21.4)."""
-
-    user_id: uuid.UUID
-    nickname: str
-    username: str
-
+# --- wire schemas (defined in wire_schemas.py, re-exported for callers) -----------
+
+from app.modules.community.wire_schemas import (  # noqa: E402
+    CommentCreateRequest,
+    CommentEditRequest,
+    CommentListResponse,
+    CommentPublicResponse,
+    CommentReportListResponse,
+    CommentReportResponse,
+    ModerationCommentListResponse,
+    ModerationCommentResponse,
+    ModerationDeleteRequest,
+    RatingRequest,
+    RatingResponse,
+    ReactionRequest,
+    ReactionResponse,
+    ReportClosureResponse,
+    ReportDismissRequest,
+    ReportHandleRequest,
+    ReportRequest,
+    ReportResponse,
+    RevealIdentityResponse,
+    RevealRequest,
+    VoteRequest,
+    VoteResponse,
+)
 
 # --- community participant surfaces (spec §21-§23, §28) ------------------------------
 

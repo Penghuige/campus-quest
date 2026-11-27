@@ -23,6 +23,7 @@ const basePath = process.env.CQ_BASE_PATH || undefined;
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   basePath,
   ...(proxyTarget !== undefined && proxyTarget !== ""
     ? {

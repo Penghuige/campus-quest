@@ -108,6 +108,7 @@ from app.core.clock import Clock
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
 from app.integrations.object_storage import ObjectStorage
+from app.modules.identity.directory import lock_user_for_update
 from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
 from app.modules.submissions.enums import (
     DOCUMENT_FILE_TYPES,
@@ -707,6 +708,17 @@ class ValidationService:
     async def _lock(
         db: AsyncSession, submission_id: UUID, *, populate_existing: bool = False
     ) -> Submission:
+        # Lock-free anchor read to acquire the owning user row first,
+        # matching the global user -> submission -> claim lock order.
+        user_id = await db.scalar(
+            select(AssignmentClaim.user_id)
+            .join(Submission, Submission.claim_id == AssignmentClaim.id)
+            .where(Submission.id == submission_id)
+        )
+        if user_id is None:
+            raise SubmissionNotFoundError(submission_id)
+        await lock_user_for_update(db, user_id)
+
         statement = (
             select(Submission).where(Submission.id == submission_id).with_for_update()
         )

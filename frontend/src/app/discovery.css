@@ -1,0 +1,150 @@
+/* Public discovery is an editorial index, not another stack of draft cards.
+ * Hairlines and content metadata carry the hierarchy on the page ground;
+ * every preview retains a direct route when its own request is empty or fails. */
+.discovery-landing,
+.home-discovery {
+  min-width: 0;
+}
+
+.discovery-landing {
+  display: grid;
+  gap: var(--space-7);
+}
+
+.discovery-pair {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.discovery-section {
+  min-width: 0;
+}
+
+.discovery-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.discovery-item {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.discovery-item-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+.discovery-item-title a {
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+}
+
+.discovery-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.discovery-meta,
+.discovery-facts,
+.discovery-excerpt,
+.discovery-empty {
+  margin: 0;
+}
+
+.discovery-meta,
+.discovery-facts,
+.discovery-empty {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.discovery-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.discovery-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.discovery-empty {
+  padding: var(--space-4) 0;
+  border-block: 1px solid var(--border);
+}
+
+.discovery-intro {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.discovery-intro .section-title {
+  font-size: var(--text-lg);
+}
+
+.home-discovery {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.discovery-directory {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.discovery-directory-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.discovery-rules {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+
+.discovery-rules summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.discovery-rules-body {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 48rem;
+  padding-top: var(--space-3);
+}
+
+.discovery-rules-body p {
+  margin: 0;
+}
+
+@media (min-width: 56rem) {
+  .discovery-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-7);
+  }
+}

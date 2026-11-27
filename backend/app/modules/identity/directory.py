@@ -1,34 +1,20 @@
 # backend/app/modules/identity/directory.py
-"""Frozen cross-module identity read port (docs/architecture/interfaces.md).
+"""Cross-module identity read and lock-order port (docs/architecture/interfaces.md).
 
-Modules outside identity (points, community, ranking, the admin surface)
-read account facts ONLY through ``UserDirectory`` — never by importing
-identity ORM models. The contract is deliberately minimal:
-
-- ``UserSummary`` carries identity plus role/status and NOTHING else: no
-  phone, no email, no password material. Contact data stays inside the
-  identity module, so a consumer cannot even accidentally widen its
-  dependency to contact handling.
-- The adapter is a thin mapping over the existing ``UserRepository``; every
-  lookup joins the caller's transaction (same session-in, answer-out shape
-  as the other cross-module ports), so no second connection or commit ever
-  appears inside a consumer's unit of work.
-- ``find_by_email`` normalizes its argument (strip + lowercase) exactly
-  once, mirroring how identity itself normalizes emails, so consumers may
-  pass raw user input.
-- ``get_display_profile`` keeps the repository delegation for nickname
-  and user existence; the display-honor title (Plan 05 Task 7's
-  ``users.display_honor_id`` pointer) resolves through a
-  constructor-injectable resolver whose default is one fresh Core
-  SELECT over the rankings-owned ``honors`` table — identity never
-  imports rankings models, mirroring the tasks module's ``_USERS_LOCK``
-  seam in reverse.
+Non-identity modules read account facts and acquire user row locks through
+this port rather than importing ``identity.models.User`` directly:
+- ``UserDirectory`` / ``UserSummary``: role/status lookups without contact PII.
+- ``NotificationRecipient`` / ``get_notification_recipient``: minimal contact
+  and status projection for notification routing.
+- ``lock_user_for_update``: write-free row lock for callers following the
+  global ``user -> claim`` lock order.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -42,9 +28,13 @@ from app.modules.identity.repository import UserRepository
 __all__ = [
     "DisplayHonorTitleResolver",
     "DisplayProfile",
+    "NotificationRecipient",
+    "NotificationRecipientSnapshot",
     "SqlAlchemyUserDirectory",
     "UserDirectory",
     "UserSummary",
+    "get_notification_recipient",
+    "lock_user_for_update",
     "resolve_display_honor_title",
 ]
 
@@ -79,6 +69,63 @@ class UserSummary:
     username: str
     role: Role
     status: UserStatus
+
+
+@runtime_checkable
+class NotificationRecipient(Protocol):
+    """Read-only account contact/status shape required by notification routing."""
+
+    @property
+    def id(self) -> UUID: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def phone_e164(self) -> str | None: ...
+
+    @property
+    def email_normalized(self) -> str | None: ...
+
+    @property
+    def email_verified_at(self) -> datetime | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationRecipientSnapshot:
+    """Frozen identity-owned projection for notification delivery."""
+
+    id: UUID
+    status: str
+    phone_e164: str | None
+    email_normalized: str | None
+    email_verified_at: datetime | None
+
+
+async def get_notification_recipient(
+    session: AsyncSession, user_id: UUID
+) -> NotificationRecipientSnapshot | None:
+    """Read notification routing/contact fields without exposing the User ORM."""
+    row = (
+        await session.execute(
+            select(
+                User.id,
+                User.status,
+                User.phone_e164,
+                User.email_normalized,
+                User.email_verified_at,
+            ).where(User.id == user_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return NotificationRecipientSnapshot(
+        id=row.id,
+        status=row.status,
+        phone_e164=row.phone_e164,
+        email_normalized=row.email_normalized,
+        email_verified_at=row.email_verified_at,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +169,16 @@ def _summary(user: User) -> UserSummary:
         role=Role(user.role),
         status=UserStatus(user.status),
     )
+
+
+async def lock_user_for_update(session: AsyncSession, user_id: UUID) -> None:
+    """Lock an account in the caller's transaction without exposing its ORM row.
+
+    This is only the cross-module lock-order primitive: it deliberately does
+    not reject missing or inactive accounts. Each use case retains its own
+    eligibility policy after the lock has been acquired.
+    """
+    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
 # The injectable display-honor title read: (session, user_id) -> the

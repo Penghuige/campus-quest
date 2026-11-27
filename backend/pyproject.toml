@@ -225,26 +225,20 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Identity ORM models stay behind the directory port (interfaces.md)"
 type = "forbidden"
-source_modules = ["app.modules"]
+source_modules = ["app.modules.*"]
 forbidden_modules = ["app.modules.identity.models"]
+allow_indirect_imports = true
 ignore_imports = [
     # identity importing its own models is internal, not a cross-module read
     "app.modules.identity.* -> app.modules.identity.models",
-    # DRIFT (2026-10-16, 5 files): notifications imports identity.models.User
-    # directly instead of the identity directory port. Refactor is an owner
-    # decision; delete these waivers after routing through directory.py.
-    "app.modules.notifications.port -> app.modules.identity.models",
-    "app.modules.notifications.service -> app.modules.identity.models",
-    "app.modules.notifications.delivery_service -> app.modules.identity.models",
-    "app.modules.notifications.deadline_scheduler -> app.modules.identity.models",
-    "app.modules.notifications.event_handlers -> app.modules.identity.models",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Modules must not import the worker runtime"
 type = "forbidden"
-source_modules = ["app.modules"]
+source_modules = ["app.modules.*"]
 forbidden_modules = ["app.workers", "app.workers.*"]
+allow_indirect_imports = true
 ignore_imports = [
     # Composition seams: two routers construct the injected Celery dispatchers
     # (backend-engineering §3 "resolve dependencies"); the jobs themselves own

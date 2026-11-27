@@ -1,29 +1,22 @@
 # backend/app/modules/identity/admin_power_service.py
-"""The admin console's cross-module read and emergency-stop use cases
-(V1.1 Wave 2a, spec §3.1/§3.3).
+"""Admin console read projections and emergency session-revocation use cases.
 
-``user_panorama`` is the §3.1 detail view: the account's own row plus
-the wallet projection, the ten most recent submissions, and the live
-credential counts (sessions, remembered devices). Read-only, one query
-per fact — the console shape, not a domain aggregate.
-
-``kick`` is the §3.3 stolen-account emergency stop: every still-live
-refresh session revoked and every remembered-device credential dropped
-in ONE transaction, with the ``ADMIN_SESSIONS_REVOKED`` audit row
-riding the same commit (flush-only writer, the #80 discipline). The
-revoked session rows survive (revocation is audit trail, never
-deletion); device credentials go because their whole value is being a
-live credential (the #87 module's design).
+- ``user_panorama``: read-only account summary (profile, wallet balance, recent
+  submissions, active sessions/devices) using Core light tables for foreign
+  domains so identity never imports foreign ORM models.
+- ``kick``: revokes all active refresh sessions and drops remembered-device
+  credentials in one transaction with an ``ADMIN_SESSIONS_REVOKED`` audit row.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import DateTime, Integer, String, Uuid, column, func, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
@@ -39,8 +32,6 @@ from app.modules.identity.enums import Role, UserStatus
 from app.modules.identity.events import Actor
 from app.modules.identity.models import RememberedDevice, User, UserSession
 from app.modules.identity.session_service import SessionService
-from app.modules.points.models import PointWallet
-from app.modules.submissions.models import Submission
 
 if TYPE_CHECKING:
     import redis.asyncio as aioredis
@@ -58,13 +49,55 @@ _RESET_TOKEN_INVALID_MESSAGE = "重置链接无效或已过期"
 AUDIT_ADMIN_SESSIONS_REVOKED = "ADMIN_SESSIONS_REVOKED"
 _RECENT_SUBMISSIONS_LIMIT = 10
 
+# Core light tables for read-only admin console projections so identity never
+# imports ORM models from points, submissions, or tasks.
+_POINT_WALLETS = table(
+    "point_wallets",
+    column("user_id", Uuid),
+    column("available_points", Integer),
+)
+_REWARD_REDEMPTIONS = table(
+    "reward_redemptions",
+    column("status", String),
+)
+_SUBMISSIONS = table(
+    "submissions",
+    column("id", Uuid),
+    column("claim_id", Uuid),
+    column("validation_status", String),
+    column("review_status", String),
+    column("submitted_at", DateTime(timezone=True)),
+)
+_ASSIGNMENT_CLAIMS = table(
+    "assignment_claims",
+    column("id", Uuid),
+    column("user_id", Uuid),
+    column("task_id", Uuid),
+)
+_TASKS = table(
+    "tasks",
+    column("id", Uuid),
+    column("title", String),
+    column("status", String),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RecentSubmissionSummary:
+    """Read-only submission summary row for the admin user panorama."""
+
+    id: UUID
+    validation_status: str
+    review_status: str
+    submitted_at: datetime
+
 
 class AdminPanorama(TypedDict):
     """The §3.1 facts, typed for the route's DTO assembly."""
 
     user: User
     wallet_balance: int
-    recent_submissions: list[tuple[Submission, str]]
+    recent_submissions: list[tuple[RecentSubmissionSummary, str]]
     active_session_count: int
     remembered_device_count: int
 
@@ -78,20 +111,38 @@ async def user_panorama(
     if user is None:
         raise AdminTargetNotFoundError(user_id)
 
-    wallet = await db.get(PointWallet, user_id)
-    # Submissions hang off claims (claim -> student, claim -> task):
-    # the strip joins through to the task title in one query.
-    from app.modules.tasks.models import AssignmentClaim, Task
-
+    wallet_balance = await db.scalar(
+        select(_POINT_WALLETS.c.available_points).where(
+            _POINT_WALLETS.c.user_id == user_id
+        )
+    )
     recent = [
-        (row[0], row[1])
+        (
+            RecentSubmissionSummary(
+                id=row.id,
+                validation_status=row.validation_status,
+                review_status=row.review_status,
+                submitted_at=row.submitted_at,
+            ),
+            row.task_title,
+        )
         for row in (
             await db.execute(
-                select(Submission, Task.title)
-                .join(AssignmentClaim, Submission.claim_id == AssignmentClaim.id)
-                .join(Task, AssignmentClaim.task_id == Task.id)
-                .where(AssignmentClaim.user_id == user_id)
-                .order_by(Submission.submitted_at.desc(), Submission.id)
+                select(
+                    _SUBMISSIONS.c.id,
+                    _SUBMISSIONS.c.validation_status,
+                    _SUBMISSIONS.c.review_status,
+                    _SUBMISSIONS.c.submitted_at,
+                    _TASKS.c.title.label("task_title"),
+                )
+                .select_from(
+                    _SUBMISSIONS.join(
+                        _ASSIGNMENT_CLAIMS,
+                        _SUBMISSIONS.c.claim_id == _ASSIGNMENT_CLAIMS.c.id,
+                    ).join(_TASKS, _ASSIGNMENT_CLAIMS.c.task_id == _TASKS.c.id)
+                )
+                .where(_ASSIGNMENT_CLAIMS.c.user_id == user_id)
+                .order_by(_SUBMISSIONS.c.submitted_at.desc(), _SUBMISSIONS.c.id)
                 .limit(_RECENT_SUBMISSIONS_LIMIT)
             )
         ).all()
@@ -122,7 +173,7 @@ async def user_panorama(
     )
     return {
         "user": user,
-        "wallet_balance": wallet.available_points if wallet else 0,
+        "wallet_balance": int(wallet_balance) if wallet_balance is not None else 0,
         "recent_submissions": recent,
         "active_session_count": active_sessions,
         "remembered_device_count": devices,
@@ -435,10 +486,6 @@ async def overview(db: AsyncSession, *, clock: Clock) -> dict[str, Any]:
     governance facts only — counts, never identities."""
     from datetime import time as _time
 
-    from app.modules.points.models import RewardRedemption
-    from app.modules.submissions.models import Submission
-    from app.modules.tasks.models import Task
-
     def _fixed(pairs: dict[str, int], keys: tuple[str, ...]) -> dict[str, int]:
         return {key: pairs.get(key, 0) for key in keys}
 
@@ -459,7 +506,7 @@ async def overview(db: AsyncSession, *, clock: Clock) -> dict[str, Any]:
     task_rows: dict[str, int] = {
         str(status): int(count)
         for status, count in await db.execute(
-            select(Task.status, func.count()).group_by(Task.status)
+            select(_TASKS.c.status, func.count()).group_by(_TASKS.c.status)
         )
     }
     task_keys = (
@@ -474,16 +521,16 @@ async def overview(db: AsyncSession, *, clock: Clock) -> dict[str, Any]:
     pending_submissions = int(
         await db.scalar(
             select(func.count())
-            .select_from(Submission)
-            .where(Submission.review_status == "PENDING_REVIEW")
+            .select_from(_SUBMISSIONS)
+            .where(_SUBMISSIONS.c.review_status == "PENDING_REVIEW")
         )
         or 0
     )
     pending_redemptions = int(
         await db.scalar(
             select(func.count())
-            .select_from(RewardRedemption)
-            .where(RewardRedemption.status.in_(("REQUESTED", "UNDER_REVIEW")))
+            .select_from(_REWARD_REDEMPTIONS)
+            .where(_REWARD_REDEMPTIONS.c.status.in_(("REQUESTED", "UNDER_REVIEW")))
         )
         or 0
     )

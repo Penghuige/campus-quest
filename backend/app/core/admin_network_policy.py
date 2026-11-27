@@ -1,71 +1,14 @@
 # backend/app/core/admin_network_policy.py
-"""Optional management-network restriction for staff surfaces (Plan 08
-T8 step 4; spec §33.4 adjacency).
+"""Optional management-network IP allowlist for staff surfaces (spec §33.4).
 
-Design decisions:
-
-- **Standard-library parsing only:** CIDRs are parsed with
-  :mod:`ipaddress` at POLICY-CONSTRUCTION time (``ip_network`` with the
-  default ``strict=True`` — a CIDR with host bits set, e.g.
-  ``10.0.0.5/24``, is a configuration error, not a network). An invalid
-  entry raises ``ValueError`` immediately: fail loud at construction,
-  never a silently-different allowlist at request time (G5).
-- **Enabled with an empty network list is a construction error.** An
-  allowlist that allows nothing is indistinguishable from a
-  half-entered configuration; refusing it at load time names the
-  mistake. Deployments that want the restriction off set
-  ``management_network_enabled = false`` (the default) and leave the
-  CIDR list empty.
-- **The client IP is ``request.client.host`` — the DIRECTLY connected
-  peer — and nothing else.** ``X-Forwarded-For`` (or any client-supplied
-  header) is never read: it is spoofable, and a spoofable header is
-  worse than a proxy address (the ``AuditContext`` trust-boundary
-  discipline, verbatim). Behind a reverse proxy this compares the
-  PROXY's address, so the CIDRs must list the proxy's network or — the
-  correct fix — the deployment must rewrite addresses at the connection
-  layer (proxy protocol / connection forwarding) BEFORE the app sees
-  them; this module deliberately offers no trusted-proxy knob in V1.
-- **Disabled means pass-through** (the factory returns without reading
-  the request): 2FA/RBAC gates still apply because the route composes
-  this guard BESIDE ``require_staff_management_actor`` /
-  ``require_admin_actor``, not instead of them.
-- **The guard is a FastAPI dependency factory** so a route family
-  mounts it once::
-
-      dependencies=[
-          Depends(require_staff_management_actor),
-          Depends(require_management_network()),
-      ]
-
-  The factory takes an optional ``policy_loader`` callable (evaluated
-  per request, so the store can change policy without restart) — sync
-  or ASYNC: a loader that reads the audited system_settings store needs
-  a database round-trip per request, so the guard awaits an awaitable
-  result and passes a plain value through (``inspect.isawaitable``).
-  The DEFAULT loader is the process-cached env policy — used only by
-  tests and callers that pass no loader: production wiring passes the
-  store-reading loader explicitly (read the two ``MANAGEMENT_NETWORK_*``
-  rows through ``SystemSettingService.get`` per request and resolve them
-  via ``load_management_network_policy``) — the landed T9 composition
-  (identity/admin_router's ``require_management_network_from_store``).
-- **Store first, env fallback (Plan 08 T5 migration).** The policy's
-  values live in the audited ``system_settings`` store under
-  ``MANAGEMENT_NETWORK_ENABLED`` / ``MANAGEMENT_NETWORK_CIDRS``;
-  ``load_management_network_policy`` resolves each key's value from the
-  store when the row exists and falls back PER KEY to the typed
-  ``Settings`` env fields ``management_network_enabled`` /
-  ``management_network_cidrs`` (comma-separated) when it does not —
-  deployments configured against the env vars keep working through the
-  transition, and admins migrate by writing the store keys. The env
-  fields are DEPRECATED transitional fallbacks (config.py marks them);
-  their removal rides the store-backed policy fully replacing them —
-  the loader's fallbacks go with them, after which the store is the
-  only source.
-  ``MANAGEMENT_NETWORK_ENABLED`` is stored ``"true"``/``"false"`` and
-  ``MANAGEMENT_NETWORK_CIDRS`` comma-separated canonical CIDRs (the
-  registry's canonical forms — see system/service.py).
-- Denials are ``PERMISSION_DENIED`` 403 via ``BusinessError`` — the
-  same envelope every guard raises, rendered with no per-route work.
+Invariants:
+- CIDRs are validated strictly (``ip_network(..., strict=True)``) at policy
+  construction time; an enabled policy with an empty network list fails loud.
+- Only the direct peer address (``request.client.host``) is checked —
+  ``X-Forwarded-For`` is never trusted.
+- Values resolve from ``system_settings`` (``MANAGEMENT_NETWORK_ENABLED`` /
+  ``MANAGEMENT_NETWORK_CIDRS``) per request, falling back per key to the
+  deprecated env fields until migrated. Denials raise ``PERMISSION_DENIED`` 403.
 """
 
 from __future__ import annotations
