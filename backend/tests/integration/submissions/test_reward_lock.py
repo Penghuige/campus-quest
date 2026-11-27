@@ -1038,9 +1038,7 @@ def test_concurrent_upload_intent_and_reward_lock_no_deadlock() -> None:
             seed = await _seed(
                 factory,
                 f"{run}dl{idx}",
-                submissions=(
-                    SubmissionSpec(1, _DEADLINE - timedelta(minutes=5)),
-                ),
+                submissions=(SubmissionSpec(1, _DEADLINE - timedelta(minutes=5)),),
             )
             task_ids.append(seed.task.id)
             user_ids.extend((seed.teacher.id, seed.student.id))
