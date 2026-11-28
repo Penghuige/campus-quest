@@ -113,48 +113,12 @@ async def recover_stuck_sending_deliveries(
     stuck_after: timedelta,
     limit: int,
 ) -> list[UUID]:
-    """Flip deliveries that have sat SENDING past ``stuck_after`` to
-    RETRYABLE — the monitor's whole write, one conditional UPDATE plus
-    its commit.
-
-    ``now`` is the caller's SERVICE-clock instant (the same domain the
-    send service's claim stamps ``updated_at`` from); it serves both
-    the cutoff comparison and the row's new ``updated_at``.
-    ``scheduled_at`` and ``attempts`` are deliberately untouched: the
-    row's due instant is already past, so the next dispatcher round
-    re-dispatches it, and the next claim advances attempts under the
-    send service's bounded ladder. Returns the recovered ids (in the
-    database's RETURNING order).
-    """
-    from sqlalchemy import select, update
-
-    from app.modules.notifications.enums import DeliveryStatus
-    from app.modules.notifications.models import NotificationDelivery
-
-    cutoff = now - stuck_after
-    statement = (
-        update(NotificationDelivery)
-        .where(
-            NotificationDelivery.id.in_(
-                select(NotificationDelivery.id)
-                .where(
-                    NotificationDelivery.status == DeliveryStatus.SENDING.value,
-                    NotificationDelivery.updated_at <= cutoff,
-                )
-                .order_by(NotificationDelivery.updated_at, NotificationDelivery.id)
-                .limit(limit)
-            )
-        )
-        .values(
-            status=DeliveryStatus.RETRYABLE.value,
-            last_error=STUCK_SENDING_RECOVERY_MARKER,
-            updated_at=now,
-        )
-        .returning(NotificationDelivery.id)
+    """Delegate aged-SENDING recovery to the notifications service layer (B04-03)."""
+    from app.modules.notifications.delivery_service import (
+        recover_stuck_sending_deliveries as _recover_deliveries,
     )
-    recovered = list((await session.execute(statement)).scalars().all())
-    await session.commit()
-    return recovered
+
+    return await _recover_deliveries(session, now, stuck_after=stuck_after, limit=limit)
 
 
 @shared_task(  # type: ignore[untyped-decorator]

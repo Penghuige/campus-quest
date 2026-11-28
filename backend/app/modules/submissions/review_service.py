@@ -829,14 +829,19 @@ class ReviewService:
         await db.flush()
 
         # Step 8: the unique reward grant, through the frozen port,
-        # inside the transaction (§14: one transaction covers the whole
-        # invariant; Plan 05's adapter writes the ledger on this session).
-        grant = await self._points.grant_assignment_reward(
-            user_id=claim.user_id,
-            claim_id=claim.id,
-            base_points=claim.base_reward_points_snapshot,
-            locked_points=points_value,
-            idempotency_key=f"assignment_reward:{claim.id}",
+        # inside the transaction (§14). When a very small base_reward_points
+        # floors to 0 under a late tier (B02-03), complete the claim cleanly
+        # without writing a 0-amount ledger row (ledger requires non-zero).
+        grant = (
+            await self._points.grant_assignment_reward(
+                user_id=claim.user_id,
+                claim_id=claim.id,
+                base_points=claim.base_reward_points_snapshot,
+                locked_points=points_value,
+                idempotency_key=f"assignment_reward:{claim.id}",
+            )
+            if points_value > 0
+            else None
         )
 
         # Step 10: the audit event, after flush / before commit.
@@ -881,7 +886,7 @@ class ReviewService:
                 "reward_lock_status": RewardLockStatus.CONFIRMED.value,
                 "reward_tier_locked": tier,
                 "locked_reward_points": points_value,
-                "points_granted": grant.points_granted,
+                "points_granted": grant.points_granted if grant is not None else 0,
             },
             details=self._audit_details(claim, submission),
             ip_address=audit_context.ip_address if audit_context else None,

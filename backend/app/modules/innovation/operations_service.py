@@ -137,7 +137,7 @@ class OperationsGrantService:
         ):
             raise BusinessError(
                 ErrorCode.CONFLICT,
-                "授权状态已改变或操作重复，请重新读取后再决定",
+                "授权状态已更新，请刷新后重试",
                 status_code=409,
             )
         if row is None:

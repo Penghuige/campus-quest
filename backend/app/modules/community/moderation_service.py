@@ -107,6 +107,7 @@ _USERS = table(
 
 _REASON_REQUIRED_MESSAGE = "必须填写追溯原因"
 _REVEAL_DENIED_MESSAGE = "只有管理员可以追溯匿名评论作者身份"
+_NOT_ANONYMOUS_MESSAGE = "该评论不是匿名评论，无需追溯身份"
 
 
 # --- typed exceptions (router-mapped) ------------------------------------------------
@@ -136,6 +137,18 @@ class RevealDeniedError(BusinessError):
             _REVEAL_DENIED_MESSAGE,
             status_code=403,
             details={"role": str(role)},
+        )
+
+
+class CommentNotAnonymousError(BusinessError):
+    """Identity reveal applies only to anonymous comments (B06-02)."""
+
+    def __init__(self, comment_id: UUID) -> None:
+        super().__init__(
+            ErrorCode.CONFLICT,
+            _NOT_ANONYMOUS_MESSAGE,
+            status_code=409,
+            details={"comment_id": str(comment_id)},
         )
 
 
@@ -211,6 +224,8 @@ class ModerationService:
         comment = await db.scalar(select(Comment).where(Comment.id == comment_id))
         if comment is None:
             raise CommentNotFoundError(comment_id)
+        if not comment.is_anonymous:
+            raise CommentNotAnonymousError(comment_id)
 
         row = (
             await db.execute(

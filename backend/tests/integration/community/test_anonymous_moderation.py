@@ -435,6 +435,22 @@ async def test_reported_staff_author_cannot_see_reporter_identity(
     assert admin_page[0].reporter_nickname is not None
 
 
+@pytest.mark.integration
+async def test_reveal_rejects_non_anonymous_comment(
+    db_session: AsyncSession,
+) -> None:
+    """B06-02: Admin identity reveal is restricted to anonymous comments."""
+    from app.modules.community.moderation_service import CommentNotAnonymousError
+
+    task, _teacher, author, _, _, admin = await _fixture(db_session)
+    named_comment = await _root_comment(db_session, task, author, is_anonymous=False)
+    service, _events = _moderation_service()
+    with pytest.raises(CommentNotAnonymousError):
+        await service.request_identity_reveal(
+            db_session, _actor(admin), named_comment.id, "核查实名评论"
+        )
+
+
 # --- the Admin reveal (spec §21.4 每次追溯必须写 AuditLog) ---------------------------
 
 

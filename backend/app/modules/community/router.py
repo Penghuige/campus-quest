@@ -62,6 +62,7 @@ from app.modules.community.schemas import (
 from app.modules.community.serializers import serialize_moderation_comment
 from app.modules.community.settings_emoji_whitelist import SystemEmojiWhitelistProvider
 from app.modules.community.vote_service import VoteService
+from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_community_actor,
@@ -718,7 +719,11 @@ async def moderate_delete_comment(
     )
 
 
-@router.post("/teacher/comments/{comment_id}/hard-hide", status_code=204)
+@router.post(
+    "/teacher/comments/{comment_id}/hard-hide",
+    status_code=204,
+    dependencies=[Depends(require_management_network_from_store)],
+)
 async def hide_comment_subtree(
     comment_id: uuid.UUID,
     body: ModerationDeleteRequest,
@@ -743,6 +748,7 @@ async def hide_comment_subtree(
 @router.post(
     "/admin/comments/{comment_id}/reveal-identity",
     response_model=RevealIdentityResponse,
+    dependencies=[Depends(require_management_network_from_store)],
 )
 async def reveal_comment_identity(
     comment_id: uuid.UUID,

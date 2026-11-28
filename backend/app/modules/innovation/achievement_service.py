@@ -236,7 +236,7 @@ class AchievementDraftService:
         if row is None:
             raise BusinessError(
                 ErrorCode.CONFLICT,
-                "成果草稿已更新，请读取最新版本；当前输入尚未保存",
+                "成果草稿已有更新，请刷新后再保存",
                 status_code=409,
                 details={"kind": "achievement_version"},
             )
