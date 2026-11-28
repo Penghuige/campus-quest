@@ -72,6 +72,7 @@ from app.core.errors import BusinessError
 from app.db.session import get_db_session
 from app.integrations.masking import mask_phone
 from app.modules.audit.context import AuditContext
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity import admin_power_service as admin_power
 from app.modules.identity.account_admin_service import AccountAdminService
 from app.modules.identity.dependencies import (
@@ -124,7 +125,7 @@ logger = logging.getLogger(__name__)
 # the message names the repair path — the settings surface is exempt
 # from this guard, so the Admin can always reach it.
 _POLICY_UNLOADABLE_MESSAGE = (
-    "管理网络策略配置不可加载，已拒绝所有管理功能访问；请立即通过系统设置修复网络策略"
+    "管理网络策略配置异常，当前暂停访问；请前往系统设置检查并修复网络策略"
 )
 
 
@@ -244,6 +245,8 @@ from app.modules.identity.admin_wire_schemas import (  # noqa: E402
 
 @router.get("/admin/users", response_model=AdminUserListResponse)
 async def list_users(
+    request: Request,
+    actor: AdminActor,
     db: DbSession,
     role: Annotated[Role | None, Query()] = None,
     status: Annotated[UserStatus | None, Query()] = None,
@@ -260,26 +263,47 @@ async def list_users(
     total = int(
         await db.scalar(select(func.count()).select_from(User).where(*conditions))
     )
-    rows = await db.scalars(
-        select(User)
-        .where(*conditions)
-        .order_by(User.username)
-        .limit(limit)
-        .offset(offset)
+    rows = list(
+        await db.scalars(
+            select(User)
+            .where(*conditions)
+            .order_by(User.username)
+            .limit(limit)
+            .offset(offset)
+        )
     )
+    items = [
+        AdminUserResponse(
+            id=str(user.id),
+            username=user.username,
+            nickname=user.nickname,
+            role=Role(user.role),
+            status=UserStatus(user.status),
+            phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
+            created_at=user.created_at,
+        )
+        for user in rows
+    ]
+    audit_ctx = AuditContext.from_request(request)
+    await AuditLogWriter().append(
+        db,
+        actor=actor,
+        action="ADMIN_USERS_LIST_READ",
+        target_type="user",
+        target_id="directory",
+        details={
+            "filter_role": role.value if role else None,
+            "filter_status": status.value if status else None,
+            "limit": limit,
+            "offset": offset,
+            "returned": len(items),
+        },
+        ip_address=audit_ctx.ip_address,
+        request_id=audit_ctx.request_id,
+    )
+    await db.commit()
     return AdminUserListResponse(
-        items=[
-            AdminUserResponse(
-                id=str(user.id),
-                username=user.username,
-                nickname=user.nickname,
-                role=Role(user.role),
-                status=UserStatus(user.status),
-                phone_masked=mask_phone(user.phone_e164) if user.phone_e164 else None,
-                created_at=user.created_at,
-            )
-            for user in rows
-        ],
+        items=items,
         total=total,
         limit=limit,
         offset=offset,
@@ -315,6 +339,7 @@ async def _transition_account_status(
 @router.get("/admin/users/{user_id}", response_model=AdminUserPanoramaResponse)
 async def read_user_panorama(
     user_id: UUID,
+    request: Request,
     actor: AdminActor,
     db: DbSession,
     clock: Annotated[Clock, Depends(get_business_clock)],
@@ -323,7 +348,7 @@ async def read_user_panorama(
     ten most recent submissions, and the live credential counts."""
     panorama = await admin_power.user_panorama(db, user_id, clock=clock)
     user = panorama["user"]
-    return AdminUserPanoramaResponse(
+    response = AdminUserPanoramaResponse(
         user=AdminUserResponse(
             id=str(user.id),
             username=user.username,
@@ -347,21 +372,46 @@ async def read_user_panorama(
         active_session_count=panorama["active_session_count"],
         remembered_device_count=panorama["remembered_device_count"],
     )
+    audit_ctx = AuditContext.from_request(request)
+    await AuditLogWriter().append(
+        db,
+        actor=actor,
+        action="ADMIN_USER_PANORAMA_READ",
+        target_type="user",
+        target_id=str(user_id),
+        ip_address=audit_ctx.ip_address,
+        request_id=audit_ctx.request_id,
+    )
+    await db.commit()
+    return response
 
 
 @router.get("/admin/users/{user_id}/sessions", response_model=AdminUserSessionsResponse)
 async def read_user_sessions(
     user_id: UUID,
+    request: Request,
     actor: AdminActor,
     db: DbSession,
     clock: Annotated[Clock, Depends(get_business_clock)],
 ) -> AdminUserSessionsResponse:
     """The §3.3 read side: the account's live credential counts."""
     panorama = await admin_power.user_panorama(db, user_id, clock=clock)
-    return AdminUserSessionsResponse(
+    response = AdminUserSessionsResponse(
         active_session_count=panorama["active_session_count"],
         remembered_device_count=panorama["remembered_device_count"],
     )
+    audit_ctx = AuditContext.from_request(request)
+    await AuditLogWriter().append(
+        db,
+        actor=actor,
+        action="ADMIN_USER_SESSIONS_READ",
+        target_type="user",
+        target_id=str(user_id),
+        ip_address=audit_ctx.ip_address,
+        request_id=audit_ctx.request_id,
+    )
+    await db.commit()
+    return response
 
 
 @router.delete("/admin/users/{user_id}/sessions", response_model=AdminKickResponse)

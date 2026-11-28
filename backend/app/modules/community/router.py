@@ -530,6 +530,7 @@ async def put_task_rating(
 )
 async def list_moderation_comments(
     task_id: uuid.UUID,
+    request: Request,
     actor: StaffActor,
     db: DbSession,
     settings: AppSettings,
@@ -568,6 +569,7 @@ async def list_moderation_comments(
                 .offset(offset)
             )
         ).all()
+        redact_hard_hidden = not rbac.is_admin(actor.role)
         items = [
             ModerationCommentResponse.from_dto(
                 serialize_moderation_comment(
@@ -575,10 +577,23 @@ async def list_moderation_comments(
                     author_nickname=str(nickname),
                     key_secret=settings.token_secret,
                     edited=edited,
+                    redact_hard_hidden=redact_hard_hidden,
                 )
             )
             for comment, nickname, edited in rows
         ]
+    audit_ctx = AuditContext.from_request(request)
+    await AuditLogWriter().append(
+        db,
+        actor=actor,
+        action="COMMUNITY_MODERATION_COMMENTS_READ",
+        target_type="task",
+        target_id=str(task_id),
+        details={"limit": limit, "offset": offset, "returned": len(items)},
+        ip_address=audit_ctx.ip_address,
+        request_id=audit_ctx.request_id,
+    )
+    await db.commit()
     return ModerationCommentListResponse(
         items=items, total=total, limit=limit, offset=offset
     )
@@ -589,6 +604,7 @@ async def list_moderation_comments(
 )
 async def list_task_reports(
     task_id: uuid.UUID,
+    request: Request,
     actor: StaffActor,
     db: DbSession,
     reports: ReportServiceDep,
@@ -600,7 +616,12 @@ async def list_task_reports(
     identity for the moderators who act on it. Admin is admitted by the
     service's read ruling."""
     views, total = await reports.list_task_reports(
-        db, actor, task_id, limit=limit, offset=offset
+        db,
+        actor,
+        task_id,
+        limit=limit,
+        offset=offset,
+        audit_context=AuditContext.from_request(request),
     )
     return CommentReportListResponse(
         items=[CommentReportResponse.from_dto(view) for view in views],

@@ -528,7 +528,7 @@ async def test_unloadable_residue_fails_closed_but_settings_stay_repairable(
         )
     assert guarded.status_code == 403, guarded.text
     assert guarded.json()["error"]["code"] == ErrorCode.PERMISSION_DENIED
-    assert "不可加载" in guarded.json()["error"]["message"]
+    assert "配置异常" in guarded.json()["error"]["message"]
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=api_app), base_url="http://test"

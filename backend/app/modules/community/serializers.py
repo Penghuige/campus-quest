@@ -153,28 +153,21 @@ def serialize_moderation_comment(
     author_nickname: str,
     key_secret: str,
     edited: bool = False,
+    redact_hard_hidden: bool = False,
 ) -> ModerationComment:
     """Build the moderation DTO — the Teacher-safe author surface (spec
     §21.4).
 
-    ``author_nickname`` is the ONLY join material the caller supplies,
-    and it renders ONLY for named comments — an anonymous record shows
-    匿名用户 whatever the nickname is. ``key_secret`` is the
-    settings-derived HMAC material; the ``moderation_key`` is derived
-    here, server-side, and rides exactly the anonymous records: a named
-    record's correlation handle is its (already public) nickname, and a
-    key there would join the author's named and anonymous comments in
-    one Task — the deanonymization this seam exists to prevent. The
-    row's ``user_id`` is deliberately unread beyond the keyed digest,
-    so the raw id cannot smuggle into the shape. ``hard_hidden``
-    (task 3) distinguishes Admin privacy/legal removals from ordinary
-    soft deletes: both are ``deleted`` here, only the former is flagged.
+    When ``redact_hard_hidden`` is True (non-Admin viewers), hard-hidden
+    comments have their body redacted to ``None`` (spec §21.3 / B06-03).
     """
     return ModerationComment(
         id=comment.id,
         task_id=comment.task_id,
         parent_id=comment.parent_id,
-        content=comment.content,
+        content=None
+        if (redact_hard_hidden and comment.is_hard_hidden)
+        else comment.content,
         is_anonymous=comment.is_anonymous,
         author_display=(
             ANONYMOUS_AUTHOR_DISPLAY if comment.is_anonymous else author_nickname

@@ -54,6 +54,7 @@ from app.db.session import get_db_session
 from app.modules.audit.context import AuditContext
 from app.modules.audit.models import AuditLog
 from app.modules.audit.repair_service import RepairService
+from app.modules.audit.service import AuditLogWriter
 from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import get_business_clock, require_admin_actor
 from app.modules.identity.events import Actor
@@ -165,6 +166,8 @@ class ForceFailDeliveryResponse(BaseModel):
 
 @router.get("/admin/audit-logs", response_model=AuditLogListResponse)
 async def list_audit_logs(
+    request: Request,
+    actor: AdminActor,
     db: DbSession,
     action: Annotated[str | None, Query(max_length=64)] = None,
     actor_user_id: Annotated[UUID | None, Query()] = None,
@@ -191,15 +194,36 @@ async def list_audit_logs(
     total = int(
         await db.scalar(select(func.count()).select_from(AuditLog).where(*conditions))
     )
-    rows = await db.scalars(
-        select(AuditLog)
-        .where(*conditions)
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .limit(limit)
-        .offset(offset)
+    rows = list(
+        await db.scalars(
+            select(AuditLog)
+            .where(*conditions)
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
     )
+    items = [_audit_log_response(row) for row in rows]
+    audit_ctx = AuditContext.from_request(request)
+    await AuditLogWriter().append(
+        db,
+        actor=actor,
+        action="AUDIT_LOGS_READ",
+        target_type="audit_log",
+        target_id="search",
+        details={
+            "filter_action": action,
+            "filter_target_type": target_type,
+            "limit": limit,
+            "offset": offset,
+            "returned": len(items),
+        },
+        ip_address=audit_ctx.ip_address,
+        request_id=audit_ctx.request_id,
+    )
+    await db.commit()
     return AuditLogListResponse(
-        items=[_audit_log_response(row) for row in rows],
+        items=items,
         total=total,
         limit=limit,
         offset=offset,
