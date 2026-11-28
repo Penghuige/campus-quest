@@ -396,6 +396,45 @@ class ValidationService:
             else ValidationStatus.VALIDATION_FAILED
         )
         report_json = report_to_json(report)
+        existing_status = ValidationStatus(submission.validation_status)
+        if existing_status in _TERMINAL_STATUSES:
+            # A concurrent validation run already committed a terminal state
+            # while we were parsing. Record our run audit row, but never
+            # overwrite the submission's terminal status/report or revert
+            # a claim that already moved to UNDER_REVIEW.
+            if submission.validation_report is None:
+                raise RuntimeError(
+                    f"submission {submission_id} is {existing_status.value} "
+                    "with no report"
+                )
+            existing_report = report_from_json(submission.validation_report)
+            existing_detected = (
+                FileType(submission.detected_type)
+                if submission.detected_type is not None
+                else None
+            )
+            finished_run = await db.get(
+                SubmissionValidation,
+                run.id,
+                populate_existing=True,
+            )
+            assert finished_run is not None
+            finished_run.parser_version = report.parser_version
+            finished_run.status = terminal.value
+            finished_run.report = report_json
+            finished_run.finished_at = finished_at
+            finished_run.duration_ms = int(
+                (finished_at - started_at).total_seconds() * 1000
+            )
+            finished_run_id = finished_run.id
+            await db.commit()
+            return ValidationRunResult(
+                report=existing_report,
+                status=existing_status,
+                detected_type=existing_detected,
+                run_id=finished_run_id,
+                already_terminal=True,
+            )
         submission.validation_status = terminal.value
         submission.validation_report = report_json
         if detected is not None:

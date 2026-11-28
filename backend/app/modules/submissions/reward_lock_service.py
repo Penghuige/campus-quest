@@ -128,7 +128,11 @@ from app.core.errors import BusinessError
 from app.modules.identity.directory import lock_user_for_update
 from app.modules.identity.events import DomainEvent, DomainEventPublisher
 from app.modules.submissions.cleanup_claim import ensure_no_active_cleanup_claim
-from app.modules.submissions.enums import RewardLockStatus, ValidationStatus
+from app.modules.submissions.enums import (
+    ReviewStatus,
+    RewardLockStatus,
+    ValidationStatus,
+)
 from app.modules.submissions.models import RewardLockHistory, Submission
 from app.modules.submissions.validation_service import SubmissionNotFoundError
 from app.modules.tasks.deadlines import (
@@ -293,6 +297,14 @@ class RewardLockService:
         if status in _TERMINAL_CLAIM_STATUSES:
             # The expiry/abandon side won the race (§26): idempotent
             # no-op — never resurrect, never lock, never event.
+            await db.commit()
+            return claim
+
+        if submission.review_status != ReviewStatus.PENDING_REVIEW.value:
+            # A teacher already acted on this submission (e.g.
+            # REVISION_REQUIRED or APPROVED): a replayed/late validation
+            # job must never undo the review decision or re-lock on this
+            # submission (B02-01, spec §11.3 / G8).
             await db.commit()
             return claim
 

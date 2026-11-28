@@ -1790,3 +1790,128 @@ def test_tightened_allowed_file_types_fail_revalidation() -> None:
         asyncio.run(_inspect())
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_late_validation_failure_cannot_overwrite_already_validated_submission() -> (
+    None
+):
+    """B02-02 regression: if a twin validation run already committed
+    VALIDATED (and moved the claim to UNDER_REVIEW) while a slower run
+    was parsing, the slower run's failure report must not overwrite the
+    submission's terminal VALIDATED state or revert the claim."""
+    import threading
+
+    from app.modules.submissions.validation_runner import SandboxedValidation
+    from app.modules.submissions.validation_service import ValidationService
+    from app.modules.submissions.validators.common import (
+        ValidationCode,
+        ValidationFinding,
+        ValidationReport,
+        report_to_json,
+    )
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(_seed(factory, run, content=_valid_csv()))
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+        storage = asyncio.run(_store(factory, seed, _valid_csv()))
+
+        passed_report = ValidationReport(
+            parser_version="csv-2",
+            file_type=FileType.CSV,
+            row_count=3,
+            detected_columns=("url", "title"),
+            missing_required_columns=(),
+            extra_columns=(),
+            type_error_counts={},
+            null_ratios={},
+            duplicate_counts={},
+            warnings=(),
+            errors=(),
+            duration_ms=1.0,
+        )
+
+        class _RacingFailSandbox:
+            def run(
+                self,
+                *,
+                path: Any,  # noqa: ARG002
+                request: Any,  # noqa: ARG002
+                declared_type: FileType,
+            ) -> SandboxedValidation:
+                async def _twin_commit() -> None:
+                    async with factory() as twin_db:
+                        sub = await twin_db.get(Submission, seed.submission.id)
+                        clm = await twin_db.get(AssignmentClaim, seed.claim.id)
+                        assert sub is not None and clm is not None
+                        sub.validation_status = ValidationStatus.VALIDATED.value
+                        sub.detected_type = "CSV"
+                        sub.validation_report = report_to_json(passed_report)
+                        clm.status = ClaimStatus.UNDER_REVIEW.value
+                        await twin_db.commit()
+
+                err: list[BaseException] = []
+
+                def _thread_entry() -> None:
+                    try:
+                        asyncio.run(_twin_commit())
+                    except BaseException as exc:  # noqa: BLE001
+                        err.append(exc)
+
+                t = threading.Thread(target=_thread_entry)
+                t.start()
+                t.join(timeout=15)
+                assert not err, f"twin commit failed: {err[0]!r}"
+
+                return SandboxedValidation(
+                    detected_type=None,
+                    report=ValidationReport(
+                        parser_version="csv-2",
+                        file_type=declared_type,
+                        row_count=0,
+                        detected_columns=(),
+                        missing_required_columns=(),
+                        extra_columns=(),
+                        type_error_counts={},
+                        null_ratios={},
+                        duplicate_counts={},
+                        warnings=(),
+                        errors=(
+                            ValidationFinding(
+                                code=ValidationCode.VALIDATION_TIMED_OUT,
+                                message="simulated slow twin timeout",
+                            ),
+                        ),
+                        duration_ms=10.0,
+                    ),
+                    failure_code=ValidationCode.VALIDATION_TIMED_OUT,
+                )
+
+        service = ValidationService(
+            clock=FrozenClock(_NOW),
+            storage=storage,
+            sandbox=_RacingFailSandbox(),  # type: ignore[arg-type]
+        )
+        result = _validate(service, factory, seed.submission.id)
+        assert result.already_terminal is True
+        assert result.status is ValidationStatus.VALIDATED
+        assert result.report.passed is True
+
+        async def _verify() -> None:
+            async with factory() as session:
+                sub = await session.get(Submission, seed.submission.id)
+                clm = await session.get(AssignmentClaim, seed.claim.id)
+                assert sub is not None and clm is not None
+                assert sub.validation_status == ValidationStatus.VALIDATED.value
+                assert sub.validation_report is not None
+                assert sub.validation_report["errors"] == []
+                assert clm.status == ClaimStatus.UNDER_REVIEW.value
+
+        asyncio.run(_verify())
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))

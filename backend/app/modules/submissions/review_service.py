@@ -127,6 +127,7 @@ from app.core.errors import BusinessError
 from app.core.rbac import is_admin
 from app.modules.audit.context import AuditContext
 from app.modules.audit.service import AuditLogWriter
+from app.modules.identity.directory import lock_user_for_update
 from app.modules.identity.events import Actor, DomainEvent, DomainEventPublisher
 from app.modules.submissions.enums import (
     ReviewAction,
@@ -704,10 +705,17 @@ class ReviewService:
         in the same transaction (§30): before/after carry the
         submission/claim state migration and the lock transition —
         business facts only, no PII (G11)."""
-        # Step 1: the claim row lock — the serialization point.
-        anchor = await db.get(Submission, submission_id)
+        # Step 1: lock-free anchor read -> global user -> claim lock order.
+        anchor = (
+            await db.execute(
+                select(Submission.claim_id, AssignmentClaim.user_id)
+                .join(AssignmentClaim, AssignmentClaim.id == Submission.claim_id)
+                .where(Submission.id == submission_id)
+            )
+        ).one_or_none()
         if anchor is None:
             raise SubmissionNotFoundError(submission_id)
+        await lock_user_for_update(db, anchor.user_id)
         claim = await db.scalar(
             select(AssignmentClaim)
             .where(AssignmentClaim.id == anchor.claim_id)
@@ -716,7 +724,12 @@ class ReviewService:
         )
         assert claim is not None  # submissions.claim_id FK
 
-        # Step 2: verify the claim is still reviewable (in-transaction
+        # Step 2: reviewer permission FIRST (spec §4.2/§4.3, quality-gates §10)
+        # — an unauthorized teacher must learn PERMISSION_DENIED and never
+        # probe the claim's completion, terminal, submission, or lock state.
+        await self._require_review_permission(db, claim, actor)
+
+        # Step 3: verify the claim is still reviewable (in-transaction
         # recheck — this is the gate the racing loser fails).
         status = ClaimStatus(claim.status)
         if status is ClaimStatus.COMPLETED:
@@ -728,7 +741,7 @@ class ReviewService:
             await db.rollback()
             raise ClaimNotReviewableError(observed_claim_id, observed_status)
 
-        # Step 3: the submission belongs (by anchor construction), is
+        # Step 4: the submission belongs (by anchor construction), is
         # machine-VALIDATED, and is the current version.
         submission = await db.scalar(
             select(Submission)
@@ -737,13 +750,6 @@ class ReviewService:
         )
         assert submission is not None
         await self._require_submission_gates(db, claim, submission)
-
-        # Step 4: reviewer permission (owner / REVIEW_SUBMISSIONS
-        # collaborator / Admin) — deliberately BEFORE the lock-shape
-        # gate below (the invalidate path's permission-first ordering):
-        # an unauthorized teacher must learn PERMISSION_DENIED, never
-        # the claim's lock state (a lock-state oracle for free).
-        await self._require_review_permission(db, claim, actor)
 
         # Step 7 needs real values to confirm: only a PROVISIONAL lock
         # carries them (the on_validation_passed race, or a lock
@@ -1014,9 +1020,19 @@ class ReviewService:
         the submission gates and the permission gate; return the pair
         plus the sampled ``now`` (after every lock, before every
         consumer)."""
-        anchor = await db.get(Submission, submission_id)
+        anchor = (
+            await db.execute(
+                select(Submission.claim_id, AssignmentClaim.user_id)
+                .join(AssignmentClaim, AssignmentClaim.id == Submission.claim_id)
+                .where(Submission.id == submission_id)
+            )
+        ).one_or_none()
         if anchor is None:
             raise SubmissionNotFoundError(submission_id)
+        # Global user -> claim lock order: returning a claim to
+        # REVISION_REQUIRED consumes one of the student's 3 actionable
+        # claim slots, so serialize with ClaimService on the user row.
+        await lock_user_for_update(db, anchor.user_id)
         claim = await db.scalar(
             select(AssignmentClaim)
             .where(AssignmentClaim.id == anchor.claim_id)
@@ -1024,6 +1040,10 @@ class ReviewService:
             .execution_options(populate_existing=True)
         )
         assert claim is not None  # submissions.claim_id FK
+
+        # Reviewer permission FIRST (quality-gates §10): never leak
+        # claim/submission status to a teacher outside the task scope.
+        await self._require_review_permission(db, claim, actor)
 
         status = ClaimStatus(claim.status)
         if status in _TERMINAL_CLAIM_STATUSES:
@@ -1039,7 +1059,6 @@ class ReviewService:
         )
         assert submission is not None
         await self._require_submission_gates(db, claim, submission)
-        await self._require_review_permission(db, claim, actor)
         return submission, claim, self._clock.now()
 
     async def _require_submission_gates(
