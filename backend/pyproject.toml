@@ -161,7 +161,7 @@ type = "layers"
 containers = ["app.modules.identity"]
 layers = [
     "admin_router : auth_router : profile_router : staff_router : users_router",
-    "account_admin_service : avatar_service : mobile_login_service : profile_service : service : session_service : staff_service : unified_login_service",
+    "account_admin_service : admin_power_service : avatar_service : email_login_service : mobile_login_service : profile_service : service : session_service : staff_service : unified_login_service",
 ]
 
 [[tool.importlinter.contracts]]
@@ -254,9 +254,8 @@ source_modules = ["app.core"]
 forbidden_modules = ["app.modules", "app.modules.*"]
 
 [[tool.importlinter.contracts]]
-# Exact router modules (import-linter wildcards are trailing-only, so
-# app.modules.*.router is not expressible); update this list when a module
-# gains or renames a router file.
+# Exact router modules; test_import_linter_config.py pins that every
+# *router*.py under app/modules/ is listed here.
 name = "Workers are orchestration shells (never import module routers)"
 type = "forbidden"
 source_modules = ["app.workers"]
@@ -268,6 +267,20 @@ forbidden_modules = [
     "app.modules.identity.profile_router",
     "app.modules.identity.staff_router",
     "app.modules.identity.users_router",
+    "app.modules.innovation.achievement_router",
+    "app.modules.innovation.evidence_router",
+    "app.modules.innovation.operations_router",
+    "app.modules.innovation.owner_router",
+    "app.modules.innovation.public_achievement_router",
+    "app.modules.innovation.public_recruitment_router",
+    "app.modules.innovation.public_talent_router",
+    "app.modules.innovation.qualification_router",
+    "app.modules.innovation.recruitment_router",
+    "app.modules.innovation.review_operations_router",
+    "app.modules.innovation.review_router",
+    "app.modules.innovation.router",
+    "app.modules.innovation.talent_file_router",
+    "app.modules.innovation.talent_router",
     "app.modules.notifications.router",
     "app.modules.points.admin_router",
     "app.modules.points.router",
@@ -276,3 +289,21 @@ forbidden_modules = [
     "app.modules.system.router",
     "app.modules.tasks.router",
 ]
+
+[[tool.importlinter.contracts]]
+name = "innovation stays decoupled from task-domain modules (innovation-boundary.md)"
+type = "forbidden"
+source_modules = ["app.modules.innovation", "app.modules.innovation.*"]
+forbidden_modules = [
+    "app.modules.tasks",
+    "app.modules.tasks.*",
+    "app.modules.submissions",
+    "app.modules.submissions.*",
+    "app.modules.points",
+    "app.modules.points.*",
+    "app.modules.community",
+    "app.modules.community.*",
+    "app.modules.rankings",
+    "app.modules.rankings.*",
+]
+allow_indirect_imports = true

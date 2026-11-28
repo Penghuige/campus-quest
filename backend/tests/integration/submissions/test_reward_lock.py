@@ -1118,3 +1118,68 @@ def test_concurrent_upload_intent_and_reward_lock_no_deadlock() -> None:
         assert deadlocks == [], f"PostgreSQL deadlock detected: {deadlocks[0]}"
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))
+
+
+@pytest.mark.integration
+def test_replayed_validation_never_undoes_teacher_revision_or_invalidation() -> None:
+    """B02-01 regression: a late/replayed ``on_validation_passed`` call for
+    a submission a teacher already returned (REVISION_REQUIRED, with or
+    without lock invalidation) must be an idempotent no-op."""
+    from app.modules.submissions.enums import ReviewStatus
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    user_ids: list[UUID] = []
+
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                claim_status=ClaimStatus.REVISION_REQUIRED,
+                reward_lock_status=RewardLockStatus.INVALIDATED,
+                submissions=(SubmissionSpec(1, _DEADLINE - timedelta(minutes=10)),),
+                latest_version=1,
+            )
+        )
+        task_ids.append(seed.task.id)
+        user_ids.extend((seed.teacher.id, seed.student.id))
+
+        async def _mark_returned() -> None:
+            async with factory() as session:
+                sub = await session.get(Submission, seed.submissions[1].id)
+                assert sub is not None
+                sub.review_status = ReviewStatus.REVISION_REQUIRED.value
+                sub.review_note = "请补充缺失字段"
+                await session.commit()
+
+        asyncio.run(_mark_returned())
+
+        service, collector = _service()
+        claim = _lock_reward(service, factory, seed.submissions[1].id)
+        assert claim.status == ClaimStatus.REVISION_REQUIRED.value
+        assert claim.reward_lock_status == RewardLockStatus.INVALIDATED.value
+        assert collector.of_type(REWARD_LOCKED) == []
+
+        async def _verify_db() -> None:
+            async with factory() as session:
+                db_claim = await session.get(AssignmentClaim, seed.claim.id)
+                db_sub = await session.get(Submission, seed.submissions[1].id)
+                history = (
+                    await session.scalars(
+                        select(RewardLockHistory).where(
+                            RewardLockHistory.claim_id == seed.claim.id
+                        )
+                    )
+                ).all()
+                assert db_claim is not None and db_sub is not None
+                assert db_claim.status == ClaimStatus.REVISION_REQUIRED.value
+                assert db_claim.reward_lock_status == RewardLockStatus.INVALIDATED.value
+                assert db_sub.review_status == ReviewStatus.REVISION_REQUIRED.value
+                assert db_sub.review_note == "请补充缺失字段"
+                assert history == []
+
+        asyncio.run(_verify_db())
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, user_ids=user_ids))

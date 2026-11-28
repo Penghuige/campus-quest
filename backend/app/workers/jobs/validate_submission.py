@@ -201,7 +201,10 @@ def run_submission_validation(
     async def _call() -> Any:
         async with session_source() as session:
             result = await service.validate_submission(session, _UUID(submission_id))
-            if result.status is ValidationStatus.VALIDATED:
+            if (
+                result.status is ValidationStatus.VALIDATED
+                and not result.already_terminal
+            ):
                 await _lock_reward_after_validation(
                     session, _UUID(submission_id), clock=clock, events=events
                 )

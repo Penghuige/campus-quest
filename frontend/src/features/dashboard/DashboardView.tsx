@@ -135,7 +135,7 @@ function HeroAction({ next, now }: { next: NextActionView; now: number }) {
   return (
     <section className="hero" aria-label="当前最重要">
       <p className="hero-eyebrow">
-        {next.kind === "revision" ? "老师退回修改，奖励档位已保留" : "进行中 · 最早截止"}
+        {next.kind === "revision" ? "待修改重新提交" : "进行中 · 最早截止"}
       </p>
       <h2 className="hero-title">{next.taskTitle}</h2>
       <div className="hero-row">
@@ -244,9 +244,7 @@ function ClaimRow({
             <span className={`badge badge-${status.tone}`}>{status.label}</span>
           </div>
           {revision ? (
-            // Design §14 preferred copy; the revision deadline is not part of
-            // the /me/claims DTO yet.
-            <p className="claim-deadline">老师已退回修改，奖励档位已保留</p>
+            <p className="claim-deadline">需要修改并重新提交，点进查看具体原因</p>
           ) : (
             <p className="claim-deadline" suppressHydrationWarning>
               截止 {formatDeadlineSummary(parseServerInstant(claim.deadline_at), now)}

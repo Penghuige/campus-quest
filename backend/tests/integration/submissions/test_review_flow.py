@@ -1583,3 +1583,52 @@ def test_approve_records_notification_with_the_grant() -> None:
         assert points.calls[0].locked_points == 100
     finally:
         asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
+
+
+@pytest.mark.integration
+def test_unrelated_teacher_gets_permission_denied_before_state_gates() -> None:
+    """B05-01 regression: an unrelated teacher must receive
+    ReviewerPermissionDeniedError before any COMPLETED/EXPIRED/unvalidated
+    state gate, so review endpoints never act as a cross-task state oracle."""
+    from app.modules.submissions.review_service import ReviewerPermissionDeniedError
+
+    scenarios: tuple[tuple[ClaimStatus, str], ...] = (
+        (ClaimStatus.COMPLETED, ValidationStatus.VALIDATED.value),
+        (ClaimStatus.EXPIRED, ValidationStatus.VALIDATED.value),
+        (ClaimStatus.UNDER_REVIEW, ValidationStatus.UPLOADED.value),
+    )
+    for claim_status, val_status in scenarios:
+        factory = _new_factory()
+        run = uuid4().hex[:8]
+        task_ids: list[UUID] = []
+        try:
+            seed = asyncio.run(
+                _seed(
+                    factory,
+                    run,
+                    claim_status=claim_status,
+                    submissions=(
+                        SubmissionSpec(1, _DEADLINE, validation_status=val_status),
+                    ),
+                )
+            )
+            task_ids.append(seed.task.id)
+            outsider = seed.actor(seed.teacher_other)
+            sub_id = seed.submissions[1].id
+            for action in (
+                lambda svc, db, o=outsider, s=sub_id: svc.approve_submission(db, o, s),
+                lambda svc, db, o=outsider, s=sub_id: svc.require_revision(
+                    db, o, s, "越权探测"
+                ),
+                lambda svc, db, o=outsider, s=sub_id: svc.invalidate_reward_lock(
+                    db, o, s, "越权探测"
+                ),
+            ):
+                service, _collector, _points = _service(_REVIEWED_AT)
+                with pytest.raises(ReviewerPermissionDeniedError):
+                    _call(
+                        factory,
+                        lambda session, a=action, svc=service: a(svc, session),
+                    )
+        finally:
+            asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))

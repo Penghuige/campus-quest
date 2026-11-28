@@ -7,8 +7,16 @@
  */
 import { rewardStatusView, type RewardClaimFacts } from "./rewardView";
 
-export function RewardStatus({ claim, nowMs }: { claim: RewardClaimFacts; nowMs: number }) {
-  const view = rewardStatusView(claim, nowMs);
+export function RewardStatus({
+  claim,
+  nowMs,
+  machineFailed = false,
+}: {
+  claim: RewardClaimFacts;
+  nowMs: number;
+  machineFailed?: boolean;
+}) {
+  const view = rewardStatusView({ ...claim, machineFailed }, nowMs);
   return (
     <section className="section" aria-label="奖励状态">
       <h2 className="section-title">奖励</h2>
