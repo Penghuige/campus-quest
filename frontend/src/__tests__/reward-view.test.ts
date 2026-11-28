@@ -86,6 +86,33 @@ describe("state-specific copy", () => {
     assertNoClientMath(view);
   });
 
+  test("REVISION_REQUIRED after machine validation failure never claims teacher return or preserved tier", () => {
+    const view = rewardStatusView(
+      claim({ status: "REVISION_REQUIRED", machineFailed: true }),
+      NOW,
+    );
+    assert.equal(view.tone, "warning");
+    assert.match(view.lines[0]!, /机器校验/);
+    for (const line of view.lines) {
+      assert.doesNotMatch(line, /老师/);
+      assert.doesNotMatch(line, /奖励档位已保留/);
+    }
+    assertNoClientMath(view);
+  });
+
+  test("REVISION_REQUIRED with INVALIDATED lock never claims preserved tier", () => {
+    const view = rewardStatusView(
+      claim({ status: "REVISION_REQUIRED", reward_lock_status: "INVALIDATED" }),
+      NOW,
+    );
+    assert.equal(view.tone, "warning");
+    assert.match(view.lines[0]!, /已作废/);
+    for (const line of view.lines) {
+      assert.doesNotMatch(line, /奖励档位已保留/);
+    }
+    assertNoClientMath(view);
+  });
+
   test("UNDER_REVIEW points at the review, not a number", () => {
     const view = rewardStatusView(claim({ status: "UNDER_REVIEW" }), NOW);
     assert.deepEqual(view.lines, ["已提交，等待老师审核，积分以审核结果为准"]);

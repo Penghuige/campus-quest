@@ -331,7 +331,7 @@ function ClaimDetailReady({
         </p>
       </section>
 
-      <RewardStatus claim={claim} nowMs={nowMs} />
+      <RewardStatus claim={claim} nowMs={nowMs} machineFailed={machineFailed} />
 
       {isSubmittable(claim.status) ? (
         <>

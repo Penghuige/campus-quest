@@ -19,6 +19,10 @@ export interface RewardClaimFacts {
   base_reward_points_snapshot: number;
   deadline_at: string;
   grace_deadline_at: string;
+  /** True when the latest submission failed automated machine validation. */
+  machineFailed?: boolean;
+  /** Server-provided reward lock status when available on the DTO. */
+  reward_lock_status?: string | null;
 }
 
 export interface RewardStatusView {
@@ -38,8 +42,26 @@ export function rewardStatusView(claim: RewardClaimFacts, nowMs: number): Reward
 
   switch (claim.status) {
     case "REVISION_REQUIRED":
-      // §11.3: 退回 preserves the PROVISIONAL lock — the snapshot stays
-      // the earnable figure (design §14 preferred copy).
+      if (claim.machineFailed) {
+        return {
+          tone: "warning",
+          lines: [
+            "上次提交未通过机器校验，请按报告修正后重新上传",
+            "积分将在新版本通过校验后按提交时间结算",
+          ],
+        };
+      }
+      if (claim.reward_lock_status === "INVALIDATED") {
+        return {
+          tone: "warning",
+          lines: [
+            "待修改重新提交，原奖励档位已作废",
+            "重新提交通过后将按新提交时间结算积分",
+          ],
+        };
+      }
+      // §11.3: teacher return preserves the PROVISIONAL lock — the snapshot
+      // stays the earnable figure.
       return {
         tone: "warning",
         lines: [
