@@ -165,6 +165,7 @@ class WalletResponse(BaseModel):
 
     available_points: int
     earned_points: int
+    net_earned_points: int
     spendable_points: int
     point_debt: int
 
@@ -411,6 +412,7 @@ def _wallet_response(summary: WalletSummary) -> WalletResponse:
     return WalletResponse(
         available_points=max(summary.available_points, 0),
         earned_points=summary.earned_points,
+        net_earned_points=summary.net_earned_points,
         spendable_points=max(summary.spendable_points, 0),
         point_debt=max(-summary.available_points, 0),
     )

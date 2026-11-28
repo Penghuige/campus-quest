@@ -47,6 +47,7 @@ function reward(overrides: Partial<RewardItemDto>): RewardItemDto {
 const WALLET = {
   available_points: 160,
   earned_points: 420,
+  net_earned_points: 420,
   spendable_points: 160,
   point_debt: 0,
 };
