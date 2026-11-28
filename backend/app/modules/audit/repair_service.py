@@ -137,8 +137,8 @@ _PERMISSION_DENIED_MESSAGE = "仅管理员可以执行状态修复"
 _REASON_REQUIRED_MESSAGE = "必须填写操作原因"
 _ID_REQUIRED_MESSAGE = "目标标识必须是合法的 UUID"
 _TARGET_NOT_FOUND_MESSAGE = "修复目标不存在"
-_ASSIGNMENT_NOT_DANGLING_MESSAGE = "该任务占用量不是悬挂状态，无需修复"
-_DELIVERY_NOT_STUCK_MESSAGE = "该通知投递不在卡死（SENDING）状态"
+_ASSIGNMENT_NOT_DANGLING_MESSAGE = "该任务单元当前未被异常占用，无需释放"
+_DELIVERY_NOT_STUCK_MESSAGE = "该通知投递当前不在发送中状态，无需强制失败"
 
 # The release family: terminal claim statuses whose correct follow-up
 # is Assignment -> AVAILABLE (models.py). COMPLETED is deliberately

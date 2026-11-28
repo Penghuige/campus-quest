@@ -201,12 +201,12 @@ _TERMINAL_CLAIM_STATUSES: tuple[ClaimStatus, ...] = (
     ClaimStatus.EXPIRED,
 )
 
-_PERMISSION_DENIED_MESSAGE = "只有任务所有者、拥有审核权限的协作者或管理员可以审核提交"
-_STALE_VERSION_MESSAGE = "只能审核当前最新版本的有效提交"
-_CLAIM_NOT_REVIEWABLE_MESSAGE = "该认领已结束，无法再审核"
-_LOCK_NOT_INVALIDATABLE_MESSAGE = "当前奖励锁状态不支持判无效操作"
-_REASON_REQUIRED_MESSAGE = "判无效操作必须填写原因"
-_LOCK_NOT_PROVISIONAL_MESSAGE = "奖励锁尚未处于待确认状态，无法通过验收"
+_PERMISSION_DENIED_MESSAGE = "你没有权限审核该任务的提交"
+_STALE_VERSION_MESSAGE = "只能审核最新版本的有效提交"
+_CLAIM_NOT_REVIEWABLE_MESSAGE = "该任务认领已结束，无法继续审核"
+_LOCK_NOT_INVALIDATABLE_MESSAGE = "当前奖励状态不支持作废"
+_REASON_REQUIRED_MESSAGE = "作废奖励档位必须填写原因"
+_LOCK_NOT_PROVISIONAL_MESSAGE = "当前奖励尚未锁定，无法通过验收"
 
 _CONFIRM_LOCK_REASON = "人工验收通过，确认奖励锁。"
 

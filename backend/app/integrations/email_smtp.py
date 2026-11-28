@@ -61,10 +61,10 @@ def _login_code_body(variables: Mapping[str, Any]) -> str:
     code = variables.get("code", "")
     ttl_minutes = variables.get("ttl_minutes", "")
     return (
-        "您正在登录 CampusQuest。\n\n"
+        "你正在登录 CampusQuest。\n\n"
         f"登录验证码：{code}\n\n"
-        f"验证码 {ttl_minutes} 分钟内有效；如非本人操作，请忽略本邮件。\n"
-        "\n—— CampusQuest"
+        f"验证码 {ttl_minutes} 分钟内有效，如非本人操作请忽略本邮件。\n\n"
+        "CampusQuest 团队"
     )
 
 
@@ -72,10 +72,10 @@ def _verification_body(variables: Mapping[str, Any]) -> str:
     token = variables.get("token", "")
     ttl_hours = variables.get("ttl_hours", "")
     return (
-        "您正在验证 CampusQuest 账号邮箱。\n\n"
-        f"验证码/令牌：{token}\n\n"
-        f"令牌 {ttl_hours} 小时内有效；如非本人操作请忽略本邮件。\n"
-        "\n—— CampusQuest"
+        "你正在验证 CampusQuest 账号邮箱。\n\n"
+        f"验证令牌：{token}\n\n"
+        f"令牌 {ttl_hours} 小时内有效，如非本人操作请忽略本邮件。\n\n"
+        "CampusQuest 团队"
     )
 
 

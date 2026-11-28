@@ -204,9 +204,9 @@ _TIMEOUT_CHECK_ROWS = 1024
 _READ_CHUNK = 1024 * 1024
 
 _NO_DATA_MESSAGE = "XLSX 工作表只有表头，没有数据行"
-_EMPTY_SHEET_MESSAGE = "XLSX 工作表为空（没有任何内容）"
-_NOT_XLSX_MESSAGE = "文件不是有效的 XLSX（ZIP）归档"
-_UNPARSEABLE_MESSAGE = "工作簿无法解析（结构损坏或不是有效的 XLSX）"
+_EMPTY_SHEET_MESSAGE = "工作表为空，请填写数据后再上传"
+_NOT_XLSX_MESSAGE = "上传的文件不是有效的 Excel（.xlsx）文件，请检查后重试"
+_UNPARSEABLE_MESSAGE = "Excel 文件无法解析，请确认文件未损坏后重试"
 
 #: The streaming families: iterated row-by-row (worksheets, bounded
 #: by the row/timeout caps), materialized under their own dedicated
