@@ -82,9 +82,11 @@ logger = logging.getLogger(__name__)
 OTP_TEMPLATE_NAME = "phone_otp_verification"
 
 _DEFAULT_ENDPOINT = "dypnsapi.aliyuncs.com"
+_DEFAULT_NOTIFICATION_ENDPOINT = "dysmsapi.aliyuncs.com"
 _DEFAULT_REGION = "ap-southeast-1"
 _API_VERSION = "2017-05-25"
 _API_ACTION = "SendSmsVerifyCode"
+_NOTIFICATION_API_ACTION = "SendSms"
 
 #: Provider error codes that are definite, retry-cannot-help rejections
 #: (invalid number/params, day-level caps, account or credential
@@ -233,6 +235,8 @@ class AliyunDypnsSmsSender:
         otp_template_code: str,
         endpoint: str = _DEFAULT_ENDPOINT,
         region: str = _DEFAULT_REGION,
+        notification_template_codes: Mapping[str, str] | None = None,
+        notification_endpoint: str = _DEFAULT_NOTIFICATION_ENDPOINT,
         clock: Clock | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout_seconds: float = 8.0,
@@ -242,6 +246,12 @@ class AliyunDypnsSmsSender:
         self._sign_name = sign_name
         self._otp_template_code = otp_template_code
         self._endpoint = endpoint
+        self._notification_endpoint = notification_endpoint
+        self._notification_template_codes: dict[str, str] = {
+            k.strip().lower(): v.strip()
+            for k, v in (notification_template_codes or {}).items()
+            if k.strip() and v.strip()
+        }
         # Not sent on the wire (see module docstring); a deployment fact
         # kept for diagnostics and the smoke script's banner.
         self._region = region
@@ -257,33 +267,56 @@ class AliyunDypnsSmsSender:
         variables: Mapping[str, Any],
         idempotency_key: str | None = None,
     ) -> str | None:
-        if template != OTP_TEMPLATE_NAME:
+        normalized_template = template.strip().lower()
+        if normalized_template == OTP_TEMPLATE_NAME:
+            code = str(variables.get("code", ""))
+            if not code:
+                raise PermanentProviderError(
+                    "the OTP template requires a non-empty 'code' variable"
+                )
+            ttl_minutes = str(variables.get("ttl_minutes", "5"))
+            country_code, phone_number = _decompose_e164(to)
+            template_param = json.dumps(
+                {"code": code, "min": ttl_minutes},
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            params = {
+                "CountryCode": country_code,
+                "PhoneNumber": phone_number,
+                "SignName": self._sign_name,
+                "TemplateCode": self._otp_template_code,
+                "TemplateParam": template_param,
+            }
+            endpoint = self._endpoint
+            action = _API_ACTION
+        elif normalized_template in self._notification_template_codes:
+            country_code, phone_number = _decompose_e164(to)
+            phone_numbers = (
+                phone_number
+                if country_code == "86"
+                else f"{country_code}{phone_number}"
+            )
+            template_param = json.dumps(
+                {str(k): str(v) for k, v in variables.items()},
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            params = {
+                "PhoneNumbers": phone_numbers,
+                "SignName": self._sign_name,
+                "TemplateCode": self._notification_template_codes[normalized_template],
+                "TemplateParam": template_param,
+            }
+            endpoint = self._notification_endpoint
+            action = _NOTIFICATION_API_ACTION
+        else:
             raise PermanentProviderError(
                 f"no Aliyun template is mapped for SMS template {template!r} "
-                f"(only {OTP_TEMPLATE_NAME!r} is deliverable)"
+                f"(configure ALIYUN_SMS_NOTIFICATION_TEMPLATE_CODES or use "
+                f"{OTP_TEMPLATE_NAME!r})"
             )
-        code = str(variables.get("code", ""))
-        if not code:
-            raise PermanentProviderError(
-                "the OTP template requires a non-empty 'code' variable"
-            )
-        ttl_minutes = str(variables.get("ttl_minutes", "5"))
-        country_code, phone_number = _decompose_e164(to)
 
-        # Caller-supplied-code mode: ${code} is OUR code (module
-        # docstring), ${min} renders the validity the user reads.
-        template_param = json.dumps(
-            {"code": code, "min": ttl_minutes},
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        params = {
-            "CountryCode": country_code,
-            "PhoneNumber": phone_number,
-            "SignName": self._sign_name,
-            "TemplateCode": self._otp_template_code,
-            "TemplateParam": template_param,
-        }
         if idempotency_key is not None:
             # Transparency only: the provider documents no dedupe
             # semantics for OutId, so UnknownOutcome retries still
@@ -301,13 +334,14 @@ class AliyunDypnsSmsSender:
         payload_hash = hashlib.sha256(b"").hexdigest()
         authorization = acs3_authorization(
             method="POST",
-            host=self._endpoint,
+            host=endpoint,
             query=params,
             body=b"",
             access_key_id=self._access_key_id,
             access_key_secret=self._access_key_secret,
             date=now,
             nonce=nonce,
+            action=action,
         )
         # The query string is pre-encoded in the signer's canonical form
         # and handed to httpx verbatim: letting httpx re-encode `params`
@@ -315,10 +349,10 @@ class AliyunDypnsSmsSender:
         # TemplateParam) and desync the signed string from the sent one.
         request = httpx.Request(
             "POST",
-            f"https://{self._endpoint}/?{_canonical_query(params)}",
+            f"https://{endpoint}/?{_canonical_query(params)}",
             headers={
                 "Authorization": authorization,
-                "x-acs-action": _API_ACTION,
+                "x-acs-action": action,
                 "x-acs-version": _API_VERSION,
                 "x-acs-date": date_header,
                 "x-acs-signature-nonce": nonce,
@@ -346,9 +380,11 @@ class AliyunDypnsSmsSender:
                 f"Aliyun DYPNS transport failure: {type(exc).__name__}"
             ) from exc
 
-        return self._interpret(response, to)
+        return self._interpret(response, to, template=normalized_template)
 
-    def _interpret(self, response: httpx.Response, to: str) -> str | None:
+    def _interpret(
+        self, response: httpx.Response, to: str, *, template: str = OTP_TEMPLATE_NAME
+    ) -> str | None:
         if response.status_code >= 500:
             raise TemporaryProviderError(
                 f"Aliyun DYPNS server error HTTP {response.status_code}"
@@ -362,12 +398,17 @@ class AliyunDypnsSmsSender:
         provider_code = str(payload.get("Code") or "")
         if provider_code == "OK":
             model = payload.get("Model") or {}
-            receipt = model.get("BizId") or model.get("RequestId")
+            receipt = (
+                model.get("BizId")
+                or model.get("RequestId")
+                or payload.get("BizId")
+                or payload.get("RequestId")
+            )
             receipt_text = str(receipt) if receipt else None
             logger.info(
                 "aliyun sms delivered to=%s template=%s receipt=%s",
                 mask_phone(to),
-                OTP_TEMPLATE_NAME,
+                template,
                 receipt_text,
             )
             return receipt_text

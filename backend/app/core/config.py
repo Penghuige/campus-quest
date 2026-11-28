@@ -200,6 +200,8 @@ class Settings(BaseSettings):
     aliyun_sms_otp_template_code: str = ""
     aliyun_sms_endpoint: str = "dypnsapi.aliyuncs.com"
     aliyun_sms_region: str = "ap-southeast-1"
+    aliyun_sms_notification_endpoint: str = "dysmsapi.aliyuncs.com"
+    aliyun_sms_notification_template_codes: dict[str, str] = Field(default_factory=dict)
 
     # SMTP relay credentials (security round batch 4 item 4,
     # owner-approved 2026-10-11: email carries two real product flows —

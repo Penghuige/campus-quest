@@ -135,6 +135,12 @@ def build_sms_sender(provider: str, settings: Any = None) -> SmsSender:
             otp_template_code=settings.aliyun_sms_otp_template_code,
             endpoint=settings.aliyun_sms_endpoint,
             region=settings.aliyun_sms_region,
+            notification_template_codes=getattr(
+                settings, "aliyun_sms_notification_template_codes", None
+            ),
+            notification_endpoint=getattr(
+                settings, "aliyun_sms_notification_endpoint", "dysmsapi.aliyuncs.com"
+            ),
         )
     if provider == "aliyun_dypns":
         raise LookupError(
