@@ -168,6 +168,7 @@ from app.integrations.rate_limit import (
 )
 from app.modules.audit.context import AuditContext
 from app.modules.community.adapters import CommunityRatingSummaryAdapter
+from app.modules.identity.admin_router import require_management_network_from_store
 from app.modules.identity.dependencies import (
     get_business_clock,
     require_active_actor,
@@ -421,7 +422,11 @@ async def list_platforms(
     ]
 
 
-@router.get("/admin/platforms", response_model=list[PlatformAdminPublic])
+@router.get(
+    "/admin/platforms",
+    response_model=list[PlatformAdminPublic],
+    dependencies=[Depends(require_management_network_from_store)],
+)
 async def list_admin_platforms(
     actor: Annotated[Actor, Depends(require_admin_actor)],
     db: DbSession,
@@ -440,7 +445,12 @@ async def list_admin_platforms(
     ]
 
 
-@router.post("/admin/platforms", response_model=PlatformAdminPublic, status_code=201)
+@router.post(
+    "/admin/platforms",
+    response_model=PlatformAdminPublic,
+    status_code=201,
+    dependencies=[Depends(require_management_network_from_store)],
+)
 async def create_platform(
     body: PlatformCreateRequest,
     request: Request,
@@ -467,7 +477,11 @@ async def create_platform(
     )
 
 
-@router.patch("/admin/platforms/{code}", response_model=PlatformAdminPublic)
+@router.patch(
+    "/admin/platforms/{code}",
+    response_model=PlatformAdminPublic,
+    dependencies=[Depends(require_management_network_from_store)],
+)
 async def patch_platform(
     code: str,
     body: PlatformPatchRequest,

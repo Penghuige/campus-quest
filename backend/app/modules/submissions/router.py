@@ -571,7 +571,11 @@ async def approve_submission(
         claim_id=result.claim.id,
         claim_status=result.claim.status,
         reward_lock_status=result.claim.reward_lock_status,
-        points_granted=result.grant.points_granted if result.grant else None,
+        points_granted=(
+            result.grant.points_granted
+            if result.grant is not None
+            else (None if result.already_reviewed else 0)
+        ),
         already_reviewed=result.already_reviewed,
     )
 

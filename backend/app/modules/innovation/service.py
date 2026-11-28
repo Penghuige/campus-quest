@@ -217,7 +217,7 @@ class ProjectDraftService:
                 raise _not_found()
             raise BusinessError(
                 ErrorCode.PROJECT_DRAFT_VERSION_CONFLICT,
-                "草稿已在其他页面更新，请刷新后重新保存；当前输入尚未保存",
+                "草稿已有更新，请刷新后再保存",
                 status_code=409,
             )
         result = _response(row)

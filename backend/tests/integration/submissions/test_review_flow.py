@@ -1632,3 +1632,43 @@ def test_unrelated_teacher_gets_permission_denied_before_state_gates() -> None:
                     )
         finally:
             asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))
+
+
+@pytest.mark.integration
+def test_zero_point_locked_reward_completes_without_ledger_error() -> None:
+    """B02-03: when a tiny base_reward_points floors to 0 under a late tier,
+    approve_submission completes the claim and confirms the lock cleanly
+    without writing a 0-amount ledger entry."""
+    from app.modules.submissions.enums import ReviewStatus
+
+    factory = _new_factory()
+    run = uuid4().hex[:8]
+    task_ids: list[UUID] = []
+    try:
+        seed = asyncio.run(
+            _seed(
+                factory,
+                run,
+                reward_tier_locked=20,
+                locked_reward_points=0,
+            )
+        )
+        task_ids.append(seed.task.id)
+        service, _collector, points = _service(_REVIEWED_AT)
+        result = _call(
+            factory,
+            lambda session: service.approve_submission(
+                session, seed.actor(seed.owner), seed.submissions[1].id
+            ),
+        )
+        assert isinstance(result, ApprovalResult)
+        assert result.already_reviewed is False
+        assert result.grant is None
+        assert points.calls == []
+        claim, assignment, submission = asyncio.run(_reload(factory, seed.claim.id))
+        assert claim.status == ClaimStatus.COMPLETED.value
+        assert claim.reward_lock_status == RewardLockStatus.CONFIRMED.value
+        assert assignment.availability_status == AssignmentAvailability.COMPLETED.value
+        assert submission.review_status == ReviewStatus.APPROVED.value
+    finally:
+        asyncio.run(_cleanup(factory, task_ids=task_ids, run=run))

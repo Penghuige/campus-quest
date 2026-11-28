@@ -320,7 +320,7 @@ class RecruitmentService:
                 )
             return prior, digest
         if payload.version != row.version:
-            raise conflict("内容已变化，请重新读取后再操作", kind="VERSION_CONFLICT")
+            raise conflict("内容已有更新，请刷新后重试", kind="VERSION_CONFLICT")
         return None, digest
 
     async def update(

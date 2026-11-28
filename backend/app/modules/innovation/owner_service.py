@@ -124,7 +124,7 @@ class OwnerProfileService:
         if row is None:
             raise BusinessError(
                 ErrorCode.OWNER_PROFILE_VERSION_CONFLICT,
-                "资料版本已改变，请读取最新资料；当前输入尚未保存",
+                "资料已在其他地方更新，请刷新后再保存",
                 status_code=409,
             )
         await self._record(

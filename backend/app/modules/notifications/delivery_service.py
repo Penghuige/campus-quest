@@ -712,3 +712,48 @@ def _claim_id_from_event_key(event_key: str) -> UUID | None:
     if match is None:
         return None
     return UUID(match.group(1))
+
+
+#: Marker stored in ``last_error`` when the aged-SENDING recovery flips a row.
+STUCK_SENDING_RECOVERY_MARKER = "stuck-SENDING recovery"
+
+
+async def recover_stuck_sending_deliveries(
+    session: AsyncSession,
+    now: datetime,
+    *,
+    stuck_after: timedelta,
+    limit: int,
+) -> list[UUID]:
+    """Flip deliveries stuck in SENDING past ``stuck_after`` back to RETRYABLE.
+
+    Owned by the notifications service layer (B04-03) so the Celery beat
+    task stays a thin orchestration shell without duplicating domain
+    state transitions.
+    """
+    from sqlalchemy import update
+
+    cutoff = now - stuck_after
+    statement = (
+        update(NotificationDelivery)
+        .where(
+            NotificationDelivery.id.in_(
+                select(NotificationDelivery.id)
+                .where(
+                    NotificationDelivery.status == DeliveryStatus.SENDING.value,
+                    NotificationDelivery.updated_at <= cutoff,
+                )
+                .order_by(NotificationDelivery.updated_at, NotificationDelivery.id)
+                .limit(limit)
+            )
+        )
+        .values(
+            status=DeliveryStatus.RETRYABLE.value,
+            last_error=STUCK_SENDING_RECOVERY_MARKER,
+            updated_at=now,
+        )
+        .returning(NotificationDelivery.id)
+    )
+    recovered = list((await session.execute(statement)).scalars().all())
+    await session.commit()
+    return recovered
