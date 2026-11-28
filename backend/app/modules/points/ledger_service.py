@@ -215,6 +215,7 @@ class WalletSummary:
     available_points: int
     earned_points: int
     spendable_points: int
+    net_earned_points: int = 0
 
 
 class InvalidLedgerEntryError(BusinessError):
@@ -515,7 +516,10 @@ class LedgerService:
         ).first()
         if row is None:
             return WalletSummary(
-                available_points=0, earned_points=0, spendable_points=0
+                available_points=0,
+                earned_points=0,
+                spendable_points=0,
+                net_earned_points=0,
             )
         frozen = await db.scalar(
             select(func.coalesce(func.sum(PointReservation.points), 0)).where(
@@ -523,11 +527,19 @@ class LedgerService:
                 PointReservation.status == ReservationStatus.ACTIVE.value,
             )
         )
+        net_earned = await db.scalar(
+            select(func.coalesce(func.sum(PointsLedger.amount), 0)).where(
+                PointsLedger.user_id == user_id,
+                PointsLedger.affects_ranking.is_(True),
+            )
+        )
         assert frozen is not None
+        assert net_earned is not None
         return WalletSummary(
             available_points=int(row.available_points),
             earned_points=int(row.earned_points),
             spendable_points=int(row.available_points) - int(frozen),
+            net_earned_points=int(net_earned),
         )
 
     async def grant_assignment_reward(

@@ -114,10 +114,11 @@ async def test_operator_claim_gates_private_material_and_publication(
         )
     ).status_code == 409
     detail = await client.get(f"{OPS}/{case['id']}", headers=headers)
-    assert (
-        detail.status_code == 200
-        and detail.json()["owner_profile"]["student_no"] == "000002"
-    )
+    assert detail.status_code == 200
+    # F03-01: student operations reviewers must not receive raw student_no.
+    owner_profile = detail.json()["owner_profile"]
+    assert "student_no" not in owner_profile
+    assert owner_profile["name"]
     eid = command["evidence_ids"][0]
     file = await client.get(
         f"{OPS}/{case['id']}/evidence/{eid}/content", headers=headers

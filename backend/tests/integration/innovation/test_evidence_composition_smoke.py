@@ -118,7 +118,8 @@ async def test_real_provider_checks_uploaded_bytes_and_write_once(db_session, cl
         detail = await review_service.detail(db_session, **review_args)
         assert (
             detail.case.id == claimed.id
-            and detail.owner_profile["student_no"] == "000005"
+            and "student_no" not in detail.owner_profile
+            and detail.owner_profile["name"] == "烟测本人"
         )
         operator_content = await review_service.read_content(
             db_session, **review_args, evidence_id=checked.id

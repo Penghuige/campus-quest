@@ -19702,6 +19702,10 @@
             "type": "integer",
             "title": "Earned Points"
           },
+          "net_earned_points": {
+            "type": "integer",
+            "title": "Net Earned Points"
+          },
           "spendable_points": {
             "type": "integer",
             "title": "Spendable Points"
@@ -19716,6 +19720,7 @@
         "required": [
           "available_points",
           "earned_points",
+          "net_earned_points",
           "spendable_points",
           "point_debt"
         ],

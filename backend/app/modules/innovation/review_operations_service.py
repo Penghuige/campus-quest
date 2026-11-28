@@ -485,11 +485,17 @@ class ReviewOperationsService:
                 .order_by(RevisionEvidence.evidence_id)
             )
         )
+        # F03-01: student operations reviewers do not need other owners'
+        # raw student numbers; strip student_no from the review surface
+        # while keeping the immutable revision snapshot intact in storage.
+        safe_owner_profile = {
+            k: v for k, v in revision.owner_profile.items() if k != "student_no"
+        }
         result = ReviewPrivateDetail(
             case=await case_summary(db, case),
             project_content=revision.project_content,
             achievement_content=revision.achievement_content,
-            owner_profile=revision.owner_profile,
+            owner_profile=safe_owner_profile,
             evidence=evidence,
         )
         await db.commit()

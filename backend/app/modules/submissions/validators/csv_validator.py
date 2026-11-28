@@ -215,7 +215,7 @@ def _scan(
     if b"\x00" in prefix:
         builder.add_error(
             ValidationCode.BINARY_CONTENT,
-            "文件包含二进制内容（检测到 NUL 字节），不是文本 CSV",
+            "上传的文件不是有效的文本 CSV 文件，请检查格式后重试",
         )
         return ScanAggregates()
     try:

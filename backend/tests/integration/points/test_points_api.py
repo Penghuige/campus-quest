@@ -97,7 +97,13 @@ _T0 = datetime.now(UTC).replace(microsecond=0)
 _PASSWORD = "correct-horse-battery"
 _TERM = "2026-fall"
 
-_WALLET_FIELDS = {"available_points", "earned_points", "spendable_points", "point_debt"}
+_WALLET_FIELDS = {
+    "available_points",
+    "earned_points",
+    "net_earned_points",
+    "spendable_points",
+    "point_debt",
+}
 _REWARD_FIELDS = {
     "id",
     "name",
@@ -306,6 +312,7 @@ async def test_points_me_reports_wallet_and_spendable(
     assert body == {
         "available_points": 1000,
         "earned_points": 1000,
+        "net_earned_points": 0,
         "spendable_points": 900,
         "point_debt": 0,
     }
@@ -321,6 +328,7 @@ async def test_points_me_reads_zeros_without_a_wallet(
     assert response.json() == {
         "available_points": 0,
         "earned_points": 0,
+        "net_earned_points": 0,
         "spendable_points": 0,
         "point_debt": 0,
     }
@@ -381,6 +389,7 @@ async def test_points_me_clamps_the_overdrawn_wallet_into_point_debt(
     assert response.json() == {
         "available_points": 0,  # max(-150, 0)
         "earned_points": 200,
+        "net_earned_points": 0,  # 200 grant - 200 reversal
         "spendable_points": 0,  # max(-150 - reservations, 0)
         "point_debt": 150,  # max(150, 0)
     }
@@ -447,6 +456,7 @@ async def test_redeem_freezes_points_atomically(
     assert wallet.json() == {
         "available_points": 1000,
         "earned_points": 1000,
+        "net_earned_points": 0,
         "spendable_points": 600,
         "point_debt": 0,
     }
@@ -610,6 +620,7 @@ async def test_admin_approves_then_fulfills_the_redemption(
     assert wallet.json() == {
         "available_points": 600,
         "earned_points": 1000,
+        "net_earned_points": 0,
         "spendable_points": 600,
         "point_debt": 0,
     }

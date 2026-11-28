@@ -397,11 +397,42 @@ async def test_hard_hidden_comment_keeps_moderation_shape_with_flag(
     record = page[0].comment
     assert record.hard_hidden is True
     assert record.deleted is True
-    assert record.content is not None
+    # B06-03: non-Admin moderation viewers do not receive hard-hidden body text.
+    assert record.content is None
     assert record.author_display == "匿名用户"
     assert record.moderation_key == derive_moderation_key(
         task.id, author.id, secret=_KEY_SECRET
     )
+
+    admin_page, _ = await _report_service().list_task_reports(
+        db_session, _actor(admin), task.id, limit=20, offset=0
+    )
+    assert admin_page[0].comment.content is not None
+
+
+@pytest.mark.integration
+async def test_reported_staff_author_cannot_see_reporter_identity(
+    db_session: AsyncSession,
+) -> None:
+    """B06-01: spec §23 forbids exposing reporter identity to the reported
+    comment's author, with no role exception for staff moderators."""
+    task, teacher, _author, _, reporter, admin = await _fixture(db_session)
+    teacher_comment = await _root_comment(db_session, task, teacher)
+    await _report_service().report_comment(
+        db_session, reporter.id, teacher_comment.id, "HARASSMENT"
+    )
+
+    teacher_page, _ = await _report_service().list_task_reports(
+        db_session, _actor(teacher), task.id, limit=20, offset=0
+    )
+    assert teacher_page[0].reporter_user_id is None
+    assert teacher_page[0].reporter_nickname is None
+
+    admin_page, _ = await _report_service().list_task_reports(
+        db_session, _actor(admin), task.id, limit=20, offset=0
+    )
+    assert admin_page[0].reporter_user_id == reporter.id
+    assert admin_page[0].reporter_nickname is not None
 
 
 # --- the Admin reveal (spec §21.4 每次追溯必须写 AuditLog) ---------------------------

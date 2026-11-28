@@ -211,7 +211,7 @@ Student 的 username 就是学号。
 - MUST 只接受 ASCII 数字 0–9。
 - 不允许空格、短横线、小数点、全角数字、科学计数法形式。
 - 长度不固定。实现 SHOULD 采用可配置 min/max，默认 6–20 位，避免无界输入。
-- 注册时 MUST 同时通过格式校验和 StudentWhitelist 命中校验。
+- 注册时 MUST 通过格式校验并按现行注册审核流程进入审批（早期 StudentWhitelist 预导入流程已退役）。
 - username MUST 全局唯一。
 - 注册后 Student 不能自行修改。
 - 登录时可以去除首尾空白，但不能改写内部字符。
@@ -286,11 +286,11 @@ Student 强制绑定手机号。
 - 若使用 Cookie 认证，所有有副作用请求必须有 CSRF 防护。
 - Refresh 轮换的稳定后继者重放窗修订（PR #10，休眠能力，默认 `REFRESH_GRACE_SECONDS=0` 保持本节原语义）见 [2026-09-30-refresh-grace-amendment.md](2026-09-30-refresh-grace-amendment.md)。
 
-Teacher/Admin：
+Teacher/Admin（按 V1.1 认证口径修订）：
 
-- MUST 强制 2FA。
-- 推荐 TOTP + 一次性恢复码。
-- 后台支持额外 IP/VPN 白名单策略，但 IP 白名单不能替代正常认证和 2FA。
+- Admin：MUST 强制启用 TOTP 2FA + 一次性恢复码，未完成绑定前不得进入管理后台。
+- Teacher：采用已验证邮箱验证码（或密码）登录，TOTP 为可选安全增强，不作为首次登录的强制阻塞门槛。
+- 后台支持额外 IP/VPN 白名单策略，但 IP 白名单不能替代正常认证与 Admin 2FA。
 
 ### 5.7 User 状态
 
@@ -316,7 +316,7 @@ V1 推荐：
 
 1. Admin 在后台创建 Staff 邀请。
 2. Staff 通过一次性、短时有效邀请链接设置密码。
-3. 首次登录必须绑定并启用 TOTP 2FA，未完成前不能进入管理后台。
+3. Admin 账号首次登录必须绑定并启用 TOTP 2FA，未完成前不能进入管理后台；Teacher 账号可按需可选绑定 TOTP。
 4. Recovery Code 只在启用 2FA 时展示一次，服务端仅保存 hash。
 5. Admin 账号的创建、角色提升、角色撤销都必须写 AuditLog。
 
@@ -510,7 +510,7 @@ Assignment 是可复用工作单元；AssignmentClaim 是一次领取历史。�
 - 同一 Task 没有冲突中的 Claim。
 - 有 AVAILABLE Assignment。
 - FIXED DDL 模式未到 claim cutoff。
-- 该用户没有命中该 Task 的额外限制。
+- 该用户没有命中该 Task 的额外限制（未来扩展条款；V1 暂不引入 Task 级自定义领取限制）。
 
 全局并行限制：
 
@@ -1188,7 +1188,7 @@ ADMIN_ADJUSTMENT 默认：
 - reversal 的 ranking_effective_at SHOULD 使用原奖励的 ranking_effective_at。
 - 例如 8 月奖励在 9 月被冲销，应修正 8 月历史榜和总榜，而不是把 -200 算到 9 月学生表现。
 
-此规则必须有测试。
+此规则必须有测试。钱包接口同时区分 `earned_points`（历史累计发放毛额，冲销不减）与 `net_earned_points`（扣除冲销后的有效净额，与成长页 `total_earned_points` 及总榜口径一致）。
 
 ### 17.3 Redis
 
@@ -1200,7 +1200,7 @@ Redis Sorted Set 可维护：
 
 但 Redis 是投影。
 
-必须提供从 PostgreSQL 重建排行榜的方法。
+必须提供从 PostgreSQL 重建排行榜的方法（V1 为人工运维触发的 `rebuild_all_rankings` 任务，按运维手册执行）。
 
 积分事务提交成功后再更新缓存；缓存更新失败不得回滚已经合法完成的任务，后续由重建/事件重放修复。
 
@@ -1328,7 +1328,7 @@ Comment 字段：
 - 默认软删除。
 - 父评论删除后子评论保留。
 - 前台显示“该评论已删除”。
-- Admin 在特殊隐私/违法场景可彻底隐藏内容，但 AuditLog 仍保留操作记录。
+- Admin 在特殊隐私/违法场景可彻底隐藏内容（`hard_hidden`），除 Admin 外前台与 Teacher 治理面均不可见原文（返回 `content=null`），AuditLog 仍保留操作记录。
 
 ### 21.4 匿名
 
@@ -1787,7 +1787,7 @@ AuditLog 不允许通过普通管理后台删除。
 
 建议支持 Idempotency-Key 的写接口：
 
-- reward redeem。
+- reward redeem（V1 `Idempotency-Key` 为 advisory，核心余额不负、库存不超卖由数据库行锁与约束保障）。
 - upload intent / finalize。
 - 高价值管理操作。
 
@@ -1830,7 +1830,7 @@ AuditLog 不允许通过普通管理后台删除。
 
 ### 33.4 后台
 
-- Teacher/Admin 强制 2FA。
+- Admin 强制 TOTP 2FA；Teacher 邮箱验证码单因子登录，TOTP 为可选增强。
 - 支持 IP/VPN 额外限制。
 - 高风险操作要求二次确认。
 - 匿名身份追溯、积分修改等操作写 AuditLog。

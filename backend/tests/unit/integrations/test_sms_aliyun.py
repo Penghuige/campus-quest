@@ -277,3 +277,57 @@ def test_credentials_and_code_never_leak_in_exceptions_or_logs(
 
 def mask_present(text: str) -> bool:
     return "*" in text
+
+
+def test_mapped_notification_template_dispatches_via_sendsms() -> None:
+    """B04-01: mapped notification event slugs route through Aliyun SendSms."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"Code": "OK", "BizId": "biz-notif-1"})
+
+    sender = AliyunDypnsSmsSender(
+        access_key_id="test-key-id",
+        access_key_secret=_SECRET,
+        sign_name="CampusQuest",
+        otp_template_code="100001",
+        notification_template_codes={"assignment_deadline_4h": "SMS_998877"},
+        transport=httpx.MockTransport(handler),
+    )
+    receipt = sender.send(
+        to=_TO,
+        template="assignment_deadline_4h",
+        variables={"title": "截止提醒", "body": "任务即将截止"},
+        idempotency_key="idem-notif-1",
+    )
+    assert receipt == "biz-notif-1"
+    assert len(seen) == 1
+    req = seen[0]
+    assert req.url.host == "dysmsapi.aliyuncs.com"
+    assert req.headers["x-acs-action"] == "SendSms"
+    query = dict(req.url.params)
+    assert query["PhoneNumbers"] == "13530417625"
+    assert query["TemplateCode"] == "SMS_998877"
+    assert query["OutId"] == "idem-notif-1"
+    assert "截止提醒" in query["TemplateParam"]
+
+
+def test_unmapped_notification_template_still_fails_closed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("unmapped template must never reach the wire")
+
+    sender = AliyunDypnsSmsSender(
+        access_key_id="test-key-id",
+        access_key_secret=_SECRET,
+        sign_name="CampusQuest",
+        otp_template_code="100001",
+        notification_template_codes={"assignment_deadline_4h": "SMS_998877"},
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(PermanentProviderError):
+        sender.send(
+            to=_TO,
+            template="unmapped_event",
+            variables={"title": "t", "body": "b"},
+        )

@@ -166,6 +166,7 @@ from sqlalchemy import String, Uuid, column, func, select, table
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import rbac
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import BusinessError
@@ -205,6 +206,7 @@ __all__ = [
 # docstring).
 REPORT_DISMISSED = "REPORT_DISMISSED"
 REPORT_HANDLED = "REPORT_HANDLED"
+COMMUNITY_REPORTS_READ = "COMMUNITY_REPORTS_READ"
 
 # The audit target vocabulary for the closures: the report row the
 # moderator decided on (target_id = the report's UUID as text).
@@ -228,8 +230,8 @@ _USERS = table(
 _INVALID_CATEGORY_MESSAGE = "举报类别无效"
 _NOTE_INVALID_MESSAGE = "举报备注必须是文本"
 _NOTE_TOO_LONG_MESSAGE = "举报备注超过长度上限"
-_VIEW_DENIED_MESSAGE = "只有任务所有者、拥有社区治理权限的协作者或管理员可以查看举报"
-_CLOSURE_DENIED_MESSAGE = "只有任务所有者、拥有社区治理权限的协作者或管理员可以处理举报"
+_VIEW_DENIED_MESSAGE = "你没有权限查看该任务的举报"
+_CLOSURE_DENIED_MESSAGE = "你没有权限处理该任务的举报"
 _DISMISS_REASON_REQUIRED_MESSAGE = "必须填写驳回举报的理由"
 _REPORT_NOT_FOUND_MESSAGE = "举报不存在"
 _REPORT_ALREADY_CLOSED_MESSAGE = "举报已按另一结论处理，不能再次变更"
@@ -481,6 +483,7 @@ class ReportService:
         *,
         limit: int,
         offset: int,
+        audit_context: AuditContext | None = None,
     ) -> tuple[list[CommentReportView], int]:
         """One offset page of the reports on ONE task's comments, newest
         first, with the rendered total — the staff moderation surface
@@ -499,71 +502,83 @@ class ReportService:
             )
             or 0
         )
-        if total == 0 or offset >= total:
-            return [], total
-
-        edited_flag = (
-            select(CommentRevision.comment_id)
-            .where(CommentRevision.comment_id == Comment.id)
-            .exists()
-        )
-        # The author's users row joins under an alias: the nickname is
-        # the Teacher-safe display for named comments, while the key
-        # derives from the (task, author) pair server-side.
-        author_users = _USERS.alias("moderation_author_users")
-        rows = (
-            await db.execute(
-                select(
-                    CommentReport,
-                    Comment,
-                    _USERS.c.nickname,
-                    author_users.c.nickname,
-                    edited_flag,
+        views: list[CommentReportView] = []
+        if total > 0 and offset < total:
+            edited_flag = (
+                select(CommentRevision.comment_id)
+                .where(CommentRevision.comment_id == Comment.id)
+                .exists()
+            )
+            author_users = _USERS.alias("moderation_author_users")
+            rows = (
+                await db.execute(
+                    select(
+                        CommentReport,
+                        Comment,
+                        _USERS.c.nickname,
+                        author_users.c.nickname,
+                        edited_flag,
+                    )
+                    .select_from(CommentReport)
+                    .join(Comment, Comment.id == CommentReport.comment_id)
+                    .join(_USERS, _USERS.c.id == CommentReport.reporter_user_id)
+                    .join(author_users, author_users.c.id == Comment.user_id)
+                    .where(Comment.task_id == task_id)
+                    .order_by(CommentReport.created_at.desc(), CommentReport.id)
+                    .limit(limit)
+                    .offset(offset)
                 )
-                .select_from(CommentReport)
-                .join(Comment, Comment.id == CommentReport.comment_id)
-                .join(_USERS, _USERS.c.id == CommentReport.reporter_user_id)
-                .join(author_users, author_users.c.id == Comment.user_id)
-                .where(Comment.task_id == task_id)
-                .order_by(CommentReport.created_at.desc(), CommentReport.id)
-                .limit(limit)
-                .offset(offset)
-            )
-        ).all()
-        return [
-            CommentReportView(
-                id=report.id,
-                comment=serialize_moderation_comment(
-                    comment,
-                    author_nickname=str(author_nickname),
-                    key_secret=self._moderation_key_secret,
-                    edited=edited,
-                ),
-                category=report.category,
-                note=report.note,
-                status=report.status,
-                # Self-report fold (task 6 review F2): the reporter IS
-                # the comment's author -> no reporter identity renders;
-                # their nickname beside an anonymous comment would
-                # deanonymize it. Otherwise the reporter fields are the
-                # moderators' material (row unpacks are Any; the column
-                # is NOT NULL VARCHAR).
-                reporter_user_id=(
-                    None
-                    if report.reporter_user_id == comment.user_id
-                    else report.reporter_user_id
-                ),
-                reporter_nickname=(
-                    None
-                    if report.reporter_user_id == comment.user_id
-                    else str(nickname)
-                ),
-                created_at=report.created_at,
-                handled_by=report.handled_by,
-                handled_at=report.handled_at,
-            )
-            for report, comment, nickname, author_nickname, edited in rows
-        ], total
+            ).all()
+            redact_hard_hidden = not rbac.is_admin(actor.role)
+            views = [
+                CommentReportView(
+                    id=report.id,
+                    comment=serialize_moderation_comment(
+                        comment,
+                        author_nickname=str(author_nickname),
+                        key_secret=self._moderation_key_secret,
+                        edited=edited,
+                        redact_hard_hidden=redact_hard_hidden,
+                    ),
+                    category=report.category,
+                    note=report.note,
+                    status=report.status,
+                    # Hide reporter identity for self-reports AND whenever the
+                    # viewer is the reported comment's author (spec §23 / B06-01).
+                    reporter_user_id=(
+                        None
+                        if (
+                            report.reporter_user_id == comment.user_id
+                            or actor.user_id == comment.user_id
+                        )
+                        else report.reporter_user_id
+                    ),
+                    reporter_nickname=(
+                        None
+                        if (
+                            report.reporter_user_id == comment.user_id
+                            or actor.user_id == comment.user_id
+                        )
+                        else str(nickname)
+                    ),
+                    created_at=report.created_at,
+                    handled_by=report.handled_by,
+                    handled_at=report.handled_at,
+                )
+                for report, comment, nickname, author_nickname, edited in rows
+            ]
+        await self._audit.append(
+            db,
+            actor=actor,
+            action=COMMUNITY_REPORTS_READ,
+            target_type="task",
+            target_id=str(task_id),
+            details={"limit": limit, "offset": offset, "returned": len(views)},
+            ip_address=audit_context.ip_address if audit_context else None,
+            request_id=audit_context.request_id if audit_context else None,
+        )
+        await db.commit()
+        return views, total
 
     async def dismiss_report(
         self,

@@ -232,8 +232,8 @@ def _validated_term_key(term_key: str) -> str:
     stripped = term_key.strip() if isinstance(term_key, str) else ""
     if not stripped or len(stripped) > _TERM_KEY_MAX_LENGTH:
         raise AcademicTermConfigurationError(
-            f"CURRENT_ACADEMIC_TERM 配置不可用：{term_key!r}（必须是非空白字符串且"
-            f"不超过 {_TERM_KEY_MAX_LENGTH} 个字符）；拒绝回退到日历推断的学期"
+            f"当前学期配置无效（长度需在 1-{_TERM_KEY_MAX_LENGTH} 字符内），"
+            "请联系管理员检查系统设置"
         )
     return stripped
 

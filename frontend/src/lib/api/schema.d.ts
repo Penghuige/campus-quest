@@ -8030,6 +8030,8 @@ export interface components {
             available_points: number;
             /** Earned Points */
             earned_points: number;
+            /** Net Earned Points */
+            net_earned_points: number;
             /** Spendable Points */
             spendable_points: number;
             /** Point Debt */

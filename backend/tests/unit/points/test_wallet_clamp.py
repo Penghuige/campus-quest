@@ -26,11 +26,17 @@ from app.modules.points.router import WalletResponse, _wallet_response
 
 def test_healthy_wallet_maps_unchanged_with_zero_debt() -> None:
     response = _wallet_response(
-        WalletSummary(available_points=1000, earned_points=1000, spendable_points=900)
+        WalletSummary(
+            available_points=1000,
+            earned_points=1000,
+            spendable_points=900,
+            net_earned_points=1000,
+        )
     )
     assert response == WalletResponse(
         available_points=1000,
         earned_points=1000,
+        net_earned_points=1000,
         spendable_points=900,
         point_debt=0,
     )
@@ -49,11 +55,17 @@ def test_overdrawn_wallet_clamps_and_carries_the_debt() -> None:
     balance figures clamp at 0 and the overdraft surfaces as
     point_debt — earned is never touched by spending (spec §17.1)."""
     response = _wallet_response(
-        WalletSummary(available_points=-150, earned_points=200, spendable_points=-150)
+        WalletSummary(
+            available_points=-150,
+            earned_points=200,
+            spendable_points=-150,
+            net_earned_points=0,
+        )
     )
     assert response == WalletResponse(
         available_points=0,
         earned_points=200,
+        net_earned_points=0,
         spendable_points=0,
         point_debt=150,
     )
@@ -87,11 +99,17 @@ def test_positive_wallet_with_frozen_spendable_clamps_spendable_only() -> None:
     (theoretical under the redemption gate, pinned anyway): spendable
     clamps at 0, available stays true-positive, no debt is invented."""
     response = _wallet_response(
-        WalletSummary(available_points=100, earned_points=100, spendable_points=-50)
+        WalletSummary(
+            available_points=100,
+            earned_points=100,
+            spendable_points=-50,
+            net_earned_points=100,
+        )
     )
     assert response == WalletResponse(
         available_points=100,
         earned_points=100,
+        net_earned_points=100,
         spendable_points=0,
         point_debt=0,
     )
