@@ -31,7 +31,7 @@ Spec: `docs/superpowers/specs/2026-10-29-load-testing-design.md` ·
 | 场景 | 负载 | 结果 | P99（API 腿） | 正确性检查 |
 |---|---|---|---|---|
 | S1 截止抢交（目标） | 50 并发 / 4.5 min | 55 提交（含版本化重交）全成功，0 错误 0 限流；踩点小组按时开火 | 1.64 s | ✅ check_s1：零丢失/零重复/§9.3 分档 oracle 全对；排水 max 21.4s / mean 9.1s |
-| S1 递增（修复前口径） | 100 并发 | 1 次 500（死锁，见发现 1） | ~2.7 s | ⚠️ 该两轮递增的 summary 工件被当时的固定 run 目录 bug 覆盖销毁（审查 I2，已修复为每次独立目录）；死锁证据完整留存于 `stack-logs/uvicorn.log` |
+| S1 递增（修复前口径） | 100 并发 | 1 次 500（死锁，见发现 1） | ~2.7 s | ⚠️ 该两轮递增的 summary 工件及当次原始 `stack-logs/uvicorn.log` / PG 死锁日志均被早期脚本覆盖销毁（审查 I2 与 `stack.sh` 归档改造前）；后续已在 PR #159 统一 `user -> claim` 锁序并补 PostgreSQL 并发回归测试 |
 | S1 递增（崩溃区域） | 200 并发 | MinIO 卷 52 秒被打爆（507 级联→404 连锁） | ~7.9 s | 同上：工件已毁；**未重跑**——宿主磁盘 98% 满，重跑 200 并发有把系统盘打满的风险，不值得为一个"磁盘先倒"的结论冒险 |
 | S2 开抢名额 | 300 人 / 60 槽 | **恰好 60 胜，零超发**，240 落败**全部** `NO_ASSIGNMENT_AVAILABLE`（§8.4 稳定码），0 次 5xx | 1.60 s | ✅ check_s2 全绿（无超发/无人重复/占用一致/码白名单） |
 | S3 读基线 | 20 并发 | 464 读全成功 | 27.5 ms | 对照组 |
@@ -42,15 +42,15 @@ Spec: `docs/superpowers/specs/2026-10-29-load-testing-design.md` ·
 
 ## 发现（按重要度）
 
-1. **上传意向流死锁（生产级，移交修复）**：100+ 并发下
+1. **上传意向流死锁（生产级，已于 PR #159 锁序修复 + 回归测试）**：100+ 并发下
    `POST /submissions/upload-intent` 偶发 PostgreSQL
-   `DeadlockDetectedError` → 500。锁图（留存于 `stack-logs/uvicorn.log`
-   与 PG 日志摘录）：intent 流的 `SELECT ... FOR UPDATE`（claim 行）与
-   验证 worker 的裸 `UPDATE assignment_claims SET status='UNDER_REVIEW'`
-   相互等待——worker 绕过了 upload_service 文档规定的
-   user→claim→intent 锁序。慢查询日志佐证：竞争窗口内 claim 行
-   UPDATE 996ms、FOR UPDATE 290ms。**修复属产品正确性变更，需专属 TDD PR**
-   （确定性并发复现 + 锁序对齐），不在本容量 PR 内夹带。
+   `DeadlockDetectedError` → 500（注：2026-10 当次的原始 `stack-logs/uvicorn.log`
+   与 PG 日志已被早期 `stack.sh` 覆盖销毁，不再可定位；后续压测脚本已改为归档不截断）。
+   锁图分析：intent 流按 `user -> claim` 顺序持有 `users` 行锁与 `assignment_claims` 行锁，
+   而验证 / reward-lock 路径未先锁 `users` 行即更新 `assignment_claims`（触发 PG 对 `users`
+   的外键 `FOR KEY SHARE`），形成 AB-BA 死锁。**代码修复与 PostgreSQL 并发回归测试
+   （`test_concurrent_upload_intent_and_reward_lock_no_deadlock`）已合入 PR #159**；
+   修复后的全量 100 并发重跑压测尚未重新执行。
 2. **磁盘是单机形态的第一道天花板**：200 并发时 MinIO 卷 52 秒被
    ~30MB 级上传打爆（桶内还堆着 3.2GB 历史残留——retention=DAYS_180，
    压测期间无人清理）。容量规划必须把"对象存储增长率"与 QPS 一起算；
